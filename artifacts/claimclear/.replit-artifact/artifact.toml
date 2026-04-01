@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/claimclear/"
+title = "ClaimClear"
+version = "1.0.0"
+id = "artifacts/claimclear"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/claimclear/" ]
+localPort = 25823
+
+[services.development]
+run = "pnpm --filter @workspace/claimclear run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/claimclear", "run", "build" ]
+publicDir = "artifacts/claimclear/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25823"
+BASE_PATH = "/claimclear/"

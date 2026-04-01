@@ -1,0 +1,551 @@
+import { useState, useEffect } from "react";
+import { useParams, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetClaim, getGetClaimQueryKey,
+  useUpdateClaim, useUpdateClaimStatus, useUpdateClaimOutcome,
+  useUpdateClaimEvidence, usePlaceClaimOnHold, useRemoveClaimHold,
+  useUpdateClaimWorkflow, useGenerateClaimEmail,
+  useListClaimNotes, getListClaimNotesQueryKey, useCreateClaimNote, useDeleteNote,
+  useListClaimAuditLogs, getListClaimAuditLogsQueryKey,
+  useGetPresence, getGetPresenceQueryKey,
+  useCreatePortalSubmission,
+  useListPortalSubmissions, getListPortalSubmissionsQueryKey,
+  useListBotActivity, getListBotActivityQueryKey,
+} from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspace/api-client-react";
+import { StatusBadge } from "@/components/status-badge";
+import { usePresence } from "@/hooks/use-presence";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
+import {
+  Edit2, Save, X, Trash2, Send, PauseCircle, Play,
+  Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
+  ChevronRight, ArrowRight, Eye
+} from "lucide-react";
+
+function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
+  const { data: botActivity } = useListBotActivity(sub.id, {
+    query: { queryKey: getListBotActivityQueryKey(sub.id), enabled: !!sub.id }
+  });
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Submission #{sub.id}</span>
+          <Badge
+            variant={
+              sub.status === "submitted" ? "default" :
+              sub.status === "failed" ? "destructive" :
+              "secondary"
+            }
+          >
+            {sub.status === "submitted" && <CheckCircle className="h-3 w-3 mr-1" />}
+            {sub.status === "failed" && <AlertTriangle className="h-3 w-3 mr-1" />}
+            {sub.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
+            {sub.status}
+          </Badge>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {sub.createdAt ? formatDateTime(sub.createdAt) : ""}
+        </span>
+      </div>
+
+      {sub.portalTicketId && (
+        <div className="bg-green-50 text-green-800 p-2 rounded text-sm">
+          Portal Ticket: <span className="font-mono font-semibold">{sub.portalTicketId}</span>
+        </div>
+      )}
+
+      {sub.errorMessage && (
+        <div className="bg-red-50 text-red-800 p-2 rounded text-sm">
+          Error: {sub.errorMessage}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        {sub.issueType && <div>Issue Type: {sub.issueType}</div>}
+        {sub.subject && <div>Subject: {sub.subject}</div>}
+        <div>Attempts: {sub.attempts}</div>
+        {sub.submittedAt && <div>Submitted: {formatDateTime(sub.submittedAt)}</div>}
+      </div>
+
+      {botActivity && botActivity.length > 0 && (
+        <div className="mt-3 border-t pt-3">
+          <Label className="text-xs font-medium text-muted-foreground mb-2 block">Bot Activity Timeline</Label>
+          <div className="space-y-2">
+            {botActivity.map((log: BotActivityLogResponse) => (
+              <div
+                key={log.id}
+                className={`flex items-start gap-2 text-xs border-l-2 pl-2 py-1 ${
+                  log.success ? "border-green-400" : "border-red-400"
+                }`}
+              >
+                <div className="shrink-0 mt-0.5">
+                  {log.success ? (
+                    <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <span className="font-medium">{log.action}</span>
+                  {log.message && (
+                    <p className="text-muted-foreground mt-0.5">{log.message}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-muted-foreground/70">
+                      {log.createdAt ? formatDateTime(log.createdAt) : ""}
+                    </span>
+                    {log.screenshotPath && (
+                      <Badge variant="outline" className="text-[10px] py-0">
+                        <Image className="h-2.5 w-2.5 mr-0.5" />Screenshot
+                      </Badge>
+                    )}
+                    {log.pageHtmlPath && (
+                      <Badge variant="outline" className="text-[10px] py-0">
+                        <FileText className="h-2.5 w-2.5 mr-0.5" />HTML
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ClaimDetail() {
+  const params = useParams<{ id: string }>();
+  const claimId = parseInt(params.id || "0", 10);
+  const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+
+  const { data: claim, isLoading } = useGetClaim(claimId, { query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId } });
+  const { data: notes } = useListClaimNotes(claimId, { query: { queryKey: getListClaimNotesQueryKey(claimId), enabled: !!claimId } });
+  const { data: auditLogs } = useListClaimAuditLogs(claimId, { query: { queryKey: getListClaimAuditLogsQueryKey(claimId), enabled: !!claimId } });
+  const { data: viewers } = useGetPresence(claimId, { query: { queryKey: getGetPresenceQueryKey(claimId), enabled: !!claimId, refetchInterval: 15000 } });
+
+  usePresence(claimId);
+
+  const updateClaim = useUpdateClaim();
+  const updateStatus = useUpdateClaimStatus();
+  const updateOutcome = useUpdateClaimOutcome();
+  const updateEvidence = useUpdateClaimEvidence();
+  const placeHold = usePlaceClaimOnHold();
+  const removeHold = useRemoveClaimHold();
+  const createNote = useCreateClaimNote();
+  const deleteNote = useDeleteNote();
+  const generateEmail = useGenerateClaimEmail();
+  const createSubmission = useCreatePortalSubmission();
+  const { data: portalSubmissions } = useListPortalSubmissions(
+    undefined,
+    { query: { queryKey: getListPortalSubmissionsQueryKey(), enabled: !!claimId } }
+  );
+
+  const claimSubmissions = (portalSubmissions || []).filter(
+    (s: PortalSubmissionResponse) => s.claimId === claimId
+  );
+
+  interface ClaimEditData {
+    confNumber: string;
+    date: string;
+    refNumber: string;
+    clientNumber: string;
+    carNumber: string;
+    errorDetails: string;
+    claimAmount: string;
+    payorEmail: string;
+    [key: string]: string;
+  }
+
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<ClaimEditData>({
+    confNumber: "", date: "", refNumber: "", clientNumber: "",
+    carNumber: "", errorDetails: "", claimAmount: "", payorEmail: "",
+  });
+  const [noteContent, setNoteContent] = useState("");
+  const [holdReason, setHoldReason] = useState("");
+  const [holdPending, setHoldPending] = useState("");
+  const [showHoldDialog, setShowHoldDialog] = useState(false);
+
+  useEffect(() => {
+    if (claim) {
+      setEditData({
+        confNumber: claim.confNumber,
+        date: claim.date || "",
+        refNumber: claim.refNumber || "",
+        clientNumber: claim.clientNumber || "",
+        carNumber: claim.carNumber || "",
+        errorDetails: claim.errorDetails || "",
+        claimAmount: claim.claimAmount || "",
+        payorEmail: claim.payorEmail || "",
+      });
+    }
+  }, [claim]);
+
+  if (isLoading) return <div className="flex items-center justify-center p-12">Loading...</div>;
+  if (!claim) return <div className="p-12 text-center text-muted-foreground">Claim not found</div>;
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+    queryClient.invalidateQueries({ queryKey: getListClaimNotesQueryKey(claimId) });
+    queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+  };
+
+  const handleSave = async () => {
+    await updateClaim.mutateAsync({ id: claimId, data: editData });
+    setEditing(false);
+    invalidate();
+  };
+
+  const handleStatusChange = async (status: string) => {
+    await updateStatus.mutateAsync({ id: claimId, data: { status } });
+    invalidate();
+  };
+
+  const handleOutcomeChange = async (outcome: string) => {
+    const approvedAmount = outcome === "Approved" ? claim.claimAmount || "0" : outcome === "Partially Approved" ? "" : undefined;
+    await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount } });
+    if (outcome === "Approved" || outcome === "Denied") {
+      await updateStatus.mutateAsync({ id: claimId, data: { status: outcome === "Approved" ? "Resolved" : "Denied" } });
+    }
+    invalidate();
+  };
+
+  const handleAddNote = async () => {
+    if (!noteContent.trim()) return;
+    await createNote.mutateAsync({ id: claimId, data: { content: noteContent } });
+    setNoteContent("");
+    invalidate();
+  };
+
+  const handlePlaceHold = async () => {
+    await placeHold.mutateAsync({ id: claimId, data: { holdReason, holdPendingFrom: holdPending } });
+    setShowHoldDialog(false);
+    setHoldReason("");
+    setHoldPending("");
+    invalidate();
+  };
+
+  const handleRemoveHold = async () => {
+    await removeHold.mutateAsync({ id: claimId });
+    invalidate();
+  };
+
+  const handleQueueForPortal = async () => {
+    await createSubmission.mutateAsync({ data: { claimId } });
+    invalidate();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold tracking-tight font-mono">{claim.confNumber}</h2>
+          <StatusBadge status={claim.status} />
+          <Badge variant="outline">{claim.outcome}</Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          {viewers && viewers.length > 0 && (
+            <div className="flex -space-x-2 mr-2">
+              {viewers.map(v => (
+                <Avatar key={v.userEmail} className="h-7 w-7 border-2 border-background" title={v.userName || v.userEmail}>
+                  <AvatarFallback className="text-xs">{(v.userName || v.userEmail).charAt(0).toUpperCase()}</AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+          )}
+          {!editing ? (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 className="h-4 w-4 mr-1" />Edit</Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSave}><Save className="h-4 w-4 mr-1" />Save</Button>
+              <Button variant="ghost" size="sm" onClick={() => setEditing(false)}><X className="h-4 w-4" /></Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Claim Details</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: "Conf #", key: "confNumber" },
+                  { label: "Date", key: "date" },
+                  { label: "Ref #", key: "refNumber" },
+                  { label: "Client #", key: "clientNumber" },
+                  { label: "Car #", key: "carNumber" },
+                  { label: "Amount", key: "claimAmount" },
+                  { label: "Payor Email", key: "payorEmail" },
+                ].map(field => (
+                  <div key={field.key}>
+                    <Label className="text-xs text-muted-foreground">{field.label}</Label>
+                    {editing ? (
+                      <Input
+                        value={editData[field.key] || ""}
+                        onChange={e => setEditData({ ...editData, [field.key]: e.target.value })}
+                        className="mt-1"
+                      />
+                    ) : (
+                      <p className="text-sm font-medium mt-1">
+                        {field.key === "claimAmount" ? formatCurrency(claim[field.key as keyof typeof claim] as string) : (claim[field.key as keyof typeof claim] as string) || "-"}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <div className="col-span-2">
+                  <Label className="text-xs text-muted-foreground">Error Details</Label>
+                  {editing ? (
+                    <Textarea
+                      value={editData.errorDetails || ""}
+                      onChange={e => setEditData({ ...editData, errorDetails: e.target.value })}
+                      className="mt-1"
+                    />
+                  ) : (
+                    <p className="text-sm mt-1">{claim.errorDetails || "-"}</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Select onValueChange={handleStatusChange}>
+                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
+                  <SelectContent>
+                    {["New", "Needs Evidence", "Generating Email", "Ready to Review", "Awaiting Response", "Resolved", "Denied"].map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex gap-2">
+                  {["Pending", "Approved", "Partially Approved", "Denied"].map(o => (
+                    <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)}>{o}</Button>
+                  ))}
+                </div>
+
+                <Separator orientation="vertical" className="h-8 mx-2" />
+
+                <Button variant="outline" size="sm" onClick={handleQueueForPortal}>
+                  <Send className="h-4 w-4 mr-1" />Queue for Portal
+                </Button>
+
+                {claim.status === "On Hold" ? (
+                  <Button variant="outline" size="sm" onClick={handleRemoveHold}>
+                    <Play className="h-4 w-4 mr-1" />Remove Hold
+                  </Button>
+                ) : (
+                  <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm"><PauseCircle className="h-4 w-4 mr-1" />Place on Hold</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle></DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label>Reason</Label>
+                          <Textarea value={holdReason} onChange={e => setHoldReason(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>Pending From</Label>
+                          <Input value={holdPending} onChange={e => setHoldPending(e.target.value)} placeholder="Person or dept" />
+                        </div>
+                        <Button onClick={handlePlaceHold} disabled={!holdReason}>Place on Hold</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+
+              {claim.holdReason && (
+                <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-md border border-purple-200 dark:border-purple-800">
+                  <p className="text-sm font-medium text-purple-800 dark:text-purple-300">On Hold: {claim.holdReason}</p>
+                  {claim.holdPendingFrom && <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Pending from: {claim.holdPendingFrom}</p>}
+                </div>
+              )}
+
+              {claim.approvedAmount && (
+                <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
+                  <p className="text-sm">Approved Amount: <span className="font-semibold">{formatCurrency(claim.approvedAmount)}</span></p>
+                  {claim.invoiceNumbers && <p className="text-xs text-muted-foreground mt-1">Invoice: {claim.invoiceNumbers}</p>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Evidence</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Evidence Notes</Label>
+                <p className="text-sm mt-1">{claim.evidenceNotes || "No evidence notes yet."}</p>
+              </div>
+              {claim.evidenceChecklist && typeof claim.evidenceChecklist === "object" && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Evidence Checklist</Label>
+                  <div className="space-y-1 mt-1">
+                    {Object.entries(claim.evidenceChecklist as Record<string, boolean>).map(([item, checked]) => (
+                      <div key={item} className="flex items-center gap-2 text-sm">
+                        {checked ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className={checked ? "" : "text-muted-foreground"}>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {claim.evidenceFiles && Array.isArray(claim.evidenceFiles) && (claim.evidenceFiles as unknown[]).length > 0 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Files</Label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {(claim.evidenceFiles as unknown[]).map((f, i: number) => {
+                      const file = f as Record<string, string>;
+                      return <Badge key={i} variant="outline">{file.label || file.url || `File ${i + 1}`}</Badge>;
+                    })}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {claimSubmissions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5" />
+                  Portal Submissions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {claimSubmissions.map((sub: PortalSubmissionResponse) => (
+                  <SubmissionCard key={sub.id} submission={sub} />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {claim.workflowProgress && typeof claim.workflowProgress === "object" && (
+            <Card>
+              <CardHeader><CardTitle>Workflow Progress</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {(() => {
+                    const progress = claim.workflowProgress as Record<string, unknown>;
+                    const currentStep = (progress.currentStep as string) || "review";
+                    const steps = [
+                      { id: "review", label: "Review", icon: Eye },
+                      { id: "evidence", label: "Evidence", icon: FileText },
+                      { id: "decide", label: "Decision", icon: ChevronRight },
+                      { id: "submit", label: "Submit", icon: Send },
+                    ];
+                    const currentIndex = steps.findIndex(s => s.id === currentStep);
+                    return (
+                      <div className="flex items-center gap-1">
+                        {steps.map((step, i) => {
+                          const StepIcon = step.icon;
+                          const isComplete = i < currentIndex;
+                          const isCurrent = i === currentIndex;
+                          return (
+                            <div key={step.id} className="flex items-center">
+                              {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-0.5" />}
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                                isCurrent ? "bg-primary text-primary-foreground" :
+                                isComplete ? "bg-green-100 text-green-800" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {isComplete ? <CheckCircle className="h-3 w-3" /> : <StepIcon className="h-3 w-3" />}
+                                {step.label}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Add a note..."
+                  value={noteContent}
+                  onChange={e => setNoteContent(e.target.value)}
+                  className="flex-1"
+                  rows={2}
+                />
+                <Button size="sm" onClick={handleAddNote} disabled={!noteContent.trim()}>Add</Button>
+              </div>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {(notes || []).map(note => (
+                  <div key={note.id} className="p-3 border rounded-md text-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium">{note.author || "System"}</span>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-xs">{note.type}</Badge>
+                        <Button
+                          variant="ghost" size="icon" className="h-5 w-5"
+                          onClick={async () => { await deleteNote.mutateAsync({ id: note.id }); invalidate(); }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-muted-foreground">{note.content}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">{formatDateTime(note.createdAt)}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Audit Trail</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {(auditLogs || []).slice(0, 20).map(log => (
+                  <div key={log.id} className="text-sm border-l-2 border-muted pl-3 py-1">
+                    <p className="font-medium">{log.action}</p>
+                    <p className="text-muted-foreground text-xs">{log.details}</p>
+                    <p className="text-muted-foreground/70 text-xs">{log.userName || log.userEmail || "System"} - {formatDateTime(log.timestamp)}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

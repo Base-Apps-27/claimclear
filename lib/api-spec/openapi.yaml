@@ -1,22 +1,47 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ClaimClear API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: claims
+    description: Claims management
+  - name: errorTypes
+    description: Error type management
+  - name: notes
+    description: Notes per claim
+  - name: portalSubmissions
+    description: Portal submission management
+  - name: auditLogs
+    description: Audit log viewing
+  - name: botInstances
+    description: Bot instance management
+  - name: botActivity
+    description: Bot activity logs
+  - name: presence
+    description: Real-time presence
+  - name: import
+    description: Claims import
+  - name: dashboard
+    description: Dashboard summary
+  - name: dailyBrief
+    description: Daily brief email
+  - name: ai
+    description: AI features
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +49,880 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    oneOf:
+                      - $ref: "#/components/schemas/AuthUser"
+                      - type: "null"
+                required:
+                  - user
+
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      summary: Get current session (returns 401 if unauthenticated)
+      responses:
+        "200":
+          description: Authenticated session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/AuthUser"
+                required:
+                  - user
+        "401":
+          description: Not authenticated
+
+  /claims:
+    get:
+      operationId: listClaims
+      tags: [claims]
+      summary: List claims with filtering
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: ["Pending", "Approved", "Denied", "Partially Approved"]
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Claims list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimsListResponse"
+    post:
+      operationId: createClaim
+      tags: [claims]
+      summary: Create a new claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClaimBody"
+      responses:
+        "201":
+          description: Claim created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}:
+    get:
+      operationId: getClaim
+      tags: [claims]
+      summary: Get claim by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Claim details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateClaim
+      tags: [claims]
+      summary: Update a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimBody"
+      responses:
+        "200":
+          description: Claim updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+    delete:
+      operationId: deleteClaim
+      tags: [claims]
+      summary: Delete a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /claims/{id}/status:
+    patch:
+      operationId: updateClaimStatus
+      tags: [claims]
+      summary: Update claim status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimStatusBody"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/outcome:
+    patch:
+      operationId: updateClaimOutcome
+      tags: [claims]
+      summary: Update claim outcome
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimOutcomeBody"
+      responses:
+        "200":
+          description: Outcome updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/evidence:
+    patch:
+      operationId: updateClaimEvidence
+      tags: [claims]
+      summary: Update claim evidence
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimEvidenceBody"
+      responses:
+        "200":
+          description: Evidence updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/hold:
+    post:
+      operationId: placeClaimOnHold
+      tags: [claims]
+      summary: Place claim on hold
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceHoldBody"
+      responses:
+        "200":
+          description: Hold placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+    delete:
+      operationId: removeClaimHold
+      tags: [claims]
+      summary: Remove claim hold
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hold removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/workflow:
+    patch:
+      operationId: updateClaimWorkflow
+      tags: [claims]
+      summary: Update workflow progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowBody"
+      responses:
+        "200":
+          description: Workflow updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/generate-email:
+    post:
+      operationId: generateClaimEmail
+      tags: [ai]
+      summary: Generate dispute email via AI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateEmailBody"
+      responses:
+        "200":
+          description: Email generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/notes:
+    get:
+      operationId: listClaimNotes
+      tags: [notes]
+      summary: List notes for a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Notes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NoteResponse"
+    post:
+      operationId: createClaimNote
+      tags: [notes]
+      summary: Create a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteBody"
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoteResponse"
+
+  /notes/{id}:
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /claims/{id}/audit-logs:
+    get:
+      operationId: listClaimAuditLogs
+      tags: [auditLogs]
+      summary: List audit logs for a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogResponse"
+
+  /error-types:
+    get:
+      operationId: listErrorTypes
+      tags: [errorTypes]
+      summary: List all error types
+      responses:
+        "200":
+          description: Error types list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ErrorTypeResponse"
+    post:
+      operationId: createErrorType
+      tags: [errorTypes]
+      summary: Create error type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateErrorTypeBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTypeResponse"
+
+  /error-types/{id}:
+    get:
+      operationId: getErrorType
+      tags: [errorTypes]
+      summary: Get error type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Error type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTypeResponse"
+    patch:
+      operationId: updateErrorType
+      tags: [errorTypes]
+      summary: Update error type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateErrorTypeBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTypeResponse"
+    delete:
+      operationId: deleteErrorType
+      tags: [errorTypes]
+      summary: Delete error type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /import:
+    post:
+      operationId: importClaims
+      tags: [import]
+      summary: Import claims from parsed CSV data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportClaimsBody"
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportSummary"
+
+  /portal-submissions:
+    get:
+      operationId: listPortalSubmissions
+      tags: [portalSubmissions]
+      summary: List portal submissions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Submissions list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortalSubmissionResponse"
+    post:
+      operationId: createPortalSubmission
+      tags: [portalSubmissions]
+      summary: Create portal submission from claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortalSubmissionBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}:
+    get:
+      operationId: getPortalSubmission
+      tags: [portalSubmissions]
+      summary: Get portal submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Submission details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}/retry:
+    post:
+      operationId: retryPortalSubmission
+      tags: [portalSubmissions]
+      summary: Retry failed submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Reset to pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}/cancel:
+    post:
+      operationId: cancelPortalSubmission
+      tags: [portalSubmissions]
+      summary: Cancel pending submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /bot/portal-submissions/poll:
+    post:
+      operationId: pollPortalSubmissions
+      tags: [bot]
+      summary: Bot polls for pending submissions (bot token auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollSubmissionsBody"
+      responses:
+        "200":
+          description: Pending submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /bot/portal-submissions/{id}/claim:
+    post:
+      operationId: claimPortalSubmission
+      tags: [bot]
+      summary: Bot claims a submission (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimSubmissionBody"
+      responses:
+        "200":
+          description: Claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /bot/portal-submissions/{id}/complete:
+    post:
+      operationId: completePortalSubmission
+      tags: [bot]
+      summary: Bot reports success (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteSubmissionBody"
+      responses:
+        "200":
+          description: Completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /bot/portal-submissions/{id}/fail:
+    post:
+      operationId: failPortalSubmission
+      tags: [bot]
+      summary: Bot reports failure (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailSubmissionBody"
+      responses:
+        "200":
+          description: Failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}/activity:
+    get:
+      operationId: listBotActivity
+      tags: [botActivity]
+      summary: List bot activity for submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Bot activity logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotActivityLogResponse"
+
+  /bot-instances:
+    get:
+      operationId: listBotInstances
+      tags: [botInstances]
+      summary: List active bot instances (authenticated users)
+      responses:
+        "200":
+          description: Bot instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotInstanceResponse"
+
+  /bot/instances:
+    post:
+      operationId: registerBotInstance
+      tags: [bot]
+      summary: Register a new bot instance (bot token auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBotBody"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotInstanceResponse"
+
+  /bot/instances/{id}/heartbeat:
+    post:
+      operationId: botHeartbeat
+      tags: [bot]
+      summary: Bot heartbeat (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Heartbeat acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotInstanceResponse"
+
+  /bot/instances/{id}/stop:
+    post:
+      operationId: stopBotInstance
+      tags: [bot]
+      summary: Mark bot as stopped (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotInstanceResponse"
+
+  /presence/heartbeat:
+    post:
+      operationId: presenceHeartbeat
+      tags: [presence]
+      summary: Upsert presence heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceHeartbeatBody"
+      responses:
+        "200":
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /presence/leave:
+    post:
+      operationId: presenceLeave
+      tags: [presence]
+      summary: Remove presence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceLeaveBody"
+      responses:
+        "200":
+          description: Left
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /presence/{claimId}:
+    get:
+      operationId: getPresence
+      tags: [presence]
+      summary: Get active viewers for a claim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Active viewers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PresenceViewer"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /daily-brief:
+    post:
+      operationId: triggerDailyBrief
+      tags: [dailyBrief]
+      summary: Trigger daily brief email
+      responses:
+        "200":
+          description: Brief sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyBriefResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +933,797 @@ components:
       required:
         - status
 
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+        role:
+          type: string
+      required:
+        - id
+        - email
+        - role
+
+    ClaimResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        confNumber:
+          type: string
+        date:
+          type: ["string", "null"]
+        refNumber:
+          type: ["string", "null"]
+        clientNumber:
+          type: ["string", "null"]
+        carNumber:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        errorTypeId:
+          type: ["string", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+        claimAmount:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+        outcome:
+          type: string
+          enum: ["Pending", "Approved", "Denied", "Partially Approved"]
+        approvedAmount:
+          type: ["string", "null"]
+        invoiceNumbers:
+          type: ["string", "null"]
+        payorEmail:
+          type: ["string", "null"]
+        disputeEmailSent:
+          type: boolean
+        disputeEmailSentAt:
+          type: ["string", "null"]
+        importBatch:
+          type: ["string", "null"]
+        evidenceFiles:
+          type: ["object", "null"]
+        evidenceNotes:
+          type: ["string", "null"]
+        evidenceChecklist:
+          type: ["object", "null"]
+        generatedEmailSubject:
+          type: ["string", "null"]
+        generatedEmailBody:
+          type: ["string", "null"]
+        generatedEmailAt:
+          type: ["string", "null"]
+        workflowProgress:
+          type: ["object", "null"]
+        holdReason:
+          type: ["string", "null"]
+        holdPendingFrom:
+          type: ["string", "null"]
+        holdPlacedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - confNumber
+        - status
+        - outcome
+        - disputeEmailSent
+
+    ClaimsListResponse:
+      type: object
+      properties:
+        claims:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimResponse"
+        total:
+          type: integer
+      required:
+        - claims
+        - total
+
+    CreateClaimBody:
+      type: object
+      properties:
+        confNumber:
+          type: string
+        date:
+          type: string
+        refNumber:
+          type: string
+        clientNumber:
+          type: string
+        carNumber:
+          type: string
+        errorDetails:
+          type: string
+        errorTypeId:
+          type: string
+        errorTypeName:
+          type: string
+        claimAmount:
+          type: string
+        payorEmail:
+          type: string
+      required:
+        - confNumber
+
+    UpdateClaimBody:
+      type: object
+      properties:
+        confNumber:
+          type: string
+        date:
+          type: string
+        refNumber:
+          type: string
+        clientNumber:
+          type: string
+        carNumber:
+          type: string
+        errorDetails:
+          type: string
+        errorTypeId:
+          type: string
+        errorTypeName:
+          type: string
+        claimAmount:
+          type: string
+        payorEmail:
+          type: string
+        invoiceNumbers:
+          type: string
+        evidenceNotes:
+          type: string
+        evidenceFiles:
+          type: object
+        evidenceChecklist:
+          type: object
+
+    UpdateClaimStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    UpdateClaimOutcomeBody:
+      type: object
+      properties:
+        outcome:
+          type: string
+        approvedAmount:
+          type: string
+        invoiceNumbers:
+          type: string
+      required:
+        - outcome
+
+    UpdateClaimEvidenceBody:
+      type: object
+      properties:
+        evidenceFiles:
+          type: object
+        evidenceNotes:
+          type: string
+        evidenceChecklist:
+          type: object
+
+    PlaceHoldBody:
+      type: object
+      properties:
+        holdReason:
+          type: string
+        holdPendingFrom:
+          type: string
+      required:
+        - holdReason
+
+    UpdateWorkflowBody:
+      type: object
+      properties:
+        workflowProgress:
+          type: object
+      required:
+        - workflowProgress
+
+    GenerateEmailBody:
+      type: object
+      properties:
+        disputeReason:
+          type: string
+      required:
+        - disputeReason
+
+    NoteResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+        type:
+          type: string
+          enum: ["manual", "email", "email_sent", "reply_parsed", "status_change", "outcome_recorded", "system", "bot"]
+        content:
+          type: string
+        author:
+          type: ["string", "null"]
+        emailSubject:
+          type: ["string", "null"]
+        extractedInvoiceNumbers:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - claimId
+        - type
+        - content
+
+    CreateNoteBody:
+      type: object
+      properties:
+        content:
+          type: string
+        type:
+          type: string
+      required:
+        - content
+
+    AuditLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+        action:
+          type: string
+        details:
+          type: string
+        metadata:
+          type: ["object", "null"]
+        userEmail:
+          type: ["string", "null"]
+        userName:
+          type: ["string", "null"]
+        timestamp:
+          type: string
+      required:
+        - id
+        - claimId
+        - action
+        - details
+
+    ErrorTypeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        guidance:
+          type: ["string", "null"]
+        recommendedActions:
+          type: ["string", "null"]
+        disputeReasonsLibrary:
+          type: ["object", "null"]
+        evidenceRequirements:
+          type: ["object", "null"]
+        decisionTree:
+          type: ["object", "null"]
+        emailTemplate:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+
+    CreateErrorTypeBody:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        guidance:
+          type: string
+        recommendedActions:
+          type: string
+        disputeReasonsLibrary:
+          type: object
+        evidenceRequirements:
+          type: object
+        decisionTree:
+          type: object
+        emailTemplate:
+          type: string
+      required:
+        - name
+
+    UpdateErrorTypeBody:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        guidance:
+          type: string
+        recommendedActions:
+          type: string
+        disputeReasonsLibrary:
+          type: object
+        evidenceRequirements:
+          type: object
+        decisionTree:
+          type: object
+        emailTemplate:
+          type: string
+
+    ImportClaimsBody:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportClaimRow"
+        duplicateAction:
+          type: string
+          default: skip
+      required:
+        - rows
+
+    ImportClaimRow:
+      type: object
+      properties:
+        confNumber:
+          type: string
+        date:
+          type: string
+        refNumber:
+          type: string
+        clientNumber:
+          type: string
+        carNumber:
+          type: string
+        errorDetails:
+          type: string
+        claimAmount:
+          type: number
+      required:
+        - confNumber
+
+    ImportSummary:
+      type: object
+      properties:
+        success:
+          type: boolean
+        created:
+          type: integer
+        skipped:
+          type: integer
+        updated:
+          type: integer
+        duplicates:
+          type: array
+          items:
+            type: string
+        total:
+          type: integer
+        batchId:
+          type: string
+      required:
+        - success
+        - created
+        - skipped
+        - updated
+        - total
+        - batchId
+
+    PortalSubmissionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+        status:
+          type: string
+          enum: ["pending", "in_progress", "submitted", "failed", "cancelled"]
+        issueType:
+          type: ["string", "null"]
+        subject:
+          type: ["string", "null"]
+        requesterEmail:
+          type: ["string", "null"]
+        transportationProviderName:
+          type: ["string", "null"]
+        phoneNumber:
+          type: ["string", "null"]
+        invoiceNumber:
+          type: ["string", "null"]
+        gpsBreadcrumbsAvailable:
+          type: ["string", "null"]
+        descriptionHtml:
+          type: ["string", "null"]
+        attachmentUrls:
+          type: ["object", "null"]
+        confNumber:
+          type: ["string", "null"]
+        serviceDate:
+          type: ["string", "null"]
+        refNumber:
+          type: ["string", "null"]
+        clientNumber:
+          type: ["string", "null"]
+        carNumber:
+          type: ["string", "null"]
+        claimAmount:
+          type: ["string", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        disputeReason:
+          type: ["string", "null"]
+        evidenceNotes:
+          type: ["string", "null"]
+        evidenceFiles:
+          type: ["object", "null"]
+        workflowHistory:
+          type: ["object", "null"]
+        portalTicketId:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        submittedAt:
+          type: ["string", "null"]
+        attempts:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - claimId
+        - status
+        - attempts
+
+    CreatePortalSubmissionBody:
+      type: object
+      properties:
+        claimId:
+          type: integer
+        issueType:
+          type: string
+        subject:
+          type: string
+        requesterEmail:
+          type: string
+        transportationProviderName:
+          type: string
+        phoneNumber:
+          type: string
+        invoiceNumber:
+          type: string
+        gpsBreadcrumbsAvailable:
+          type: string
+        descriptionHtml:
+          type: string
+        disputeReason:
+          type: string
+      required:
+        - claimId
+
+    PollSubmissionsBody:
+      type: object
+      properties:
+        botInstanceId:
+          type: integer
+      required:
+        - botInstanceId
+
+    ClaimSubmissionBody:
+      type: object
+      properties:
+        botInstanceId:
+          type: integer
+      required:
+        - botInstanceId
+
+    CompleteSubmissionBody:
+      type: object
+      properties:
+        portalTicketId:
+          type: string
+        botInstanceId:
+          type: integer
+
+    FailSubmissionBody:
+      type: object
+      properties:
+        errorMessage:
+          type: string
+        botInstanceId:
+          type: integer
+      required:
+        - errorMessage
+
+    BotActivityLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        submissionId:
+          type: integer
+        botInstanceId:
+          type: ["integer", "null"]
+        action:
+          type: string
+        success:
+          type: boolean
+        message:
+          type: ["string", "null"]
+        screenshotPath:
+          type: ["string", "null"]
+        pageHtmlPath:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - submissionId
+        - action
+        - success
+
+    BotInstanceResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+        lastHeartbeat:
+          type: string
+        lastPollAt:
+          type: ["string", "null"]
+        submissionsToday:
+          type: integer
+        successCount:
+          type: integer
+        failCount:
+          type: integer
+        sessionValid:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - status
+
+    PresenceHeartbeatBody:
+      type: object
+      properties:
+        claimId:
+          type: integer
+      required:
+        - claimId
+
+    PresenceLeaveBody:
+      type: object
+      properties:
+        claimId:
+          type: integer
+      required:
+        - claimId
+
+    PresenceViewer:
+      type: object
+      properties:
+        userEmail:
+          type: string
+        userName:
+          type: ["string", "null"]
+        lastHeartbeat:
+          type: string
+      required:
+        - userEmail
+
+    DashboardSummary:
+      type: object
+      properties:
+        pipeline:
+          type: object
+          properties:
+            needsEvidence:
+              type: integer
+            portalQueued:
+              type: integer
+            awaitingResponse:
+              type: integer
+          required:
+            - needsEvidence
+            - portalQueued
+            - awaitingResponse
+        stats:
+          type: object
+          properties:
+            total:
+              type: integer
+            new:
+              type: integer
+            resolved:
+              type: integer
+            denied:
+              type: integer
+            onHold:
+              type: integer
+          required:
+            - total
+            - new
+            - resolved
+            - denied
+            - onHold
+        amounts:
+          type: object
+          properties:
+            totalClaimed:
+              type: string
+            totalApproved:
+              type: string
+          required:
+            - totalClaimed
+            - totalApproved
+        expiringClaims:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExpiringClaim"
+        recentClaims:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimResponse"
+        portalStats:
+          type: object
+          properties:
+            pending:
+              type: integer
+            submitted:
+              type: integer
+            failed:
+              type: integer
+            successRate:
+              type: string
+          required:
+            - pending
+            - submitted
+            - failed
+            - successRate
+        botInstances:
+          type: array
+          items:
+            $ref: "#/components/schemas/BotInstanceResponse"
+      required:
+        - pipeline
+        - stats
+        - amounts
+        - expiringClaims
+        - recentClaims
+        - portalStats
+
+    ExpiringClaim:
+      type: object
+      properties:
+        id:
+          type: integer
+        confNumber:
+          type: string
+        date:
+          type: string
+        claimAmount:
+          type: ["string", "null"]
+        status:
+          type: string
+        daysLeft:
+          type: integer
+      required:
+        - id
+        - confNumber
+        - date
+        - status
+        - daysLeft
+
+    DailyBriefResponse:
+      type: object
+      properties:
+        sent:
+          type: boolean
+        message:
+          type: string
+      required:
+        - sent
+        - message
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    GetCurrentAuthUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+        role:
+          type: string
+      required:
+        - id
+        - email
+        - role
+
+    RegisterBotBody:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
+    ExchangeMobileAuthorizationCodeBody:
+      type: object
+      properties:
+        code:
+          type: string
+        code_verifier:
+          type: string
+        state:
+          type: string
+        nonce:
+          type: string
+      required:
+        - code
+        - code_verifier
+        - state
+        - nonce

@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. ClaimClear — a full NEMT rejected claims dispute tracker platform. Imports rejected claims, guides staff through decision-tree workflows, and submits disputes via Playwright bot automation to the MAS Transportation Provider Support Portal.
 
 ## Stack
 
@@ -15,82 +15,120 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
+- **Auth**: Replit Auth (OpenID Connect with PKCE)
+- **Bot automation**: Playwright
 
 ## Structure
 
 ```text
 artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
+├── artifacts/
+│   ├── api-server/         # Express API server (port 8080)
+│   │   └── src/bot/        # Playwright bot scripts
+│   └── claimclear/         # React + Vite frontend (proxied through API server)
+├── lib/
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+├── scripts/
+│   └── src/
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+├── tsconfig.json
+└── package.json
 ```
+
+## Architecture Notes
+
+### Frontend Routing
+The ClaimClear frontend is served through the API server via http-proxy-middleware in dev mode. In production, it's served as static files. The frontend is mounted at `/claimclear/` path.
+
+### Database Entities (9 tables)
+- `users` — Replit Auth users (varchar ID)
+- `claims` — rejected claims (serial ID)
+- `notes` — claim notes/comments
+- `audit_logs` — full audit trail
+- `error_types` — categorized denial reasons
+- `portal_submissions` — MAS portal submission tracking
+- `bot_instances` — Playwright bot instance registry
+- `presence` — real-time user presence (heartbeat-based)
+- `sessions` — auth session storage
+
+### Status Flow
+New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resolved/Denied
+
+### API Route Auth Architecture
+- `/api/healthz`, `/api/auth/*` — Public (no auth)
+- `/api/bot/*` — Bot service token only (`requireBotToken`)
+  - `/api/bot/instances` — Bot instance CRUD (register, heartbeat, stop)
+  - `/api/bot/portal-submissions/poll`, `/claim`, `/complete`, `/fail` — Bot workflow
+- `/api/bot-instances` — Read-only listing for authenticated human users
+- All other `/api/*` routes — Session auth required (`requireAuth`)
+- Bot authenticates via `X-Bot-Token` header (env: `BOT_SERVICE_TOKEN`)
+
+### Daily Brief
+- Generates styled HTML email summary with pipeline stats
+- Sends via SMTP when configured (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`)
+- Recipients: queries users table for email addresses; falls back to `DAILY_BRIEF_RECIPIENTS` env var or `SMTP_USER`
+- Returns `{ sent: boolean, message: string }` per OpenAPI spec
+
+### CSS Theme
+Indigo primary (243 75% 59%), dark indigo sidebar (243 85% 15%), light background (210 20% 98%)
 
 ## TypeScript & Composite Projects
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references.
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+- **Always typecheck from the root** — run `pnpm run typecheck`
+- **`emitDeclarationOnly`** — only emit `.d.ts` files during typecheck
+- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
+- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly`
 
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to the Vite dev server in development.
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
+- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`
+- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, audit logs, notes
+- Bot routes: `src/routes/bot-portal.ts` (bot-only portal submission endpoints), `src/routes/bot-instances.ts` (bot instance management)
+- Bot scripts: `src/bot/portal-bot.ts` (Playwright automation for MAS portal), `src/bot/save-session.ts` (session saver)
 - Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+
+### `artifacts/claimclear` (`@workspace/claimclear`)
+
+React + Vite frontend with 10 pages:
+- Dashboard, Queue (split-panel with decision-tree workflow player), All Claims, Claim Detail (portal submission tracking, bot activity timeline, evidence checklist), New Claim, Import (RFC-compliant CSV parser), Error Types (structured SOP builder with decision-tree editor), Portal Submissions, Summary, Settings
+- Queue page: 4-step workflow (Review → Evidence → Decide → Submit), fetches error type's decision tree for guided branching, uses error type's evidence requirements for checklist
+- Error Types: Tabbed editor (Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) replacing raw JSON textareas
+- Uses `@workspace/api-client-react` for API hooks
+- Uses `@workspace/replit-auth-web` for authentication
+- Presence system with heartbeat hooks
 
 ### `lib/db` (`@workspace/db`)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+Database layer using Drizzle ORM with PostgreSQL.
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+OpenAPI 3.1 spec and Orval codegen config.
 
 ### `lib/api-zod` (`@workspace/api-zod`)
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+Generated Zod schemas from the OpenAPI spec.
 
 ### `lib/api-client-react` (`@workspace/api-client-react`)
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
+Generated React Query hooks and fetch client.
 
 ### `scripts` (`@workspace/scripts`)
 
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Utility scripts package.
