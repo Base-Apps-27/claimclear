@@ -1,0 +1,138 @@
+{
+  "name": "Claim",
+  "type": "object",
+  "properties": {
+    "conf_number": {
+      "type": "string",
+      "description": "Confirmation number"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Service date"
+    },
+    "ref_number": {
+      "type": "string",
+      "description": "Reference number(s)"
+    },
+    "client_number": {
+      "type": "string",
+      "description": "Client/member number"
+    },
+    "car_number": {
+      "type": "string",
+      "description": "Vehicle/car number"
+    },
+    "error_details": {
+      "type": "string",
+      "description": "Raw error details from report"
+    },
+    "error_type_id": {
+      "type": "string",
+      "description": "Reference to ErrorType entity"
+    },
+    "error_type_name": {
+      "type": "string",
+      "description": "Cached error type name"
+    },
+    "claim_amount": {
+      "type": "number",
+      "description": "Original claim amount"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "New",
+        "Needs Evidence",
+        "Generating Email",
+        "Ready to Review",
+        "Awaiting Response",
+        "On Hold",
+        "Resolved",
+        "Denied"
+      ],
+      "default": "New"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "Approved",
+        "Partially Approved",
+        "Denied",
+        "Pending"
+      ],
+      "default": "Pending"
+    },
+    "approved_amount": {
+      "type": "number",
+      "description": "Amount approved after dispute"
+    },
+    "invoice_numbers": {
+      "type": "string",
+      "description": "Invoice numbers extracted from reply"
+    },
+    "payor_email": {
+      "type": "string",
+      "description": "Email address of payor"
+    },
+    "dispute_email_sent": {
+      "type": "boolean",
+      "default": false
+    },
+    "dispute_email_sent_at": {
+      "type": "string",
+      "description": "When dispute email was sent"
+    },
+    "last_reply_parsed_at": {
+      "type": "string",
+      "description": "When last reply was parsed"
+    },
+    "import_batch": {
+      "type": "string",
+      "description": "Import batch identifier"
+    },
+    "evidence_files": {
+      "type": "string",
+      "description": "JSON array of uploaded file URLs with labels"
+    },
+    "evidence_notes": {
+      "type": "string",
+      "description": "Text notes provided as evidence"
+    },
+    "evidence_checklist": {
+      "type": "string",
+      "description": "JSON object tracking which requirements are met"
+    },
+    "generated_email_subject": {
+      "type": "string",
+      "description": "AI-generated email subject"
+    },
+    "generated_email_body": {
+      "type": "string",
+      "description": "AI-generated email body"
+    },
+    "generated_email_at": {
+      "type": "string",
+      "description": "When email was generated"
+    },
+    "workflow_progress": {
+      "type": "string",
+      "description": "JSON object tracking decision tree progress. Contains currentNodeId, history (array of {nodeId, answer, timestamp}), and completed boolean."
+    },
+    "hold_reason": {
+      "type": "string",
+      "description": "Explanation for why the claim is on hold"
+    },
+    "hold_pending_from": {
+      "type": "string",
+      "description": "Person or department that needs to respond before the claim can move forward"
+    },
+    "hold_placed_at": {
+      "type": "string",
+      "description": "When the hold was placed"
+    }
+  },
+  "required": [
+    "conf_number"
+  ]
+}

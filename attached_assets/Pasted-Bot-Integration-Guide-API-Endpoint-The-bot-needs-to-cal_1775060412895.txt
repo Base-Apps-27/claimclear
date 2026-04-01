@@ -1,0 +1,47 @@
+Bot Integration Guide
+API Endpoint
+The bot needs to call your backend function portalSubmissions. The URL is found in your Dashboard → Code → Functions → portalSubmissions.
+
+Workflow (4-step loop)
+1. Poll for pending work
+
+POST /portalSubmissions
+Body: { "action": "poll" }
+Returns { submission: {...} } with the next pending task, or { submission: null } if the queue is empty.
+
+2. Claim the task (marks it "in_progress" so no other bot picks it up)
+
+POST /portalSubmissions
+Body: { "action": "claim", "submission_id": "<id>" }
+3. Do the Playwright work — fill out the MAS portal using the fields from the submission object:
+
+issue_type → portal dropdown
+subject → subject field
+requester_email → email field
+transportation_provider_name → provider name field
+phone_number → phone field
+invoice_number → invoice field
+gps_breadcrumbs_available → GPS dropdown (only for GPS Control Deviation)
+description_html → description/body field
+attachment_urls → download each URL and upload to the portal
+evidence_files → additional attachments from the claim
+4a. Report success
+
+POST /portalSubmissions
+Body: { "action": "complete", "submission_id": "<id>", "portal_ticket_id": "TKT-12345" }
+This automatically updates the claim status to "Awaiting Response".
+
+4b. Report failure
+
+POST /portalSubmissions
+Body: { "action": "fail", "submission_id": "<id>", "error_message": "Login failed" }
+Authentication
+All requests must include the service auth header. The bot needs to call the function endpoint URL directly (found in Dashboard → Code → Functions → portalSubmissions). It should include headers:
+
+Content-Type: application/json
+The bot will need a service token — you'll need to share the function's direct URL with them.
+Polling Cadence
+Recommended: poll every 30–60 seconds. If submission is null, back off for a few minutes.
+
+Extra Fields Available on Each Submission
+conf_number, service_date, ref_number, client_number, car_number, claim_amount, error_type_name, error_details, dispute_reason, evidence_notes — all there for context if the bot needs them.

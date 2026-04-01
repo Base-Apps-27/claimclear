@@ -1,0 +1,26 @@
+{
+  "name": "PresenceLog",
+  "type": "object",
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "description": "Which claim this user is viewing"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email of the viewing user"
+    },
+    "user_name": {
+      "type": "string",
+      "description": "Display name of the viewing user"
+    },
+    "last_heartbeat": {
+      "type": "string",
+      "description": "ISO timestamp of last heartbeat"
+    }
+  },
+  "required": [
+    "claim_id",
+    "user_email"
+  ]
+}

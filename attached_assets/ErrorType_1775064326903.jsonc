@@ -1,0 +1,45 @@
+{
+  "name": "ErrorType",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Error type name/label"
+    },
+    "category": {
+      "type": "string",
+      "description": "Category (e.g. GPS Issues, Attestation)"
+    },
+    "description": {
+      "type": "string",
+      "description": "What this error means"
+    },
+    "guidance": {
+      "type": "string",
+      "description": "How staff should handle this error type"
+    },
+    "recommended_actions": {
+      "type": "string",
+      "description": "Step-by-step recommended actions"
+    },
+    "dispute_reasons_library": {
+      "type": "string",
+      "description": "JSON array of preset dispute reasons. Each entry: {id, label, reason, key_points: string[]}"
+    },
+    "email_template": {
+      "type": "string",
+      "description": "Legacy email template (deprecated)"
+    },
+    "evidence_requirements": {
+      "type": "string",
+      "description": "JSON array of required evidence items, each with id, label, type (file/text), and description"
+    },
+    "decision_tree": {
+      "type": "string",
+      "description": "JSON object representing the decision tree workflow."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

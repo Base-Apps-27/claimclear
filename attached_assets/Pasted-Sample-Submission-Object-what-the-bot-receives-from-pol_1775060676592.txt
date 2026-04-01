@@ -1,0 +1,56 @@
+Sample Submission Object (what the bot receives from poll)
+{
+  "submissions": [
+    {
+      "id": "abc123",
+      "created_date": "2026-04-01T14:30:00.000Z",
+      "claim_id": "claim_456",
+      "status": "pending",
+      
+      // === PORTAL FORM FIELDS (bot fills these into the MAS portal) ===
+      "issue_type": "GPS Control Deviation",
+      "subject": "Dispute - CONF-2026-0412 - GPS Control Deviation",
+      "requester_email": "disputes@transportco.com",
+      "transportation_provider_name": "ABC Transport LLC",
+      "phone_number": "(555) 123-4567",
+      "invoice_number": "INV-20260312-001",
+      "gps_breadcrumbs_available": "Yes",
+      "description_html": "We are disputing this GPS control deviation. Our driver confirmed pickup at the correct location. GPS logs show the vehicle was within the acceptable range. The deviation was caused by a temporary GPS signal issue in a parking garage...",
+      
+      // === FILES TO ATTACH ===
+      "attachment_urls": "[\"https://files.base44.com/evidence1.pdf\",\"https://files.base44.com/gps_log.png\"]",
+      "evidence_files": "[{\"label\":\"GPS Screenshot\",\"url\":\"https://files.base44.com/gps_log.png\"},{\"label\":\"Driver Statement\",\"url\":\"https://files.base44.com/driver_statement.pdf\"}]",
+      
+      // === CLAIM CONTEXT (for reference, not portal fields) ===
+      "conf_number": "CONF-2026-0412",
+      "service_date": "2026-03-12",
+      "ref_number": "REF-9981",
+      "client_number": "MBR-44201",
+      "car_number": "VH-1023",
+      "claim_amount": 145.50,
+      "error_type_name": "GPS Control Deviation",
+      "error_details": "Pickup GPS deviation of 0.8 miles from scheduled location",
+      "dispute_reason": "GPS signal interference in covered parking structure",
+      "evidence_notes": "Driver confirmed correct pickup. GPS log attached.",
+      "workflow_history": "{\"currentNodeId\":\"node_3\",\"history\":[...],\"completed\":true,\"resolution_type\":\"portal_dispute\"}",
+      
+      // === TRACKING ===
+      "attempts": 0,
+      "portal_ticket_id": "",
+      "error_message": "",
+      "submitted_at": ""
+    }
+  ]
+}
+Bot Flow Summary
+1. POST { action: "poll" }           → get submissions[]
+2. POST { action: "claim", submission_id: "abc123" }  → lock it
+3. Run Playwright: fill MAS portal form, attach files, submit
+4a. POST { action: "complete", submission_id: "abc123", portal_ticket_id: "TKT-999" }
+4b. POST { action: "fail", submission_id: "abc123", error_message: "..." }
+Key notes for the dev:
+
+attachment_urls and evidence_files are JSON strings — parse them to get file URL arrays
+Bot should download each file URL and upload it to the MAS portal
+gps_breadcrumbs_available field is only relevant when issue_type is "GPS Control Deviation"
+On success, always pass back the portal_ticket_id from the portal's confirmation page

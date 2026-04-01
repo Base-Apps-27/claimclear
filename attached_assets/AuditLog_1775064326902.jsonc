@@ -1,0 +1,39 @@
+{
+  "name": "AuditLog",
+  "type": "object",
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "description": "Reference to the Claim this log belongs to"
+    },
+    "action": {
+      "type": "string",
+      "description": "Action type: viewed, status_changed, outcome_changed, note_added, note_deleted, email_sent, claim_edited, workflow_step, hold_placed, evidence_submitted, email_generated, email_approved"
+    },
+    "details": {
+      "type": "string",
+      "description": "Human-readable description of what happened"
+    },
+    "metadata": {
+      "type": "string",
+      "description": "JSON string with structured data about the action (old/new values, etc.)"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who performed the action"
+    },
+    "user_name": {
+      "type": "string",
+      "description": "Display name of the user who performed the action"
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "ISO timestamp of when the action occurred"
+    }
+  },
+  "required": [
+    "claim_id",
+    "action",
+    "details"
+  ]
+}

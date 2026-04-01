@@ -1,0 +1,470 @@
+Here is the straight answer: set this up as a nightly Playwright job with a service account, a submission queue file, and logging/screenshots. Do not use a recorder macro. That is amateur-hour and it will fail the first time the page shifts.
+
+The portal is a MAS Transportation Provider Support Portal with a “Submit a ticket” page and issue types including Custom Payment Request, GPS Control Deviation, MAS Trips App Issue, Vehicle, Driver, or TPP, Zip Code Block, and Other Issue or Question. Its login flow appears to redirect through Freshworks/Freshdesk OAuth.  ￼
+
+What you should build
+
+You need 5 pieces:
+	1.	A queue of tickets to submit each night
+Use CSV or Excel at first. Do not overengineer this.
+	2.	A Playwright script
+Reads each row, opens the portal, fills the form, uploads files, submits, records the result.
+	3.	A saved login session
+If the login is stable, save browser session cookies once and reuse them nightly.
+	4.	A scheduler
+Windows Task Scheduler is good enough if this runs on a dedicated business PC or server.
+	5.	A run log
+Every submission should record: timestamp, subject/reference, success/failure, screenshot path, and any confirmation text.
+
+Your smartest setup
+
+Option A: easiest practical setup
+	•	Windows PC that stays on overnight
+	•	Python
+	•	Playwright
+	•	CSV/Excel input file
+	•	Windows Task Scheduler
+	•	A dedicated service account for the portal
+
+This is the fastest way to get working.
+
+Option B: better long-term setup
+	•	Small cloud VM or always-on office mini PC
+	•	Same Playwright script
+	•	Input data from a folder or database
+	•	Automatic email summary after each run
+
+That is cleaner, but do not start there if speed matters.
+
+⸻
+
+Step-by-step setup
+
+1) Install Python
+
+Install Python 3.11+.
+
+Then open Command Prompt:
+
+pip install playwright pandas openpyxl
+playwright install
+
+pandas and openpyxl let you read Excel if needed.
+
+⸻
+
+2) Create your input file
+
+Start with a CSV like this:
+
+issue_type,subject,description,attachment_1,attachment_2,status
+Custom Payment Request,Invoice correction for trip 12345,Please review attached payment support,C:\MASBot\files\doc1.pdf,C:\MASBot\files\img1.png,pending
+GPS Control Deviation,GPS mismatch for driver ABC,Trip appears flagged incorrectly,C:\MASBot\files\gps_note.pdf,,pending
+Other Issue or Question,Portal question for claim 8888,Please review the attached details,,,pending
+
+Keep it simple.
+
+Use:
+	•	issue_type
+	•	subject
+	•	description
+	•	one or more attachment columns
+	•	status
+
+Later you can add custom columns if the form requires more fields after issue type is selected.
+
+⸻
+
+3) Save a logged-in browser session
+
+Because the site uses a Freshworks/Freshdesk-style OAuth redirect, the clean move is to log in once manually and save the authenticated session for reuse.  ￼
+
+Create save_session.py:
+
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)
+    context = browser.new_context()
+    page = context.new_page()
+
+    page.goto("https://tpissues.medanswering.com/support/tickets/new")
+    print("Log in manually in the browser window.")
+    input("After login is complete and you can access the ticket page, press Enter here...")
+
+    context.storage_state(path="auth_state.json")
+    print("Saved session to auth_state.json")
+    browser.close()
+
+Run it:
+
+python save_session.py
+
+Log in manually once. When you can reach the ticket page, press Enter in the terminal.
+Now your script can reuse auth_state.json.
+
+Why this matters
+
+If you try to script the login first, especially if there is MFA, SSO, CAPTCHA, or redirect weirdness, you waste time on the wrong problem. Save session first. Get the bot submitting forms. Then improve.
+
+⸻
+
+4) Inspect the form fields
+
+You need the actual selectors. The page publicly shows the issue-type choices, but once you log in, different fields may appear based on the selected issue type.  ￼
+
+Use Playwright codegen to inspect:
+
+playwright codegen https://tpissues.medanswering.com/support/tickets/new
+
+Log in if needed, then interact with the form. This helps you capture selectors like:
+	•	issue type dropdown
+	•	subject field
+	•	description field
+	•	file upload input
+	•	submit button
+
+Do not blindly trust recorded output. Clean it up.
+
+⸻
+
+5) Build the submission bot
+
+Here is a solid starter script.
+
+import os
+import csv
+import time
+from datetime import datetime
+from pathlib import Path
+from playwright.sync_api import sync_playwright, TimeoutError
+
+BASE_URL = "https://tpissues.medanswering.com/support/tickets/new"
+INPUT_CSV = r"C:\MASBot\nightly_submissions.csv"
+LOG_CSV = r"C:\MASBot\submission_log.csv"
+SCREENSHOT_DIR = r"C:\MASBot\screenshots"
+AUTH_STATE = r"C:\MASBot\auth_state.json"
+
+Path(SCREENSHOT_DIR).mkdir(parents=True, exist_ok=True)
+
+def log_result(row, success, message, screenshot_path=""):
+    file_exists = os.path.exists(LOG_CSV)
+    with open(LOG_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow([
+                "timestamp", "issue_type", "subject", "success",
+                "message", "screenshot_path"
+            ])
+        writer.writerow([
+            datetime.now().isoformat(timespec="seconds"),
+            row.get("issue_type", ""),
+            row.get("subject", ""),
+            "yes" if success else "no",
+            message,
+            screenshot_path
+        ])
+
+def get_attachment_list(row):
+    attachments = []
+    for key, value in row.items():
+        if key.lower().startswith("attachment_") and value.strip():
+            if os.path.exists(value.strip()):
+                attachments.append(value.strip())
+    return attachments
+
+def submit_one(page, row):
+    page.goto(BASE_URL, wait_until="networkidle")
+
+    # Adjust selectors after inspecting the real logged-in form.
+    # These are examples only.
+    page.get_by_label("Select issue type").select_option(label=row["issue_type"])
+    page.get_by_label("Subject").fill(row["subject"])
+    page.get_by_label("Description").fill(row["description"])
+
+    attachments = get_attachment_list(row)
+    if attachments:
+        page.locator('input[type="file"]').set_input_files(attachments)
+
+    page.get_by_role("button", name="Submit").click()
+    page.wait_for_load_state("networkidle")
+
+    # Adjust this logic once you see the real success page.
+    content = page.locator("body").inner_text()
+    return content[:500]
+
+def main():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(storage_state=AUTH_STATE)
+        page = context.new_page()
+
+        rows = []
+        with open(INPUT_CSV, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        updated_rows = []
+        for idx, row in enumerate(rows, start=1):
+            status = row.get("status", "").strip().lower()
+            if status not in ("", "pending"):
+                updated_rows.append(row)
+                continue
+
+            screenshot_path = os.path.join(
+                SCREENSHOT_DIR,
+                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{idx}.png"
+            )
+
+            try:
+                message = submit_one(page, row)
+                page.screenshot(path=screenshot_path, full_page=True)
+                row["status"] = "submitted"
+                log_result(row, True, message, screenshot_path)
+                time.sleep(2)
+            except TimeoutError as e:
+                page.screenshot(path=screenshot_path, full_page=True)
+                row["status"] = "failed"
+                log_result(row, False, f"TimeoutError: {e}", screenshot_path)
+            except Exception as e:
+                page.screenshot(path=screenshot_path, full_page=True)
+                row["status"] = "failed"
+                log_result(row, False, f"Exception: {e}", screenshot_path)
+
+            updated_rows.append(row)
+
+        # Rewrite CSV with updated statuses
+        if updated_rows:
+            fieldnames = updated_rows[0].keys()
+            with open(INPUT_CSV, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(updated_rows)
+
+        browser.close()
+
+if __name__ == "__main__":
+    main()
+
+6) Handle issue-type-specific fields
+
+This is where most people get sloppy.
+
+Different issue types may reveal different required fields. The public ticket page already shows the issue-type selector, which means the form logic may branch after selection.  ￼
+
+So your script should look more like this:
+
+issue_type = row["issue_type"]
+
+page.get_by_label("Select issue type").select_option(label=issue_type)
+
+if issue_type == "Custom Payment Request":
+    page.get_by_label("Subject").fill(row["subject"])
+    page.get_by_label("Description").fill(row["description"])
+    # fill extra payment request fields here
+
+elif issue_type == "GPS Control Deviation":
+    page.get_by_label("Subject").fill(row["subject"])
+    page.get_by_label("Description").fill(row["description"])
+    # fill GPS-specific fields here
+
+else:
+    page.get_by_label("Subject").fill(row["subject"])
+    page.get_by_label("Description").fill(row["description"])
+
+That means your CSV may need extra columns per form type.
+
+Do not force one flat structure if the page is not flat.
+
+⸻
+
+7) Add a daily scheduler
+
+On Windows
+
+Use Task Scheduler:
+	•	Trigger: Daily, 1:00 AM
+	•	Action: Start a program
+	•	Program:
+
+C:\Path\To\python.exe
+
+
+	•	Arguments:
+
+C:\MASBot\submit_tickets.py
+
+
+	•	Start in:
+
+C:\MASBot
+
+
+
+Also check:
+	•	Run whether user is logged on or not
+	•	Run with highest privileges
+	•	Wake the computer if needed
+
+Important
+
+Run it first in headful mode during testing:
+
+browser = p.chromium.launch(headless=False)
+
+Once stable, switch to:
+
+browser = p.chromium.launch(headless=True)
+
+
+⸻
+
+8) Add failure-proofing
+
+This is not optional.
+
+You need:
+	•	screenshot on every failure
+	•	retry once for transient errors
+	•	skip rows already marked submitted
+	•	save the page HTML on failure if needed
+	•	slow down between submissions
+
+Example retry pattern:
+
+for attempt in range(2):
+    try:
+        message = submit_one(page, row)
+        success = True
+        break
+    except Exception as e:
+        last_error = str(e)
+        success = False
+        time.sleep(3)
+
+if not success:
+    raise Exception(last_error)
+
+
+⸻
+
+9) Plan for session expiration
+
+Your auth_state.json will eventually expire.
+
+So build a simple rule:
+	•	if redirected to login
+	•	or if the page shows login text
+	•	fail the run early
+	•	send yourself an alert saying session refresh is needed
+
+Do not let the bot silently fake a run while unauthenticated.
+
+You can detect it like this:
+
+page.goto(BASE_URL, wait_until="networkidle")
+if "login" in page.url.lower():
+    raise Exception("Session expired. Please refresh auth_state.json.")
+
+
+⸻
+
+10) Use a service account, not your personal login
+
+This matters more than you think.
+
+Why:
+	•	continuity if your password changes
+	•	clarity in audit trails
+	•	easier access control
+	•	less risk if you leave the company or rotate roles
+
+If they refuse a service account, at least isolate this into a specific business credential with limited permissions.
+
+⸻
+
+What will actually go wrong
+
+Here is what you are underestimating:
+
+1. Attachment path chaos
+
+Half of automation failures come from missing or renamed files.
+
+Fix it by:
+	•	putting nightly attachments in one controlled folder
+	•	validating file existence before launching browser
+	•	logging missing files separately
+
+2. Conditional fields
+
+Selecting issue type may change required inputs.
+If you ignore that, you will get random failures.
+
+3. Session expiration
+
+The script works for four nights, then dies because the session aged out.
+
+4. Silent duplicate submissions
+
+If the bot crashes after submit but before logging success, you may resubmit the same form next night.
+
+Fix it by:
+	•	unique record ID per row
+	•	marking submitted_at
+	•	optionally checking the success page text before moving on
+
+5. UI changes
+
+A label changes, a selector changes, your bot breaks.
+
+Fix it by:
+	•	using robust selectors
+	•	preferring labels and roles over fragile CSS chains
+	•	keeping screenshots of failures
+
+⸻
+
+The minimum viable version I would build first
+
+Do not build the whole empire on day one.
+
+Build this first:
+
+Phase 1
+	•	one CSV input
+	•	one issue type
+	•	subject + description + attachments
+	•	saved login session
+	•	screenshot and log output
+	•	nightly scheduled run
+
+Phase 2
+	•	multiple issue types
+	•	retries
+	•	email summary
+	•	duplicate prevention
+
+Phase 3
+	•	database-backed queue
+	•	dashboard for review
+	•	failed-item reprocessing
+
+That is the correct order.
+
+⸻
+
+My recommendation
+
+Start with:
+	•	Python
+	•	Playwright
+	•	CSV queue
+	•	saved auth session
+	•	Windows Task Scheduler
+
+That is the least glamorous and most effective route.
+
+The biggest mistake you could make is trying to build a “smart” bot before you have a boring, reliable submission pipeline. Reliability first. Elegance later.
+
+If you want, I’ll draft the exact folder structure and a version of the script tailored to the fields you see after logging in.

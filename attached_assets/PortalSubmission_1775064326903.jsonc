@@ -1,0 +1,132 @@
+{
+  "name": "PortalSubmission",
+  "type": "object",
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "description": "Reference to the Claim"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "submitted",
+        "failed",
+        "cancelled"
+      ],
+      "default": "pending",
+      "description": "Current status of the portal submission"
+    },
+    "portal_ticket_id": {
+      "type": "string",
+      "description": "Ticket ID returned by the portal after successful submission"
+    },
+    "issue_type": {
+      "type": "string",
+      "description": "Portal issue type dropdown value (e.g. GPS Control Deviation, MAS Trips App Issue)"
+    },
+    "subject": {
+      "type": "string",
+      "description": "Ticket subject line"
+    },
+    "requester_email": {
+      "type": "string",
+      "description": "Requester email address for the portal"
+    },
+    "transportation_provider_name": {
+      "type": "string",
+      "description": "Transportation provider name"
+    },
+    "phone_number": {
+      "type": "string",
+      "description": "Contact phone number"
+    },
+    "invoice_number": {
+      "type": "string",
+      "description": "Invoice number (one per ticket)"
+    },
+    "gps_breadcrumbs_available": {
+      "type": "string",
+      "enum": [
+        "Yes",
+        "No",
+        ""
+      ],
+      "description": "Are GPS breadcrumbs available and unaltered? (GPS Control Deviation only)"
+    },
+    "description_html": {
+      "type": "string",
+      "description": "Rich text description/dispute argument"
+    },
+    "attachment_urls": {
+      "type": "string",
+      "description": "JSON array of file URLs to attach to the portal submission"
+    },
+    "conf_number": {
+      "type": "string",
+      "description": "Claim confirmation number (for reference)"
+    },
+    "service_date": {
+      "type": "string",
+      "description": "Service date from the claim"
+    },
+    "ref_number": {
+      "type": "string",
+      "description": "Reference number from the claim"
+    },
+    "client_number": {
+      "type": "string",
+      "description": "Client/member number"
+    },
+    "car_number": {
+      "type": "string",
+      "description": "Vehicle/car number"
+    },
+    "claim_amount": {
+      "type": "number",
+      "description": "Original claim amount"
+    },
+    "error_type_name": {
+      "type": "string",
+      "description": "Error type name for context"
+    },
+    "error_details": {
+      "type": "string",
+      "description": "Raw error details from the claim"
+    },
+    "dispute_reason": {
+      "type": "string",
+      "description": "Selected dispute reason text"
+    },
+    "evidence_notes": {
+      "type": "string",
+      "description": "Evidence notes from the claim"
+    },
+    "evidence_files": {
+      "type": "string",
+      "description": "JSON array of evidence file URLs from the claim"
+    },
+    "workflow_history": {
+      "type": "string",
+      "description": "JSON of workflow decision history for audit"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error message if submission failed"
+    },
+    "submitted_at": {
+      "type": "string",
+      "description": "ISO timestamp of when the bot successfully submitted"
+    },
+    "attempts": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of submission attempts"
+    }
+  },
+  "required": [
+    "claim_id",
+    "status"
+  ]
+}
