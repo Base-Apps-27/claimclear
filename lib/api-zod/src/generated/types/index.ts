@@ -7,6 +7,10 @@
  */
 
 export * from "./analyzeSOPBody";
+export * from "./anthropicConversation";
+export * from "./anthropicConversationWithMessages";
+export * from "./anthropicError";
+export * from "./anthropicMessage";
 export * from "./auditLogResponse";
 export * from "./auditLogResponseMetadata";
 export * from "./authUser";
@@ -21,6 +25,7 @@ export * from "./claimResponseWorkflowProgress";
 export * from "./claimsListResponse";
 export * from "./claimSubmissionBody";
 export * from "./completeSubmissionBody";
+export * from "./createAnthropicConversationBody";
 export * from "./createClaimBody";
 export * from "./createErrorTypeBody";
 export * from "./createErrorTypeBodyDecisionTree";
@@ -70,6 +75,7 @@ export * from "./sOPAnalysisResult";
 export * from "./sOPAnalysisResultDecisionTree";
 export * from "./sOPAnalysisResultDisputeReasonsLibrary";
 export * from "./sOPAnalysisResultEvidenceRequirements";
+export * from "./sendAnthropicMessageBody";
 export * from "./successResponse";
 export * from "./updateClaimBody";
 export * from "./updateClaimBodyEvidenceChecklist";

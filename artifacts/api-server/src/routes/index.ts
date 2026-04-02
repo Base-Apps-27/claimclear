@@ -17,6 +17,7 @@ import dashboardRouter from "./dashboard";
 import dailyBriefRouter from "./daily-brief";
 import aiEmailRouter from "./ai-email";
 import sopAnalyzerRouter from "./sop-analyzer";
+import anthropicRouter from "./anthropic";
 
 const router: IRouter = Router();
 
@@ -41,5 +42,6 @@ router.use(presenceRouter);
 router.use(dashboardRouter);
 router.use(aiEmailRouter);
 router.use(sopAnalyzerRouter);
+router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;
