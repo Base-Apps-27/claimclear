@@ -27,85 +27,11 @@ import {
   ChevronRight, CheckCircle, AlertTriangle, Send,
   PauseCircle, FileText, ArrowRight, Eye, Clipboard
 } from "lucide-react";
-
-interface DecisionNode {
-  question: string;
-  yes?: string | DecisionNode;
-  no?: string | DecisionNode;
-  action?: string;
-}
-
-interface DecisionTreeNodeData {
-  question: string;
-  yesLabel?: string;
-  noLabel?: string;
-  yesAction?: string;
-  noAction?: string;
-  yesChild?: DecisionTreeNodeData;
-  noChild?: DecisionTreeNodeData;
-}
-
-function DecisionTreePlayer({
-  tree,
-  onAction,
-}: {
-  tree: DecisionTreeNodeData;
-  onAction: (action: string) => void;
-}) {
-  const [path, setPath] = useState<Array<{ question: string; answer: string }>>([]);
-  const [currentNode, setCurrentNode] = useState<DecisionTreeNodeData>(tree);
-
-  const handleChoice = (answer: "yes" | "no") => {
-    const label = answer === "yes" ? (currentNode.yesLabel || "Yes") : (currentNode.noLabel || "No");
-    const nextPath = [...path, { question: currentNode.question, answer: label }];
-    setPath(nextPath);
-
-    const child = answer === "yes" ? currentNode.yesChild : currentNode.noChild;
-    const action = answer === "yes" ? currentNode.yesAction : currentNode.noAction;
-
-    if (child) {
-      setCurrentNode(child);
-    } else if (action) {
-      onAction(action);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      {path.length > 0 && (
-        <div className="space-y-1">
-          {path.map((step, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="font-medium">{step.question}</span>
-              <ChevronRight className="h-3 w-3" />
-              <Badge variant="outline" className="text-[10px]">{step.answer}</Badge>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="bg-blue-50 p-3 rounded-lg">
-        <p className="text-sm font-medium mb-3">{currentNode.question}</p>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="default"
-            className="bg-green-600 hover:bg-green-700"
-            onClick={() => handleChoice("yes")}
-          >
-            {currentNode.yesLabel || "Yes"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => handleChoice("no")}
-          >
-            {currentNode.noLabel || "No"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import {
+  TreePlayer,
+  type DecisionTree, type LegacyTreeNode, type OutcomeType,
+  legacyToTree,
+} from "@/components/decision-tree";
 
 function WorkflowPlayer({
   claim,
@@ -337,36 +263,45 @@ function WorkflowPlayer({
               </div>
             )}
 
-            {errorType?.decisionTree && (errorType.decisionTree as Record<string, unknown>).question ? (
-              <div>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Follow the decision tree for <span className="font-medium">{errorType.name}</span>:
-                </p>
-                <DecisionTreePlayer
-                  tree={errorType.decisionTree as unknown as DecisionTreeNodeData}
-                  onAction={(action) => {
-                    const lower = action.toLowerCase();
-                    if (lower.includes("submit") || lower.includes("dispute") || lower.includes("portal")) {
-                      advanceStep("submit");
-                    } else if (lower.includes("hold")) {
-                      setShowHoldDialog(true);
-                    } else if (lower.includes("resolve") || lower.includes("approve")) {
-                      updateStatus.mutateAsync({ id: claim.id, data: { status: "Resolved" } }).then(() => {
-                        invalidate();
-                        onComplete();
-                      });
-                    } else if (lower.includes("deny") || lower.includes("denied")) {
-                      updateStatus.mutateAsync({ id: claim.id, data: { status: "Denied" } }).then(() => {
-                        invalidate();
-                        onComplete();
-                      });
-                    } else {
-                      advanceStep("submit");
-                    }
-                  }}
-                />
-              </div>
-            ) : (
+            {errorType?.decisionTree ? (() => {
+              const rawTree = errorType.decisionTree as Record<string, unknown>;
+              let tree: DecisionTree | null = null;
+              if ("nodes" in rawTree && "rootId" in rawTree) {
+                tree = rawTree as unknown as DecisionTree;
+              } else if ("question" in rawTree) {
+                tree = legacyToTree(rawTree as unknown as LegacyTreeNode);
+              }
+              if (!tree) return null;
+              return (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Follow the decision tree for <span className="font-medium">{errorType.name}</span>:
+                  </p>
+                  <TreePlayer
+                    tree={tree}
+                    onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
+                      if (outcomeType === "portal_dispute") {
+                        advanceStep("submit");
+                      } else if (outcomeType === "hold") {
+                        setShowHoldDialog(true);
+                      } else if (outcomeType === "dispute") {
+                        advanceStep("submit");
+                      } else if (outcomeType === "internal") {
+                        const lower = outcomeLabel.toLowerCase();
+                        const isDeny = lower.includes("deny") || lower.includes("denied");
+                        const finalStatus = isDeny ? "Denied" : "Resolved";
+                        updateStatus.mutateAsync({ id: claim.id, data: { status: finalStatus } }).then(() => {
+                          invalidate();
+                          onComplete();
+                        });
+                      } else {
+                        advanceStep("submit");
+                      }
+                    }}
+                  />
+                </div>
+              );
+            })() : (
               <>
                 <p className="text-sm text-muted-foreground">
                   Choose how to resolve this claim based on the evidence gathered.

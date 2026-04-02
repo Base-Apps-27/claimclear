@@ -17,8 +17,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
-  BookOpen, X, ChevronDown, ChevronRight, Sparkles, Loader2
+  BookOpen, X, ChevronDown, ChevronRight, Sparkles, Loader2,
+  MessageSquare, Wand2, Copy, Send, ArrowRight, Ban
 } from "lucide-react";
+import {
+  TreeEditor, TreePreview, TreePlayer,
+  type DecisionTree, type LegacyTreeNode,
+  legacyToTree, generateNodeId,
+} from "@/components/decision-tree";
 
 interface DisputeReason {
   key: string;
@@ -30,16 +36,6 @@ interface EvidenceRequirement {
   key: string;
   label: string;
   required: boolean;
-}
-
-interface DecisionTreeNode {
-  question: string;
-  yesLabel?: string;
-  noLabel?: string;
-  yesAction?: string;
-  noAction?: string;
-  yesChild?: DecisionTreeNode;
-  noChild?: DecisionTreeNode;
 }
 
 function DisputeReasonsEditor({
@@ -177,137 +173,252 @@ function EvidenceRequirementsEditor({
   );
 }
 
-function DecisionTreeEditor({
-  node,
-  onChange,
-  depth = 0,
+function ConversationalWizard({
+  onComplete,
 }: {
-  node: DecisionTreeNode | null;
-  onChange: (node: DecisionTreeNode | null) => void;
-  depth?: number;
+  onComplete: (tree: DecisionTree) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [messages, setMessages] = useState<Array<{ role: "system" | "user"; text: string }>>([
+    { role: "system", text: "Let's build a decision tree step by step. What's the first question staff should answer when handling this claim type?" },
+  ]);
+  const [input, setInput] = useState("");
+  const [tree, setTree] = useState<DecisionTree | null>(null);
+  const [wizardState, setWizardState] = useState<"question" | "options" | "option_action" | "sub_question" | "done">("question");
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
+  const [pendingOptions, setPendingOptions] = useState<string[]>([]);
+  const [currentOptionIdx, setCurrentOptionIdx] = useState(0);
 
-  if (!node) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="w-full border-dashed"
-        onClick={() =>
-          onChange({ question: "", yesLabel: "Yes", noLabel: "No" })
-        }
-      >
-        <Plus className="h-3 w-3 mr-1" /> Add Decision Node
-      </Button>
-    );
-  }
+  const addMessage = (role: "system" | "user", text: string) => {
+    setMessages(prev => [...prev, { role, text }]);
+  };
 
-  const borderColors = [
-    "border-blue-300",
-    "border-green-300",
-    "border-amber-300",
-    "border-purple-300",
-  ];
+  const handleSubmit = () => {
+    if (!input.trim()) return;
+    const userText = input.trim();
+    addMessage("user", userText);
+    setInput("");
+
+    if (wizardState === "question") {
+      const nodeId = generateNodeId();
+      const newNode = { id: nodeId, question: userText, options: [] };
+      if (!tree) {
+        setTree({ rootId: nodeId, nodes: [newNode] });
+      } else {
+        setTree({ ...tree, nodes: [...tree.nodes, newNode] });
+      }
+      setCurrentNodeId(nodeId);
+      setWizardState("options");
+      addMessage("system", `Great question: "${userText}"\n\nWhat are the possible answers? Enter them separated by commas (e.g., "Yes, GPS confirmed", "No GPS data", "Partial data")`);
+    } else if (wizardState === "options") {
+      const opts = userText.split(",").map(s => s.trim()).filter(Boolean);
+      if (opts.length < 2) {
+        addMessage("system", "Please provide at least 2 options, separated by commas.");
+        return;
+      }
+      setPendingOptions(opts);
+      setCurrentOptionIdx(0);
+      setWizardState("option_action");
+      addMessage("system", `Got ${opts.length} options. For "${opts[0]}" — choose what happens next:`);
+    }
+  };
+
+  const applyOutcome = (outcomeType: "portal_dispute" | "hold" | "internal" | "dispute") => {
+    if (!tree || !currentNodeId) return;
+    const optionLabel = pendingOptions[currentOptionIdx];
+    const labels = { portal_dispute: "Submit Portal Dispute", hold: "Place on Hold", internal: "Resolve Internally", dispute: "Send Dispute Email" };
+    const updatedTree = { ...tree, nodes: [...tree.nodes] };
+    const nodeIdx = updatedTree.nodes.findIndex(n => n.id === currentNodeId);
+    if (nodeIdx < 0) return;
+    const node = { ...updatedTree.nodes[nodeIdx] };
+    node.options = [...node.options, { label: optionLabel, outcomeType, outcomeLabel: labels[outcomeType] }];
+    updatedTree.nodes[nodeIdx] = node;
+    setTree(updatedTree);
+    addMessage("user", `${optionLabel} → ${labels[outcomeType]}`);
+    advanceToNextOption(updatedTree);
+  };
+
+  const applySubQuestion = () => {
+    setWizardState("sub_question");
+    addMessage("system", `What follow-up question should staff answer for "${pendingOptions[currentOptionIdx]}"?`);
+  };
+
+  const advanceToNextOption = (updatedTree: DecisionTree) => {
+    const nextOptIdx = currentOptionIdx + 1;
+    if (nextOptIdx < pendingOptions.length) {
+      setCurrentOptionIdx(nextOptIdx);
+      setWizardState("option_action");
+      addMessage("system", `For "${pendingOptions[nextOptIdx]}" — choose what happens next:`);
+    } else {
+      const incompleteNodes = updatedTree.nodes.filter(n => n.options.length === 0);
+      if (incompleteNodes.length > 0) {
+        const next = incompleteNodes[0];
+        setCurrentNodeId(next.id);
+        setWizardState("options");
+        addMessage("system", `Now let's handle: "${next.question}"\n\nWhat are the possible answers? (comma separated)`);
+      } else {
+        setWizardState("done");
+        addMessage("system", "The tree is complete! Review it below and click 'Use This Tree' to save it.");
+      }
+    }
+  };
+
+  const handleSubQuestion = () => {
+    if (!input.trim() || !tree || !currentNodeId) return;
+    const question = input.trim();
+    setInput("");
+    addMessage("user", question);
+    const childId = generateNodeId();
+    const childNode = { id: childId, question, options: [] as import("@/components/decision-tree/types").TreeOption[] };
+    const optionLabel = pendingOptions[currentOptionIdx];
+    const updatedTree = { ...tree, nodes: [...tree.nodes] };
+    const nodeIdx = updatedTree.nodes.findIndex(n => n.id === currentNodeId);
+    if (nodeIdx < 0) return;
+    const node = { ...updatedTree.nodes[nodeIdx] };
+    node.options = [...node.options, { label: optionLabel, childId }];
+    updatedTree.nodes[nodeIdx] = node;
+    updatedTree.nodes.push(childNode);
+    setTree(updatedTree);
+    advanceToNextOption(updatedTree);
+  };
 
   return (
-    <div
-      className={`border-l-4 ${borderColors[depth % borderColors.length]} pl-3 space-y-2`}
-    >
-      <div className="flex items-start gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0 mt-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </Button>
-        <Input
-          value={node.question}
-          onChange={(e) => onChange({ ...node, question: e.target.value })}
-          placeholder="Decision question (e.g., Does GPS data confirm the trip?)"
-          className="text-sm flex-1"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-destructive shrink-0"
-          onClick={() => onChange(null)}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+    <div className="space-y-3">
+      <div className="bg-muted/30 rounded-lg p-3 max-h-64 overflow-y-auto space-y-2">
+        {messages.map((msg, i) => (
+          <div key={i} className={`text-xs ${msg.role === "system" ? "text-muted-foreground" : "text-foreground font-medium"}`}>
+            <span className="font-semibold">{msg.role === "system" ? "Builder: " : "You: "}</span>
+            <span className="whitespace-pre-line">{msg.text}</span>
+          </div>
+        ))}
       </div>
 
-      {expanded && (
-        <div className="grid grid-cols-1 gap-3 ml-8">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">
-                YES →
-              </Badge>
-              <Input
-                value={node.yesLabel || ""}
-                onChange={(e) => onChange({ ...node, yesLabel: e.target.value })}
-                placeholder="Button label"
-                className="text-xs h-7 w-32"
-              />
-              {!node.yesChild && (
-                <Input
-                  value={node.yesAction || ""}
-                  onChange={(e) => onChange({ ...node, yesAction: e.target.value })}
-                  placeholder="Action (e.g., Submit Dispute, Mark Resolved)"
-                  className="text-xs h-7 flex-1"
-                />
-              )}
-            </div>
-            {depth < 3 && (
-              <DecisionTreeEditor
-                node={node.yesChild ?? null}
-                onChange={(child) =>
-                  onChange({ ...node, yesChild: child ?? undefined })
-                }
-                depth={depth + 1}
-              />
-            )}
-          </div>
+      {wizardState === "question" && (
+        <div className="flex gap-2">
+          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Type your question..." onKeyDown={e => e.key === "Enter" && handleSubmit()} className="text-sm" />
+          <Button size="sm" onClick={handleSubmit} className="gap-1"><Send className="h-3 w-3" />Send</Button>
+        </div>
+      )}
 
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="bg-red-100 text-red-800 text-xs">
-                NO →
-              </Badge>
-              <Input
-                value={node.noLabel || ""}
-                onChange={(e) => onChange({ ...node, noLabel: e.target.value })}
-                placeholder="Button label"
-                className="text-xs h-7 w-32"
-              />
-              {!node.noChild && (
-                <Input
-                  value={node.noAction || ""}
-                  onChange={(e) => onChange({ ...node, noAction: e.target.value })}
-                  placeholder="Action (e.g., Deny Claim, Place on Hold)"
-                  className="text-xs h-7 flex-1"
-                />
-              )}
-            </div>
-            {depth < 3 && (
-              <DecisionTreeEditor
-                node={node.noChild ?? null}
-                onChange={(child) =>
-                  onChange({ ...node, noChild: child ?? undefined })
-                }
-                depth={depth + 1}
-              />
-            )}
+      {wizardState === "options" && (
+        <div className="flex gap-2">
+          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Options separated by commas..." onKeyDown={e => e.key === "Enter" && handleSubmit()} className="text-sm" />
+          <Button size="sm" onClick={handleSubmit} className="gap-1"><Send className="h-3 w-3" />Send</Button>
+        </div>
+      )}
+
+      {wizardState === "option_action" && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">For "<span className="font-medium">{pendingOptions[currentOptionIdx]}</span>" — what happens?</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button size="sm" variant="outline" className="text-xs justify-start text-green-700" onClick={() => applyOutcome("portal_dispute")}>
+              <Send className="h-3 w-3 mr-1" />Portal Dispute
+            </Button>
+            <Button size="sm" variant="outline" className="text-xs justify-start text-amber-700" onClick={() => applyOutcome("hold")}>
+              <span className="mr-1">⏸</span>Place on Hold
+            </Button>
+            <Button size="sm" variant="outline" className="text-xs justify-start text-red-700" onClick={() => applyOutcome("internal")}>
+              <Ban className="h-3 w-3 mr-1" />Resolve Internally
+            </Button>
+            <Button size="sm" variant="outline" className="text-xs justify-start text-blue-700" onClick={() => applyOutcome("dispute")}>
+              <span className="mr-1">📧</span>Email Dispute
+            </Button>
+          </div>
+          <Button size="sm" variant="default" className="w-full text-xs gap-1" onClick={applySubQuestion}>
+            <ArrowRight className="h-3 w-3" />Add a Follow-up Question
+          </Button>
+        </div>
+      )}
+
+      {wizardState === "sub_question" && (
+        <div className="flex gap-2">
+          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Type the follow-up question..." onKeyDown={e => e.key === "Enter" && handleSubQuestion()} className="text-sm" />
+          <Button size="sm" onClick={handleSubQuestion} className="gap-1"><Send className="h-3 w-3" />Send</Button>
+        </div>
+      )}
+
+      {tree && tree.nodes.length > 0 && (
+        <div className="space-y-2">
+          <TreePreview tree={tree} />
+          {wizardState === "done" && (
+            <Button onClick={() => onComplete(tree)} className="w-full gap-1">
+              <ArrowRight className="h-4 w-4" />Use This Tree
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NaturalLanguageBuilder({
+  errorTypeName,
+  onComplete,
+}: {
+  errorTypeName?: string;
+  onComplete: (tree: DecisionTree) => void;
+}) {
+  const [description, setDescription] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<DecisionTree | null>(null);
+
+  const handleGenerate = async () => {
+    if (!description.trim()) return;
+    setIsGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/error-types/build-tree-from-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description, errorTypeName }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Generation failed");
+      }
+      const data = await res.json();
+      if (data.decisionTree) {
+        const converted = legacyToTree(data.decisionTree as LegacyTreeNode);
+        setPreview(converted);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to generate tree");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Textarea
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        rows={6}
+        placeholder={"Describe the workflow in plain English...\n\nExample:\nFirst check if GPS data is available. If yes, verify the breadcrumbs match the pickup and dropoff locations. If they match, submit a portal dispute. If not, check if there's a reasonable explanation like a detour. If yes, still dispute. If no explanation, deny internally. If no GPS data at all, ask for a driver attestation. If available, dispute. If not, place on hold."}
+        className="text-sm"
+      />
+      <Button
+        onClick={handleGenerate}
+        disabled={isGenerating || !description.trim()}
+        className="gap-2"
+      >
+        {isGenerating ? (
+          <><Loader2 className="h-4 w-4 animate-spin" />Generating Tree...</>
+        ) : (
+          <><Wand2 className="h-4 w-4" />Generate Decision Tree</>
+        )}
+      </Button>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {preview && (
+        <div className="space-y-2">
+          <TreePreview tree={preview} />
+          <div className="flex gap-2">
+            <Button onClick={() => onComplete(preview)} className="flex-1 gap-1">
+              <ArrowRight className="h-4 w-4" />Use This Tree
+            </Button>
+            <Button variant="outline" onClick={() => setPreview(null)}>
+              Try Again
+            </Button>
           </div>
         </div>
       )}
@@ -368,7 +479,7 @@ interface ErrorTypeFormState {
   emailTemplate: string;
   reasons: DisputeReason[];
   requirements: EvidenceRequirement[];
-  decisionTree: DecisionTreeNode | null;
+  decisionTree: DecisionTree | null;
 }
 
 export default function ErrorTypes() {
@@ -384,6 +495,7 @@ export default function ErrorTypes() {
   const [sopText, setSopText] = useState("");
   const [sopAnalyzing, setSopAnalyzing] = useState(false);
   const [sopError, setSopError] = useState<string | null>(null);
+  const [testTree, setTestTree] = useState<DecisionTree | null>(null);
 
   const emptyForm: ErrorTypeFormState = {
     name: "", category: "", description: "", guidance: "",
@@ -401,6 +513,7 @@ export default function ErrorTypes() {
       const result = await analyzeSOP.mutateAsync({
         data: { sopText, errorTypeName: form.name || undefined },
       });
+      const legacyTree = result.decisionTree as LegacyTreeNode | null;
       setForm({
         name: result.name || form.name || "",
         category: result.category || "",
@@ -410,7 +523,7 @@ export default function ErrorTypes() {
         emailTemplate: form.emailTemplate,
         reasons: parseReasons(result.disputeReasonsLibrary as Record<string, unknown> | null),
         requirements: parseRequirements(result.evidenceRequirements as Record<string, unknown> | null),
-        decisionTree: (result.decisionTree as DecisionTreeNode | null) ?? null,
+        decisionTree: legacyTree ? legacyToTree(legacyTree) : null,
       });
     } catch (err: unknown) {
       setSopError(err instanceof Error ? err.message : "Analysis failed");
@@ -422,6 +535,15 @@ export default function ErrorTypes() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
 
   const openEdit = (et: ErrorTypeResponse) => {
+    const rawTree = et.decisionTree as Record<string, unknown> | null;
+    let convertedTree: DecisionTree | null = null;
+    if (rawTree) {
+      if ("nodes" in rawTree && "rootId" in rawTree) {
+        convertedTree = rawTree as unknown as DecisionTree;
+      } else if ("question" in rawTree) {
+        convertedTree = legacyToTree(rawTree as unknown as LegacyTreeNode);
+      }
+    }
     setForm({
       name: et.name || "",
       category: et.category || "",
@@ -431,7 +553,7 @@ export default function ErrorTypes() {
       emailTemplate: et.emailTemplate || "",
       reasons: parseReasons(et.disputeReasonsLibrary as Record<string, unknown> | null),
       requirements: parseRequirements(et.evidenceRequirements as Record<string, unknown> | null),
-      decisionTree: (et.decisionTree as DecisionTreeNode | null) ?? null,
+      decisionTree: convertedTree,
     });
     setEditingId(et.id);
   };
@@ -447,7 +569,7 @@ export default function ErrorTypes() {
       disputeReasonsLibrary: serializeReasons(form.reasons),
       evidenceRequirements: serializeRequirements(form.requirements),
       decisionTree: form.decisionTree
-        ? (JSON.parse(JSON.stringify(form.decisionTree)) as Record<string, unknown>)
+        ? (JSON.parse(JSON.stringify(form.decisionTree)) as unknown as Record<string, unknown>)
         : undefined,
     };
 
@@ -542,46 +664,69 @@ export default function ErrorTypes() {
             </TabsList>
 
             <TabsContent value="ai-analyzer" className="space-y-4 mt-4">
-              <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-violet-600" />
-                  <h3 className="font-semibold text-sm">SOP Analyzer</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Paste your Standard Operating Procedure text below and the AI will automatically generate all fields: name, category, description, guidance, dispute reasons, evidence requirements, and a decision tree workflow.
-                </p>
-                <Textarea
-                  value={sopText}
-                  onChange={e => setSopText(e.target.value)}
-                  rows={10}
-                  placeholder="Paste your SOP text here...&#10;&#10;Example:&#10;Error: Invoice Number Not in System&#10;When a claim is rejected because the invoice number is not found in the MAS system...&#10;Steps:&#10;1. Verify the invoice number matches the trip confirmation&#10;2. Check if the invoice was submitted to the correct payor&#10;..."
-                  className="font-mono text-xs bg-white dark:bg-background"
-                />
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={handleAnalyzeSOP}
-                    disabled={sopAnalyzing || !sopText.trim()}
-                    className="gap-2"
-                  >
-                    {sopAnalyzing ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" />Analyzing...</>
-                    ) : (
-                      <><Sparkles className="h-4 w-4" />Analyze & Generate All Fields</>
+              <Tabs defaultValue="sop-analyzer">
+                <TabsList className="w-full grid grid-cols-3">
+                  <TabsTrigger value="sop-analyzer" className="text-xs gap-1"><Sparkles className="h-3 w-3" />SOP Analyzer</TabsTrigger>
+                  <TabsTrigger value="nl-builder" className="text-xs gap-1"><Wand2 className="h-3 w-3" />Describe Workflow</TabsTrigger>
+                  <TabsTrigger value="wizard" className="text-xs gap-1"><MessageSquare className="h-3 w-3" />Guided Builder</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="sop-analyzer" className="mt-3">
+                  <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Paste your Standard Operating Procedure text and the AI will generate all fields: name, category, description, guidance, dispute reasons, evidence requirements, and a decision tree.
+                    </p>
+                    <Textarea
+                      value={sopText}
+                      onChange={e => setSopText(e.target.value)}
+                      rows={8}
+                      placeholder="Paste your SOP text here..."
+                      className="font-mono text-xs bg-white dark:bg-background"
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button
+                        onClick={handleAnalyzeSOP}
+                        disabled={sopAnalyzing || !sopText.trim()}
+                        className="gap-2"
+                      >
+                        {sopAnalyzing ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" />Analyzing...</>
+                        ) : (
+                          <><Sparkles className="h-4 w-4" />Analyze & Generate All Fields</>
+                        )}
+                      </Button>
+                      {sopAnalyzing && <span className="text-xs text-muted-foreground">This may take 10-20 seconds...</span>}
+                    </div>
+                    {sopError && <p className="text-sm text-red-600">{sopError}</p>}
+                    {form.name && sopText && !sopAnalyzing && (
+                      <p className="text-xs text-green-600">Analysis complete. Review the generated fields in the other tabs, then save.</p>
                     )}
-                  </Button>
-                  {sopAnalyzing && (
-                    <span className="text-xs text-muted-foreground">This may take 10-20 seconds...</span>
-                  )}
-                </div>
-                {sopError && (
-                  <p className="text-sm text-red-600">{sopError}</p>
-                )}
-                {form.name && sopText && !sopAnalyzing && (
-                  <p className="text-xs text-green-600">
-                    Analysis complete. Review the generated fields in the other tabs, then save.
-                  </p>
-                )}
-              </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="nl-builder" className="mt-3">
+                  <div className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/30 dark:to-green-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Describe the decision workflow in plain English and the AI will build a decision tree for you.
+                    </p>
+                    <NaturalLanguageBuilder
+                      errorTypeName={form.name}
+                      onComplete={(tree) => setForm({ ...form, decisionTree: tree })}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="wizard" className="mt-3">
+                  <div className="bg-gradient-to-r from-green-50 to-amber-50 dark:from-green-950/30 dark:to-amber-950/30 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Build a tree step-by-step through a guided conversation. Answer questions and the tree builds itself.
+                    </p>
+                    <ConversationalWizard
+                      onComplete={(tree) => setForm({ ...form, decisionTree: tree })}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
             </TabsContent>
 
             <TabsContent value="basics" className="space-y-4 mt-4">
@@ -636,17 +781,11 @@ export default function ErrorTypes() {
             </TabsContent>
 
             <TabsContent value="workflow" className="space-y-4 mt-4">
-              <div>
-                <Label className="text-sm font-medium">Decision Tree</Label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Build a decision tree to guide staff through the dispute process.
-                  Each node asks a yes/no question and routes to the next step or a final action.
-                </p>
-                <DecisionTreeEditor
-                  node={form.decisionTree}
-                  onChange={(node) => setForm({ ...form, decisionTree: node })}
-                />
-              </div>
+              <TreeEditor
+                tree={form.decisionTree}
+                onChange={(tree) => setForm({ ...form, decisionTree: tree })}
+                onTest={(tree) => setTestTree(tree)}
+              />
             </TabsContent>
           </Tabs>
 
@@ -654,6 +793,21 @@ export default function ErrorTypes() {
             <Button variant="outline" onClick={() => { setEditingId(null); setShowCreate(false); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.name}>{editingId ? "Update" : "Create"}</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!testTree} onOpenChange={(open) => { if (!open) setTestTree(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Test Decision Tree</DialogTitle>
+          </DialogHeader>
+          {testTree && (
+            <TreePlayer
+              tree={testTree}
+              onOutcome={() => {}}
+              isTestMode
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

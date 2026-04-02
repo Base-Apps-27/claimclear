@@ -109,8 +109,9 @@ Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to th
 
 React + Vite frontend with 10 pages:
 - Dashboard, Queue (split-panel with decision-tree workflow player), All Claims, Claim Detail (portal submission tracking, bot activity timeline, evidence checklist), New Claim, Import (RFC-compliant CSV parser), Error Types (structured SOP builder with decision-tree editor), Portal Submissions, Summary, Settings
-- Queue page: 4-step workflow (Review → Evidence → Decide → Submit), fetches error type's decision tree for guided branching, uses error type's evidence requirements for checklist
-- Error Types: Tabbed editor (AI Analyzer, Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) with AI-powered SOP analysis
+- Queue page: 4-step workflow (Review → Evidence → Decide → Submit), fetches error type's decision tree for guided branching, uses error type's evidence requirements for checklist. Decision tree player supports multi-option nodes, undo/back, help text, progress indicator, per-node evidence, and color-coded structured outcomes.
+- Error Types: Tabbed editor (AI Analyzer, Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) with AI-powered SOP analysis. AI Analyzer has 3 sub-tabs: SOP Analyzer (paste SOP text → generates all fields), Describe Workflow (natural language → AI generates tree), Guided Builder (conversational step-by-step wizard). Decision Tree tab uses visual card-based editor with multi-option nodes, outcome type dropdowns, help text, per-node evidence, collapse/expand, and templates.
+- Decision tree components extracted to `src/components/decision-tree/` (types.ts, editor.tsx, player.tsx, index.ts). Supports new multi-option node format + backward-compatible legacy yes/no conversion.
 - Uses `@workspace/api-client-react` for API hooks
 - Uses `@workspace/replit-auth-web` for authentication
 - Presence system with heartbeat hooks
