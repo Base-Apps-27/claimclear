@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AnalyzeSOPBody,
   AuditLogResponse,
   BotActivityLogResponse,
   BotInstanceResponse,
@@ -48,6 +49,7 @@ import type {
   PresenceLeaveBody,
   PresenceViewer,
   RegisterBotBody,
+  SOPAnalysisResult,
   SuccessResponse,
   UpdateClaimBody,
   UpdateClaimEvidenceBody,
@@ -1244,6 +1246,92 @@ export const useUpdateClaimWorkflow = <
   TContext
 > => {
   return useMutation(getUpdateClaimWorkflowMutationOptions(options));
+};
+
+/**
+ * @summary Analyze SOP text with AI to generate error type fields
+ */
+export const getAnalyzeSOPTextUrl = () => {
+  return `/api/error-types/analyze-sop`;
+};
+
+export const analyzeSOPText = async (
+  analyzeSOPBody: AnalyzeSOPBody,
+  options?: RequestInit,
+): Promise<SOPAnalysisResult> => {
+  return customFetch<SOPAnalysisResult>(getAnalyzeSOPTextUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(analyzeSOPBody),
+  });
+};
+
+export const getAnalyzeSOPTextMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyzeSOPText>>,
+    TError,
+    { data: BodyType<AnalyzeSOPBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof analyzeSOPText>>,
+  TError,
+  { data: BodyType<AnalyzeSOPBody> },
+  TContext
+> => {
+  const mutationKey = ["analyzeSOPText"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof analyzeSOPText>>,
+    { data: BodyType<AnalyzeSOPBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return analyzeSOPText(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AnalyzeSOPTextMutationResult = NonNullable<
+  Awaited<ReturnType<typeof analyzeSOPText>>
+>;
+export type AnalyzeSOPTextMutationBody = BodyType<AnalyzeSOPBody>;
+export type AnalyzeSOPTextMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Analyze SOP text with AI to generate error type fields
+ */
+export const useAnalyzeSOPText = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyzeSOPText>>,
+    TError,
+    { data: BodyType<AnalyzeSOPBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof analyzeSOPText>>,
+  TError,
+  { data: BodyType<AnalyzeSOPBody> },
+  TContext
+> => {
+  return useMutation(getAnalyzeSOPTextMutationOptions(options));
 };
 
 /**

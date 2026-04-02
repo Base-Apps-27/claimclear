@@ -16,6 +16,7 @@ import presenceRouter from "./presence";
 import dashboardRouter from "./dashboard";
 import dailyBriefRouter from "./daily-brief";
 import aiEmailRouter from "./ai-email";
+import sopAnalyzerRouter from "./sop-analyzer";
 
 const router: IRouter = Router();
 
@@ -39,5 +40,6 @@ router.use(portalSubmissionsRouter);
 router.use(presenceRouter);
 router.use(dashboardRouter);
 router.use(aiEmailRouter);
+router.use(sopAnalyzerRouter);
 
 export default router;

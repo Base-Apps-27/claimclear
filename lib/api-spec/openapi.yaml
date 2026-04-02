@@ -344,6 +344,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
 
+  /error-types/analyze-sop:
+    post:
+      operationId: analyzeSOPText
+      tags: [ai]
+      summary: Analyze SOP text with AI to generate error type fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeSOPBody"
+      responses:
+        "200":
+          description: SOP analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SOPAnalysisResult"
+
   /claims/{id}/generate-email:
     post:
       operationId: generateClaimEmail
@@ -1679,6 +1698,42 @@ components:
       required:
         - sent
         - message
+
+    AnalyzeSOPBody:
+      type: object
+      properties:
+        sopText:
+          type: string
+        errorTypeName:
+          type: string
+      required:
+        - sopText
+
+    SOPAnalysisResult:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        guidance:
+          type: string
+        recommendedActions:
+          type: string
+        disputeReasonsLibrary:
+          type: object
+        evidenceRequirements:
+          type: object
+        decisionTree:
+          type: object
+      required:
+        - name
+        - category
+        - description
+        - guidance
+        - recommendedActions
 
     SuccessResponse:
       type: object

@@ -17,6 +17,7 @@ pnpm workspace monorepo using TypeScript. ClaimClear — a full NEMT rejected cl
 - **Build**: esbuild (CJS bundle)
 - **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
 - **Auth**: Replit Auth (OpenID Connect with PKCE)
+- **AI**: Anthropic Claude (via Replit AI Integrations proxy)
 - **Bot automation**: Playwright
 
 ## Structure
@@ -31,6 +32,7 @@ artifacts-monorepo/
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
+│   ├── integrations-anthropic-ai/ # Anthropic AI SDK client
 │   └── db/                 # Drizzle ORM schema + DB connection
 ├── scripts/
 │   └── src/
@@ -98,7 +100,7 @@ Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to th
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`
-- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, audit logs, notes
+- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes
 - Bot routes: `src/routes/bot-portal.ts` (bot-only portal submission endpoints), `src/routes/bot-instances.ts` (bot instance management)
 - Bot scripts: `src/bot/portal-bot.ts` (Playwright automation for MAS portal), `src/bot/save-session.ts` (session saver)
 - Depends on: `@workspace/db`, `@workspace/api-zod`
@@ -108,7 +110,7 @@ Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to th
 React + Vite frontend with 10 pages:
 - Dashboard, Queue (split-panel with decision-tree workflow player), All Claims, Claim Detail (portal submission tracking, bot activity timeline, evidence checklist), New Claim, Import (RFC-compliant CSV parser), Error Types (structured SOP builder with decision-tree editor), Portal Submissions, Summary, Settings
 - Queue page: 4-step workflow (Review → Evidence → Decide → Submit), fetches error type's decision tree for guided branching, uses error type's evidence requirements for checklist
-- Error Types: Tabbed editor (Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) replacing raw JSON textareas
+- Error Types: Tabbed editor (AI Analyzer, Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) with AI-powered SOP analysis
 - Uses `@workspace/api-client-react` for API hooks
 - Uses `@workspace/replit-auth-web` for authentication
 - Presence system with heartbeat hooks

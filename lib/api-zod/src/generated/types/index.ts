@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./analyzeSOPBody";
 export * from "./auditLogResponse";
 export * from "./auditLogResponseMetadata";
 export * from "./authUser";
@@ -65,6 +66,10 @@ export * from "./presenceHeartbeatBody";
 export * from "./presenceLeaveBody";
 export * from "./presenceViewer";
 export * from "./registerBotBody";
+export * from "./sOPAnalysisResult";
+export * from "./sOPAnalysisResultDecisionTree";
+export * from "./sOPAnalysisResultDisputeReasonsLibrary";
+export * from "./sOPAnalysisResultEvidenceRequirements";
 export * from "./successResponse";
 export * from "./updateClaimBody";
 export * from "./updateClaimBodyEvidenceChecklist";

@@ -572,6 +572,28 @@ export interface DailyBriefResponse {
   message: string;
 }
 
+export interface AnalyzeSOPBody {
+  sopText: string;
+  errorTypeName?: string;
+}
+
+export type SOPAnalysisResultDisputeReasonsLibrary = { [key: string]: unknown };
+
+export type SOPAnalysisResultEvidenceRequirements = { [key: string]: unknown };
+
+export type SOPAnalysisResultDecisionTree = { [key: string]: unknown };
+
+export interface SOPAnalysisResult {
+  name: string;
+  category: string;
+  description: string;
+  guidance: string;
+  recommendedActions: string;
+  disputeReasonsLibrary?: SOPAnalysisResultDisputeReasonsLibrary;
+  evidenceRequirements?: SOPAnalysisResultEvidenceRequirements;
+  decisionTree?: SOPAnalysisResultDecisionTree;
+}
+
 export interface SuccessResponse {
   success: boolean;
 }

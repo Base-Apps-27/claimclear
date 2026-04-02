@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, errorTypesTable, auditLogsTable } from "@workspace/db";
-import OpenAI from "openai";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
 
@@ -38,15 +38,6 @@ async function generateWithLLM(
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
 ): Promise<{ subject: string; body: string }> {
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-
-  if (!baseURL || !apiKey) {
-    throw new Error("OpenAI integration not configured");
-  }
-
-  const client = new OpenAI({ baseURL, apiKey });
-
   const prompt = `Write a professional dispute email for a rejected NEMT (Non-Emergency Medical Transportation) claim.
 
 Claim details:
@@ -69,24 +60,26 @@ Generate a professional, concise dispute email addressed to "MAS Support Team". 
 Respond with JSON in this exact format:
 {"subject": "email subject line", "body": "full email body text"}`;
 
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
     messages: [
       {
-        role: "system",
-        content: "You are a professional NEMT claims dispute specialist. Write clear, factual, and persuasive dispute emails. Always respond with valid JSON containing subject and body fields.",
+        role: "user",
+        content: prompt,
       },
-      { role: "user", content: prompt },
     ],
-    response_format: { type: "json_object" },
-    max_tokens: 1000,
-    temperature: 0.3,
+    system: "You are a professional NEMT claims dispute specialist. Write clear, factual, and persuasive dispute emails. Always respond with valid JSON containing subject and body fields.",
   });
 
-  const content = completion.choices[0]?.message?.content;
-  if (!content) throw new Error("Empty LLM response");
+  const textBlock = message.content.find(b => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") throw new Error("Empty LLM response");
 
-  const parsed = JSON.parse(content) as { subject: string; body: string };
+  let jsonStr = textBlock.text.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  const parsed = JSON.parse(jsonStr) as { subject: string; body: string };
   if (!parsed.subject || !parsed.body) throw new Error("Invalid LLM response format");
 
   return parsed;

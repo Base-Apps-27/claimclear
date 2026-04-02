@@ -592,6 +592,25 @@ export const UpdateClaimWorkflowResponse = zod.object({
 });
 
 /**
+ * @summary Analyze SOP text with AI to generate error type fields
+ */
+export const AnalyzeSOPTextBody = zod.object({
+  sopText: zod.string(),
+  errorTypeName: zod.string().optional(),
+});
+
+export const AnalyzeSOPTextResponse = zod.object({
+  name: zod.string(),
+  category: zod.string(),
+  description: zod.string(),
+  guidance: zod.string(),
+  recommendedActions: zod.string(),
+  disputeReasonsLibrary: zod.object({}).passthrough().optional(),
+  evidenceRequirements: zod.object({}).passthrough().optional(),
+  decisionTree: zod.object({}).passthrough().optional(),
+});
+
+/**
  * @summary Generate dispute email via AI
  */
 export const GenerateClaimEmailParams = zod.object({

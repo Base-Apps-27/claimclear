@@ -1,0 +1,379 @@
+Rejected Claims Dispute Tracker — Full Technical Specification
+1. APPLICATION OVERVIEW
+This is an internal tool for a non-emergency medical transportation (NEMT) company to manage rejected ride claims from payors (insurance companies like MAS). It automates the dispute process: importing rejected claims, guiding staff through evidence collection using decision-tree workflows, generating AI-powered dispute emails, sending them via Outlook, tracking responses, and submitting portal-based disputes.
+
+Tech Stack: React + Vite, TailwindCSS, shadcn/ui, TanStack React Query, React Router v6. Backend: Deno-based serverless functions. Database: Entity-based (Base44 BaaS). Email: Microsoft Graph API via Outlook OAuth connector.
+
+2. DATA MODEL (7 Entities)
+2.1 Claim
+The core entity. One record per rejected ride claim.
+
+Field	Type	Description
+conf_number	string (required)	Confirmation number — unique claim identifier
+date	string (date)	Service date
+ref_number	string	Reference number(s)
+client_number	string	Client/member number
+car_number	string	Vehicle/car number
+error_details	string	Raw error details from the rejection report
+error_type_id	string	FK to ErrorType entity
+error_type_name	string	Cached error type name (denormalized)
+claim_amount	number	Original claim dollar amount
+status	enum	New → Needs Evidence → Generating Email → Ready to Review → Awaiting Response → On Hold → Resolved / Denied
+outcome	enum	Pending, Approved, Partially Approved, Denied
+approved_amount	number	Amount approved after dispute
+invoice_numbers	string	Invoice numbers extracted from payor reply
+payor_email	string	Email address of payor
+dispute_email_sent	boolean	Whether dispute email was sent
+dispute_email_sent_at	string	ISO timestamp
+last_reply_parsed_at	string	When last reply was parsed
+import_batch	string	Import batch identifier
+evidence_files	string	JSON array: [{id, label, url, name}]
+evidence_notes	string	Free-text notes from staff
+evidence_checklist	string	JSON object: {requirement_id: true/false or text_value}
+generated_email_subject	string	AI-generated email subject
+generated_email_body	string	AI-generated email body
+generated_email_at	string	ISO timestamp
+workflow_progress	string	JSON: `{currentNodeId, history: [{nodeId, nodeLabel, answer, timestamp}], completed: boolean, resolution_type: 'dispute'
+hold_reason	string	Why claim is on hold
+hold_pending_from	string	Who needs to respond
+hold_placed_at	string	ISO timestamp
+Status Flow:
+
+New → Needs Evidence → [workflow runs] →
+  IF portal_dispute: Portal Submission queued → Awaiting Response
+  IF dispute: Generating Email → Ready to Review → [bulk send] → Awaiting Response
+  IF internal: Resolved (outcome=Denied)
+  IF hold: On Hold
+2.2 ErrorType
+Defines error categories with SOPs, decision trees, dispute reasons, and evidence requirements.
+
+Field	Type	Description
+name	string (required)	Error type name (e.g. "GPS Control Deviation")
+category	string	Category grouping
+description	string	What this error means
+guidance	string	Staff guidance text
+recommended_actions	string	Step-by-step actions
+dispute_reasons_library	string	JSON array: [{id, label, reason, key_points: []}]
+evidence_requirements	string	JSON array: `[{id, label, type: 'file'
+decision_tree	string	JSON: {nodes: [], edges: []} (see section 3)
+email_template	string	Legacy email template (deprecated)
+2.3 Note
+Activity log entries per claim.
+
+Field	Type	Description
+claim_id	string (required)	FK to Claim
+type	enum	manual, email_sent, reply_parsed, status_change, outcome_recorded
+content	string (required)	Note text / email body excerpt
+author	string	Who created it
+email_subject	string	If applicable
+extracted_invoice_numbers	string	From parsed replies
+2.4 AuditLog
+Immutable audit trail per claim.
+
+Field	Type	Description
+claim_id	string (required)	FK to Claim
+action	string (required)	viewed, status_changed, outcome_changed, note_added, note_deleted, email_sent, claim_edited, workflow_step, hold_placed, evidence_submitted, email_generated, email_approved
+details	string (required)	Human-readable description
+metadata	string	JSON with structured data (old/new values)
+user_email	string	Who performed the action
+user_name	string	Display name
+timestamp	string	ISO timestamp
+2.5 PresenceLog
+Real-time collaborative presence tracking.
+
+Field	Type	Description
+claim_id	string (required)	Which claim is being viewed
+user_email	string (required)	Viewer's email
+user_name	string	Display name
+last_heartbeat	string	ISO timestamp, updated every 15s
+Records older than 45 seconds are considered stale. Records are deleted when user leaves the page.
+
+2.6 MailboxConfig
+Singleton — one record stores the shared Outlook mailbox configuration.
+
+Field	Type	Description
+email_address	string (required)	Shared mailbox email
+display_name	string	Sender display name
+payor_email	string	Default recipient email
+payor_name	string	Payor organization name
+reply_check_enabled	boolean	Enable inbox scanning
+notes	string	Internal notes
+2.7 PortalSubmission
+Queue for external browser automation (Playwright bot) to submit disputes via the MAS web portal.
+
+Field	Type	Description
+claim_id	string (required)	FK to Claim
+status	enum (required)	pending, in_progress, submitted, failed, cancelled
+portal_ticket_id	string	Ticket ID returned by portal
+issue_type	string	Portal dropdown value
+subject	string	Ticket subject line
+requester_email	string	Requester email for portal
+transportation_provider_name	string	Provider name
+phone_number	string	Contact phone
+invoice_number	string	One invoice per ticket
+gps_breadcrumbs_available	enum	Yes, No, ``
+description_html	string	Rich text dispute argument
+attachment_urls	string	JSON array of file URLs to attach
+conf_number, service_date, ref_number, client_number, car_number	string	Copied from claim for context
+claim_amount	number	Original claim amount
+error_type_name, error_details, dispute_reason, evidence_notes, evidence_files	string	Copied from claim
+workflow_history	string	JSON of decision history
+error_message	string	If submission failed
+submitted_at	string	ISO timestamp of success
+attempts	number	Number of attempts
+3. DECISION TREE MODEL
+3.1 Data Structure
+Stored as JSON string on ErrorType.decision_tree:
+
+{
+  "nodes": [
+    {"id": "start", "type": "question", "label": "Is GPS data available?", "options": ["Yes", "No"]},
+    {"id": "node_2", "type": "action", "label": "Upload GPS screenshot"},
+    {"id": "node_3", "type": "hold", "label": "Pending GPS review", "hold_default_reason": "...", "hold_default_pending_from": "...", "hold_instructions": "..."}
+  ],
+  "edges": [
+    {"from": "start", "to": "node_2", "label": "Yes"},
+    {"from": "start", "to": "__outcome__", "label": "No", "outcome": "internal"},
+    {"from": "node_2", "to": "__outcome__", "label": "", "outcome": "portal_dispute"}
+  ]
+}
+3.2 Node Types
+question: Branching decision point. Has options array (e.g. ["Yes", "No"]). Each option is a label for an outgoing edge.
+action: An action staff must perform. Single "Continue" button. Can optionally have evidence_requirements array for node-specific evidence.
+hold: Terminal node — places claim on hold. Has hold_default_reason, hold_default_pending_from, hold_instructions.
+3.3 Outcome Edges (Terminal Branches)
+Instead of terminal nodes, leaf branches use special edges with "to": "__outcome__":
+
+"outcome": "portal_dispute" — Submit via MAS portal (PRIMARY dispute method)
+"outcome": "dispute" — Send dispute via email (fallback)
+"outcome": "internal" — Resolve internally, no external dispute
+3.4 Legacy Migration
+Old trees had "type": "end" (mapped to dispute) and "type": "internal" nodes. The migrateTree() function converts these to the new edge-outcome model. Migration runs automatically when an admin opens an error type for editing.
+
+3.5 Workflow Progress
+Stored on Claim.workflow_progress as JSON:
+
+{
+  "currentNodeId": "node_5",
+  "history": [
+    {"nodeId": "start", "nodeLabel": "Is GPS data available?", "answer": "Yes", "timestamp": "..."},
+    {"nodeId": "node_2", "nodeLabel": "Upload GPS screenshot", "answer": "Completed", "timestamp": "..."}
+  ],
+  "completed": true,
+  "resolution_type": "portal_dispute"
+}
+4. PAGES & ROUTES
+Layout: components/Layout
+Sidebar navigation wrapping all pages via React Router <Outlet>. Nav items: Dashboard, Work Queue, All Claims, Import, Error Types, Mailbox, Settings.
+
+4.1 Dashboard (/dashboard)
+Pipeline overview cards: Needs Evidence, Generating, Ready to Send, Awaiting Response
+Expiring claims panel (30-day deadline from service date)
+Stats: total claims, by status, total/approved amounts
+Recent claims table (top 10, clickable)
+4.2 Work Queue (/queue)
+Three-tab workflow:
+
+Tab 1: Needs Evidence (statuses: New, Needs Evidence)
+
+Lists claims needing attention
+Click → opens WorkflowPlayer (decision tree) + EvidencePanel
+After evidence submitted, checks workflow_progress.resolution_type:
+portal_dispute → PortalSubmissionPanel
+dispute → DisputeReasonPicker → AI email generation
+internal → InternalResolutionPanel
+hold → HoldPanel
+Tab 2: Generating (status: Generating Email)
+
+Read-only, shows claims being processed by AI
+Auto-refreshes every 10 seconds
+Tab 3: Ready to Send (status: Ready to Review)
+
+Email review with edit/regenerate capability
+Checkbox bulk selection + BulkSendBar for batch sending
+Approving adds to send queue
+4.3 All Claims (/claims)
+Full table with search (conf #, ref #, client #, error text) and status filter
+Click → ClaimDetail
+4.4 Claim Detail (/claims/:id?id=<claimId>)
+Uses URL param id from query string. Features:
+
+Editable claim fields (inline edit mode)
+Workflow status display + manual override (collapsed by default)
+Dispute result buttons (Pending/Approved/Partially Approved/Denied) + invoice tracking
+Decision tree workflow player (if error type has one)
+Error type guidance card
+Audit trail (recent preview + full sidebar)
+Notes & activity feed (add/delete manual notes)
+Real-time presence indicator (who else is viewing)
+Email draft modal for ad-hoc email sending
+4.5 Import (/import)
+File upload (Excel/CSV)
+Uses ExtractDataFromUploadedFile for preview
+Expected columns: Conf #, Date, Ref #, Client #, Car #, Error Details, Claim Amount, Payor Email
+Duplicate handling: skip or update existing
+Calls importClaims backend function
+4.6 Error Types (/error-types)
+CRUD for error type definitions
+Modal form includes:
+AI SOP Analyzer (upload SOP PDFs → auto-generates everything)
+Manual fields: name, category, description, guidance, recommended actions
+Dispute Reasons Manager (library of reusable arguments)
+Evidence Requirements Editor (file/text requirements)
+Decision Tree Builder (visual node/edge editor)
+4.7 Mailbox (/mailbox)
+Outlook connection test
+Mailbox config form (shared email, display name, payor email, etc.)
+Reply scanning trigger (calls parseReplies)
+4.8 Settings (/settings)
+Basic info page with Outlook connection instructions
+4.9 Summary (/summary)
+Analytics: total claims, disputed amount, recovered amount, recovery rate
+30-day expiration risk analysis
+Breakdown by status, outcome, and error type
+4.10 New Claim (/claims/new)
+Manual single-claim creation form
+5. BACKEND FUNCTIONS
+5.1 importClaims
+Input: {file_url, duplicate_action: 'skip'|'update'}
+Uses AI extraction (ExtractDataFromUploadedFile) to parse Excel/CSV
+Creates claims with status New, outcome Pending
+Duplicate detection by conf_number
+Returns: {created, skipped, updated, duplicates, batch_id}
+5.2 generateDisputeEmail
+Input: {claim_id, selected_reason_id}
+Sets claim status to Generating Email
+Fetches claim, error type, mailbox config, evidence
+Builds detailed prompt including dispute reason from library and evidence descriptions
+Calls InvokeLLM for subject + body generation
+Saves to claim fields, sets status to Ready to Review
+5.3 sendDisputeEmail
+Input: {claim_id, to_email, subject, body}
+Uses Outlook OAuth connector (connectors.getConnection('outlook'))
+Sends via Microsoft Graph API: POST https://graph.microsoft.com/v1.0/me/sendMail
+Supports shared mailbox (sets from field from MailboxConfig)
+Updates claim status to Awaiting Response, creates Note
+5.4 bulkSendEmails
+Input: {claim_ids: string[]}
+Iterates claims, sends each via SendEmail integration (not Outlook directly)
+Staggers delivery: 1-3 second random delay between emails
+Uses MailboxConfig.payor_email as fallback recipient
+Returns: {sent, failed, errors}
+5.5 parseReplies
+Uses Outlook OAuth to fetch last 50 inbox messages from shared mailbox
+Matches emails to claims with status Awaiting Response by conf_number or ref_number in subject/body
+Extracts invoice numbers via regex: /(?:invoice\s*#?|inv[-\s]?)(\w{4,12})/gi
+Creates Note of type reply_parsed, updates claim
+5.6 testOutlookConnection
+Simple test: calls GET https://graph.microsoft.com/v1.0/me with OAuth token
+Returns email and display name to verify connection
+5.7 dailyBriefEmail
+Scheduled automation (runs daily at 10:00 UTC = 6:00 AM ET)
+Computes pipeline overview, expiration risks, recent replies
+Sends styled HTML email to all users
+Returns summary of what was sent
+5.8 portalSubmissions
+External bot API with actions:
+poll → returns pending submissions (up to 20)
+claim → marks submission as in_progress
+complete → marks as submitted, updates claim to Awaiting Response, creates Note
+fail → marks as failed with error message
+create → creates new submission from claim data (copies all relevant fields, builds attachment list from evidence)
+list → lists submissions with optional status filter
+All actions require authenticated user
+6. INTEGRATIONS
+6.1 Outlook OAuth Connector (Shared)
+Scopes: Mail.Read, Mail.ReadWrite, Mail.Send, User.Read, profile, openid, email
+Used by: sendDisputeEmail, parseReplies, testOutlookConnection
+Access: base44.asServiceRole.connectors.getConnection('outlook') → {accessToken}
+6.2 Built-in Integrations
+InvokeLLM: AI email generation, SOP analysis (uses claude_sonnet_4_6 for SOP analysis)
+UploadFile: Evidence file uploads, SOP document uploads
+ExtractDataFromUploadedFile: Import parsing
+SendEmail: Bulk email sending (alternative to Outlook direct send)
+7. AUTOMATIONS
+7.1 Daily Claims Brief Email
+Type: Scheduled
+Schedule: Daily at 10:00 UTC (6:00 AM ET)
+Function: dailyBriefEmail
+Active: Yes
+8. KEY COMPONENTS
+8.1 WorkflowPlayer
+Interactive decision tree executor. Renders current node (question/action/hold), tracks history as breadcrumbs, saves progress to claim. Shows completion state based on resolution_type.
+
+8.2 EvidencePanel
+Dynamic evidence collection form. Requirements sourced from (in priority order):
+
+Current workflow node's evidence_requirements
+ErrorType's evidence_requirements
+Keyword-matched defaults from lib/constants.js
+Supports file uploads and text inputs. Progress bar shows completion.
+
+8.3 DecisionTreeBuilder
+Visual editor for building decision trees. Supports creating/editing/deleting nodes, connecting edges, setting outcomes on leaf branches. Uses OutcomeSelector for terminal branches.
+
+8.4 SOPAnalyzer
+AI-powered SOP document analyzer. Uploads PDFs/images, calls LLM to extract structured data (decision tree, dispute reasons, evidence requirements). Uses claude_sonnet_4_6 model (higher credit cost).
+
+8.5 PortalSubmissionPanel
+Form for queuing MAS portal submissions. Pre-fills from claim data. Fields map to MAS portal form: issue type, subject, email, provider name, phone, invoice, GPS breadcrumbs, description. Calls portalSubmissions create action.
+
+8.6 DisputeReasonPicker
+Lets staff select from pre-configured dispute reasons (from ErrorType library) or create new ones on the fly. Selected reason ID is passed to generateDisputeEmail.
+
+8.7 EmailReviewPanel
+Review/edit/regenerate AI-generated email before approval. Can edit subject and body inline.
+
+8.8 BulkSendBar
+Sticky bottom bar for batch-sending approved emails with count and total value display.
+
+8.9 Presence System (usePresence hook)
+Creates PresenceLog record on mount, deletes on unmount
+Heartbeat every 15 seconds
+Stale threshold: 45 seconds
+Uses real-time subscriptions for instant updates
+8.10 Audit System (useAuditLog hook)
+Logs "viewed" action once per mount
+logAction(action, details, metadata) creates AuditLog entries
+Fetches and caches logs per claim
+9. EVIDENCE SYSTEM
+9.1 Requirement Sources (priority order)
+Node-level: Specific workflow nodes can have evidence_requirements array
+ErrorType-level: ErrorType.evidence_requirements JSON
+Keyword defaults: Match error text against GPS, attestation, time, duplicate keywords
+9.2 Default Requirements
+Defined in lib/constants.js:
+
+GPS: GPS screenshot, trip coordinates, GPS context notes
+Attestation: Signed form, attestation details
+Time: Trip log screenshot, time explanation
+Duplicate: Trip records comparison, explanation
+Default: Supporting doc, dispute explanation
+10. 30-DAY EXPIRATION SYSTEM
+Claims have a 30-day deadline from service date. Logic: deadline = serviceDate + 30 days. Used in:
+
+Dashboard: ExpiringClaimsPanel (shows claims ≤10 days)
+Summary: Full expiration risk analysis
+Daily brief email: Expired + expiring lists
+11. STATUS COLOR MAPPING
+New → blue
+Needs Evidence → amber
+Generating Email → indigo
+Ready to Review → cyan
+Awaiting Response → violet
+On Hold → purple
+Resolved → green
+Denied → red
+12. ROUTING (App.jsx)
+/ → redirect to /dashboard
+/dashboard → Dashboard
+/queue → WorkQueue
+/claims → Claims
+/claims/new → NewClaim
+/claims/:id → ClaimDetail (uses ?id= query param)
+/import → Import
+/error-types → ErrorTypes
+/mailbox → Mailbox
+/settings → Settings
+/summary → Summary
+All routes wrapped in Layout component (sidebar).

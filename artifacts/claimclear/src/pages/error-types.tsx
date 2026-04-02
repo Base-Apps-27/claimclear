@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListErrorTypes, getListErrorTypesQueryKey,
   useCreateErrorType, useUpdateErrorType, useDeleteErrorType,
+  useAnalyzeSOPText,
 } from "@workspace/api-client-react";
 import type { ErrorTypeResponse } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
-  BookOpen, X, ChevronDown, ChevronRight, GripVertical
+  BookOpen, X, ChevronDown, ChevronRight, Sparkles, Loader2
 } from "lucide-react";
 
 interface DisputeReason {
@@ -325,7 +326,7 @@ function parseReasons(raw: Record<string, unknown> | null | undefined): DisputeR
   }
   return Object.entries(raw).map(([key, val]) => ({
     key,
-    label: typeof val === "string" ? val : key,
+    label: typeof val === "object" && val ? ((val as Record<string, unknown>).label as string) || key : typeof val === "string" ? val : key,
     description: typeof val === "object" && val ? ((val as Record<string, unknown>).description as string) || "" : "",
   }));
 }
@@ -341,7 +342,7 @@ function parseRequirements(raw: Record<string, unknown> | null | undefined): Evi
   }
   return Object.entries(raw).map(([key, val]) => ({
     key,
-    label: typeof val === "string" ? val : key,
+    label: typeof val === "object" && val ? ((val as Record<string, unknown>).label as string) || key : typeof val === "string" ? val : key,
     required: typeof val === "object" && val ? ((val as Record<string, unknown>).required as boolean) !== false : true,
   }));
 }
@@ -377,8 +378,12 @@ export default function ErrorTypes() {
   const updateErrorType = useUpdateErrorType();
   const deleteErrorType = useDeleteErrorType();
 
+  const analyzeSOP = useAnalyzeSOPText();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [sopText, setSopText] = useState("");
+  const [sopAnalyzing, setSopAnalyzing] = useState(false);
+  const [sopError, setSopError] = useState<string | null>(null);
 
   const emptyForm: ErrorTypeFormState = {
     name: "", category: "", description: "", guidance: "",
@@ -387,6 +392,32 @@ export default function ErrorTypes() {
   };
 
   const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
+
+  const handleAnalyzeSOP = async () => {
+    if (!sopText.trim()) return;
+    setSopAnalyzing(true);
+    setSopError(null);
+    try {
+      const result = await analyzeSOP.mutateAsync({
+        data: { sopText, errorTypeName: form.name || undefined },
+      });
+      setForm({
+        name: result.name || form.name || "",
+        category: result.category || "",
+        description: result.description || "",
+        guidance: result.guidance || "",
+        recommendedActions: result.recommendedActions || "",
+        emailTemplate: form.emailTemplate,
+        reasons: parseReasons(result.disputeReasonsLibrary as Record<string, unknown> | null),
+        requirements: parseRequirements(result.evidenceRequirements as Record<string, unknown> | null),
+        decisionTree: (result.decisionTree as DecisionTreeNode | null) ?? null,
+      });
+    } catch (err: unknown) {
+      setSopError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setSopAnalyzing(false);
+    }
+  };
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
 
@@ -501,13 +532,57 @@ export default function ErrorTypes() {
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="basics">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs defaultValue="ai-analyzer">
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Analyzer</TabsTrigger>
               <TabsTrigger value="basics">Basics</TabsTrigger>
               <TabsTrigger value="sop">SOP & Guidance</TabsTrigger>
               <TabsTrigger value="evidence">Evidence & Reasons</TabsTrigger>
               <TabsTrigger value="workflow">Decision Tree</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="ai-analyzer" className="space-y-4 mt-4">
+              <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-violet-600" />
+                  <h3 className="font-semibold text-sm">SOP Analyzer</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Paste your Standard Operating Procedure text below and the AI will automatically generate all fields: name, category, description, guidance, dispute reasons, evidence requirements, and a decision tree workflow.
+                </p>
+                <Textarea
+                  value={sopText}
+                  onChange={e => setSopText(e.target.value)}
+                  rows={10}
+                  placeholder="Paste your SOP text here...&#10;&#10;Example:&#10;Error: Invoice Number Not in System&#10;When a claim is rejected because the invoice number is not found in the MAS system...&#10;Steps:&#10;1. Verify the invoice number matches the trip confirmation&#10;2. Check if the invoice was submitted to the correct payor&#10;..."
+                  className="font-mono text-xs bg-white dark:bg-background"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleAnalyzeSOP}
+                    disabled={sopAnalyzing || !sopText.trim()}
+                    className="gap-2"
+                  >
+                    {sopAnalyzing ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" />Analyzing...</>
+                    ) : (
+                      <><Sparkles className="h-4 w-4" />Analyze & Generate All Fields</>
+                    )}
+                  </Button>
+                  {sopAnalyzing && (
+                    <span className="text-xs text-muted-foreground">This may take 10-20 seconds...</span>
+                  )}
+                </div>
+                {sopError && (
+                  <p className="text-sm text-red-600">{sopError}</p>
+                )}
+                {form.name && sopText && !sopAnalyzing && (
+                  <p className="text-xs text-green-600">
+                    Analysis complete. Review the generated fields in the other tabs, then save.
+                  </p>
+                )}
+              </div>
+            </TabsContent>
 
             <TabsContent value="basics" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
