@@ -52,8 +52,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <Card className="w-full max-w-md mx-4">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-primary-foreground text-2xl font-bold tracking-tight">
-                A
+              <div className="w-16 h-16 rounded-xl bg-[#1B2A4A] flex items-center justify-center">
+                <svg width="40" height="40" viewBox="0 0 100 100" fill="none">
+                  <path d="M50 8 C50 8 20 55 20 70 C20 85 33 95 50 95 C67 95 80 85 80 70 C80 55 50 8 50 8Z" fill="none" stroke="white" strokeWidth="6"/>
+                  <path d="M35 72 L50 45 L65 72" fill="none" stroke="white" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M65 72 C72 60 78 65 82 58" fill="none" stroke="#E85D3A" strokeWidth="5" strokeLinecap="round"/>
+                </svg>
               </div>
             </div>
             <CardTitle className="text-2xl">Agape ClaimClear</CardTitle>
@@ -134,11 +138,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen w-full flex bg-background">
         <Sidebar className="border-r border-sidebar-border">
           <SidebarHeader className="p-4 border-b border-sidebar-border">
-            <div className="flex items-center gap-2 font-bold text-xl text-sidebar-foreground tracking-tight">
-              <div className="w-8 h-8 rounded-md bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
-                A
+            <div className="flex items-center gap-2.5 font-bold text-xl text-sidebar-foreground tracking-tight">
+              <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                <svg width="28" height="28" viewBox="0 0 100 100" fill="none">
+                  <path d="M50 8 C50 8 20 55 20 70 C20 85 33 95 50 95 C67 95 80 85 80 70 C80 55 50 8 50 8Z" fill="none" stroke="white" strokeWidth="7"/>
+                  <path d="M35 72 L50 45 L65 72" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M65 72 C72 60 78 65 82 58" fill="none" stroke="#E85D3A" strokeWidth="6" strokeLinecap="round"/>
+                </svg>
               </div>
-              <span>Agape <span className="font-normal text-sidebar-foreground/70">ClaimClear</span></span>
+              <span>Agape <span className="font-normal text-sidebar-foreground/60 text-base">ClaimClear</span></span>
             </div>
           </SidebarHeader>
           <SidebarContent>

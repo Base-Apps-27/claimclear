@@ -77,7 +77,7 @@ New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resol
 - Returns `{ sent: boolean, message: string }` per OpenAPI spec
 
 ### CSS Theme
-Agape brand purple primary (272 60% 35%), gold accent (45 80% 52%), deep purple sidebar (272 75% 12%), light purple-tinted background (270 15% 97%). Brand identity: "Agape ClaimClear" with gold "A" on purple logo mark.
+Agape brand: dark navy primary (221 50% 16%), blue interactive (219 85% 52%), orange accent (12 79% 57%), navy sidebar. Logo: Agape teardrop "A" mark with orange accent stroke. Brand hex values: navy #1B2A4A, blue #3478F6, orange #E85D3A, gold #E5A332.
 
 ## TypeScript & Composite Projects
 

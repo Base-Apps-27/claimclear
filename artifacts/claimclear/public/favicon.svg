@@ -1,4 +1,6 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#4B0082"/>
-<text x="90" y="120" font-family="Inter, Arial, sans-serif" font-size="100" font-weight="700" fill="#D4AF37" text-anchor="middle">A</text>
+<rect width="180" height="180" rx="36" fill="#1B2A4A"/>
+<path d="M90 25 C90 25 45 95 45 120 C45 145 65 162 90 162 C115 162 135 145 135 120 C135 95 90 25 90 25Z" fill="none" stroke="white" stroke-width="9"/>
+<path d="M65 125 L90 78 L115 125" fill="none" stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M115 125 C125 105 135 112 142 102" fill="none" stroke="#E85D3A" stroke-width="8" stroke-linecap="round"/>
 </svg>
