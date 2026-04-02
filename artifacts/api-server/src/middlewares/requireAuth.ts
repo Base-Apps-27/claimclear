@@ -5,5 +5,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
+  if (req.user?.status !== "approved") {
+    res.status(403).json({ error: "Access pending approval", status: req.user?.status ?? "pending" });
+    return;
+  }
   next();
 }

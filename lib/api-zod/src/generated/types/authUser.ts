@@ -14,4 +14,5 @@ export interface AuthUser {
   /** @nullable */
   profileImageUrl?: string | null;
   role: string;
+  status: string;
 }

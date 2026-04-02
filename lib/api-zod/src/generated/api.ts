@@ -25,6 +25,7 @@ export const GetCurrentAuthUserResponse = zod.object({
       displayName: zod.string().nullish(),
       profileImageUrl: zod.string().nullish(),
       role: zod.string(),
+      status: zod.string(),
     }),
     zod.null(),
   ]),
@@ -40,6 +41,7 @@ export const GetAuthSessionResponse = zod.object({
     displayName: zod.string().nullish(),
     profileImageUrl: zod.string().nullish(),
     role: zod.string(),
+    status: zod.string(),
   }),
 });
 

@@ -14,4 +14,5 @@ export interface GetCurrentAuthUserResponse {
   /** @nullable */
   profileImageUrl?: string | null;
   role: string;
+  status: string;
 }

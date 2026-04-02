@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -25,7 +26,9 @@ import {
   Settings, 
   BarChart3,
   LogOut,
-  LogIn
+  LogIn,
+  Clock,
+  ShieldX
 } from "lucide-react";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -42,6 +45,89 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Summary", href: "/summary", icon: BarChart3 },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
+
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-primary-foreground text-2xl font-bold">
+                CC
+              </div>
+            </div>
+            <CardTitle className="text-2xl">ClaimClear</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">NEMT Claim Dispute Command Center</p>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Sign in with your Replit account to access the dashboard.
+            </p>
+            <Button onClick={() => login()} size="lg" className="w-full gap-2">
+              <LogIn className="h-5 w-5" />
+              Sign In with Replit
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (user.status === "pending") {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Clock className="h-8 w-8 text-amber-600" />
+              </div>
+            </div>
+            <CardTitle className="text-xl">Access Request Submitted</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Your request to access ClaimClear has been submitted. An administrator will review and approve your access shortly.
+            </p>
+            <div className="text-sm text-muted-foreground bg-muted rounded-md p-3 w-full">
+              <div className="flex justify-between"><span>Account</span><span className="font-medium">{user.email}</span></div>
+              <div className="flex justify-between mt-1"><span>Status</span><span className="font-medium text-amber-600">Pending Approval</span></div>
+            </div>
+            <Button variant="outline" onClick={() => logout()} className="w-full gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (user.status === "denied") {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-xl bg-red-100 flex items-center justify-center">
+                <ShieldX className="h-8 w-8 text-red-600" />
+              </div>
+            </div>
+            <CardTitle className="text-xl">Access Denied</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Your access request has been denied. Please contact an administrator if you believe this is an error.
+            </p>
+            <Button variant="outline" onClick={() => logout()} className="w-full gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider>
@@ -78,34 +164,27 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border p-4">
-            {isAuthenticated && user ? (
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <Avatar className="h-9 w-9 border border-sidebar-border">
-                    <AvatarImage src={user.profileImageUrl || undefined} />
-                    <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
-                      {user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-medium text-sidebar-foreground truncate">
-                      {user.displayName || "User"}
-                    </span>
-                    <span className="text-xs text-sidebar-foreground/70 truncate">
-                      {user.email}
-                    </span>
-                  </div>
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <Avatar className="h-9 w-9 border border-sidebar-border">
+                  <AvatarImage src={user.profileImageUrl || undefined} />
+                  <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
+                    {user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-sm font-medium text-sidebar-foreground truncate">
+                    {user.displayName || "User"}
+                  </span>
+                  <span className="text-xs text-sidebar-foreground/70 truncate">
+                    {user.email}
+                  </span>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => logout()} className="text-sidebar-foreground hover:bg-sidebar-accent shrink-0">
-                  <LogOut className="h-4 w-4" />
-                </Button>
               </div>
-            ) : (
-              <Button onClick={() => login()} className="w-full justify-start gap-2" variant="outline">
-                <LogIn className="h-4 w-4" />
-                Log In
+              <Button variant="ghost" size="icon" onClick={() => logout()} className="text-sidebar-foreground hover:bg-sidebar-accent shrink-0">
+                <LogOut className="h-4 w-4" />
               </Button>
-            )}
+            </div>
           </SidebarFooter>
         </Sidebar>
         <div className="flex-1 flex flex-col min-w-0">

@@ -946,10 +946,13 @@ components:
           type: ["string", "null"]
         role:
           type: string
+        status:
+          type: string
       required:
         - id
         - email
         - role
+        - status
 
     ClaimResponse:
       type: object
@@ -1698,10 +1701,13 @@ components:
           type: ["string", "null"]
         role:
           type: string
+        status:
+          type: string
       required:
         - id
         - email
         - role
+        - status
 
     RegisterBotBody:
       type: object

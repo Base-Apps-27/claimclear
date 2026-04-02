@@ -17,6 +17,7 @@ export interface AuthUser {
   /** @nullable */
   profileImageUrl?: string | null;
   role: string;
+  status: string;
 }
 
 export type ClaimResponseStatus =
@@ -583,6 +584,7 @@ export interface GetCurrentAuthUserResponse {
   /** @nullable */
   profileImageUrl?: string | null;
   role: string;
+  status: string;
 }
 
 export interface RegisterBotBody {

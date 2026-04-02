@@ -4,6 +4,7 @@ import {
   GetCurrentAuthUserResponse,
 } from "@workspace/api-zod";
 import { db, usersTable } from "@workspace/db";
+import { eq, sql, count } from "drizzle-orm";
 import {
   clearSession,
   getOidcConfig,
@@ -65,15 +66,29 @@ async function upsertUser(claims: Record<string, unknown>) {
       | null,
   };
 
+  const [existing] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, userData.id));
+
+  if (existing) {
+    const [user] = await db
+      .update(usersTable)
+      .set({ ...userData, updatedAt: new Date() })
+      .where(eq(usersTable.id, userData.id))
+      .returning();
+    return user;
+  }
+
+  const [{ value: userCount }] = await db.select({ value: count() }).from(usersTable);
+  const isFirstUser = userCount === 0;
+
   const [user] = await db
     .insert(usersTable)
-    .values(userData)
-    .onConflictDoUpdate({
-      target: usersTable.id,
-      set: {
-        ...userData,
-        updatedAt: new Date(),
-      },
+    .values({
+      ...userData,
+      role: isFirstUser ? "admin" : "user",
+      status: isFirstUser ? "approved" : "pending",
     })
     .returning();
   return user;
@@ -84,16 +99,16 @@ router.get("/auth/user", (req: Request, res: Response) => {
     res.json({ user: null });
     return;
   }
-  const parsed = GetCurrentAuthUserResponse.parse({
+  res.json({
     user: {
       id: String(req.user.id),
       email: req.user.email,
       displayName: req.user.displayName ?? null,
       profileImageUrl: req.user.profileImageUrl ?? null,
       role: req.user.role,
+      status: req.user.status ?? "pending",
     },
   });
-  res.json(parsed);
 });
 
 router.get("/auth/session", (req: Request, res: Response) => {
@@ -108,8 +123,86 @@ router.get("/auth/session", (req: Request, res: Response) => {
       displayName: req.user.displayName ?? null,
       profileImageUrl: req.user.profileImageUrl ?? null,
       role: req.user.role,
+      status: req.user.status ?? "pending",
     },
   });
+});
+
+router.get("/admin/users", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || req.user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
+  res.json(users.map(u => ({
+    id: u.id,
+    email: u.email,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    profileImageUrl: u.profileImageUrl,
+    role: u.role,
+    status: u.status,
+    createdAt: u.createdAt,
+  })));
+});
+
+router.patch("/admin/users/:userId/approve", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || req.user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  const { userId } = req.params;
+  const [user] = await db
+    .update(usersTable)
+    .set({ status: "approved", updatedAt: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ message: "User approved", user: { id: user.id, email: user.email, status: user.status } });
+});
+
+router.patch("/admin/users/:userId/deny", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || req.user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  const { userId } = req.params;
+  const [user] = await db
+    .update(usersTable)
+    .set({ status: "denied", updatedAt: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ message: "User denied", user: { id: user.id, email: user.email, status: user.status } });
+});
+
+router.patch("/admin/users/:userId/role", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || req.user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  const { userId } = req.params;
+  const { role } = req.body;
+  if (!role || !["admin", "user"].includes(role)) {
+    res.status(400).json({ error: "Invalid role. Must be 'admin' or 'user'" });
+    return;
+  }
+  const [user] = await db
+    .update(usersTable)
+    .set({ role, updatedAt: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ message: "Role updated", user: { id: user.id, email: user.email, role: user.role } });
 });
 
 router.get("/login", async (req: Request, res: Response) => {
@@ -201,6 +294,7 @@ router.get("/callback", async (req: Request, res: Response) => {
       displayName,
       profileImageUrl: dbUser.profileImageUrl ?? null,
       role: dbUser.role,
+      status: dbUser.status,
     },
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
