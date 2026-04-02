@@ -48,15 +48,15 @@ function generateBriefHtml(
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:600px;margin:0 auto;padding:20px;">
-    <div style="background:#4338ca;color:white;padding:24px;border-radius:12px 12px 0 0;">
-      <h1 style="margin:0;font-size:24px;">ClaimClear Daily Brief</h1>
+    <div style="background:#4B0082;color:white;padding:24px;border-radius:12px 12px 0 0;">
+      <h1 style="margin:0;font-size:24px;color:#D4AF37;">Agape ClaimClear Daily Brief</h1>
       <p style="margin:8px 0 0;opacity:0.9;">${today}</p>
     </div>
     <div style="background:white;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
       <div style="display:flex;gap:16px;margin-bottom:24px;">
-        <div style="flex:1;text-align:center;padding:16px;background:#eef2ff;border-radius:8px;">
-          <div style="font-size:28px;font-weight:700;color:#4338ca;">${openClaims}</div>
-          <div style="font-size:12px;color:#6366f1;margin-top:4px;">Open Claims</div>
+        <div style="flex:1;text-align:center;padding:16px;background:#f3e8ff;border-radius:8px;">
+          <div style="font-size:28px;font-weight:700;color:#4B0082;">${openClaims}</div>
+          <div style="font-size:12px;color:#743089;margin-top:4px;">Open Claims</div>
         </div>
         <div style="flex:1;text-align:center;padding:16px;background:${expired.length > 0 ? "#fef2f2" : "#f0fdf4"};border-radius:8px;">
           <div style="font-size:28px;font-weight:700;color:${expired.length > 0 ? "#dc2626" : "#16a34a"};">${expired.length}</div>
@@ -144,7 +144,7 @@ router.post("/", async (_req, res): Promise<void> => {
         await transporter.sendMail({
           from: process.env.SMTP_FROM || process.env.SMTP_USER,
           to: recipients,
-          subject: `ClaimClear Daily Brief - ${openClaims.length} open claims, ${expired.length} expired`,
+          subject: `Agape ClaimClear Daily Brief - ${openClaims.length} open claims, ${expired.length} expired`,
           html,
         });
         emailSent = true;

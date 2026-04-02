@@ -52,12 +52,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <Card className="w-full max-w-md mx-4">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-primary-foreground text-2xl font-bold">
-                CC
+              <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center text-primary-foreground text-2xl font-bold tracking-tight">
+                A
               </div>
             </div>
-            <CardTitle className="text-2xl">ClaimClear</CardTitle>
-            <p className="text-muted-foreground text-sm mt-1">NEMT Claim Dispute Command Center</p>
+            <CardTitle className="text-2xl">Agape ClaimClear</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">NEMT Claims Dispute Command Center</p>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
             <p className="text-sm text-muted-foreground text-center">
@@ -87,7 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
             <p className="text-sm text-muted-foreground text-center">
-              Your request to access ClaimClear has been submitted. An administrator will review and approve your access shortly.
+              Your request to access Agape ClaimClear has been submitted. An administrator will review and approve your access shortly.
             </p>
             <div className="text-sm text-muted-foreground bg-muted rounded-md p-3 w-full">
               <div className="flex justify-between"><span>Account</span><span className="font-medium">{user.email}</span></div>
@@ -135,10 +135,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar className="border-r border-sidebar-border">
           <SidebarHeader className="p-4 border-b border-sidebar-border">
             <div className="flex items-center gap-2 font-bold text-xl text-sidebar-foreground tracking-tight">
-              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground">
-                CC
+              <div className="w-8 h-8 rounded-md bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
+                A
               </div>
-              ClaimClear
+              <span>Agape <span className="font-normal text-sidebar-foreground/70">ClaimClear</span></span>
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -190,7 +190,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-14 border-b bg-card flex items-center px-4 sticky top-0 z-10 shrink-0">
             <SidebarTrigger className="mr-4" />
-            <h1 className="font-semibold text-sm">NEMT Claim Dispute Command Center</h1>
+            <h1 className="font-semibold text-sm text-muted-foreground">NEMT Claims Dispute Command Center</h1>
           </header>
           <main className="flex-1 overflow-auto p-6 md:p-8">
             <div className="max-w-7xl mx-auto h-full">
