@@ -72,7 +72,7 @@ Respond with JSON in this exact format:
     system: "You are a professional NEMT claims dispute specialist. Write clear, factual, and persuasive dispute emails. Always respond with valid JSON containing subject and body fields.",
   });
 
-  const textBlock = message.content.find(b => b.type === "text");
+  const textBlock = message.content.find((b: any) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("Empty LLM response");
 
   let jsonStr = textBlock.text.trim();

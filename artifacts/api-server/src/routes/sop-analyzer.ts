@@ -75,7 +75,7 @@ Important:
       messages: [{ role: "user", content: prompt }],
     });
 
-    const textBlock = message.content.find(b => b.type === "text");
+    const textBlock = message.content.find((b: any) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
       res.status(500).json({ error: "No text response from AI" });
       return;
@@ -163,7 +163,7 @@ Respond with ONLY the JSON object, no other text.`;
       messages: [{ role: "user", content: prompt }],
     });
 
-    const textBlock = message.content.find(b => b.type === "text");
+    const textBlock = message.content.find((b: any) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
       res.status(500).json({ error: "No text response from AI" });
       return;

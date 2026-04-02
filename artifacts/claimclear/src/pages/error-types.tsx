@@ -513,7 +513,7 @@ export default function ErrorTypes() {
       const result = await analyzeSOP.mutateAsync({
         data: { sopText, errorTypeName: form.name || undefined },
       });
-      const legacyTree = result.decisionTree as LegacyTreeNode | null;
+      const legacyTree = result.decisionTree as unknown as LegacyTreeNode | null;
       setForm({
         name: result.name || form.name || "",
         category: result.category || "",

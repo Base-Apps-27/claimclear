@@ -151,7 +151,7 @@ router.patch("/admin/users/:userId/approve", async (req: Request, res: Response)
     res.status(403).json({ error: "Admin access required" });
     return;
   }
-  const { userId } = req.params;
+  const userId = req.params.userId as string;
   const [user] = await db
     .update(usersTable)
     .set({ status: "approved", updatedAt: new Date() })
@@ -169,7 +169,7 @@ router.patch("/admin/users/:userId/deny", async (req: Request, res: Response) =>
     res.status(403).json({ error: "Admin access required" });
     return;
   }
-  const { userId } = req.params;
+  const userId = req.params.userId as string;
   const [user] = await db
     .update(usersTable)
     .set({ status: "denied", updatedAt: new Date() })
@@ -187,7 +187,7 @@ router.patch("/admin/users/:userId/role", async (req: Request, res: Response) =>
     res.status(403).json({ error: "Admin access required" });
     return;
   }
-  const { userId } = req.params;
+  const userId = req.params.userId as string;
   const { role } = req.body;
   if (!role || !["admin", "user"].includes(role)) {
     res.status(400).json({ error: "Invalid role. Must be 'admin' or 'user'" });
