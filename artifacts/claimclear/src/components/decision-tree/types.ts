@@ -225,26 +225,64 @@ export const TEMPLATES: Record<string, { name: string; tree: DecisionTree }> = {
     }),
   },
   invoice_not_found: {
-    name: "Invoice Number Not in System",
-    tree: legacyToTree({
-      question: "Does the invoice number match the trip confirmation number?",
-      yesLabel: "Yes, numbers match",
-      noLabel: "No, mismatch found",
-      yesChild: {
-        question: "Was the invoice submitted to the correct payor/plan?",
-        yesLabel: "Yes, correct payor",
-        noLabel: "Wrong payor",
-        yesAction: "Submit Portal Dispute",
-        noAction: "Resolve Internally - Resubmit to correct payor",
-      },
-      noChild: {
-        question: "Can the correct invoice number be located in the billing system?",
-        yesLabel: "Yes, found correct number",
-        noLabel: "Cannot locate",
-        yesAction: "Submit Portal Dispute",
-        noAction: "Place on Hold - Contact billing team",
-      },
-    }),
+    name: "Invoice Number Not in System (MAS Cancelled Trip)",
+    tree: {
+      rootId: "mas_q1",
+      nodes: [
+        {
+          id: "mas_q1",
+          question: "Was the trip or affected leg actually completed before MAS cancelled it?",
+          helpText: "Check dispatch history: Job Filter > All Comments > search 'CANCELLED BY MAS'. Confirm whether the driver picked up and dropped off the member before the cancellation timestamp.",
+          options: [
+            { label: "Yes, trip was completed", childId: "mas_q2" },
+            { label: "No, trip was not completed", outcomeType: "internal" as OutcomeType, outcomeLabel: "Trip was not completed — no basis for correction" },
+          ],
+        },
+        {
+          id: "mas_q2",
+          question: "Can completion be verified by GPS, member signature/receipt, and dispatch timestamps?",
+          helpText: "All three pieces of evidence are required: (1) GPS route showing pickup and drop-off, (2) signed member receipt, (3) dispatch timestamps confirming completion before cancellation.",
+          evidenceRequirements: [
+            { key: "gps_screenshot", label: "GPS Screenshot", required: true },
+            { key: "receipt_signed", label: "Signed Member Receipt", required: true },
+            { key: "mas_portal_screenshot", label: "MAS Portal Invoice/Trip Screenshot", required: true },
+          ],
+          options: [
+            { label: "Yes, all evidence available", childId: "mas_q3" },
+            { label: "No, missing documentation", outcomeType: "hold" as OutcomeType, outcomeLabel: "Place on hold — request additional documentation from dispatch/driver" },
+          ],
+        },
+        {
+          id: "mas_q3",
+          question: "Review dispatch history: did MAS cancel one leg or both legs, and did the cancellation happen before pickup, after pickup, or after drop-off?",
+          helpText: "Search the member/trip record. Determine exactly when the cancellation occurred relative to the trip timeline. This determines whether a correction is supportable.",
+          options: [
+            { label: "Reviewed — continue", childId: "mas_q4" },
+          ],
+        },
+        {
+          id: "mas_q4",
+          question: "Did MAS cancel the trip after drop-off or after the completed leg was finalized?",
+          helpText: "If MAS cancelled after the trip was already completed, the case qualifies for correction. If MAS cancelled before service was performed, the case is not supportable.",
+          options: [
+            { label: "Yes, cancelled after completion", childId: "mas_q5" },
+            { label: "No, cancelled before completion", outcomeType: "internal" as OutcomeType, outcomeLabel: "Cancellation occurred before completion — not correctable" },
+          ],
+        },
+        {
+          id: "mas_q5",
+          question: "Is the Correction Request option available in the MAS portal for this invoice?",
+          helpText: "Access the MAS portal: Manage Trips > Search Trip by Invoice. Check whether the Correction Request button is available. Ensure submission is within the 30-day deadline.",
+          evidenceRequirements: [
+            { key: "correction_explanation", label: "Brief written explanation of why correction is needed", required: true },
+          ],
+          options: [
+            { label: "Yes, Correction Request available", outcomeType: "portal_dispute" as OutcomeType, outcomeLabel: "Submit correction request through MAS portal" },
+            { label: "No, Correction Request not available", outcomeType: "dispute" as OutcomeType, outcomeLabel: "Email correction request to tripinvresolution@medanswering.com with all evidence attached" },
+          ],
+        },
+      ],
+    },
   },
   attestation_timing: {
     name: "Attestation Timing Issue",
