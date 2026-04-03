@@ -21,7 +21,6 @@
     "express": "^5",
     "http-proxy-middleware": "^3.0.5",
     "nodemailer": "^8.0.4",
-    "@workspace/integrations-anthropic-ai": "workspace:*",
     "openai": "^6.33.0",
     "openid-client": "^6.8.2",
     "pino": "^9",
