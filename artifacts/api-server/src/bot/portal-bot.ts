@@ -5,6 +5,8 @@ import fs from "fs";
 const API_BASE = process.env.API_BASE_URL || "http://localhost:8080/api";
 const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://mastransportation.force.com/support";
 const SESSION_DIR = path.resolve("bot-session");
+const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
+const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 const BOT_NAME = process.env.BOT_NAME || `bot-${process.pid}`;
 const BOT_TOKEN: string = process.env.BOT_SERVICE_TOKEN || "";
 if (!BOT_TOKEN) {
@@ -226,11 +228,49 @@ async function processSubmission(context: BrowserContext, submission: PortalSubm
 
     const loginButton = await page.$('a:has-text("Log In"), button:has-text("Log In"), a:has-text("Sign In")');
     if (loginButton) {
-      console.log("[BOT] Login required - session may be expired. Saving state and failing.");
-      await saveScreenshot(page, subId);
-      await failSubmission(subId, "Portal session expired - manual login required via save-session utility");
-      await page.close();
-      return;
+      if (!MAS_USERNAME || !MAS_PASSWORD) {
+        console.log("[BOT] Login required but MAS_PORTAL_USERNAME/MAS_PORTAL_PASSWORD not set.");
+        await saveScreenshot(page, subId);
+        await failSubmission(subId, "Portal login required - MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
+        await page.close();
+        return;
+      }
+
+      console.log("[BOT] Login required - attempting automatic login...");
+      await loginButton.click();
+      await page.waitForTimeout(2000);
+
+      const usernameInput = await page.$('input[name="username"], input[name="email"], input[type="email"], #username, #email');
+      const passwordInput = await page.$('input[name="password"], input[type="password"], #password');
+
+      if (usernameInput && passwordInput) {
+        await usernameInput.fill(MAS_USERNAME);
+        await passwordInput.fill(MAS_PASSWORD);
+        await page.waitForTimeout(500);
+
+        const submitBtn = await page.$('button[type="submit"], input[type="submit"], button:has-text("Log In"), button:has-text("Sign In")');
+        if (submitBtn) {
+          await submitBtn.click();
+          await page.waitForTimeout(5000);
+        }
+
+        const stillOnLogin = await page.$('input[type="password"]');
+        if (stillOnLogin) {
+          console.log("[BOT] Login appears to have failed - credentials may be incorrect.");
+          await saveScreenshot(page, subId);
+          await failSubmission(subId, "Portal login failed - check MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD");
+          await page.close();
+          return;
+        }
+
+        console.log("[BOT] Login successful, continuing with submission...");
+      } else {
+        console.log("[BOT] Could not locate login form fields.");
+        await saveScreenshot(page, subId);
+        await failSubmission(subId, "Portal login form not recognized - manual login may be required");
+        await page.close();
+        return;
+      }
     }
 
     const newRequestLink = await page.$('a:has-text("Submit"), a:has-text("New Request"), a:has-text("Create")');
