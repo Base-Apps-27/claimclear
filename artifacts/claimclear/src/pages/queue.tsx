@@ -274,7 +274,7 @@ function WorkflowPlayer({
               }
               if (!tree) return null;
               return (
-                <div>
+                <div className="min-w-0 overflow-hidden">
                   <p className="text-sm text-muted-foreground mb-2">
                     Follow the decision tree for <span className="font-medium">{errorType.name}</span>:
                   </p>

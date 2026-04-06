@@ -650,7 +650,7 @@ export default function ErrorTypes() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setEditingId(null); setShowCreate(false); } }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>
@@ -780,7 +780,7 @@ export default function ErrorTypes() {
               />
             </TabsContent>
 
-            <TabsContent value="workflow" className="space-y-4 mt-4">
+            <TabsContent value="workflow" className="space-y-4 mt-4 min-w-0 overflow-x-auto">
               <TreeEditor
                 tree={form.decisionTree}
                 onChange={(tree) => setForm({ ...form, decisionTree: tree })}
@@ -797,7 +797,7 @@ export default function ErrorTypes() {
       </Dialog>
 
       <Dialog open={!!testTree} onOpenChange={(open) => { if (!open) setTestTree(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Test Decision Tree</DialogTitle>
           </DialogHeader>

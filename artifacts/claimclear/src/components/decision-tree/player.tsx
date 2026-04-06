@@ -121,12 +121,12 @@ export function TreePlayer({ tree, onOutcome, isTestMode }: PlayerProps) {
     const colors = OUTCOME_COLORS[outcome.type];
     const Icon = OUTCOME_ICONS[outcome.type];
     return (
-      <div className="space-y-3">
+      <div className="space-y-3 min-w-0 overflow-hidden">
         {isTestMode && (
           <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Test Mode</Badge>
         )}
         <StepsBreadcrumb steps={steps} />
-        <Card className={`${colors.bg} border ${colors.border}`}>
+        <Card className={`${colors.bg} border ${colors.border} min-w-0`}>
           <CardContent className="p-4 text-center space-y-3">
             <Icon className={`h-10 w-10 mx-auto ${colors.text}`} />
             <div>
@@ -155,7 +155,7 @@ export function TreePlayer({ tree, onOutcome, isTestMode }: PlayerProps) {
   const evidenceReady = nodeEvidenceComplete(currentNode);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 min-w-0 overflow-hidden">
       {isTestMode && (
         <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Test Mode - no changes will be saved</Badge>
       )}
@@ -169,7 +169,7 @@ export function TreePlayer({ tree, onOutcome, isTestMode }: PlayerProps) {
 
       {steps.length > 0 && <StepsBreadcrumb steps={steps} />}
 
-      <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+      <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 min-w-0">
         <CardContent className="p-4 space-y-3">
           <p className="text-sm font-semibold">{currentNode.question}</p>
 
@@ -237,13 +237,13 @@ export function TreePlayer({ tree, onOutcome, isTestMode }: PlayerProps) {
 
 function StepsBreadcrumb({ steps }: { steps: Step[] }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 min-w-0">
       {steps.map((step, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground min-w-0 overflow-hidden">
           <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-          <span className="truncate">{step.question}</span>
+          <span className="truncate min-w-0">{step.question}</span>
           <ChevronRight className="h-3 w-3 shrink-0" />
-          <Badge variant="outline" className="text-[10px] shrink-0">{step.answer}</Badge>
+          <Badge variant="outline" className="text-[10px] truncate max-w-[40%]">{step.answer}</Badge>
         </div>
       ))}
     </div>

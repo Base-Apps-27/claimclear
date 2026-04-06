@@ -124,25 +124,25 @@ export default function PortalSubmissions() {
           </DialogHeader>
           {selected && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">Conf #:</span> <span className="font-mono">{selected.confNumber}</span></div>
-                <div><span className="text-muted-foreground">Status:</span> <Badge className={statusColors[selected.status] || ""} variant="outline">{selected.status}</Badge></div>
-                <div><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || "-"}</div>
-                <div><span className="text-muted-foreground">Subject:</span> {selected.subject || "-"}</div>
-                <div><span className="text-muted-foreground">Email:</span> {selected.requesterEmail || "-"}</div>
-                <div><span className="text-muted-foreground">Provider:</span> {selected.transportationProviderName || "-"}</div>
-                <div><span className="text-muted-foreground">Invoice:</span> {selected.invoiceNumber || "-"}</div>
-                <div><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
-                <div><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
-                {selected.portalTicketId && <div><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
-                {selected.submittedAt && <div><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
-                {selected.errorMessage && <div className="col-span-2"><span className="text-muted-foreground">Error:</span> <span className="text-red-600">{selected.errorMessage}</span></div>}
+              <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
+                <div className="min-w-0"><span className="text-muted-foreground">Conf #:</span> <span className="font-mono break-all">{selected.confNumber}</span></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Status:</span> <Badge className={statusColors[selected.status] || ""} variant="outline">{selected.status}</Badge></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || "-"}</div>
+                <div className="min-w-0 truncate"><span className="text-muted-foreground">Subject:</span> {selected.subject || "-"}</div>
+                <div className="min-w-0 truncate"><span className="text-muted-foreground">Email:</span> {selected.requesterEmail || "-"}</div>
+                <div className="min-w-0 truncate"><span className="text-muted-foreground">Provider:</span> {selected.transportationProviderName || "-"}</div>
+                <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> {selected.invoiceNumber || "-"}</div>
+                <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
+                <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
+                {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
+                {selected.submittedAt && <div className="min-w-0"><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
+                {selected.errorMessage && <div className="col-span-2 min-w-0"><span className="text-muted-foreground">Error:</span> <span className="text-red-600 break-words">{selected.errorMessage}</span></div>}
               </div>
 
               {selected.disputeReason && (
-                <div>
+                <div className="min-w-0">
                   <span className="text-sm text-muted-foreground">Dispute Reason:</span>
-                  <p className="text-sm mt-1">{selected.disputeReason}</p>
+                  <p className="text-sm mt-1 break-words">{selected.disputeReason}</p>
                 </div>
               )}
 
