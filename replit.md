@@ -83,8 +83,8 @@ New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resol
 - Bot authenticates via `X-Bot-Token` header (env: `BOT_SERVICE_TOKEN`)
 
 ### Financial Model
-- **Vendor prepayment rate**: 70% (`VENDOR_PREPAY_RATE = 0.70`)
-- **Total Exposure** = claim amount × 1.70 (claim + vendor prepayment). This is the true financial loss if a claim isn't recovered.
+- **Vendor prepayment rate**: ~70% approximate (`VENDOR_PREPAY_RATE = 0.70`). Actual rate varies per claim and can be 100%+.
+- **Total Exposure** = claim amount × 1.70 (claim + ~70% vendor prepayment). This is an approximate total financial loss if a claim isn't recovered. Labeled as "approx." throughout the UI.
 - Dashboard, Summary, and Daily Brief all show `totalExposure` alongside `totalClaimed` and `totalApproved`.
 
 ### Dashboard & Daily Brief

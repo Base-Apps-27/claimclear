@@ -59,8 +59,8 @@ function generateBriefHtml(
         </div>
         <div style="flex:1;text-align:center;padding:16px;background:#fffbeb;border-radius:8px;">
           <div style="font-size:28px;font-weight:700;color:#d97706;">$${totalAtRisk.toFixed(2)}</div>
-          <div style="font-size:12px;color:#92400e;margin-top:4px;">Total Exposure</div>
-          <div style="font-size:10px;color:#92400e;margin-top:2px;">Claims $${claimAmountAtRisk.toFixed(2)} + 70% vendor</div>
+          <div style="font-size:12px;color:#92400e;margin-top:4px;">Total Exposure (approx.)</div>
+          <div style="font-size:10px;color:#92400e;margin-top:2px;">Claims $${claimAmountAtRisk.toFixed(2)} + ~70% vendor prepay</div>
         </div>
       </div>
 

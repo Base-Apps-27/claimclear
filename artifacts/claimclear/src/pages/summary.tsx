@@ -76,7 +76,7 @@ export default function Summary() {
               <div>
                 <p className="text-3xl font-bold">{formatCurrency(String(totalExposure))}</p>
                 <p className="text-xs text-muted-foreground">Total Exposure</p>
-                <p className="text-[10px] text-muted-foreground">Claims + 70% vendor prepay</p>
+                <p className="text-[10px] text-muted-foreground">Claims + ~70% vendor prepay (approx.)</p>
               </div>
             </div>
           </CardContent>
@@ -105,7 +105,7 @@ export default function Summary() {
           <CardContent>
             <p className="text-sm text-muted-foreground mb-2">
               Total exposure at risk: {formatCurrency(String(summary.expiringClaims.reduce((s, c) => s + (parseFloat(c.claimAmount || "0") || 0), 0) * 1.7))}
-              <span className="text-xs ml-1">(claims + 70% vendor prepay)</span>
+              <span className="text-xs ml-1">(claims + ~70% vendor prepay, approx.)</span>
             </p>
           </CardContent>
         </Card>

@@ -71,7 +71,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.amounts.totalExposure)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Claims + 70% vendor prepayment
+              Claims + ~70% vendor prepay (approx.)
             </p>
           </CardContent>
         </Card>
