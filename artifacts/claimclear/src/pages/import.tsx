@@ -4,13 +4,12 @@ import type { ImportSummary } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
-  Upload, Check, AlertCircle, FileSpreadsheet, FileText, X,
-  Loader2, CheckCircle2, ArrowRight, AlertTriangle, RotateCcw,
+  Upload, AlertCircle, FileSpreadsheet, FileText, X,
+  Loader2, CheckCircle2, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -135,16 +134,6 @@ function mapRowsToData(records: string[][]): { rows: ParsedRow[]; warnings: Pars
 
   return { rows: parsed, warnings, skippedEmpty };
 }
-
-const STAGE_LABELS: Record<UploadStage, string> = {
-  idle: "Waiting for file",
-  reading: "Reading file...",
-  parsing: "Parsing data...",
-  ready: "Ready to import",
-  importing: "Importing claims...",
-  complete: "Import complete",
-  error: "Error occurred",
-};
 
 const ACCEPTED_TYPES = ".csv,.xlsx,.xls";
 
@@ -276,9 +265,9 @@ export default function Import() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const stageProgress = { idle: 0, reading: 20, parsing: 50, ready: 75, importing: 90, complete: 100, error: 0 };
-
   const totalAmount = rows.reduce((s, r) => s + (r.claimAmount || 0), 0);
+
+  const isProcessing = stage === "reading" || stage === "parsing";
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -287,38 +276,24 @@ export default function Import() {
         <p className="text-muted-foreground">Upload a Job Claim Status report</p>
       </div>
 
-      {stage !== "idle" && stage !== "error" && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {stage === "complete" ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : stage === "importing" || stage === "reading" || stage === "parsing" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                ) : (
-                  <ArrowRight className="h-4 w-4 text-primary" />
-                )}
-                <span className="text-sm font-medium">{STAGE_LABELS[stage]}</span>
-              </div>
-              {fileName && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {getFileIcon(fileName)}
-                  <span>{fileName}</span>
-                  <span>({formatFileSize(fileSize)})</span>
+      {isProcessing && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6 pb-5">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium">
+                    {stage === "reading" ? "Reading file..." : `Parsing ${fileType === "excel" ? "Excel" : "CSV"} data...`}
+                  </span>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {getFileIcon(fileName)}
+                    <span>{fileName}</span>
+                    <span>({formatFileSize(fileSize)})</span>
+                  </div>
                 </div>
-              )}
-            </div>
-            <Progress value={stageProgress[stage]} className="h-2" />
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-muted-foreground">
-                {stage === "reading" && "Reading file contents..."}
-                {stage === "parsing" && `Parsing ${fileType === "excel" ? "Excel" : "CSV"} data...`}
-                {stage === "ready" && `${rows.length} claims parsed and ready`}
-                {stage === "importing" && "Sending to server..."}
-                {stage === "complete" && "All done!"}
-              </span>
-              <span className="text-[10px] text-muted-foreground">{stageProgress[stage]}%</span>
+                <Progress value={stage === "reading" ? 30 : 70} className="h-1.5" />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -395,9 +370,16 @@ export default function Import() {
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
                 {rows.length} Claims Ready to Import
               </CardTitle>
-              <Button variant="ghost" size="sm" onClick={handleReset}>
-                <X className="h-3 w-3 mr-1" /> Cancel
-              </Button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {getFileIcon(fileName)}
+                  <span>{fileName}</span>
+                  <span>({formatFileSize(fileSize)})</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleReset}>
+                  <X className="h-3 w-3 mr-1" /> Cancel
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
