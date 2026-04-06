@@ -935,13 +935,11 @@ paths:
             type: integer
       responses:
         "200":
-          description: Active viewers
+          description: Active viewers and bot activity
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PresenceViewer"
+                $ref: "#/components/schemas/PresenceResponse"
 
   /dashboard/summary:
     get:
@@ -1735,6 +1733,37 @@ components:
           type: string
       required:
         - userEmail
+
+    BotPresenceEntry:
+      type: object
+      properties:
+        type:
+          type: string
+        submissionId:
+          type: integer
+        status:
+          type: string
+        startedAt:
+          type: ["string", "null"]
+      required:
+        - type
+        - submissionId
+        - status
+
+    PresenceResponse:
+      type: object
+      properties:
+        viewers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresenceViewer"
+        botActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/BotPresenceEntry"
+      required:
+        - viewers
+        - botActivity
 
     DashboardSummary:
       type: object

@@ -53,7 +53,7 @@ import type {
   PortalSubmissionResponse,
   PresenceHeartbeatBody,
   PresenceLeaveBody,
-  PresenceViewer,
+  PresenceResponse,
   RegisterBotBody,
   SOPAnalysisResult,
   SendAnthropicMessageBody,
@@ -3775,8 +3775,8 @@ export const getGetPresenceUrl = (claimId: number) => {
 export const getPresence = async (
   claimId: number,
   options?: RequestInit,
-): Promise<PresenceViewer[]> => {
-  return customFetch<PresenceViewer[]>(getGetPresenceUrl(claimId), {
+): Promise<PresenceResponse> => {
+  return customFetch<PresenceResponse>(getGetPresenceUrl(claimId), {
     ...options,
     method: "GET",
   });

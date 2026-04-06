@@ -4,6 +4,7 @@ import {
   getGetClaimQueryKey,
   getListClaimNotesQueryKey,
   getListClaimAuditLogsQueryKey,
+  getGetPresenceQueryKey,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { toast } from "@/hooks/use-toast";
@@ -13,6 +14,15 @@ interface ClaimEvent {
   claimId: number;
   userName: string | null;
   userEmail: string | null;
+  timestamp: string;
+}
+
+interface PresenceSSEEvent {
+  type: "viewer_joined" | "viewer_left" | "bot_started" | "bot_completed";
+  claimId: number;
+  userName: string | null;
+  userEmail: string | null;
+  botProcess?: string;
   timestamp: string;
 }
 
@@ -60,6 +70,18 @@ export function useClaimEvents(claimId: number | undefined) {
     [queryClient, user?.email],
   );
 
+  const handlePresenceEvent = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const data: PresenceSSEEvent = JSON.parse(event.data);
+        queryClient.invalidateQueries({ queryKey: getGetPresenceQueryKey(data.claimId) });
+      } catch {
+        // ignore malformed events
+      }
+    },
+    [queryClient],
+  );
+
   useEffect(() => {
     if (!claimId) return;
 
@@ -73,6 +95,7 @@ export function useClaimEvents(claimId: number | undefined) {
       });
 
       es.addEventListener("claim_update", handleEvent);
+      es.addEventListener("presence_update", handlePresenceEvent);
 
       es.onopen = () => {
         retryCount.current = 0;
@@ -92,7 +115,7 @@ export function useClaimEvents(claimId: number | undefined) {
       es?.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [claimId, handleEvent]);
+  }, [claimId, handleEvent, handlePresenceEvent]);
 }
 
 export function useClaimsListEvents() {

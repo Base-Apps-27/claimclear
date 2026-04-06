@@ -8,7 +8,6 @@ import {
   useUpdateClaimWorkflow, useGenerateClaimEmail,
   useListClaimNotes, getListClaimNotesQueryKey, useCreateClaimNote, useDeleteNote,
   useListClaimAuditLogs, getListClaimAuditLogsQueryKey,
-  useGetPresence, getGetPresenceQueryKey,
   useCreatePortalSubmission,
   useListPortalSubmissions, getListPortalSubmissionsQueryKey,
   useListBotActivity, getListBotActivityQueryKey,
@@ -17,6 +16,7 @@ import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspac
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
+import { HumanPresenceBanner, BotPresenceBanner, PresenceAvatars } from "@/components/presence-banners";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -142,9 +141,8 @@ export default function ClaimDetail() {
   const { data: claim, isLoading } = useGetClaim(claimId, { query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId } });
   const { data: notes } = useListClaimNotes(claimId, { query: { queryKey: getListClaimNotesQueryKey(claimId), enabled: !!claimId } });
   const { data: auditLogs } = useListClaimAuditLogs(claimId, { query: { queryKey: getListClaimAuditLogsQueryKey(claimId), enabled: !!claimId } });
-  const { data: viewers } = useGetPresence(claimId, { query: { queryKey: getGetPresenceQueryKey(claimId), enabled: !!claimId, refetchInterval: 15000 } });
 
-  usePresence(claimId);
+  const { viewers, botActivity: botPresenceActivity } = usePresence(claimId);
   useClaimEvents(claimId);
 
   const updateClaim = useUpdateClaim();
@@ -259,6 +257,8 @@ export default function ClaimDetail() {
 
   return (
     <div className="space-y-6">
+      <HumanPresenceBanner viewers={viewers} />
+      <BotPresenceBanner botActivity={botPresenceActivity} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="text-2xl font-bold tracking-tight font-mono">{claim.confNumber}</h2>
@@ -266,15 +266,7 @@ export default function ClaimDetail() {
           <Badge variant="outline">{claim.outcome}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          {viewers && viewers.length > 0 && (
-            <div className="flex -space-x-2 mr-2">
-              {viewers.map(v => (
-                <Avatar key={v.userEmail} className="h-7 w-7 border-2 border-background" title={v.userName || v.userEmail}>
-                  <AvatarFallback className="text-xs">{(v.userName || v.userEmail).charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-              ))}
-            </div>
-          )}
+          <PresenceAvatars viewers={viewers} />
           {!editing ? (
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 className="h-4 w-4 mr-1" />Edit</Button>
           ) : (

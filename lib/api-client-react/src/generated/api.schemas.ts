@@ -527,6 +527,19 @@ export interface PresenceViewer {
   lastHeartbeat?: string;
 }
 
+export interface BotPresenceEntry {
+  type: string;
+  submissionId: number;
+  status: string;
+  /** @nullable */
+  startedAt?: string | null;
+}
+
+export interface PresenceResponse {
+  viewers: PresenceViewer[];
+  botActivity: BotPresenceEntry[];
+}
+
 export type DashboardSummaryPipeline = {
   needsEvidence: number;
   portalQueued: number;

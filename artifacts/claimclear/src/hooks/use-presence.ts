@@ -5,7 +5,7 @@ export function usePresence(claimId: number | undefined) {
   const heartbeat = usePresenceHeartbeat();
   const leave = usePresenceLeave();
   
-  const { data: viewers = [] } = useGetPresence(claimId || 0, {
+  const { data } = useGetPresence(claimId || 0, {
     query: {
       queryKey: getGetPresenceQueryKey(claimId || 0),
       enabled: !!claimId,
@@ -13,16 +13,17 @@ export function usePresence(claimId: number | undefined) {
     }
   });
 
+  const viewers = data?.viewers ?? [];
+  const botActivity = data?.botActivity ?? [];
+
   useEffect(() => {
     if (!claimId) return;
 
-    // Initial heartbeat
     heartbeat.mutate({ data: { claimId } });
 
-    // Set up interval for continuous heartbeats
     const interval = setInterval(() => {
       heartbeat.mutate({ data: { claimId } });
-    }, 15000); // 15s
+    }, 15000);
 
     return () => {
       clearInterval(interval);
@@ -30,5 +31,5 @@ export function usePresence(claimId: number | undefined) {
     };
   }, [claimId, heartbeat.mutate, leave.mutate]);
 
-  return { viewers };
+  return { viewers, botActivity };
 }

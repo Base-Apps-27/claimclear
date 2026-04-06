@@ -1439,12 +1439,23 @@ export const GetPresenceParams = zod.object({
   claimId: zod.coerce.number(),
 });
 
-export const GetPresenceResponseItem = zod.object({
-  userEmail: zod.string(),
-  userName: zod.string().nullish(),
-  lastHeartbeat: zod.string().optional(),
+export const GetPresenceResponse = zod.object({
+  viewers: zod.array(
+    zod.object({
+      userEmail: zod.string(),
+      userName: zod.string().nullish(),
+      lastHeartbeat: zod.string().optional(),
+    }),
+  ),
+  botActivity: zod.array(
+    zod.object({
+      type: zod.string(),
+      submissionId: zod.number(),
+      status: zod.string(),
+      startedAt: zod.string().nullish(),
+    }),
+  ),
 });
-export const GetPresenceResponse = zod.array(GetPresenceResponseItem);
 
 /**
  * @summary Get dashboard summary

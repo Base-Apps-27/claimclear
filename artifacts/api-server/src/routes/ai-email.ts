@@ -4,6 +4,8 @@ import { db } from "@workspace/db";
 import { claimsTable, errorTypesTable, auditLogsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
+import { broadcastPresenceEvent } from "../lib/sse";
+import { registerBotProcess, unregisterBotProcess } from "../lib/bot-presence";
 
 const router: IRouter = Router();
 
@@ -106,36 +108,58 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
     }
   }
 
-  let subject: string;
-  let body: string;
-  let generationMethod = "llm";
-
-  try {
-    const result = await generateWithLLM(claim, errorType, disputeReason);
-    subject = result.subject;
-    body = result.body;
-  } catch {
-    const fallback = buildFallbackEmail(claim, errorType, disputeReason);
-    subject = fallback.subject;
-    body = fallback.body;
-    generationMethod = "template";
-  }
-
-  const [updated] = await db.update(claimsTable).set({
-    generatedEmailSubject: subject,
-    generatedEmailBody: body,
-    generatedEmailAt: new Date().toISOString(),
-  }).where(eq(claimsTable.id, id)).returning();
-
-  await db.insert(auditLogsTable).values({
+  registerBotProcess("email_generation", id);
+  broadcastPresenceEvent({
+    type: "bot_started",
     claimId: id,
-    action: "email_generated",
-    details: `Dispute email generated via ${generationMethod}`,
-    userEmail: req.user?.email || null,
-    userName: req.user?.displayName ?? null,
+    userName: "AI Email Generator",
+    userEmail: null,
+    botProcess: "email_generation",
+    timestamp: new Date().toISOString(),
   });
 
-  res.json(updated);
+  try {
+    let subject: string;
+    let body: string;
+    let generationMethod = "llm";
+
+    try {
+      const result = await generateWithLLM(claim, errorType, disputeReason);
+      subject = result.subject;
+      body = result.body;
+    } catch {
+      const fallback = buildFallbackEmail(claim, errorType, disputeReason);
+      subject = fallback.subject;
+      body = fallback.body;
+      generationMethod = "template";
+    }
+
+    const [updated] = await db.update(claimsTable).set({
+      generatedEmailSubject: subject,
+      generatedEmailBody: body,
+      generatedEmailAt: new Date().toISOString(),
+    }).where(eq(claimsTable.id, id)).returning();
+
+    await db.insert(auditLogsTable).values({
+      claimId: id,
+      action: "email_generated",
+      details: `Dispute email generated via ${generationMethod}`,
+      userEmail: req.user?.email || null,
+      userName: req.user?.displayName ?? null,
+    });
+
+    res.json(updated);
+  } finally {
+    unregisterBotProcess("email_generation", id);
+    broadcastPresenceEvent({
+      type: "bot_completed",
+      claimId: id,
+      userName: "AI Email Generator",
+      userEmail: null,
+      botProcess: "email_generation",
+      timestamp: new Date().toISOString(),
+    });
+  }
 }));
 
 export default router;

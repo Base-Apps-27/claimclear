@@ -3,6 +3,7 @@ import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, notesTable, botActivityLogTable, botInstancesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { broadcastPresenceEvent } from "../lib/sse";
 
 const router: IRouter = Router();
 
@@ -63,6 +64,15 @@ router.post("/:id/claim", asyncHandler(async (req, res): Promise<void> => {
 
   if (!result) { res.status(409).json({ error: "Submission not found or already claimed" }); return; }
 
+  broadcastPresenceEvent({
+    type: "bot_started",
+    claimId: result.claimId,
+    userName: "Portal Bot",
+    userEmail: null,
+    botProcess: "portal_submission",
+    timestamp: new Date().toISOString(),
+  });
+
   res.json(result);
 }));
 
@@ -108,6 +118,15 @@ router.post("/:id/complete", asyncHandler(async (req, res): Promise<void> => {
     message: `Submitted successfully${portalTicketId ? ` - Ticket: ${portalTicketId}` : ""}`,
     screenshotPath: screenshotPath || null,
     pageHtmlPath: pageHtmlPath || null,
+  });
+
+  broadcastPresenceEvent({
+    type: "bot_completed",
+    claimId: sub.claimId,
+    userName: "Portal Bot",
+    userEmail: null,
+    botProcess: "portal_submission",
+    timestamp: new Date().toISOString(),
   });
 
   res.json(sub);
@@ -199,6 +218,15 @@ router.post("/:id/fail", asyncHandler(async (req, res): Promise<void> => {
     message: errorMessage || "Unknown error",
     screenshotPath: screenshotPath || null,
     pageHtmlPath: pageHtmlPath || null,
+  });
+
+  broadcastPresenceEvent({
+    type: "bot_completed",
+    claimId: sub.claimId,
+    userName: "Portal Bot",
+    userEmail: null,
+    botProcess: "portal_submission",
+    timestamp: new Date().toISOString(),
   });
 
   res.json(sub);

@@ -8,6 +8,15 @@ export interface ClaimEvent {
   timestamp: string;
 }
 
+export interface PresenceEvent {
+  type: "viewer_joined" | "viewer_left" | "bot_started" | "bot_completed";
+  claimId: number;
+  userName: string | null;
+  userEmail: string | null;
+  botProcess?: string;
+  timestamp: string;
+}
+
 type SSEClient = {
   res: Response;
   userEmail: string | null;
@@ -29,6 +38,14 @@ function initSSE(res: Response): void {
 function sendEvent(client: SSEClient, event: ClaimEvent): void {
   try {
     client.res.write(`event: claim_update\ndata: ${JSON.stringify(event)}\n\n`);
+  } catch {
+    // client disconnected
+  }
+}
+
+function sendPresenceEvent(client: SSEClient, event: PresenceEvent): void {
+  try {
+    client.res.write(`event: presence_update\ndata: ${JSON.stringify(event)}\n\n`);
   } catch {
     // client disconnected
   }
@@ -96,5 +113,14 @@ export function broadcastClaimEvent(event: ClaimEvent): void {
 
   for (const client of globalClients) {
     sendEvent(client, event);
+  }
+}
+
+export function broadcastPresenceEvent(event: PresenceEvent): void {
+  const clients = claimClients.get(event.claimId);
+  if (clients) {
+    for (const client of clients) {
+      sendPresenceEvent(client, event);
+    }
   }
 }
