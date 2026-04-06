@@ -17,6 +17,11 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _onSessionExpired: (() => void) | null = null;
+
+export function setOnSessionExpired(handler: (() => void) | null): void {
+  _onSessionExpired = handler;
+}
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -363,6 +368,12 @@ export async function customFetch<T = unknown>(
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
+    if (response.status === 401 && _onSessionExpired) {
+      const url = resolveUrl(input);
+      if (!url.includes("/auth/user") && !url.includes("/login") && !url.includes("/callback")) {
+        _onSessionExpired();
+      }
+    }
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }

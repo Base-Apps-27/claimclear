@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { AuthUser } from "@workspace/api-client-react";
 
 export type { AuthUser };
@@ -12,40 +12,44 @@ interface AuthState {
   sessionExpiry: SessionExpiryReason;
   login: () => void;
   logout: () => void;
+  clearAuth: () => void;
 }
+
+const AUTH_POLL_INTERVAL = 2 * 60 * 1000;
 
 export function useAuth(): AuthState {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionExpiry, setSessionExpiry] = useState<SessionExpiryReason>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/user", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { user: AuthUser | null; sessionExpiry?: string };
+      setUser(data.user ?? null);
+      if (!data.user && data.sessionExpiry) {
+        setSessionExpiry(data.sessionExpiry as SessionExpiryReason);
+      }
+    } catch {
+      setUser(null);
+    }
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/auth/user", { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<{ user: AuthUser | null; sessionExpiry?: string }>;
-      })
-      .then((data) => {
-        if (!cancelled) {
-          setUser(data.user ?? null);
-          if (data.sessionExpiry) {
-            setSessionExpiry(data.sessionExpiry as SessionExpiryReason);
-          }
-          setIsLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setUser(null);
-          setIsLoading(false);
-        }
-      });
-
+    checkAuth();
+    pollRef.current = setInterval(checkAuth, AUTH_POLL_INTERVAL);
     return () => {
-      cancelled = true;
+      if (pollRef.current) clearInterval(pollRef.current);
     };
+  }, [checkAuth]);
+
+  const clearAuth = useCallback(() => {
+    setUser(null);
+    setSessionExpiry("expired_idle");
+    if (pollRef.current) clearInterval(pollRef.current);
   }, []);
 
   const login = useCallback(() => {
@@ -64,5 +68,6 @@ export function useAuth(): AuthState {
     sessionExpiry,
     login,
     logout,
+    clearAuth,
   };
 }

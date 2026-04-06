@@ -1,0 +1,34 @@
+Session Expiry Handling
+
+What & Why
+
+When a user's session expires due to inactivity or token refresh failure, the frontend has no way of knowing. The useAuth hook only checks the session once on initial page load. After that, the user sees a fully rendered dashboard but every API call fails silently with 401 errors. The user has to manually click Logout and re-login to fix it — a confusing and frustrating experience.
+
+The fix needs to detect expired sessions reactively and immediately redirect users to the login screen, rather than leaving them in a broken half-authenticated state.
+
+Done looks like
+
+When a user's session expires (whether from the 7-day TTL, failed token refresh, or server-side session cleanup), they are automatically redirected to the login screen within seconds of the next interaction or background poll
+A brief, friendly message on the login screen tells them their session expired and they need to sign in again (not a generic error)
+While actively using the platform, if any API call returns a 401, the user is immediately redirected to login instead of seeing cryptic "no claim available" or other data errors
+The dashboard, sidebar, and all pages are no longer accessible in a stale-session state
+Out of scope
+
+Changing the 7-day session TTL duration
+Adding a "remember me" or "keep me signed in" feature
+Adding an inactivity warning/countdown timer before logout (could be future work)
+Changing the OIDC provider or login mechanism
+Tasks
+
+Add a global 401 interceptor in the API client layer (customFetch) that triggers a session-expired event or callback when any API response returns 401, rather than just throwing an error that individual components catch independently.
+Update the useAuth hook to periodically re-validate the session by polling /api/auth/user on an interval (e.g. every 2-5 minutes), so the isAuthenticated state reflects reality even if the user hasn't triggered any API calls.
+Wire the 401 interceptor from step 1 into the auth state so that a 401 from any API call immediately sets isAuthenticated to false and clears the local user state, triggering the login screen.
+Add a "session expired" variant to the login screen — when the user lands on the login screen due to session expiry (not a fresh visit or manual logout), show a brief message like "Your session has expired. Please sign in again." Use a query parameter or state flag to differentiate this from a normal login prompt.
+Relevant files
+
+lib/replit-auth-web/src/use-auth.ts
+lib/api-client-react/src/custom-fetch.ts:340-372
+artifacts/claimclear/src/components/layout.tsx:34-78
+artifacts/api-server/src/middlewares/authMiddleware.ts
+artifacts/api-server/src/lib/auth.ts
+artifacts/api-server/src/middlewares/requireAuth.ts

@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { setOnSessionExpired } from "@workspace/api-client-react";
+import { useAuth } from "@workspace/replit-auth-web";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
@@ -53,11 +56,21 @@ function Router() {
   );
 }
 
+function SessionInterceptor() {
+  const { clearAuth } = useAuth();
+  useEffect(() => {
+    setOnSessionExpired(() => clearAuth());
+    return () => setOnSessionExpired(null);
+  }, [clearAuth]);
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <SessionInterceptor />
           <Router />
         </WouterRouter>
         <Toaster />
