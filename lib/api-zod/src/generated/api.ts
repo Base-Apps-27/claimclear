@@ -1465,6 +1465,14 @@ export const GetDashboardSummaryResponse = zod.object({
   amounts: zod.object({
     totalClaimed: zod.string(),
     totalApproved: zod.string(),
+    totalExposure: zod
+      .string()
+      .describe(
+        "Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment)",
+      ),
+    vendorPrepayRate: zod
+      .number()
+      .describe("Vendor prepayment rate (0.70 = 70%)"),
   }),
   expiringClaims: zod.array(
     zod.object({

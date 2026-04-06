@@ -9,4 +9,8 @@
 export type DashboardSummaryAmounts = {
   totalClaimed: string;
   totalApproved: string;
+  /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment) */
+  totalExposure: string;
+  /** Vendor prepayment rate (0.70 = 70%) */
+  vendorPrepayRate: number;
 };

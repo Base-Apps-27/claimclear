@@ -8,6 +8,7 @@ import { daysRemaining } from "../lib/dates";
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Ready to Review", "Awaiting Response", "On Hold"] as const;
+const VENDOR_PREPAY_RATE = 0.70;
 
 interface ExpiringClaim {
   id: number;
@@ -58,7 +59,8 @@ function generateBriefHtml(
         </div>
         <div style="flex:1;text-align:center;padding:16px;background:#fffbeb;border-radius:8px;">
           <div style="font-size:28px;font-weight:700;color:#d97706;">$${totalAtRisk.toFixed(2)}</div>
-          <div style="font-size:12px;color:#92400e;margin-top:4px;">At Risk</div>
+          <div style="font-size:12px;color:#92400e;margin-top:4px;">Total Exposure</div>
+          <div style="font-size:10px;color:#92400e;margin-top:2px;">Claims $${claimAmountAtRisk.toFixed(2)} + 70% vendor</div>
         </div>
       </div>
 
@@ -118,7 +120,8 @@ router.post("/", asyncHandler(async (_req, res): Promise<void> => {
     .sort((a, b) => a.daysLeft - b.daysLeft);
 
   const expired = expiring.filter(c => c.daysLeft <= 0);
-  const totalAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
+  const claimAmountAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
+  const totalAtRisk = claimAmountAtRisk * (1 + VENDOR_PREPAY_RATE);
 
   const submissionCountsRaw = await db
     .select({ status: portalSubmissionsTable.status, count: count() })

@@ -54,7 +54,7 @@ All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHand
 - `requireAuthOrBot` — accepts either session auth or bot token
 
 ### Frontend Routing
-The ClaimClear frontend is served through the API server via http-proxy-middleware in dev mode. In production, it's served as static files. The frontend is mounted at `/claimclear/` path.
+The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.
 
 ### Database Entities (11 tables)
 - `users` — Replit Auth users (varchar ID)
@@ -81,6 +81,11 @@ New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resol
 - `/api/admin/*` — Admin middleware (`requireAdmin`)
 - All other `/api/*` routes — Session auth required (`requireAuth`)
 - Bot authenticates via `X-Bot-Token` header (env: `BOT_SERVICE_TOKEN`)
+
+### Financial Model
+- **Vendor prepayment rate**: 70% (`VENDOR_PREPAY_RATE = 0.70`)
+- **Total Exposure** = claim amount × 1.70 (claim + vendor prepayment). This is the true financial loss if a claim isn't recovered.
+- Dashboard, Summary, and Daily Brief all show `totalExposure` alongside `totalClaimed` and `totalApproved`.
 
 ### Dashboard & Daily Brief
 - Dashboard uses DB-level aggregation (`GROUP BY`, `SUM`, `COUNT`) — no full table scans

@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { Link } from "wouter";
-import { ArrowRight, AlertTriangle, Clock, CheckCircle2, XCircle, Bot, Activity, Send } from "lucide-react";
+import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -65,26 +65,26 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Recovered (Approved)</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <CardTitle className="text-sm font-medium">Total Exposure</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(summary.amounts.totalApproved)}</div>
+            <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.amounts.totalExposure)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Total amount successfully disputed
+              Claims + 70% vendor prepayment
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Claimed</CardTitle>
-            <XCircle className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Recovered</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summary.amounts.totalClaimed)}</div>
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(summary.amounts.totalApproved)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Across all {summary.stats.total} tracked claims
+              {formatCurrency(summary.amounts.totalClaimed)} claimed across {summary.stats.total} claims
             </p>
           </CardContent>
         </Card>

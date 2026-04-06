@@ -8,6 +8,7 @@ import { daysRemaining } from "../lib/dates";
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
+const VENDOR_PREPAY_RATE = 0.70;
 
 router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
   const statusCountsRaw = await db
@@ -35,6 +36,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   const totalClaimed = parseFloat(amountsResult.totalClaimed || "0");
   const totalApproved = parseFloat(amountsResult.totalApproved || "0");
+  const totalExposure = totalClaimed * (1 + VENDOR_PREPAY_RATE);
 
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
 
@@ -80,7 +82,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
     stats: { total, new: newCount, resolved, denied, onHold },
-    amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2) },
+    amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringClaims,
     recentClaims,
     portalStats: { pending, submitted, failed, successRate },

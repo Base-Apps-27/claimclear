@@ -14,6 +14,7 @@ export default function Summary() {
   const claims = allClaimsData?.claims || [];
   const totalClaimed = parseFloat(summary.amounts.totalClaimed);
   const totalApproved = parseFloat(summary.amounts.totalApproved);
+  const totalExposure = parseFloat(summary.amounts.totalExposure);
   const recoveryRate = totalClaimed > 0 ? ((totalApproved / totalClaimed) * 100).toFixed(1) : "0";
 
   const statusBreakdown: Record<string, number> = {};
@@ -34,7 +35,7 @@ export default function Summary() {
         <p className="text-muted-foreground">Overview of claim dispute performance</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -71,6 +72,18 @@ export default function Summary() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
+              <AlertTriangle className="h-8 w-8 text-red-500" />
+              <div>
+                <p className="text-3xl font-bold">{formatCurrency(String(totalExposure))}</p>
+                <p className="text-xs text-muted-foreground">Total Exposure</p>
+                <p className="text-[10px] text-muted-foreground">Claims + 70% vendor prepay</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
               <TrendingUp className="h-8 w-8 text-blue-500" />
               <div>
                 <p className="text-3xl font-bold">{recoveryRate}%</p>
@@ -91,7 +104,8 @@ export default function Summary() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-2">
-              Amount at risk: {formatCurrency(String(summary.expiringClaims.reduce((s, c) => s + (parseFloat(c.claimAmount || "0") || 0), 0)))}
+              Total exposure at risk: {formatCurrency(String(summary.expiringClaims.reduce((s, c) => s + (parseFloat(c.claimAmount || "0") || 0), 0) * 1.7))}
+              <span className="text-xs ml-1">(claims + 70% vendor prepay)</span>
             </p>
           </CardContent>
         </Card>
