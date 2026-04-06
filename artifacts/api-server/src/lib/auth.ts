@@ -13,7 +13,7 @@ export interface SessionData {
   user: AuthUser;
   access_token: string;
   refresh_token?: string;
-  expires_at?: number;
+  expires_at?: number; // Legacy — no longer used for session validity
 }
 
 let oidcConfig: client.Configuration | null = null;

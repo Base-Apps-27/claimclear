@@ -160,7 +160,10 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = { outcome };
-  if (approvedAmount !== undefined) updateData.approvedAmount = approvedAmount;
+  if (approvedAmount !== undefined) {
+    const cleaned = typeof approvedAmount === "string" ? approvedAmount.trim() : approvedAmount;
+    updateData.approvedAmount = cleaned === "" ? null : String(cleaned);
+  }
   if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));

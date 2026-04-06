@@ -265,7 +265,6 @@ router.get("/callback", async (req: Request, res: Response) => {
     claims as unknown as Record<string, unknown>,
   );
 
-  const now = Math.floor(Date.now() / 1000);
   const displayName = [dbUser.firstName, dbUser.lastName]
     .filter(Boolean)
     .join(" ") || null;
@@ -280,7 +279,6 @@ router.get("/callback", async (req: Request, res: Response) => {
     },
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
-    expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,
   };
 
   const sid = await createSession(sessionData);

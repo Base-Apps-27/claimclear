@@ -1,0 +1,46 @@
+Presence Collision UI Enhancement
+
+What & Why
+
+The real-time collision detection (showing who else is viewing a claim) currently displays plain avatar circles with browser-native title tooltips. This is too subtle — users can easily miss that someone else is working on the same claim. The team is accustomed to Zoho Desk's collision detection UX, which uses a prominent in-ticket alert banner showing agent names, timestamps, and an advisory message. The UI needs to match that level of visibility.
+
+Additionally, automated processes (the portal submission bot and AI email generation) should also register as "active engagement" on a claim. When a bot is actively processing a claim — submitting a portal form or generating a dispute email — it should appear as a distinct presence with a different banner color so users know an automated process is running and should avoid making conflicting changes.
+
+Done looks like
+
+A prominent alert banner appears at the top of the claim detail page when other viewers are present, showing viewer name(s), when they started viewing, and an advisory message like "Also viewing this claim — coordinate before making changes"
+The banner updates in real time as viewers join or leave (using the existing 10-second polling)
+Avatar circles for viewers appear alongside the banner with a visible pulsating/glowing ring animation
+Hovering any viewer avatar shows a proper styled Tooltip (not browser-native title) with the user's full name or email
+When a new viewer first appears, the banner has a brief entrance animation (slide down or fade in), then settles into a steady state; it gracefully disappears when the user is the only viewer
+Bot presence: When the portal submission bot is actively processing a claim (submission status is in_progress) or an AI email generation is in progress for the claim, a separate banner appears in a distinct color (e.g., amber/orange vs. blue for human viewers) with a bot icon and message like "Automated process active — Portal submission in progress"
+The bot presence banner shows what the bot is doing (portal submission vs. email generation) and disappears automatically when the process completes or fails
+Both human and bot banners can appear simultaneously if a user is viewing while the bot is also processing
+All of this is advisory only — no hard-locking or blocking of actions
+Out of scope
+
+WebSocket-based real-time updates (keep existing polling approach)
+Sound or browser notifications
+Changes to the bot's internal logic or heartbeat intervals
+Presence on pages other than claim detail
+Hard-locking or blocking edits
+Showing what specific action a human user is performing (viewing vs. editing)
+Tasks
+
+Extend the GET presence endpoint to also check for active bot operations on the claim — query portal_submissions for in_progress status on that claim, and return bot activity alongside human viewers in the response (with a flag distinguishing bot vs. human presence)
+Build a collision alert banner component for human viewers that displays at the top of the claim detail view, showing viewer names, timestamps, and an advisory message, styled like Zoho Desk's collision banner
+Build a separate bot activity banner component in a distinct color (amber/orange) with a bot/gear icon, showing what automated process is active (portal submission, email generation) on this claim
+Replace the browser-native title attribute on viewer avatars with proper Tooltip components, showing the viewer's name/email
+Add a pulsating ring animation to viewer avatars — a gentle ongoing glow with a more noticeable entrance animation when a new viewer first appears
+Add entrance/exit animations for both banners (slide-down on appear, fade-out on disappear) and ensure graceful handling of all states: no viewers, one human viewer, multiple humans, bot only, bot + humans, viewers joining/leaving mid-session
+Relevant files
+
+artifacts/claimclear/src/pages/claim-detail.tsx:267-275
+artifacts/claimclear/src/hooks/use-presence.ts
+artifacts/claimclear/src/components/ui/avatar.tsx
+artifacts/claimclear/src/components/ui/tooltip.tsx
+artifacts/api-server/src/routes/presence.ts
+lib/db/src/schema/presence-logs.ts
+artifacts/api-server/src/routes/bot-portal.ts
+lib/db/src/schema/portal-submissions.ts
+artifacts/api-server/src/routes/ai-email.ts

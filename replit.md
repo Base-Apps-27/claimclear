@@ -52,6 +52,7 @@ All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHand
 - `requireAdmin` — checks session auth + admin role (replaces inline admin checks)
 - `requireBotToken` — checks `X-Bot-Token` header
 - `requireAuthOrBot` — accepts either session auth or bot token
+- **Session validity is based on DB session TTL (7 days), NOT OIDC token expiry.** OIDC tokens are only used during login for identity verification. The auth middleware no longer attempts token refresh — if the session exists in the DB and hasn't expired, the user stays logged in.
 
 ### Frontend Routing
 The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.
