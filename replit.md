@@ -61,18 +61,24 @@ All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHand
 ### Frontend Routing
 The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.
 
-### Database Entities (11 tables)
+### Database Entities (12 tables)
 - `users` — Replit Auth users (varchar ID)
 - `sessions` — auth session storage (sid + JSON payload + expire)
 - `claims` — rejected claims (serial ID)
 - `notes` — claim notes/comments (with ownership tracking via `author`)
 - `audit_logs` — full audit trail
 - `error_types` — categorized denial reasons with decision trees
+- `error_detail_mappings` — maps normalized error detail text to error type IDs (for auto-classification during import)
 - `portal_submissions` — MAS portal submission tracking
 - `bot_instances` — Playwright bot instance registry
 - `bot_activity_log` — per-submission bot action log
 - `presence_logs` — real-time user presence (heartbeat-based, unique on claim_id + user_email)
 - `conversations` + `messages` — AI chat conversations
+
+### Error Type Auto-Match & Bulk Assignment
+- During import, a "Classify" step groups claims by unique error detail text and looks up previously saved mappings via `POST /api/error-detail-mappings/lookup`. Known matches are pre-filled; unrecognized error details can be assigned from existing error types. Confirmed mappings are saved via `POST /api/error-detail-mappings` for future imports.
+- Fuzzy matching uses case-insensitive, whitespace-normalized text comparison.
+- The All Claims page has multi-select checkboxes and a bulk "Assign Error Type" action (`POST /api/claims/bulk-assign-error-type`) that updates all selected claims and creates audit log entries.
 
 ### Status Flow
 New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resolved/Denied

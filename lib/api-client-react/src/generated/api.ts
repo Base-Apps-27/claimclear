@@ -25,6 +25,8 @@ import type {
   AuditLogResponse,
   BotActivityLogResponse,
   BotInstanceResponse,
+  BulkAssignErrorTypeBody,
+  BulkAssignResult,
   ClaimResponse,
   ClaimSubmissionBody,
   ClaimsListResponse,
@@ -47,6 +49,8 @@ import type {
   ImportSummary,
   ListClaimsParams,
   ListPortalSubmissionsParams,
+  LookupMappingsBody,
+  LookupMappingsResponse,
   NoteResponse,
   PlaceHoldBody,
   PollSubmissionsBody,
@@ -56,6 +60,8 @@ import type {
   PresenceResponse,
   RegisterBotBody,
   SOPAnalysisResult,
+  SaveMappingsBody,
+  SaveMappingsResponse,
   SendAnthropicMessageBody,
   SuccessResponse,
   UpdateClaimBody,
@@ -2276,6 +2282,268 @@ export const useImportClaims = <
   TContext
 > => {
   return useMutation(getImportClaimsMutationOptions(options));
+};
+
+/**
+ * @summary Look up error detail mappings for a list of error detail strings
+ */
+export const getLookupErrorDetailMappingsUrl = () => {
+  return `/api/error-detail-mappings/lookup`;
+};
+
+export const lookupErrorDetailMappings = async (
+  lookupMappingsBody: LookupMappingsBody,
+  options?: RequestInit,
+): Promise<LookupMappingsResponse> => {
+  return customFetch<LookupMappingsResponse>(
+    getLookupErrorDetailMappingsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(lookupMappingsBody),
+    },
+  );
+};
+
+export const getLookupErrorDetailMappingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof lookupErrorDetailMappings>>,
+    TError,
+    { data: BodyType<LookupMappingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof lookupErrorDetailMappings>>,
+  TError,
+  { data: BodyType<LookupMappingsBody> },
+  TContext
+> => {
+  const mutationKey = ["lookupErrorDetailMappings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof lookupErrorDetailMappings>>,
+    { data: BodyType<LookupMappingsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return lookupErrorDetailMappings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LookupErrorDetailMappingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof lookupErrorDetailMappings>>
+>;
+export type LookupErrorDetailMappingsMutationBody =
+  BodyType<LookupMappingsBody>;
+export type LookupErrorDetailMappingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Look up error detail mappings for a list of error detail strings
+ */
+export const useLookupErrorDetailMappings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof lookupErrorDetailMappings>>,
+    TError,
+    { data: BodyType<LookupMappingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof lookupErrorDetailMappings>>,
+  TError,
+  { data: BodyType<LookupMappingsBody> },
+  TContext
+> => {
+  return useMutation(getLookupErrorDetailMappingsMutationOptions(options));
+};
+
+/**
+ * @summary Save new or updated error detail mappings
+ */
+export const getSaveErrorDetailMappingsUrl = () => {
+  return `/api/error-detail-mappings`;
+};
+
+export const saveErrorDetailMappings = async (
+  saveMappingsBody: SaveMappingsBody,
+  options?: RequestInit,
+): Promise<SaveMappingsResponse> => {
+  return customFetch<SaveMappingsResponse>(getSaveErrorDetailMappingsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveMappingsBody),
+  });
+};
+
+export const getSaveErrorDetailMappingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveErrorDetailMappings>>,
+    TError,
+    { data: BodyType<SaveMappingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveErrorDetailMappings>>,
+  TError,
+  { data: BodyType<SaveMappingsBody> },
+  TContext
+> => {
+  const mutationKey = ["saveErrorDetailMappings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveErrorDetailMappings>>,
+    { data: BodyType<SaveMappingsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return saveErrorDetailMappings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveErrorDetailMappingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveErrorDetailMappings>>
+>;
+export type SaveErrorDetailMappingsMutationBody = BodyType<SaveMappingsBody>;
+export type SaveErrorDetailMappingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save new or updated error detail mappings
+ */
+export const useSaveErrorDetailMappings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveErrorDetailMappings>>,
+    TError,
+    { data: BodyType<SaveMappingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveErrorDetailMappings>>,
+  TError,
+  { data: BodyType<SaveMappingsBody> },
+  TContext
+> => {
+  return useMutation(getSaveErrorDetailMappingsMutationOptions(options));
+};
+
+/**
+ * @summary Bulk assign error type to multiple claims
+ */
+export const getBulkAssignErrorTypeUrl = () => {
+  return `/api/claims/bulk-assign-error-type`;
+};
+
+export const bulkAssignErrorType = async (
+  bulkAssignErrorTypeBody: BulkAssignErrorTypeBody,
+  options?: RequestInit,
+): Promise<BulkAssignResult> => {
+  return customFetch<BulkAssignResult>(getBulkAssignErrorTypeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkAssignErrorTypeBody),
+  });
+};
+
+export const getBulkAssignErrorTypeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAssignErrorType>>,
+    TError,
+    { data: BodyType<BulkAssignErrorTypeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkAssignErrorType>>,
+  TError,
+  { data: BodyType<BulkAssignErrorTypeBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkAssignErrorType"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkAssignErrorType>>,
+    { data: BodyType<BulkAssignErrorTypeBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkAssignErrorType(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkAssignErrorTypeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkAssignErrorType>>
+>;
+export type BulkAssignErrorTypeMutationBody = BodyType<BulkAssignErrorTypeBody>;
+export type BulkAssignErrorTypeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk assign error type to multiple claims
+ */
+export const useBulkAssignErrorType = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAssignErrorType>>,
+    TError,
+    { data: BodyType<BulkAssignErrorTypeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkAssignErrorType>>,
+  TError,
+  { data: BodyType<BulkAssignErrorTypeBody> },
+  TContext
+> => {
+  return useMutation(getBulkAssignErrorTypeMutationOptions(options));
 };
 
 /**

@@ -1,19 +1,20 @@
 import { useState, useCallback, useRef } from "react";
-import { useImportClaims, getListClaimsQueryKey } from "@workspace/api-client-react";
-import type { ImportSummary } from "@workspace/api-client-react";
+import { useImportClaims, useLookupErrorDetailMappings, useSaveErrorDetailMappings, useListErrorTypes, getListClaimsQueryKey } from "@workspace/api-client-react";
+import type { ImportSummary, ErrorTypeResponse } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Upload, AlertCircle, FileSpreadsheet, FileText, X,
-  Loader2, CheckCircle2, AlertTriangle, RotateCcw,
+  Loader2, CheckCircle2, AlertTriangle, RotateCcw, Tag, ArrowRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
-type UploadStage = "idle" | "reading" | "parsing" | "ready" | "importing" | "complete" | "error";
+type UploadStage = "idle" | "reading" | "parsing" | "ready" | "classifying" | "importing" | "complete" | "error";
 
 interface ParsedRow {
   confNumber: string;
@@ -23,11 +24,23 @@ interface ParsedRow {
   carNumber: string;
   errorDetails: string;
   claimAmount: number;
+  errorTypeId?: string;
+  errorTypeName?: string;
 }
 
 interface ParseWarning {
   row: number;
   message: string;
+}
+
+interface ClassifyGroup {
+  errorDetails: string;
+  count: number;
+  matched: boolean;
+  errorTypeId: number | null;
+  errorTypeName: string | null;
+  selectedErrorTypeId: string;
+  selectedErrorTypeName: string;
 }
 
 function parseCsv(text: string): string[][] {
@@ -156,6 +169,9 @@ function formatFileSize(bytes: number) {
 export default function Import() {
   const queryClient = useQueryClient();
   const importClaims = useImportClaims();
+  const lookupMappings = useLookupErrorDetailMappings();
+  const saveMappings = useSaveErrorDetailMappings();
+  const { data: errorTypesData } = useListErrorTypes();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<UploadStage>("idle");
@@ -168,6 +184,10 @@ export default function Import() {
   const [fileType, setFileType] = useState<"csv" | "excel">("csv");
   const [errorMessage, setErrorMessage] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [classifyGroups, setClassifyGroups] = useState<ClassifyGroup[]>([]);
+  const [classifyLoading, setClassifyLoading] = useState(false);
+
+  const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
 
   const processFile = useCallback(async (file: File) => {
     setFileName(file.name);
@@ -241,10 +261,111 @@ export default function Import() {
     if (file) processFile(file);
   }, [processFile]);
 
-  const handleImport = async () => {
+  const handleStartClassify = async () => {
+    const uniqueDetails = [...new Set(rows.map(r => r.errorDetails).filter(d => d && d.trim()))];
+
+    if (uniqueDetails.length === 0) {
+      setStage("classifying");
+      setClassifyGroups([]);
+      return;
+    }
+
+    setClassifyLoading(true);
+    try {
+      const res = await lookupMappings.mutateAsync({ data: { errorDetails: uniqueDetails } });
+      const mappings = res.mappings;
+
+      const countMap = new Map<string, number>();
+      for (const row of rows) {
+        const d = row.errorDetails || "";
+        countMap.set(d, (countMap.get(d) || 0) + 1);
+      }
+
+      const groups: ClassifyGroup[] = uniqueDetails.map(detail => {
+        const mapping = mappings.find((m) => m.originalText === detail);
+        return {
+          errorDetails: detail,
+          count: countMap.get(detail) || 0,
+          matched: mapping?.matched ?? false,
+          errorTypeId: mapping?.errorTypeId ?? null,
+          errorTypeName: mapping?.errorTypeName ?? null,
+          selectedErrorTypeId: mapping?.errorTypeId ? String(mapping.errorTypeId) : "",
+          selectedErrorTypeName: mapping?.errorTypeName ?? "",
+        };
+      });
+
+      groups.sort((a, b) => {
+        if (a.matched && !b.matched) return -1;
+        if (!a.matched && b.matched) return 1;
+        return b.count - a.count;
+      });
+
+      setClassifyGroups(groups);
+      setStage("classifying");
+    } catch (err) {
+      setErrorMessage("Failed to look up error type mappings");
+      setStage("error");
+    } finally {
+      setClassifyLoading(false);
+    }
+  };
+
+  const handleGroupErrorTypeChange = (index: number, errorTypeId: string) => {
+    setClassifyGroups(prev => {
+      const next = [...prev];
+      const et = errorTypes.find((t) => String(t.id) === errorTypeId);
+      next[index] = {
+        ...next[index],
+        selectedErrorTypeId: errorTypeId,
+        selectedErrorTypeName: et?.name ?? "",
+      };
+      return next;
+    });
+  };
+
+  const [mappingSaveError, setMappingSaveError] = useState("");
+
+  const handleConfirmClassification = async () => {
+    setMappingSaveError("");
+    const mappingsToSave = classifyGroups
+      .filter(g => g.selectedErrorTypeId)
+      .map(g => ({
+        originalText: g.errorDetails,
+        errorTypeId: Number(g.selectedErrorTypeId),
+        errorTypeName: g.selectedErrorTypeName,
+      }));
+
+    if (mappingsToSave.length > 0) {
+      try {
+        await saveMappings.mutateAsync({ data: { mappings: mappingsToSave } });
+      } catch (err) {
+        setMappingSaveError("Failed to save mappings for future use, but proceeding with import.");
+      }
+    }
+
+    const classifyMap = new Map(
+      classifyGroups
+        .filter(g => g.selectedErrorTypeId)
+        .map(g => [g.errorDetails, { id: g.selectedErrorTypeId, name: g.selectedErrorTypeName }])
+    );
+
+    const updatedRows = rows.map(row => {
+      const match = classifyMap.get(row.errorDetails);
+      if (match) {
+        return { ...row, errorTypeId: match.id, errorTypeName: match.name };
+      }
+      return row;
+    });
+
+    setRows(updatedRows);
+    handleImport(updatedRows);
+  };
+
+  const handleImport = async (importRows?: ParsedRow[]) => {
     setStage("importing");
     try {
-      const res = await importClaims.mutateAsync({ data: { rows, duplicateAction } });
+      const rowsToImport = importRows ?? rows;
+      const res = await importClaims.mutateAsync({ data: { rows: rowsToImport, duplicateAction } });
       setResult(res);
       setStage("complete");
       queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
@@ -252,6 +373,10 @@ export default function Import() {
       setStage("error");
       setErrorMessage(err instanceof Error ? err.message : "Import failed");
     }
+  };
+
+  const handleSkipClassification = () => {
+    handleImport();
   };
 
   const handleReset = () => {
@@ -262,12 +387,17 @@ export default function Import() {
     setFileName("");
     setFileSize(0);
     setErrorMessage("");
+    setClassifyGroups([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const totalAmount = rows.reduce((s, r) => s + (r.claimAmount || 0), 0);
 
   const isProcessing = stage === "reading" || stage === "parsing";
+
+  const matchedCount = classifyGroups.filter(g => g.matched).length;
+  const unmatchedCount = classifyGroups.filter(g => !g.matched).length;
+  const assignedCount = classifyGroups.filter(g => g.selectedErrorTypeId).length;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -465,10 +595,121 @@ export default function Import() {
                   {duplicateAction === "skip" ? "Existing claims won't be changed" : "Existing claims will be updated"}
                 </span>
               </div>
-              <Button onClick={handleImport} disabled={stage !== "ready"} className="px-6">
-                <Upload className="h-4 w-4 mr-2" />
-                Import {rows.length} Claims
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => handleImport()} disabled={classifyLoading}>
+                  Skip Classification
+                </Button>
+                <Button onClick={handleStartClassify} disabled={classifyLoading}>
+                  {classifyLoading ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Looking up...</>
+                  ) : (
+                    <><Tag className="h-4 w-4 mr-2" /> Classify & Import</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {stage === "classifying" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Tag className="h-5 w-5 text-primary" />
+                Classify Error Types
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">
+                  {assignedCount}/{classifyGroups.length} assigned
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={() => setStage("ready")}>
+                  <ArrowRight className="h-3 w-3 mr-1 rotate-180" /> Back
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-3">
+              {matchedCount > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-md px-3 py-2 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span className="text-sm text-green-800">{matchedCount} known match{matchedCount !== 1 ? "es" : ""}</span>
+                </div>
+              )}
+              {unmatchedCount > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm text-amber-800">{unmatchedCount} unrecognized</span>
+                </div>
+              )}
+            </div>
+
+            <div className="max-h-[400px] overflow-auto border rounded-md divide-y">
+              {classifyGroups.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  No error details found in the imported claims.
+                </div>
+              ) : (
+                classifyGroups.map((group, index) => (
+                  <div key={index} className={`p-3 ${group.matched ? "bg-green-50/50" : ""}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {group.matched ? (
+                            <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-300">Known</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-300">New</Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">{group.count} claim{group.count !== 1 ? "s" : ""}</span>
+                        </div>
+                        <p className="text-sm truncate" title={group.errorDetails}>{group.errorDetails}</p>
+                      </div>
+                      <div className="w-[220px] flex-shrink-0">
+                        <Select
+                          value={group.selectedErrorTypeId}
+                          onValueChange={(val) => handleGroupErrorTypeChange(index, val)}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Select error type..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {errorTypes.map((et) => (
+                              <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {mappingSaveError && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                <span className="text-sm text-amber-800">{mappingSaveError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-muted-foreground">
+                Assigned error types will be saved for future imports.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={handleSkipClassification}>
+                  Skip & Import
+                </Button>
+                <Button onClick={handleConfirmClassification} disabled={saveMappings.isPending || importClaims.isPending}>
+                  {saveMappings.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
+                  ) : (
+                    <><CheckCircle2 className="h-4 w-4 mr-2" /> Confirm & Import</>
+                  )}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

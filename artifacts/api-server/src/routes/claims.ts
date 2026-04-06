@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, and, count, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
 
@@ -263,6 +263,69 @@ router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void
   await createAuditLog(id, "workflow_step", "Workflow progress updated", req);
   emitClaimEvent(id, "workflow_updated", req);
   res.json(claim);
+}));
+
+router.post("/claims/bulk-assign-error-type", asyncHandler(async (req, res): Promise<void> => {
+  const { claimIds, errorTypeId } = req.body;
+  if (!Array.isArray(claimIds) || claimIds.length === 0) {
+    res.status(400).json({ error: "claimIds array is required" });
+    return;
+  }
+  if (!errorTypeId) {
+    res.status(400).json({ error: "errorTypeId is required" });
+    return;
+  }
+
+  const [errorType] = await db.select({ id: errorTypesTable.id, name: errorTypesTable.name })
+    .from(errorTypesTable)
+    .where(eq(errorTypesTable.id, Number(errorTypeId)));
+
+  if (!errorType) {
+    res.status(404).json({ error: "Error type not found" });
+    return;
+  }
+
+  const ids = claimIds.map((id: string | number) => Number(id)).filter((id: number) => !isNaN(id));
+  if (ids.length === 0) {
+    res.status(400).json({ error: "No valid claim IDs provided" });
+    return;
+  }
+
+  const claims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
+    .from(claimsTable)
+    .where(inArray(claimsTable.id, ids));
+
+  if (claims.length === 0) {
+    res.status(404).json({ error: "No matching claims found" });
+    return;
+  }
+
+  const errorTypeName = errorType.name;
+  const userEmail = req.user?.email ?? null;
+  const userName = req.user?.displayName ?? null;
+
+  await db.transaction(async (tx) => {
+    await tx.update(claimsTable)
+      .set({ errorTypeId: String(errorTypeId), errorTypeName })
+      .where(inArray(claimsTable.id, ids));
+
+    for (const claim of claims) {
+      await tx.insert(auditLogsTable).values({
+        claimId: claim.id,
+        action: "error_type_assigned",
+        details: `Error type assigned: ${errorTypeName}`,
+        metadata: { errorTypeId, errorTypeName },
+        userEmail,
+        userName,
+      });
+    }
+  });
+
+  for (const claim of claims) {
+    emitClaimEvent(claim.id, "claim_edited", req);
+  }
+
+  res.json({ updated: claims.length });
 }));
 
 export default router;

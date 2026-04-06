@@ -14,4 +14,6 @@ export interface ImportClaimRow {
   carNumber?: string;
   errorDetails?: string;
   claimAmount?: number;
+  errorTypeId?: string;
+  errorTypeName?: string;
 }

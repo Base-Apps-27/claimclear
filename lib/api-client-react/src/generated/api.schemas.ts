@@ -338,6 +338,8 @@ export interface ImportClaimRow {
   carNumber?: string;
   errorDetails?: string;
   claimAmount?: number;
+  errorTypeId?: string;
+  errorTypeName?: string;
 }
 
 export interface ImportClaimsBody {
@@ -674,6 +676,49 @@ export interface AnthropicConversationWithMessages {
 
 export interface AnthropicError {
   error: string;
+}
+
+export interface LookupMappingsBody {
+  errorDetails: string[];
+}
+
+export interface MappingResult {
+  originalText: string;
+  normalizedText: string;
+  matched: boolean;
+  /** @nullable */
+  errorTypeId?: number | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+}
+
+export interface LookupMappingsResponse {
+  mappings: MappingResult[];
+}
+
+export interface SaveMappingItem {
+  originalText: string;
+  errorTypeId: number;
+  errorTypeName: string;
+}
+
+export interface SaveMappingsBody {
+  mappings: SaveMappingItem[];
+}
+
+export type SaveMappingsResponseSavedItem = { [key: string]: unknown };
+
+export interface SaveMappingsResponse {
+  saved: SaveMappingsResponseSavedItem[];
+}
+
+export interface BulkAssignErrorTypeBody {
+  claimIds: number[];
+  errorTypeId: number;
+}
+
+export interface BulkAssignResult {
+  updated: number;
 }
 
 export type GetCurrentAuthUser200 = {

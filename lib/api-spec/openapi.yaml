@@ -37,6 +37,8 @@ tags:
     description: AI features
   - name: anthropic
     description: Anthropic AI chat operations
+  - name: errorDetailMappings
+    description: Error detail to error type mappings
 
 paths:
   /healthz:
@@ -575,6 +577,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportSummary"
+
+  /error-detail-mappings/lookup:
+    post:
+      operationId: lookupErrorDetailMappings
+      tags: [errorDetailMappings]
+      summary: Look up error detail mappings for a list of error detail strings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LookupMappingsBody"
+      responses:
+        "200":
+          description: Mapping results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LookupMappingsResponse"
+
+  /error-detail-mappings:
+    post:
+      operationId: saveErrorDetailMappings
+      tags: [errorDetailMappings]
+      summary: Save new or updated error detail mappings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveMappingsBody"
+      responses:
+        "200":
+          description: Saved mappings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveMappingsResponse"
+
+  /claims/bulk-assign-error-type:
+    post:
+      operationId: bulkAssignErrorType
+      tags: [claims]
+      summary: Bulk assign error type to multiple claims
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAssignErrorTypeBody"
+      responses:
+        "200":
+          description: Bulk assignment result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkAssignResult"
 
   /portal-submissions:
     get:
@@ -1481,6 +1540,10 @@ components:
           type: string
         claimAmount:
           type: number
+        errorTypeId:
+          type: string
+        errorTypeName:
+          type: string
       required:
         - confNumber
 
@@ -2051,3 +2114,96 @@ components:
           type: string
       required:
         - error
+
+    LookupMappingsBody:
+      type: object
+      properties:
+        errorDetails:
+          type: array
+          items:
+            type: string
+      required:
+        - errorDetails
+
+    MappingResult:
+      type: object
+      properties:
+        originalText:
+          type: string
+        normalizedText:
+          type: string
+        matched:
+          type: boolean
+        errorTypeId:
+          type: ["integer", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+      required:
+        - originalText
+        - normalizedText
+        - matched
+
+    LookupMappingsResponse:
+      type: object
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MappingResult"
+      required:
+        - mappings
+
+    SaveMappingItem:
+      type: object
+      properties:
+        originalText:
+          type: string
+        errorTypeId:
+          type: integer
+        errorTypeName:
+          type: string
+      required:
+        - originalText
+        - errorTypeId
+        - errorTypeName
+
+    SaveMappingsBody:
+      type: object
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaveMappingItem"
+      required:
+        - mappings
+
+    SaveMappingsResponse:
+      type: object
+      properties:
+        saved:
+          type: array
+          items:
+            type: object
+      required:
+        - saved
+
+    BulkAssignErrorTypeBody:
+      type: object
+      properties:
+        claimIds:
+          type: array
+          items:
+            type: integer
+        errorTypeId:
+          type: integer
+      required:
+        - claimIds
+        - errorTypeId
+
+    BulkAssignResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required:
+        - updated

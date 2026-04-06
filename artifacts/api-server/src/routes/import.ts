@@ -83,6 +83,8 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         clientNumber: row.clientNumber || "",
         carNumber: String(row.carNumber || ""),
         errorDetails: row.errorDetails || "",
+        errorTypeId: row.errorTypeId || null,
+        errorTypeName: row.errorTypeName || null,
         claimAmount: row.claimAmount != null ? String(typeof row.claimAmount === "number" ? row.claimAmount : parseFloat(row.claimAmount) || 0) : null,
         status: "New",
         outcome: "Pending",

@@ -844,6 +844,8 @@ export const ImportClaimsBody = zod.object({
       carNumber: zod.string().optional(),
       errorDetails: zod.string().optional(),
       claimAmount: zod.number().optional(),
+      errorTypeId: zod.string().optional(),
+      errorTypeName: zod.string().optional(),
     }),
   ),
   duplicateAction: zod.string().default(importClaimsBodyDuplicateActionDefault),
@@ -857,6 +859,54 @@ export const ImportClaimsResponse = zod.object({
   duplicates: zod.array(zod.string()).optional(),
   total: zod.number(),
   batchId: zod.string(),
+});
+
+/**
+ * @summary Look up error detail mappings for a list of error detail strings
+ */
+export const LookupErrorDetailMappingsBody = zod.object({
+  errorDetails: zod.array(zod.string()),
+});
+
+export const LookupErrorDetailMappingsResponse = zod.object({
+  mappings: zod.array(
+    zod.object({
+      originalText: zod.string(),
+      normalizedText: zod.string(),
+      matched: zod.boolean(),
+      errorTypeId: zod.number().nullish(),
+      errorTypeName: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Save new or updated error detail mappings
+ */
+export const SaveErrorDetailMappingsBody = zod.object({
+  mappings: zod.array(
+    zod.object({
+      originalText: zod.string(),
+      errorTypeId: zod.number(),
+      errorTypeName: zod.string(),
+    }),
+  ),
+});
+
+export const SaveErrorDetailMappingsResponse = zod.object({
+  saved: zod.array(zod.object({}).passthrough()),
+});
+
+/**
+ * @summary Bulk assign error type to multiple claims
+ */
+export const BulkAssignErrorTypeBody = zod.object({
+  claimIds: zod.array(zod.number()),
+  errorTypeId: zod.number(),
+});
+
+export const BulkAssignErrorTypeResponse = zod.object({
+  updated: zod.number(),
 });
 
 /**
