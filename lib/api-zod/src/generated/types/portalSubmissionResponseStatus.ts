@@ -15,4 +15,5 @@ export const PortalSubmissionResponseStatus = {
   submitted: "submitted",
   failed: "failed",
   cancelled: "cancelled",
+  dry_run: "dry_run",
 } as const;

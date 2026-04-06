@@ -48,13 +48,16 @@ function SubmissionCard({ submission: sub }: { submission: PortalSubmissionRespo
             variant={
               sub.status === "submitted" ? "default" :
               sub.status === "failed" ? "destructive" :
+              sub.status === "dry_run" ? "outline" :
               "secondary"
             }
+            className={sub.status === "dry_run" ? "border-amber-500 text-amber-700 bg-amber-50" : undefined}
           >
             {sub.status === "submitted" && <CheckCircle className="h-3 w-3 mr-1" />}
             {sub.status === "failed" && <AlertTriangle className="h-3 w-3 mr-1" />}
             {sub.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
-            {sub.status}
+            {sub.status === "dry_run" && <Eye className="h-3 w-3 mr-1" />}
+            {sub.status === "dry_run" ? "Dry Run" : sub.status}
           </Badge>
         </div>
         <span className="text-xs text-muted-foreground">

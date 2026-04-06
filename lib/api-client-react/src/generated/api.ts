@@ -28,6 +28,7 @@ import type {
   ClaimResponse,
   ClaimSubmissionBody,
   ClaimsListResponse,
+  CompleteDryRunBody,
   CompleteSubmissionBody,
   CreateAnthropicConversationBody,
   CreateClaimBody,
@@ -2996,6 +2997,97 @@ export const useCompletePortalSubmission = <
   TContext
 > => {
   return useMutation(getCompletePortalSubmissionMutationOptions(options));
+};
+
+/**
+ * @summary Bot reports dry-run completion (bot token auth)
+ */
+export const getCompleteDryRunPortalSubmissionUrl = (id: number) => {
+  return `/api/bot/portal-submissions/${id}/complete-dry-run`;
+};
+
+export const completeDryRunPortalSubmission = async (
+  id: number,
+  completeDryRunBody: CompleteDryRunBody,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getCompleteDryRunPortalSubmissionUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(completeDryRunBody),
+    },
+  );
+};
+
+export const getCompleteDryRunPortalSubmissionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
+    TError,
+    { id: number; data: BodyType<CompleteDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
+  TError,
+  { id: number; data: BodyType<CompleteDryRunBody> },
+  TContext
+> => {
+  const mutationKey = ["completeDryRunPortalSubmission"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
+    { id: number; data: BodyType<CompleteDryRunBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return completeDryRunPortalSubmission(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteDryRunPortalSubmissionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>
+>;
+export type CompleteDryRunPortalSubmissionMutationBody =
+  BodyType<CompleteDryRunBody>;
+export type CompleteDryRunPortalSubmissionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bot reports dry-run completion (bot token auth)
+ */
+export const useCompleteDryRunPortalSubmission = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
+    TError,
+    { id: number; data: BodyType<CompleteDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
+  TError,
+  { id: number; data: BodyType<CompleteDryRunBody> },
+  TContext
+> => {
+  return useMutation(getCompleteDryRunPortalSubmissionMutationOptions(options));
 };
 
 /**

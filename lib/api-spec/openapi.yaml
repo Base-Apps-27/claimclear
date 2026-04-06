@@ -741,6 +741,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /bot/portal-submissions/{id}/complete-dry-run:
+    post:
+      operationId: completeDryRunPortalSubmission
+      tags: [bot]
+      summary: Bot reports dry-run completion (bot token auth)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteDryRunBody"
+      responses:
+        "200":
+          description: Dry run completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
   /bot/portal-submissions/{id}/fail:
     post:
       operationId: failPortalSubmission
@@ -1497,7 +1522,7 @@ components:
           type: integer
         status:
           type: string
-          enum: ["pending", "in_progress", "submitted", "failed", "cancelled"]
+          enum: ["pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"]
         issueType:
           type: ["string", "null"]
         subject:
@@ -1607,6 +1632,14 @@ components:
           type: string
         botInstanceId:
           type: integer
+
+    CompleteDryRunBody:
+      type: object
+      properties:
+        botInstanceId:
+          type: integer
+        screenshotPath:
+          type: string
 
     FailSubmissionBody:
       type: object

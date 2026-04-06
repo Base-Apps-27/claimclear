@@ -8,6 +8,7 @@ const SESSION_DIR = path.resolve("bot-session");
 const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
 const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 const BOT_NAME = process.env.BOT_NAME || `bot-${process.pid}`;
+const BOT_DRY_RUN = process.env.BOT_DRY_RUN === "true";
 const BOT_TOKEN: string = process.env.BOT_SERVICE_TOKEN || "";
 if (!BOT_TOKEN) {
   console.error("[BOT] FATAL: BOT_SERVICE_TOKEN environment variable is required");
@@ -112,6 +113,13 @@ async function completeSubmission(id: number, portalTicketId: string, screenshot
   return api(`/bot/portal-submissions/${id}/complete`, {
     method: "POST",
     body: JSON.stringify({ portalTicketId, botInstanceId, screenshotPath, pageHtmlPath }),
+  });
+}
+
+async function completeDryRun(id: number, screenshotPath: string | null) {
+  return api(`/bot/portal-submissions/${id}/complete-dry-run`, {
+    method: "POST",
+    body: JSON.stringify({ botInstanceId, screenshotPath }),
   });
 }
 
@@ -350,19 +358,28 @@ async function processSubmission(context: BrowserContext, submission: PortalSubm
 
     console.log(`[BOT] Form fields populated`);
 
-    const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit")');
-    if (submitButton) {
-      await submitButton.click();
-      await page.waitForTimeout(5000);
-
-      const confirmationText = await page.textContent("body");
-      const ticketMatch = confirmationText?.match(/(?:ticket|request|case|confirmation)\s*(?:#|number|id)?\s*[:.]?\s*(\w+)/i);
-      const ticketId = ticketMatch ? ticketMatch[1] : `portal-${Date.now()}`;
-
-      console.log(`[BOT] Submission ${subId} completed with ticket ${ticketId}`);
-      await completeSubmission(subId, ticketId);
+    if (BOT_DRY_RUN) {
+      console.log(`[BOT] DRY RUN mode — skipping submit button click`);
+      const screenshotPath = path.join(SESSION_DIR, `dry-run-${subId}-${Date.now()}.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      console.log(`[BOT] Dry-run screenshot saved to ${screenshotPath}`);
+      await completeDryRun(subId, screenshotPath);
+      console.log(`[BOT] Submission ${subId} completed as dry run`);
     } else {
-      throw new Error("Submit button not found on portal page");
+      const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit")');
+      if (submitButton) {
+        await submitButton.click();
+        await page.waitForTimeout(5000);
+
+        const confirmationText = await page.textContent("body");
+        const ticketMatch = confirmationText?.match(/(?:ticket|request|case|confirmation)\s*(?:#|number|id)?\s*[:.]?\s*(\w+)/i);
+        const ticketId = ticketMatch ? ticketMatch[1] : `portal-${Date.now()}`;
+
+        console.log(`[BOT] Submission ${subId} completed with ticket ${ticketId}`);
+        await completeSubmission(subId, ticketId);
+      } else {
+        throw new Error("Submit button not found on portal page");
+      }
     }
 
     await context.storageState({ path: path.join(SESSION_DIR, "state.json") });
@@ -396,6 +413,7 @@ Evidence Notes: ${sub.evidenceNotes || "N/A"}`;
 async function mainLoop() {
   console.log("[BOT] Starting portal submission bot...");
   console.log(`[BOT] Portal URL: ${PORTAL_URL}`);
+  if (BOT_DRY_RUN) console.log("[BOT] *** DRY RUN MODE ENABLED — submissions will NOT be submitted ***");
 
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });

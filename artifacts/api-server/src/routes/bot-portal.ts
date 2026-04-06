@@ -140,6 +140,38 @@ router.post("/:id/retry", asyncHandler(async (req, res): Promise<void> => {
   res.json(sub);
 }));
 
+router.post("/:id/complete-dry-run", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { botInstanceId, screenshotPath } = req.body;
+
+  const [sub] = await db.update(portalSubmissionsTable).set({
+    status: "dry_run",
+    submittedAt: new Date().toISOString(),
+  }).where(eq(portalSubmissionsTable.id, id)).returning();
+
+  if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  if (botInstanceId) {
+    await db.update(botInstancesTable).set({
+      successCount: sql`${botInstancesTable.successCount} + 1`,
+      submissionsToday: sql`${botInstancesTable.submissionsToday} + 1`,
+    }).where(eq(botInstancesTable.id, botInstanceId));
+  }
+
+  await db.insert(botActivityLogTable).values({
+    submissionId: id,
+    botInstanceId: botInstanceId || null,
+    action: "dry_run",
+    success: true,
+    message: "Dry run completed — form filled but not submitted",
+    screenshotPath: screenshotPath || null,
+  });
+
+  res.json(sub);
+}));
+
 router.post("/:id/fail", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

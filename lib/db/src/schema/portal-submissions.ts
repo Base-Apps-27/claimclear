@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { claimsTable } from "./claims";
 
 export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
-  "pending", "in_progress", "submitted", "failed", "cancelled"
+  "pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"
 ]);
 
 export const portalSubmissionsTable = pgTable("portal_submissions", {
