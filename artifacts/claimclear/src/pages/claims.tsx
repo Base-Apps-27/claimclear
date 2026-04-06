@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListClaims, getListClaimsQueryKey } from "@workspace/api-client-react";
+import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Link } from "wouter";
 import { Search, Filter, ArrowUpDown } from "lucide-react";
 
 export default function ClaimsList() {
+  useClaimsListEvents();
   const [search, setSearch] = useState("");
   
   const { data, isLoading } = useListClaims({

@@ -16,6 +16,7 @@ import {
 import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
+import { useClaimEvents } from "@/hooks/use-claim-events";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,6 +145,7 @@ export default function ClaimDetail() {
   const { data: viewers } = useGetPresence(claimId, { query: { queryKey: getGetPresenceQueryKey(claimId), enabled: !!claimId, refetchInterval: 15000 } });
 
   usePresence(claimId);
+  useClaimEvents(claimId);
 
   const updateClaim = useUpdateClaim();
   const updateStatus = useUpdateClaimStatus();

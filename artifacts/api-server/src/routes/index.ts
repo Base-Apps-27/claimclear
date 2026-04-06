@@ -13,6 +13,7 @@ import botPortalRouter from "./bot-portal";
 import botInstancesRouter from "./bot-instances";
 import botInstancesReadRouter from "./bot-instances-read";
 import presenceRouter from "./presence";
+import claimEventsRouter from "./claim-events";
 import dashboardRouter from "./dashboard";
 import dailyBriefRouter from "./daily-brief";
 import aiEmailRouter from "./ai-email";
@@ -32,6 +33,7 @@ router.use("/daily-brief", requireAuthOrBot, dailyBriefRouter);
 router.use(requireAuth);
 
 router.use("/bot-instances", botInstancesReadRouter);
+router.use(claimEventsRouter);
 router.use(claimsRouter);
 router.use(notesRouter);
 router.use(auditLogsRouter);

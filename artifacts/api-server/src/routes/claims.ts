@@ -3,6 +3,7 @@ import { eq, or, ilike, desc, and, count, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { broadcastClaimEvent } from "../lib/sse";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,16 @@ async function createAuditLog(claimId: number, action: string, details: string, 
     metadata: metadata ?? null,
     userEmail,
     userName,
+  });
+}
+
+function emitClaimEvent(claimId: number, type: string, req: Request) {
+  broadcastClaimEvent({
+    type,
+    claimId,
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+    timestamp: new Date().toISOString(),
   });
 }
 
@@ -85,6 +96,7 @@ router.post("/claims", asyncHandler(async (req, res): Promise<void> => {
   }).returning();
 
   await createAuditLog(claim.id, "claim_created", `Claim ${claim.confNumber} created`, req);
+  emitClaimEvent(claim.id, "claim_created", req);
   res.status(201).json(claim);
 }));
 
@@ -116,6 +128,7 @@ router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "claim_edited", `Claim ${claim.confNumber} updated`, req, { fields: Object.keys(updateData) });
+  emitClaimEvent(id, "claim_edited", req);
   res.json(claim);
 }));
 
@@ -127,6 +140,7 @@ router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "claim_deleted", `Claim ${existing.confNumber} deleted`, req);
+  emitClaimEvent(id, "claim_deleted", req);
   await db.delete(claimsTable).where(eq(claimsTable.id, id));
   res.sendStatus(204);
 }));
@@ -149,6 +163,7 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
     content: `Status changed from ${old.status} to ${status}`,
     author: req.user?.displayName || req.user?.email || "System",
   });
+  emitClaimEvent(id, "status_changed", req);
   res.json(claim);
 }));
 
@@ -177,6 +192,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
     content: `Outcome changed from ${old.outcome} to ${outcome}${approvedAmount ? ` (approved: $${approvedAmount})` : ""}`,
     author: req.user?.displayName || req.user?.email || "System",
   });
+  emitClaimEvent(id, "outcome_changed", req);
   res.json(claim);
 }));
 
@@ -193,6 +209,7 @@ router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "evidence_submitted", "Evidence updated", req);
+  emitClaimEvent(id, "evidence_updated", req);
   res.json(claim);
 }));
 
@@ -213,6 +230,7 @@ router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => 
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "hold_placed", `Claim placed on hold: ${holdReason}`, req, { holdReason, holdPendingFrom });
+  emitClaimEvent(id, "hold_placed", req);
   res.json(claim);
 }));
 
@@ -230,6 +248,7 @@ router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> =
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "hold_removed", "Hold removed from claim", req);
+  emitClaimEvent(id, "hold_removed", req);
   res.json(claim);
 }));
 
@@ -242,6 +261,7 @@ router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   await createAuditLog(id, "workflow_step", "Workflow progress updated", req);
+  emitClaimEvent(id, "workflow_updated", req);
   res.json(claim);
 }));
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import {
   useListClaims,
   useUpdateClaimStatus,
@@ -430,6 +431,7 @@ function WorkflowPlayer({
 }
 
 export default function Queue() {
+  useClaimsListEvents();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const [selectedClaim, setSelectedClaim] = useState<ClaimResponse | null>(null);

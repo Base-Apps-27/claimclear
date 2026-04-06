@@ -113,6 +113,17 @@ CORS origins allow Replit domains (`*.replit.dev`, `*.repl.co`, `*.replit.app`) 
 ### Presence
 - Uses `ON CONFLICT (claim_id, user_email) DO UPDATE` for atomic heartbeat upsert (no race conditions)
 
+### Real-Time Updates (SSE)
+- Server-Sent Events push claim changes to all connected viewers in real time
+- `GET /api/claims/:id/events` — per-claim SSE stream for claim detail pages
+- `GET /api/claims/events` — global SSE stream for claims list/queue pages
+- In-memory client tracking in `src/lib/sse.ts` with keep-alive pings every 25s
+- All claim mutation routes (status, outcome, evidence, hold, workflow, notes) emit SSE events via `broadcastClaimEvent()`
+- Frontend `useClaimEvents(claimId)` hook: opens EventSource, invalidates React Query caches on events, shows toast for remote changes
+- Frontend `useClaimsListEvents()` hook: opens global EventSource, invalidates all claims list queries
+- Indefinite exponential backoff reconnection (caps at 30s intervals, resets on successful connection)
+- Toasts skip the current user's own actions to avoid redundant feedback
+
 ### User Management
 - `upsertUser` uses `ON CONFLICT DO UPDATE` for atomic user creation/update
 - First user auto-promoted to admin with approved status

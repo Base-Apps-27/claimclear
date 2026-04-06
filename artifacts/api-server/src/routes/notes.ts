@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { notesTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { broadcastClaimEvent } from "../lib/sse";
 
 const router: IRouter = Router();
 
@@ -46,6 +47,13 @@ router.post("/claims/:id/notes", asyncHandler(async (req, res): Promise<void> =>
     userName: author,
   });
 
+  broadcastClaimEvent({
+    type: "note_added",
+    claimId,
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+    timestamp: new Date().toISOString(),
+  });
   res.status(201).json(note);
 }));
 
@@ -75,6 +83,13 @@ router.delete("/notes/:id", asyncHandler(async (req, res): Promise<void> => {
     userName: author,
   });
 
+  broadcastClaimEvent({
+    type: "note_deleted",
+    claimId: note.claimId,
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+    timestamp: new Date().toISOString(),
+  });
   res.sendStatus(204);
 }));
 
