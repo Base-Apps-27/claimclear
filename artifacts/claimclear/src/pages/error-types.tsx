@@ -20,6 +20,7 @@ import {
   BookOpen, X, ChevronDown, ChevronRight, Sparkles, Loader2,
   MessageSquare, Wand2, Copy, Send, ArrowRight, Ban
 } from "lucide-react";
+import { InfoTooltip } from "@/components/info-tooltip";
 import {
   TreeEditor, TreePreview, TreePlayer,
   type DecisionTree, type LegacyTreeNode,
@@ -62,7 +63,10 @@ function DisputeReasonsEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">Dispute Reasons</Label>
+        <Label className="text-sm font-medium flex items-center gap-1.5">
+          Dispute Reasons
+          <InfoTooltip content="Pre-defined reasons staff can select when filing a dispute. Each reason includes a label (shown to staff) and a description with talking points for the dispute." />
+        </Label>
         <Button type="button" variant="outline" size="sm" onClick={addReason}>
           <Plus className="h-3 w-3 mr-1" /> Add Reason
         </Button>
@@ -130,7 +134,10 @@ function EvidenceRequirementsEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">Evidence Requirements</Label>
+        <Label className="text-sm font-medium flex items-center gap-1.5">
+          Evidence Requirements
+          <InfoTooltip content="Documents and data staff must collect before a dispute can proceed. Mark items as 'Required' to enforce they are checked off in the evidence gathering step." />
+        </Label>
         <Button type="button" variant="outline" size="sm" onClick={addRequirement}>
           <Plus className="h-3 w-3 mr-1" /> Add Requirement
         </Button>
@@ -673,8 +680,9 @@ export default function ErrorTypes() {
 
                 <TabsContent value="sop-analyzer" className="mt-3">
                   <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                       Paste your Standard Operating Procedure text and the AI will generate all fields: name, category, description, guidance, dispute reasons, evidence requirements, and a decision tree.
+                      <InfoTooltip content="The SOP Analyzer uses AI to parse your procedure document and automatically fill in all error type fields. Paste the full SOP text — the more detail you provide, the better the generated output." />
                     </p>
                     <Textarea
                       value={sopText}
@@ -706,8 +714,9 @@ export default function ErrorTypes() {
 
                 <TabsContent value="nl-builder" className="mt-3">
                   <div className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/30 dark:to-green-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                       Describe the decision workflow in plain English and the AI will build a decision tree for you.
+                      <InfoTooltip content="Write out the decision workflow as you would explain it to a new employee. Describe the questions, possible answers, and what action to take for each scenario." />
                     </p>
                     <NaturalLanguageBuilder
                       errorTypeName={form.name}
@@ -718,8 +727,9 @@ export default function ErrorTypes() {
 
                 <TabsContent value="wizard" className="mt-3">
                   <div className="bg-gradient-to-r from-green-50 to-amber-50 dark:from-green-950/30 dark:to-amber-950/30 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                       Build a tree step-by-step through a guided conversation. Answer questions and the tree builds itself.
+                      <InfoTooltip content="The guided builder walks you through creating a decision tree interactively. You provide questions and answer options, and choose what action to take for each branch." />
                     </p>
                     <ConversationalWizard
                       onComplete={(tree) => setForm({ ...form, decisionTree: tree })}
@@ -732,16 +742,25 @@ export default function ErrorTypes() {
             <TabsContent value="basics" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Name *</Label>
+                  <Label className="flex items-center gap-1">
+                    Name *
+                    <InfoTooltip content="A short, recognizable name for this error type (e.g., 'No-Show — GPS Confirmed'). This is how staff will identify the error in claim lists and queues." />
+                  </Label>
                   <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div>
-                  <Label>Category</Label>
+                  <Label className="flex items-center gap-1">
+                    Category
+                    <InfoTooltip content="Group related error types together (e.g., 'GPS Issues', 'Scheduling'). Categories help staff filter and find relevant SOPs faster." />
+                  </Label>
                   <Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="e.g., GPS Issues, Scheduling" />
                 </div>
               </div>
               <div>
-                <Label>Description</Label>
+                <Label className="flex items-center gap-1">
+                  Description
+                  <InfoTooltip content="Explain when this error type applies and what circumstances trigger it. This description is shown to staff when reviewing claims." />
+                </Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Describe when this error type applies..." />
               </div>
             </TabsContent>
@@ -762,7 +781,10 @@ export default function ErrorTypes() {
                 <Textarea value={form.recommendedActions} onChange={e => setForm({ ...form, recommendedActions: e.target.value })} rows={3} placeholder="Actions staff should take..." />
               </div>
               <div>
-                <Label>Email Template</Label>
+                <Label className="flex items-center gap-1">
+                  Email Template
+                  <InfoTooltip content="The email template used when generating dispute emails for this error type. Use {{confNumber}}, {{date}}, and {{amount}} as placeholders that will be filled in automatically." />
+                </Label>
                 <p className="text-xs text-muted-foreground mb-1">Template for dispute emails. Use {"{{confNumber}}"}, {"{{date}}"}, {"{{amount}}"} as placeholders.</p>
                 <Textarea value={form.emailTemplate} onChange={e => setForm({ ...form, emailTemplate: e.target.value })} rows={6} className="font-mono text-xs" placeholder="Dear MAS Support,&#10;&#10;We are writing to dispute the rejection of trip {{confNumber}}..." />
               </div>

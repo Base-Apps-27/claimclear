@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import { BarChart3, DollarSign, TrendingUp, AlertTriangle } from "lucide-react";
+import { InfoTooltip } from "@/components/info-tooltip";
 
 export default function Summary() {
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
@@ -42,7 +43,10 @@ export default function Summary() {
               <BarChart3 className="h-8 w-8 text-primary" />
               <div>
                 <p className="text-3xl font-bold">{summary.stats.total}</p>
-                <p className="text-xs text-muted-foreground">Total Claims</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Total Claims
+                  <InfoTooltip content="The total number of claims in the system across all statuses and outcomes." />
+                </p>
               </div>
             </div>
           </CardContent>
@@ -53,7 +57,10 @@ export default function Summary() {
               <DollarSign className="h-8 w-8 text-amber-500" />
               <div>
                 <p className="text-3xl font-bold">{formatCurrency(summary.amounts.totalClaimed)}</p>
-                <p className="text-xs text-muted-foreground">Disputed Amount</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Disputed Amount
+                  <InfoTooltip content="The sum of all claim amounts across every claim in the system. This is the total value being disputed with payors." />
+                </p>
               </div>
             </div>
           </CardContent>
@@ -64,7 +71,10 @@ export default function Summary() {
               <DollarSign className="h-8 w-8 text-green-500" />
               <div>
                 <p className="text-3xl font-bold">{formatCurrency(summary.amounts.totalApproved)}</p>
-                <p className="text-xs text-muted-foreground">Recovered Amount</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Recovered Amount
+                  <InfoTooltip content="Total dollar amount successfully recovered from approved disputes. This is the actual money returned to the company." />
+                </p>
               </div>
             </div>
           </CardContent>
@@ -75,7 +85,10 @@ export default function Summary() {
               <AlertTriangle className="h-8 w-8 text-red-500" />
               <div>
                 <p className="text-3xl font-bold">{formatCurrency(String(totalExposure))}</p>
-                <p className="text-xs text-muted-foreground">Total Exposure</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Total Exposure
+                  <InfoTooltip content="Estimated financial exposure including claim amounts plus ~70% for vendor prepayment costs. Represents maximum potential loss if disputes aren't recovered." />
+                </p>
                 <p className="text-[10px] text-muted-foreground">Claims + ~70% vendor prepay (approx.)</p>
               </div>
             </div>
@@ -87,7 +100,10 @@ export default function Summary() {
               <TrendingUp className="h-8 w-8 text-blue-500" />
               <div>
                 <p className="text-3xl font-bold">{recoveryRate}%</p>
-                <p className="text-xs text-muted-foreground">Recovery Rate</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Recovery Rate
+                  <InfoTooltip content="Percentage of disputed dollars that were successfully recovered. Calculated as (Recovered Amount / Disputed Amount) x 100." />
+                </p>
               </div>
             </div>
           </CardContent>
@@ -100,6 +116,7 @@ export default function Summary() {
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
               30-Day Expiration Risk ({summary.expiringClaims.length})
+              <InfoTooltip content="Claims approaching their dispute filing deadline. If not acted on within the window, the right to dispute may be lost permanently." />
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -113,7 +130,12 @@ export default function Summary() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
-          <CardHeader><CardTitle>By Status</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              By Status
+              <InfoTooltip content="Breakdown of claims by their current workflow status. Shows how many claims are at each stage of the dispute process." />
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {Object.entries(statusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
@@ -126,7 +148,12 @@ export default function Summary() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>By Outcome</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              By Outcome
+              <InfoTooltip content="Breakdown of claims by their dispute outcome: Pending (undecided), Approved (payor agreed), Partially Approved, or Denied (payor rejected)." />
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {Object.entries(outcomeBreakdown).sort((a, b) => b[1] - a[1]).map(([outcome, count]) => (
@@ -139,7 +166,12 @@ export default function Summary() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>By Error Type</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              By Error Type
+              <InfoTooltip content="Breakdown of claims by their error classification. Shows which denial reasons are most common and may need attention in SOPs." />
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {Object.entries(errorTypeBreakdown).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([et, count]) => (
@@ -154,7 +186,12 @@ export default function Summary() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Portal Submission Stats</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            Portal Submission Stats
+            <InfoTooltip content="Overview of automated bot submissions to the MAS portal. Shows how many are pending, successfully submitted, or failed." />
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-4 text-center">
             <div>

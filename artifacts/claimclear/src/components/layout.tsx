@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WrapTooltip } from "@/components/info-tooltip";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -31,6 +32,17 @@ import {
   Clock,
   ShieldX
 } from "lucide-react";
+
+const navDescriptions: Record<string, string> = {
+  "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring claims.",
+  "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
+  "All Claims": "Browse, search, and filter the complete claims database.",
+  "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
+  "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
+  "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
+  "Summary": "Analytics dashboard with recovery rates, exposure, and claim breakdowns.",
+  "Settings": "Account settings, user management, daily brief triggers, and bot instance health.",
+};
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -176,16 +188,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <SidebarMenu>
                   {navItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton 
-                        asChild 
-                        isActive={location === item.href || location.startsWith(`${item.href}/`)}
-                        tooltip={item.label}
-                      >
-                        <Link href={item.href} className="flex items-center gap-3">
-                          <item.icon className="w-5 h-5" />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
+                      <WrapTooltip content={navDescriptions[item.label] || item.label} side="right">
+                        <SidebarMenuButton 
+                          asChild 
+                          isActive={location === item.href || location.startsWith(`${item.href}/`)}
+                          tooltip={item.label}
+                        >
+                          <Link href={item.href} className="flex items-center gap-3">
+                            <item.icon className="w-5 h-5" />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </WrapTooltip>
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>

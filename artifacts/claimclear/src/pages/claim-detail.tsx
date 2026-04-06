@@ -33,6 +33,7 @@ import {
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
   ChevronRight, ArrowRight, Eye
 } from "lucide-react";
+import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
 function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
   const { data: botActivity } = useListBotActivity(sub.id, {
@@ -268,7 +269,9 @@ export default function ClaimDetail() {
         <div className="flex items-center gap-2">
           <PresenceAvatars viewers={viewers} />
           {!editing ? (
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 className="h-4 w-4 mr-1" />Edit</Button>
+            <WrapTooltip content="Edit this claim's details such as confirmation number, date, amount, and error details.">
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 className="h-4 w-4 mr-1" />Edit</Button>
+            </WrapTooltip>
           ) : (
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave}><Save className="h-4 w-4 mr-1" />Save</Button>
@@ -345,18 +348,24 @@ export default function ClaimDetail() {
 
                 <Separator orientation="vertical" className="h-8 mx-2" />
 
-                <Button variant="outline" size="sm" onClick={handleQueueForPortal}>
-                  <Send className="h-4 w-4 mr-1" />Queue for Portal
-                </Button>
+                <WrapTooltip content="Add this claim to the automated portal submission queue. The bot will fill out the MAS dispute form with claim details and evidence.">
+                  <Button variant="outline" size="sm" onClick={handleQueueForPortal}>
+                    <Send className="h-4 w-4 mr-1" />Queue for Portal
+                  </Button>
+                </WrapTooltip>
 
                 {claim.status === "On Hold" ? (
-                  <Button variant="outline" size="sm" onClick={handleRemoveHold}>
-                    <Play className="h-4 w-4 mr-1" />Remove Hold
-                  </Button>
+                  <WrapTooltip content="Remove the hold and return this claim to active processing. The claim will go back to its previous workflow step.">
+                    <Button variant="outline" size="sm" onClick={handleRemoveHold}>
+                      <Play className="h-4 w-4 mr-1" />Remove Hold
+                    </Button>
+                  </WrapTooltip>
                 ) : (
                   <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm"><PauseCircle className="h-4 w-4 mr-1" />Place on Hold</Button>
+                      <WrapTooltip content="Pause processing of this claim. Use when waiting for additional information, documents, or a response from another party.">
+                        <Button variant="outline" size="sm"><PauseCircle className="h-4 w-4 mr-1" />Place on Hold</Button>
+                      </WrapTooltip>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle></DialogHeader>
@@ -492,7 +501,12 @@ export default function ClaimDetail() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1">
+                Notes
+                <InfoTooltip content="Internal notes visible only to staff. Use notes to record observations, next steps, or communication details about this claim." />
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
                 <Textarea
@@ -528,7 +542,12 @@ export default function ClaimDetail() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Audit Trail</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1">
+                Audit Trail
+                <InfoTooltip content="A chronological record of every status change, edit, and action taken on this claim. Entries are system-generated and cannot be modified." />
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
                 {(auditLogs || []).slice(0, 20).map(log => (

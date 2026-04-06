@@ -12,6 +12,7 @@ import {
   Upload, AlertCircle, FileSpreadsheet, FileText, X,
   Loader2, CheckCircle2, AlertTriangle, RotateCcw, Tag, ArrowRight,
 } from "lucide-react";
+import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import * as XLSX from "xlsx";
 
 type UploadStage = "idle" | "reading" | "parsing" | "ready" | "classifying" | "importing" | "complete" | "error";
@@ -461,7 +462,8 @@ export default function Import() {
               <p className="text-lg font-medium mb-1">
                 {dragOver ? "Drop file here" : "Drag and drop your file here"}
               </p>
-              <p className="text-sm text-muted-foreground mb-4">or click to browse</p>
+              <p className="text-sm text-muted-foreground mb-2">or click to browse</p>
+              <p className="text-xs text-muted-foreground mb-4">Upload a Job Claim Status report. The system will auto-detect columns like Conf #, Date, Ref #, Client #, Car #, Error Details, and Amount.</p>
               <label className="cursor-pointer">
                 <Button variant="outline" asChild>
                   <span>
@@ -581,7 +583,10 @@ export default function Import() {
 
             <div className="flex items-center justify-between pt-2">
               <div className="flex items-center gap-2">
-                <Label className="text-sm">Duplicates:</Label>
+                <Label className="text-sm flex items-center gap-1">
+                  Duplicates:
+                  <InfoTooltip content="How to handle claims with a confirmation number that already exists in the system. 'Skip' leaves existing claims untouched, 'Update' overwrites them with the new data." />
+                </Label>
                 <Select value={duplicateAction} onValueChange={setDuplicateAction}>
                   <SelectTrigger className="w-[130px] h-8 text-sm">
                     <SelectValue />

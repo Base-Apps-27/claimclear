@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link } from "wouter";
 import { Search, Filter, Tag, X, Loader2, CheckCircle2 } from "lucide-react";
+import { InfoTooltip } from "@/components/info-tooltip";
 
 export default function ClaimsList() {
   useClaimsListEvents();
@@ -178,13 +179,48 @@ export default function ClaimsList() {
                       aria-label="Select all"
                     />
                   </th>
-                  <th className="px-4 py-3 font-medium">Conf #</th>
-                  <th className="px-4 py-3 font-medium">Service Date</th>
-                  <th className="px-4 py-3 font-medium">Client</th>
-                  <th className="px-4 py-3 font-medium">Error Type</th>
-                  <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Action</th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Conf #
+                      <InfoTooltip content="The unique trip confirmation number from MAS. Click a number to view the full claim details." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Service Date
+                      <InfoTooltip content="The date the transportation service was performed. Claims must be disputed within the filing deadline from this date." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Client
+                      <InfoTooltip content="The client/member number associated with the trip passenger." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Error Type
+                      <InfoTooltip content="The classification of the denial or error. Each error type has its own SOP, evidence requirements, and decision tree." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Amount
+                      <InfoTooltip content="The dollar amount being disputed for this claim." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      Status
+                      <InfoTooltip content="Current stage of the claim in the dispute workflow. Hover over any status badge to see what it means." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium text-right">
+                    <span className="flex items-center gap-1 justify-end">
+                      Action
+                      <InfoTooltip content="Click View to open the full claim detail page with evidence, notes, and submission history." side="bottom" />
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

@@ -7,6 +7,7 @@ import { Link } from "wouter";
 import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/info-tooltip";
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary({
@@ -39,7 +40,10 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Needs Evidence</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Needs Evidence
+              <InfoTooltip content="Number of claims that require evidence gathering before a dispute can be filed. These need GPS logs, driver statements, or other supporting documents." />
+            </CardTitle>
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
@@ -52,7 +56,10 @@ export default function Dashboard() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Awaiting Response</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Awaiting Response
+              <InfoTooltip content="Claims that have been submitted to the payor portal and are waiting for the payor to respond. Check back periodically for updates." />
+            </CardTitle>
             <Clock className="h-4 w-4 text-violet-500" />
           </CardHeader>
           <CardContent>
@@ -65,7 +72,10 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Exposure</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Total Exposure
+              <InfoTooltip content="Estimated total financial exposure including the claim amounts plus approximately 70% for vendor prepayment costs. This represents the maximum potential loss if disputes are not recovered." />
+            </CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
@@ -78,7 +88,10 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Recovered</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Recovered
+              <InfoTooltip content="Total dollar amount successfully recovered through approved disputes. This is money returned to the company after disputes were resolved in our favor." />
+            </CardTitle>
             <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -93,7 +106,10 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Bot Instances</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Bot Instances
+              <InfoTooltip content="Number of automated bot instances currently connected and active. Bots handle automated portal submissions by filling out dispute forms on the MAS portal." />
+            </CardTitle>
             <Bot className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
@@ -111,7 +127,10 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Portal Queue</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Portal Queue
+              <InfoTooltip content="Number of claims currently waiting in the queue for automated bot submission to the MAS portal. The bot processes these in order." />
+            </CardTitle>
             <Send className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
@@ -124,7 +143,10 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Success Rate
+              <InfoTooltip content="Percentage of portal submissions that were successfully completed by the bot. A low rate may indicate portal issues or session problems." />
+            </CardTitle>
             <Activity className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -143,6 +165,7 @@ export default function Dashboard() {
             <CardTitle className="text-red-700 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
               Expiring Soon
+              <InfoTooltip content="Claims whose dispute filing window closes within 14 days. These must be acted on urgently or the opportunity to dispute will be lost." iconClassName="text-red-400" />
             </CardTitle>
             <CardDescription>Dispute window closing in {'<'} 14 days</CardDescription>
           </CardHeader>
@@ -176,7 +199,10 @@ export default function Dashboard() {
         <Card className="col-span-1 lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle className="flex items-center gap-1.5">
+                Recent Activity
+                <InfoTooltip content="The most recently created or updated claims in the system. Use this to quickly see what's new and jump to any claim." />
+              </CardTitle>
               <CardDescription>Latest claims added to the system</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>

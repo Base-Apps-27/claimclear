@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
 interface ManagedUser {
   id: string;
@@ -112,7 +113,14 @@ export default function Settings() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span>{user.email}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Name</span><span>{user.displayName || "-"}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Role</span><Badge variant={user.role === "admin" ? "default" : "secondary"}>{user.role}</Badge></div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Role</span>
+                <div className="flex items-center gap-1.5">
+                  <WrapTooltip content={user.role === "admin" ? "Admins can manage users, trigger daily briefs, and access all platform features." : "Standard users can view and process claims but cannot manage other users."}>
+                    <Badge variant={user.role === "admin" ? "default" : "secondary"} className="cursor-help">{user.role}</Badge>
+                  </WrapTooltip>
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Not logged in</p>
@@ -126,6 +134,7 @@ export default function Settings() {
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
               User Management
+              <InfoTooltip content="Manage platform access. Approve new users, assign admin roles, or revoke access. Only admins can see this section." />
               {pendingUsers.length > 0 && (
                 <Badge variant="destructive" className="ml-2">{pendingUsers.length} pending</Badge>
               )}
@@ -152,25 +161,29 @@ export default function Settings() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleApprove(u.id)}
-                            disabled={actionLoading === u.id}
-                            className="gap-1"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeny(u.id)}
-                            disabled={actionLoading === u.id}
-                            className="gap-1"
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Deny
-                          </Button>
+                          <WrapTooltip content="Grant this user access to the ClaimClear platform. They will be able to view and process claims.">
+                            <Button
+                              size="sm"
+                              onClick={() => handleApprove(u.id)}
+                              disabled={actionLoading === u.id}
+                              className="gap-1"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              Approve
+                            </Button>
+                          </WrapTooltip>
+                          <WrapTooltip content="Deny this user's access request. They will see a 'denied' message when trying to log in.">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeny(u.id)}
+                              disabled={actionLoading === u.id}
+                              className="gap-1"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Deny
+                            </Button>
+                          </WrapTooltip>
                         </div>
                       </div>
                     ))}
@@ -192,30 +205,36 @@ export default function Settings() {
                             <p className="text-sm font-medium">{getUserDisplayName(u)}</p>
                             <p className="text-xs text-muted-foreground">{u.email}</p>
                           </div>
-                          <Badge variant={u.role === "admin" ? "default" : "outline"}>{u.role}</Badge>
+                          <WrapTooltip content={u.role === "admin" ? "This user has admin privileges: user management, daily briefs, and full platform access." : "Standard user with access to claim processing features."}>
+                            <Badge variant={u.role === "admin" ? "default" : "outline"} className="cursor-help">{u.role}</Badge>
+                          </WrapTooltip>
                         </div>
                         <div className="flex items-center gap-2">
                           {u.id !== user?.id && (
                             <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleToggleRole(u.id, u.role)}
-                                disabled={actionLoading === u.id}
-                                className="gap-1"
-                              >
-                                <Shield className="h-3 w-3" />
-                                {u.role === "admin" ? "Remove Admin" : "Make Admin"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDeny(u.id)}
-                                disabled={actionLoading === u.id}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
-                                Revoke
-                              </Button>
+                              <WrapTooltip content={u.role === "admin" ? "Downgrade this user to a standard role. They will lose access to user management and admin features." : "Promote this user to admin. They will be able to manage users, trigger daily briefs, and access all features."}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleToggleRole(u.id, u.role)}
+                                  disabled={actionLoading === u.id}
+                                  className="gap-1"
+                                >
+                                  <Shield className="h-3 w-3" />
+                                  {u.role === "admin" ? "Remove Admin" : "Make Admin"}
+                                </Button>
+                              </WrapTooltip>
+                              <WrapTooltip content="Revoke this user's access to the platform. They will no longer be able to log in.">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDeny(u.id)}
+                                  disabled={actionLoading === u.id}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  Revoke
+                                </Button>
+                              </WrapTooltip>
                             </>
                           )}
                           {u.id === user?.id && (
@@ -243,16 +262,18 @@ export default function Settings() {
                             <p className="text-xs text-muted-foreground">{u.email}</p>
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleApprove(u.id)}
-                          disabled={actionLoading === u.id}
-                          className="gap-1"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          Approve
-                        </Button>
+                        <WrapTooltip content="Re-approve this previously denied user, granting them access to the platform.">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleApprove(u.id)}
+                            disabled={actionLoading === u.id}
+                            className="gap-1"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                            Approve
+                          </Button>
+                        </WrapTooltip>
                       </div>
                     ))}
                   </div>
@@ -268,12 +289,20 @@ export default function Settings() {
       )}
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" />Daily Brief</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Daily Brief
+            <InfoTooltip content="Sends a summary email with the current state of the claims pipeline, upcoming expirations, portal submission stats, and key metrics." />
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">Trigger a daily brief summary of claims pipeline, expirations, and portal submission status.</p>
-          <Button onClick={handleTriggerBrief} disabled={triggerBrief.isPending}>
-            {triggerBrief.isPending ? "Sending..." : "Send Daily Brief"}
-          </Button>
+          <WrapTooltip content="Immediately generate and send the daily brief email to all configured recipients.">
+            <Button onClick={handleTriggerBrief} disabled={triggerBrief.isPending}>
+              {triggerBrief.isPending ? "Sending..." : "Send Daily Brief"}
+            </Button>
+          </WrapTooltip>
           {briefResult && (
             <p className="text-sm text-green-600 dark:text-green-400">{briefResult}</p>
           )}
@@ -281,7 +310,13 @@ export default function Settings() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" />Bot Instances</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5" />
+            Bot Instances
+            <InfoTooltip content="Automation bots that handle portal submissions. Each bot has its own browser session and processes claims from the queue. A valid session is required for submissions to succeed." />
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           {botInstances && botInstances.length > 0 ? (
             <div className="space-y-3">
@@ -294,11 +329,17 @@ export default function Settings() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={bot.status === "running" ? "default" : "secondary"}>{bot.status}</Badge>
+                    <WrapTooltip content={bot.status === "running" ? "Bot is online and processing submissions from the queue." : "Bot is currently offline and not processing submissions."}>
+                      <Badge variant={bot.status === "running" ? "default" : "secondary"} className="cursor-help">{bot.status}</Badge>
+                    </WrapTooltip>
                     {bot.sessionValid ? (
-                      <Badge variant="outline" className="text-green-600">Session Valid</Badge>
+                      <WrapTooltip content="The bot's browser session with the MAS portal is active and authenticated. Submissions can proceed.">
+                        <Badge variant="outline" className="text-green-600 cursor-help">Session Valid</Badge>
+                      </WrapTooltip>
                     ) : (
-                      <Badge variant="outline" className="text-red-600">Session Invalid</Badge>
+                      <WrapTooltip content="The bot's portal session has expired or is invalid. The bot needs to re-authenticate before it can process submissions.">
+                        <Badge variant="outline" className="text-red-600 cursor-help">Session Invalid</Badge>
+                      </WrapTooltip>
                     )}
                   </div>
                 </div>

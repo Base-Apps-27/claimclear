@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { RefreshCw, XCircle, Eye, Bot } from "lucide-react";
+import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
 const statusColors: Record<string, string> = {
   pending: "bg-amber-500/20 text-amber-700 border-amber-300",
@@ -21,6 +22,14 @@ const statusColors: Record<string, string> = {
   submitted: "bg-green-500/20 text-green-700 border-green-300",
   failed: "bg-red-500/20 text-red-700 border-red-300",
   cancelled: "bg-gray-500/20 text-gray-700 border-gray-300",
+};
+
+const statusDescriptions: Record<string, string> = {
+  pending: "Waiting in the queue for a bot to pick it up and begin the submission process.",
+  in_progress: "A bot is currently filling out the dispute form on the MAS portal.",
+  submitted: "Successfully submitted to the portal. A ticket ID should be assigned.",
+  failed: "The bot encountered an error during submission. Review the error and retry if needed.",
+  cancelled: "This submission was manually cancelled and will not be processed.",
 };
 
 export default function PortalSubmissions() {
@@ -61,10 +70,12 @@ export default function PortalSubmissions() {
         </div>
         <div className="flex items-center gap-4">
           {botInstances && botInstances.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-green-500" />
-              <span className="text-sm text-muted-foreground">{botInstances.length} bot(s) active</span>
-            </div>
+            <WrapTooltip content="Number of automation bots currently connected and processing submissions. Bots fill out dispute forms on the MAS portal automatically.">
+              <div className="flex items-center gap-2 cursor-help">
+                <Bot className="h-4 w-4 text-green-500" />
+                <span className="text-sm text-muted-foreground">{botInstances.length} bot(s) active</span>
+              </div>
+            </WrapTooltip>
           )}
           <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
             <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
@@ -91,24 +102,36 @@ export default function PortalSubmissions() {
               <CardContent className="py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <span className="font-mono font-semibold text-sm">{sub.confNumber}</span>
-                  <Badge className={statusColors[sub.status] || ""} variant="outline">{sub.status}</Badge>
-                  {sub.portalTicketId && <Badge variant="outline">Ticket: {sub.portalTicketId}</Badge>}
+                  <WrapTooltip content={statusDescriptions[sub.status] || sub.status}>
+                    <Badge className={`${statusColors[sub.status] || ""} cursor-help`} variant="outline">{sub.status}</Badge>
+                  </WrapTooltip>
+                  {sub.portalTicketId && (
+                    <WrapTooltip content="The ticket ID assigned by the MAS portal after submission. Use this to look up the dispute status on the portal directly.">
+                      <Badge variant="outline" className="cursor-help">Ticket: {sub.portalTicketId}</Badge>
+                    </WrapTooltip>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">{formatCurrency(sub.claimAmount)}</span>
                   <span className="text-xs text-muted-foreground">Attempt {sub.attempts}</span>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedId(sub.id)}>
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  {sub.status === "failed" && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRetry(sub.id)}>
-                      <RefreshCw className="h-4 w-4" />
+                  <WrapTooltip content="View full submission details, bot activity timeline, and error information.">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedId(sub.id)}>
+                      <Eye className="h-4 w-4" />
                     </Button>
+                  </WrapTooltip>
+                  {sub.status === "failed" && (
+                    <WrapTooltip content="Reset this submission to pending and let the bot try again. Use after fixing any underlying issues.">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRetry(sub.id)}>
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </WrapTooltip>
                   )}
                   {sub.status === "pending" && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleCancel(sub.id)}>
-                      <XCircle className="h-4 w-4" />
-                    </Button>
+                    <WrapTooltip content="Cancel this submission. It will not be processed by the bot.">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleCancel(sub.id)}>
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </WrapTooltip>
                   )}
                 </div>
               </CardContent>
@@ -126,7 +149,7 @@ export default function PortalSubmissions() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
                 <div className="min-w-0"><span className="text-muted-foreground">Conf #:</span> <span className="font-mono break-all">{selected.confNumber}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Status:</span> <Badge className={statusColors[selected.status] || ""} variant="outline">{selected.status}</Badge></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Status:</span> <WrapTooltip content={statusDescriptions[selected.status] || selected.status}><Badge className={`${statusColors[selected.status] || ""} cursor-help`} variant="outline">{selected.status}</Badge></WrapTooltip></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || "-"}</div>
                 <div className="min-w-0 truncate"><span className="text-muted-foreground">Subject:</span> {selected.subject || "-"}</div>
                 <div className="min-w-0 truncate"><span className="text-muted-foreground">Email:</span> {selected.requesterEmail || "-"}</div>
@@ -149,7 +172,10 @@ export default function PortalSubmissions() {
               <Separator />
 
               <div>
-                <h4 className="font-medium mb-2">Bot Activity</h4>
+                <h4 className="font-medium mb-2 flex items-center gap-1.5">
+                  Bot Activity
+                  <InfoTooltip content="Timeline of actions taken by the automation bot for this submission. Green entries are successful steps, red entries indicate errors." />
+                </h4>
                 {activityLogs && activityLogs.length > 0 ? (
                   <div className="space-y-2">
                     {activityLogs.map(log => (

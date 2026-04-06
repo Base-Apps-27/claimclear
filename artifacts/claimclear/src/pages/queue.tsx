@@ -28,6 +28,7 @@ import {
   ChevronRight, CheckCircle, AlertTriangle, Send,
   PauseCircle, FileText, ArrowRight, Eye, Clipboard
 } from "lucide-react";
+import { WrapTooltip } from "@/components/info-tooltip";
 import {
   TreePlayer,
   type DecisionTree, type LegacyTreeNode, type OutcomeType,
@@ -63,10 +64,10 @@ function WorkflowPlayer({
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
 
   const steps = [
-    { id: "review", label: "Review Claim", icon: Eye },
-    { id: "evidence", label: "Gather Evidence", icon: FileText },
-    { id: "decide", label: "Decision", icon: Clipboard },
-    { id: "submit", label: "Submit to Portal", icon: Send },
+    { id: "review", label: "Review Claim", icon: Eye, tooltip: "Review the claim details, confirmation number, dates, and error type before proceeding." },
+    { id: "evidence", label: "Gather Evidence", icon: FileText, tooltip: "Collect supporting evidence: GPS logs, driver statements, trip records, and documentation." },
+    { id: "decide", label: "Decision", icon: Clipboard, tooltip: "Make a decision on how to handle this claim: dispute via portal, resolve internally, or place on hold." },
+    { id: "submit", label: "Submit to Portal", icon: Send, tooltip: "Queue the claim for automated submission to the MAS Transportation Provider Support Portal." },
   ];
 
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
@@ -121,22 +122,24 @@ function WorkflowPlayer({
           return (
             <div key={step.id} className="flex items-center">
               {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground mx-1" />}
-              <div
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : isComplete
-                      ? "bg-green-100 text-green-800"
-                      : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {isComplete ? (
-                  <CheckCircle className="h-3.5 w-3.5" />
-                ) : (
-                  <StepIcon className="h-3.5 w-3.5" />
-                )}
-                {step.label}
-              </div>
+              <WrapTooltip content={step.tooltip}>
+                <div
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-help ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : isComplete
+                        ? "bg-green-100 text-green-800"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {isComplete ? (
+                    <CheckCircle className="h-3.5 w-3.5" />
+                  ) : (
+                    <StepIcon className="h-3.5 w-3.5" />
+                  )}
+                  {step.label}
+                </div>
+              </WrapTooltip>
             </div>
           );
         })}
@@ -325,38 +328,42 @@ function WorkflowPlayer({
                     Place on Hold
                     <span className="ml-auto text-xs opacity-70">Pending additional info</span>
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start text-green-700"
-                    onClick={async () => {
-                      await updateStatus.mutateAsync({
-                        id: claim.id,
-                        data: { status: "Resolved" },
-                      });
-                      invalidate();
-                      onComplete();
-                    }}
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Mark as Resolved
-                    <span className="ml-auto text-xs opacity-70">No dispute needed</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start text-red-700"
-                    onClick={async () => {
-                      await updateStatus.mutateAsync({
-                        id: claim.id,
-                        data: { status: "Denied" },
-                      });
-                      invalidate();
-                      onComplete();
-                    }}
-                  >
-                    <AlertTriangle className="h-4 w-4 mr-2" />
-                    Mark as Denied
-                    <span className="ml-auto text-xs opacity-70">Cannot dispute</span>
-                  </Button>
+                  <WrapTooltip content="Close this claim as resolved without submitting a dispute. Use when evidence confirms the original denial was correct or the issue was resolved another way.">
+                    <Button
+                      variant="outline"
+                      className="justify-start text-green-700"
+                      onClick={async () => {
+                        await updateStatus.mutateAsync({
+                          id: claim.id,
+                          data: { status: "Resolved" },
+                        });
+                        invalidate();
+                        onComplete();
+                      }}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Mark as Resolved
+                      <span className="ml-auto text-xs opacity-70">No dispute needed</span>
+                    </Button>
+                  </WrapTooltip>
+                  <WrapTooltip content="Close this claim as denied. Use when the evidence does not support a dispute and no further action can be taken.">
+                    <Button
+                      variant="outline"
+                      className="justify-start text-red-700"
+                      onClick={async () => {
+                        await updateStatus.mutateAsync({
+                          id: claim.id,
+                          data: { status: "Denied" },
+                        });
+                        invalidate();
+                        onComplete();
+                      }}
+                    >
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      Mark as Denied
+                      <span className="ml-auto text-xs opacity-70">Cannot dispute</span>
+                    </Button>
+                  </WrapTooltip>
                 </div>
               </>
             )}
