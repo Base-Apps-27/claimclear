@@ -52,7 +52,11 @@ All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHand
 - `requireAdmin` — checks session auth + admin role (replaces inline admin checks)
 - `requireBotToken` — checks `X-Bot-Token` header
 - `requireAuthOrBot` — accepts either session auth or bot token
-- **Session validity is based on DB session TTL (7 days), NOT OIDC token expiry.** OIDC tokens are only used during login for identity verification. The auth middleware no longer attempts token refresh — if the session exists in the DB and hasn't expired, the user stays logged in.
+- **Session validity is based on DB session TTL, NOT OIDC token expiry.** OIDC tokens are only used during login for identity verification.
+- **Absolute TTL**: 8 hours (`SESSION_ABSOLUTE_TTL`) — max session lifetime regardless of activity
+- **Idle timeout**: 30 minutes (`SESSION_IDLE_TIMEOUT`) — session expires after 30 min of inactivity; each request resets the idle timer (via `touchSession`, throttled to 1 DB write/min)
+- **Expiry detection**: `getSession()` returns `{ data, expiry }` where expiry is `"expired_absolute"` | `"expired_idle"` | `null`. The `/auth/user` endpoint passes `sessionExpiry` to the frontend, which shows context-specific messages on the login screen.
+- **Frontend 401 handling**: QueryClient retries detect 401 and reload the page, which re-checks auth and shows the appropriate expiry message.
 
 ### Frontend Routing
 The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.

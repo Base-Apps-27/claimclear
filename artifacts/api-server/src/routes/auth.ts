@@ -14,7 +14,7 @@ import {
   createSession,
   deleteSession,
   SESSION_COOKIE,
-  SESSION_TTL,
+  SESSION_ABSOLUTE_TTL,
   ISSUER_URL,
   type SessionData,
 } from "../lib/auth";
@@ -36,7 +36,7 @@ function setSessionCookie(res: Response, sid: string) {
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_TTL,
+    maxAge: SESSION_ABSOLUTE_TTL,
   });
 }
 
@@ -94,7 +94,11 @@ async function upsertUser(claims: Record<string, unknown>) {
 
 router.get("/auth/user", (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
-    res.json({ user: null });
+    const response: Record<string, unknown> = { user: null };
+    if (req.sessionExpiry) {
+      response.sessionExpiry = req.sessionExpiry;
+    }
+    res.json(response);
     return;
   }
   res.json({

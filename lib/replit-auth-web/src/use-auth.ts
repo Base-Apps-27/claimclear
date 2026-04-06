@@ -3,10 +3,13 @@ import type { AuthUser } from "@workspace/api-client-react";
 
 export type { AuthUser };
 
+export type SessionExpiryReason = "expired_absolute" | "expired_idle" | null;
+
 interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  sessionExpiry: SessionExpiryReason;
   login: () => void;
   logout: () => void;
 }
@@ -14,6 +17,7 @@ interface AuthState {
 export function useAuth(): AuthState {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionExpiry, setSessionExpiry] = useState<SessionExpiryReason>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,11 +25,14 @@ export function useAuth(): AuthState {
     fetch("/api/auth/user", { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<{ user: AuthUser | null }>;
+        return res.json() as Promise<{ user: AuthUser | null; sessionExpiry?: string }>;
       })
       .then((data) => {
         if (!cancelled) {
           setUser(data.user ?? null);
+          if (data.sessionExpiry) {
+            setSessionExpiry(data.sessionExpiry as SessionExpiryReason);
+          }
           setIsLoading(false);
         }
       })
@@ -54,6 +61,7 @@ export function useAuth(): AuthState {
     user,
     isLoading,
     isAuthenticated: !!user,
+    sessionExpiry,
     login,
     logout,
   };

@@ -7,13 +7,17 @@ import type { AuthUser } from "@workspace/api-zod";
 
 export const ISSUER_URL = process.env.ISSUER_URL ?? "https://replit.com/oidc";
 export const SESSION_COOKIE = "sid";
-export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+
+export const SESSION_ABSOLUTE_TTL = 8 * 60 * 60 * 1000;
+export const SESSION_IDLE_TIMEOUT = 30 * 60 * 1000;
 
 export interface SessionData {
   user: AuthUser;
   access_token: string;
   refresh_token?: string;
-  expires_at?: number; // Legacy — no longer used for session validity
+  expires_at?: number;
+  createdAt: number;
+  lastActivity: number;
 }
 
 let oidcConfig: client.Configuration | null = null;
@@ -38,15 +42,25 @@ export async function getOidcConfig(): Promise<client.Configuration> {
 
 export async function createSession(data: SessionData): Promise<string> {
   const sid = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  data.createdAt = now;
+  data.lastActivity = now;
   await db.insert(sessionsTable).values({
     sid,
     sess: data as unknown as Record<string, unknown>,
-    expire: new Date(Date.now() + SESSION_TTL),
+    expire: new Date(now + SESSION_ABSOLUTE_TTL),
   });
   return sid;
 }
 
-export async function getSession(sid: string): Promise<SessionData | null> {
+export type SessionExpiry = "expired_absolute" | "expired_idle" | null;
+
+export interface SessionResult {
+  data: SessionData | null;
+  expiry: SessionExpiry;
+}
+
+export async function getSession(sid: string): Promise<SessionResult> {
   const [row] = await db
     .select()
     .from(sessionsTable)
@@ -54,21 +68,44 @@ export async function getSession(sid: string): Promise<SessionData | null> {
 
   if (!row || row.expire < new Date()) {
     if (row) await deleteSession(sid);
-    return null;
+    return { data: null, expiry: "expired_absolute" };
   }
 
-  return row.sess as unknown as SessionData;
+  const session = row.sess as unknown as SessionData;
+  const now = Date.now();
+
+  if (session.createdAt && now - session.createdAt > SESSION_ABSOLUTE_TTL) {
+    await deleteSession(sid);
+    return { data: null, expiry: "expired_absolute" };
+  }
+
+  if (session.lastActivity && now - session.lastActivity > SESSION_IDLE_TIMEOUT) {
+    await deleteSession(sid);
+    return { data: null, expiry: "expired_idle" };
+  }
+
+  return { data: session, expiry: null };
+}
+
+export async function touchSession(sid: string, session: SessionData): Promise<void> {
+  session.lastActivity = Date.now();
+  await db
+    .update(sessionsTable)
+    .set({
+      sess: session as unknown as Record<string, unknown>,
+    })
+    .where(eq(sessionsTable.sid, sid));
 }
 
 export async function updateSession(
   sid: string,
   data: SessionData,
 ): Promise<void> {
+  data.lastActivity = Date.now();
   await db
     .update(sessionsTable)
     .set({
       sess: data as unknown as Record<string, unknown>,
-      expire: new Date(Date.now() + SESSION_TTL),
     })
     .where(eq(sessionsTable.sid, sid));
 }

@@ -15,7 +15,22 @@ import Summary from "@/pages/summary";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 401) {
+          window.location.reload();
+          return false;
+        }
+        return failureCount < 2;
+      },
+    },
+    mutations: {
+      retry: false,
+    },
+  },
+});
 
 function Router() {
   return (

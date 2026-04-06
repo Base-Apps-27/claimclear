@@ -33,7 +33,7 @@ import {
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, isAuthenticated, login, logout } = useAuth();
+  const { user, isAuthenticated, sessionExpiry, login, logout } = useAuth();
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -64,9 +64,29 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <p className="text-muted-foreground text-sm mt-1">NEMT Claims Dispute Command Center</p>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Sign in with your Replit account to access the dashboard.
-            </p>
+            {sessionExpiry === "expired_idle" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 w-full text-center">
+                <div className="flex items-center justify-center gap-2 text-amber-800 font-medium text-sm">
+                  <Clock className="h-4 w-4" />
+                  Session timed out due to inactivity
+                </div>
+                <p className="text-xs text-amber-600 mt-1">For security, sessions expire after 30 minutes of inactivity.</p>
+              </div>
+            )}
+            {sessionExpiry === "expired_absolute" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 w-full text-center">
+                <div className="flex items-center justify-center gap-2 text-blue-800 font-medium text-sm">
+                  <Clock className="h-4 w-4" />
+                  Session expired
+                </div>
+                <p className="text-xs text-blue-600 mt-1">For security, sessions expire after 8 hours. Please sign in again.</p>
+              </div>
+            )}
+            {!sessionExpiry && (
+              <p className="text-sm text-muted-foreground text-center">
+                Sign in with your Replit account to access the dashboard.
+              </p>
+            )}
             <Button onClick={() => login()} size="lg" className="w-full gap-2">
               <LogIn className="h-5 w-5" />
               Sign In with Replit
