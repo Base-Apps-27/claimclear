@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/claimclear/"
+previewPath = "/"
 title = "ClaimClear"
 version = "1.0.0"
 id = "artifacts/claimclear"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/claimclear/" ]
+paths = [ "/" ]
 localPort = 5173
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "5173"
-BASE_PATH = "/claimclear/"
+BASE_PATH = "/"
