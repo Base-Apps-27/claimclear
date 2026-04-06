@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, notesTable, botActivityLogTable, botInstancesTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -10,7 +11,7 @@ function parseId(raw: string | string[]): number {
   return parseInt(s, 10);
 }
 
-router.post("/poll", async (req, res): Promise<void> => {
+router.post("/poll", asyncHandler(async (req, res): Promise<void> => {
   const { botInstanceId } = req.body;
 
   const submissions = await db.select().from(portalSubmissionsTable)
@@ -25,9 +26,9 @@ router.post("/poll", async (req, res): Promise<void> => {
   }
 
   res.json(submissions);
-});
+}));
 
-router.post("/:id/claim", async (req, res): Promise<void> => {
+router.post("/:id/claim", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -63,9 +64,9 @@ router.post("/:id/claim", async (req, res): Promise<void> => {
   if (!result) { res.status(409).json({ error: "Submission not found or already claimed" }); return; }
 
   res.json(result);
-});
+}));
 
-router.post("/:id/complete", async (req, res): Promise<void> => {
+router.post("/:id/complete", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -110,9 +111,36 @@ router.post("/:id/complete", async (req, res): Promise<void> => {
   });
 
   res.json(sub);
-});
+}));
 
-router.post("/:id/fail", async (req, res): Promise<void> => {
+router.post("/:id/retry", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [sub] = await db.update(portalSubmissionsTable).set({
+    status: "pending",
+    errorMessage: null,
+  }).where(
+    and(
+      eq(portalSubmissionsTable.id, id),
+      inArray(portalSubmissionsTable.status, ["failed", "in_progress"])
+    )
+  ).returning();
+
+  if (!sub) { res.status(404).json({ error: "Submission not found or not in retryable state" }); return; }
+
+  await db.insert(botActivityLogTable).values({
+    submissionId: id,
+    botInstanceId: req.body.botInstanceId || null,
+    action: "retried",
+    success: true,
+    message: "Submission reset to pending for retry",
+  });
+
+  res.json(sub);
+}));
+
+router.post("/:id/fail", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -142,6 +170,6 @@ router.post("/:id/fail", async (req, res): Promise<void> => {
   });
 
   res.json(sub);
-});
+}));
 
 export default router;

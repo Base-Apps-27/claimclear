@@ -1,19 +1,13 @@
 import { Router, type IRouter } from "express";
-import { isNotNull } from "drizzle-orm";
+import { isNotNull, eq, or, and, sql, count } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, portalSubmissionsTable, usersTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
+import { daysRemaining } from "../lib/dates";
 
 const router: IRouter = Router();
 
-function daysRemaining(serviceDate: string | null): number | null {
-  if (!serviceDate) return null;
-  const deadline = new Date(serviceDate);
-  deadline.setDate(deadline.getDate() + 30);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  deadline.setHours(0, 0, 0, 0);
-  return Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
+const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 
 interface ExpiringClaim {
   id: number;
@@ -94,12 +88,27 @@ function generateBriefHtml(
 </html>`;
 }
 
-router.post("/", async (_req, res): Promise<void> => {
-  const allClaims = await db.select().from(claimsTable);
-  const openStatuses = ["New", "Needs Evidence", "Portal Queued", "Ready to Review", "Awaiting Response", "On Hold"];
-  const openClaims = allClaims.filter(c => openStatuses.includes(c.status));
+router.post("/", asyncHandler(async (_req, res): Promise<void> => {
+  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
 
-  const expiring: ExpiringClaim[] = openClaims
+  const [openCountResult] = await db
+    .select({ count: count() })
+    .from(claimsTable)
+    .where(openStatusFilter);
+  const openCount = openCountResult.count;
+
+  const openClaimsWithDates = await db
+    .select({
+      id: claimsTable.id,
+      confNumber: claimsTable.confNumber,
+      date: claimsTable.date,
+      claimAmount: claimsTable.claimAmount,
+      status: claimsTable.status,
+    })
+    .from(claimsTable)
+    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
+
+  const expiring: ExpiringClaim[] = openClaimsWithDates
     .filter(c => c.date)
     .map(c => {
       const dl = daysRemaining(c.date);
@@ -111,11 +120,16 @@ router.post("/", async (_req, res): Promise<void> => {
   const expired = expiring.filter(c => c.daysLeft <= 0);
   const totalAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
 
-  const allSubmissions = await db.select().from(portalSubmissionsTable);
-  const submitted = allSubmissions.filter(s => s.status === "submitted").length;
-  const failed = allSubmissions.filter(s => s.status === "failed").length;
+  const submissionCountsRaw = await db
+    .select({ status: portalSubmissionsTable.status, count: count() })
+    .from(portalSubmissionsTable)
+    .groupBy(portalSubmissionsTable.status);
 
-  const html = generateBriefHtml(openClaims.length, expiring, expired, totalAtRisk, submitted, failed);
+  const subCounts = Object.fromEntries(submissionCountsRaw.map(r => [r.status, r.count]));
+  const submitted = subCounts["submitted"] || 0;
+  const failed = subCounts["failed"] || 0;
+
+  const html = generateBriefHtml(openCount, expiring, expired, totalAtRisk, submitted, failed);
 
   const smtpConfigured = !!(process.env.SMTP_HOST && process.env.SMTP_USER);
   let emailSent = false;
@@ -144,7 +158,7 @@ router.post("/", async (_req, res): Promise<void> => {
         await transporter.sendMail({
           from: process.env.SMTP_FROM || process.env.SMTP_USER,
           to: recipients,
-          subject: `Agape ClaimClear Daily Brief - ${openClaims.length} open claims, ${expired.length} expired`,
+          subject: `Agape ClaimClear Daily Brief - ${openCount} open claims, ${expired.length} expired`,
           html,
         });
         emailSent = true;
@@ -154,11 +168,11 @@ router.post("/", async (_req, res): Promise<void> => {
     }
   }
 
-  const message = `${openClaims.length} open claims, ${expired.length} expired, $${totalAtRisk.toFixed(2)} at risk. ${submitted} submitted, ${failed} failed portal submissions.${emailSent ? " Email sent." : smtpConfigured ? " Email failed." : " SMTP not configured."}`;
+  const message = `${openCount} open claims, ${expired.length} expired, $${totalAtRisk.toFixed(2)} at risk. ${submitted} submitted, ${failed} failed portal submissions.${emailSent ? " Email sent." : smtpConfigured ? " Email failed." : " SMTP not configured."}`;
   res.json({
     sent: emailSent,
     message,
   });
-});
+}));
 
 export default router;

@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, and, count, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -23,7 +24,7 @@ async function createAuditLog(claimId: number, action: string, details: string, 
   });
 }
 
-router.get("/claims", async (req, res): Promise<void> => {
+router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
   const { status, outcome, search, limit: limitStr, offset: offsetStr } = req.query;
   const limitVal = parseInt(String(limitStr || "50"), 10);
   const offsetVal = parseInt(String(offsetStr || "0"), 10);
@@ -61,9 +62,9 @@ router.get("/claims", async (req, res): Promise<void> => {
     .offset(offsetVal);
 
   res.json({ claims, total: totalResult.count });
-});
+}));
 
-router.post("/claims", async (req, res): Promise<void> => {
+router.post("/claims", asyncHandler(async (req, res): Promise<void> => {
   const body = req.body;
   if (!body.confNumber) {
     res.status(400).json({ error: "confNumber is required" });
@@ -85,9 +86,9 @@ router.post("/claims", async (req, res): Promise<void> => {
 
   await createAuditLog(claim.id, "claim_created", `Claim ${claim.confNumber} created`, req);
   res.status(201).json(claim);
-});
+}));
 
-router.get("/claims/:id", async (req, res): Promise<void> => {
+router.get("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -95,9 +96,9 @@ router.get("/claims/:id", async (req, res): Promise<void> => {
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   res.json(claim);
-});
+}));
 
-router.patch("/claims/:id", async (req, res): Promise<void> => {
+router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -116,9 +117,9 @@ router.patch("/claims/:id", async (req, res): Promise<void> => {
 
   await createAuditLog(id, "claim_edited", `Claim ${claim.confNumber} updated`, req, { fields: Object.keys(updateData) });
   res.json(claim);
-});
+}));
 
-router.delete("/claims/:id", async (req, res): Promise<void> => {
+router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -128,9 +129,9 @@ router.delete("/claims/:id", async (req, res): Promise<void> => {
   await createAuditLog(id, "claim_deleted", `Claim ${existing.confNumber} deleted`, req);
   await db.delete(claimsTable).where(eq(claimsTable.id, id));
   res.sendStatus(204);
-});
+}));
 
-router.patch("/claims/:id/status", async (req, res): Promise<void> => {
+router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -149,9 +150,9 @@ router.patch("/claims/:id/status", async (req, res): Promise<void> => {
     author: req.user?.displayName || req.user?.email || "System",
   });
   res.json(claim);
-});
+}));
 
-router.patch("/claims/:id/outcome", async (req, res): Promise<void> => {
+router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -174,9 +175,9 @@ router.patch("/claims/:id/outcome", async (req, res): Promise<void> => {
     author: req.user?.displayName || req.user?.email || "System",
   });
   res.json(claim);
-});
+}));
 
-router.patch("/claims/:id/evidence", async (req, res): Promise<void> => {
+router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -190,9 +191,9 @@ router.patch("/claims/:id/evidence", async (req, res): Promise<void> => {
 
   await createAuditLog(id, "evidence_submitted", "Evidence updated", req);
   res.json(claim);
-});
+}));
 
-router.post("/claims/:id/hold", async (req, res): Promise<void> => {
+router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -210,9 +211,9 @@ router.post("/claims/:id/hold", async (req, res): Promise<void> => {
 
   await createAuditLog(id, "hold_placed", `Claim placed on hold: ${holdReason}`, req, { holdReason, holdPendingFrom });
   res.json(claim);
-});
+}));
 
-router.delete("/claims/:id/hold", async (req, res): Promise<void> => {
+router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -227,9 +228,9 @@ router.delete("/claims/:id/hold", async (req, res): Promise<void> => {
 
   await createAuditLog(id, "hold_removed", "Hold removed from claim", req);
   res.json(claim);
-});
+}));
 
-router.patch("/claims/:id/workflow", async (req, res): Promise<void> => {
+router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -239,6 +240,6 @@ router.patch("/claims/:id/workflow", async (req, res): Promise<void> => {
 
   await createAuditLog(id, "workflow_step", "Workflow progress updated", req);
   res.json(claim);
-});
+}));
 
 export default router;

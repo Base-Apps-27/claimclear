@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -10,7 +11,7 @@ function parseId(raw: string | string[]): number {
   return parseInt(s, 10);
 }
 
-router.get("/portal-submissions", async (req, res): Promise<void> => {
+router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { status } = req.query;
   const statusStr = typeof status === "string" ? status : undefined;
 
@@ -19,9 +20,9 @@ router.get("/portal-submissions", async (req, res): Promise<void> => {
     .orderBy(desc(portalSubmissionsTable.createdAt));
 
   res.json(submissions);
-});
+}));
 
-router.post("/portal-submissions", async (req, res): Promise<void> => {
+router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { claimId, issueType, subject, requesterEmail, transportationProviderName,
     phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason } = req.body;
 
@@ -75,9 +76,9 @@ router.post("/portal-submissions", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(submission);
-});
+}));
 
-router.get("/portal-submissions/:id", async (req, res): Promise<void> => {
+router.get("/portal-submissions/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -85,9 +86,9 @@ router.get("/portal-submissions/:id", async (req, res): Promise<void> => {
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
 
   res.json(sub);
-});
+}));
 
-router.post("/portal-submissions/:id/retry", async (req, res): Promise<void> => {
+router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -98,9 +99,9 @@ router.post("/portal-submissions/:id/retry", async (req, res): Promise<void> => 
 
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
   res.json(sub);
-});
+}));
 
-router.post("/portal-submissions/:id/cancel", async (req, res): Promise<void> => {
+router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -110,9 +111,9 @@ router.post("/portal-submissions/:id/cancel", async (req, res): Promise<void> =>
 
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
   res.json(sub);
-});
+}));
 
-router.get("/portal-submissions/:id/activity", async (req, res): Promise<void> => {
+router.get("/portal-submissions/:id/activity", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -121,6 +122,6 @@ router.get("/portal-submissions/:id/activity", async (req, res): Promise<void> =
     .orderBy(desc(botActivityLogTable.createdAt));
 
   res.json(logs);
-});
+}));
 
 export default router;

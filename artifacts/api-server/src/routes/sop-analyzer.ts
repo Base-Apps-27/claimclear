@@ -1,9 +1,86 @@
 import { Router, type IRouter } from "express";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
-router.post("/error-types/analyze-sop", async (req, res): Promise<void> => {
+function generateNodeId(): string {
+  return `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+interface LegacyNode {
+  question: string;
+  yesLabel?: string;
+  noLabel?: string;
+  yesAction?: string;
+  noAction?: string;
+  yesChild?: LegacyNode;
+  noChild?: LegacyNode;
+}
+
+type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
+
+interface TreeOption {
+  label: string;
+  childId?: string;
+  outcomeType?: OutcomeType;
+  outcomeLabel?: string;
+}
+
+interface TreeNode {
+  id: string;
+  question: string;
+  helpText?: string;
+  options: TreeOption[];
+  evidenceRequirements?: { key: string; label: string; required: boolean }[];
+}
+
+interface DecisionTree {
+  rootId: string;
+  nodes: TreeNode[];
+}
+
+function mapOutcomeAction(action: string): OutcomeType {
+  const lower = action.toLowerCase();
+  if (lower.includes("portal") || lower.includes("submit dispute")) return "portal_dispute";
+  if (lower.includes("hold")) return "hold";
+  if (lower.includes("email") || lower.includes("send dispute")) return "dispute";
+  if (lower.includes("deny") || lower.includes("internal") || lower.includes("resolve")) return "internal";
+  return "portal_dispute";
+}
+
+function legacyToDecisionTree(legacy: LegacyNode): DecisionTree {
+  const nodes: TreeNode[] = [];
+
+  function convertNode(node: LegacyNode): string {
+    const id = generateNodeId();
+    const options: TreeOption[] = [];
+
+    if (node.yesChild) {
+      const cId = convertNode(node.yesChild);
+      options.push({ label: node.yesLabel || "Yes", childId: cId });
+    } else if (node.yesAction) {
+      const outcomeType = mapOutcomeAction(node.yesAction);
+      options.push({ label: node.yesLabel || "Yes", outcomeType, outcomeLabel: node.yesAction });
+    }
+
+    if (node.noChild) {
+      const cId = convertNode(node.noChild);
+      options.push({ label: node.noLabel || "No", childId: cId });
+    } else if (node.noAction) {
+      const outcomeType = mapOutcomeAction(node.noAction);
+      options.push({ label: node.noLabel || "No", outcomeType, outcomeLabel: node.noAction });
+    }
+
+    nodes.push({ id, question: node.question, options });
+    return id;
+  }
+
+  const rootId = convertNode(legacy);
+  return { rootId, nodes };
+}
+
+router.post("/error-types/analyze-sop", asyncHandler(async (req, res): Promise<void> => {
   const { sopText, errorTypeName } = req.body;
   if (!sopText) {
     res.status(400).json({ error: "sopText is required" });
@@ -68,58 +145,58 @@ Important:
 - Common terminal actions: "Submit Portal Dispute", "Deny Claim Internally", "Place on Hold - [reason]", "Resolve - No Dispute Needed"
 - Keep the tree to 3 levels deep maximum`;
 
-  try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [{ role: "user", content: prompt }],
-    });
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: prompt }],
+  });
 
-    const textBlock = message.content.find((b: any) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      res.status(500).json({ error: "No text response from AI" });
-      return;
-    }
-
-    let jsonStr = textBlock.text.trim();
-    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    }
-
-    const parsed = JSON.parse(jsonStr);
-
-    const disputeReasonsLibrary: Record<string, unknown> = {};
-    if (Array.isArray(parsed.disputeReasonsLibrary)) {
-      for (const r of parsed.disputeReasonsLibrary) {
-        disputeReasonsLibrary[r.key] = { label: r.label, description: r.description };
-      }
-    }
-
-    const evidenceRequirements: Record<string, unknown> = {};
-    if (Array.isArray(parsed.evidenceRequirements)) {
-      for (const e of parsed.evidenceRequirements) {
-        evidenceRequirements[e.key] = { label: e.label, required: e.required };
-      }
-    }
-
-    res.json({
-      name: parsed.name || errorTypeName || "",
-      category: parsed.category || "",
-      description: parsed.description || "",
-      guidance: parsed.guidance || "",
-      recommendedActions: parsed.recommendedActions || "",
-      disputeReasonsLibrary,
-      evidenceRequirements,
-      decisionTree: parsed.decisionTree || null,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: `SOP analysis failed: ${message}` });
+  const textBlock = message.content.find((b: any) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    res.status(500).json({ error: "No text response from AI" });
+    return;
   }
-});
 
-router.post("/error-types/build-tree-from-text", async (req, res): Promise<void> => {
+  let jsonStr = textBlock.text.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim();
+  }
+
+  const parsed = JSON.parse(jsonStr);
+
+  const disputeReasonsLibrary: Record<string, unknown> = {};
+  if (Array.isArray(parsed.disputeReasonsLibrary)) {
+    for (const r of parsed.disputeReasonsLibrary) {
+      disputeReasonsLibrary[r.key] = { label: r.label, description: r.description };
+    }
+  }
+
+  const evidenceRequirements: Record<string, unknown> = {};
+  if (Array.isArray(parsed.evidenceRequirements)) {
+    for (const e of parsed.evidenceRequirements) {
+      evidenceRequirements[e.key] = { label: e.label, required: e.required };
+    }
+  }
+
+  let decisionTree = null;
+  if (parsed.decisionTree && typeof parsed.decisionTree === "object" && parsed.decisionTree.question) {
+    decisionTree = legacyToDecisionTree(parsed.decisionTree as LegacyNode);
+  }
+
+  res.json({
+    name: parsed.name || errorTypeName || "",
+    category: parsed.category || "",
+    description: parsed.description || "",
+    guidance: parsed.guidance || "",
+    recommendedActions: parsed.recommendedActions || "",
+    disputeReasonsLibrary,
+    evidenceRequirements,
+    decisionTree,
+  });
+}));
+
+router.post("/error-types/build-tree-from-text", asyncHandler(async (req, res): Promise<void> => {
   const { description, errorTypeName } = req.body;
   if (!description) {
     res.status(400).json({ error: "description is required" });
@@ -156,35 +233,32 @@ Rules:
 
 Respond with ONLY the JSON object, no other text.`;
 
-  try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: prompt }],
+  });
 
-    const textBlock = message.content.find((b: any) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      res.status(500).json({ error: "No text response from AI" });
-      return;
-    }
-
-    let jsonStr = textBlock.text.trim();
-    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    }
-
-    const parsed = JSON.parse(jsonStr);
-    if (!parsed || typeof parsed !== "object" || !parsed.question) {
-      res.status(500).json({ error: "AI returned an invalid tree structure (missing root question)" });
-      return;
-    }
-    res.json({ decisionTree: parsed });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: `Tree generation failed: ${message}` });
+  const textBlock = message.content.find((b: any) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    res.status(500).json({ error: "No text response from AI" });
+    return;
   }
-});
+
+  let jsonStr = textBlock.text.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim();
+  }
+
+  const parsed = JSON.parse(jsonStr);
+  if (!parsed || typeof parsed !== "object" || !parsed.question) {
+    res.status(500).json({ error: "AI returned an invalid tree structure (missing root question)" });
+    return;
+  }
+
+  const decisionTree = legacyToDecisionTree(parsed as LegacyNode);
+  res.json({ decisionTree });
+}));
 
 export default router;

@@ -29,7 +29,7 @@ app.use(
 );
 const CORS_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(o => o.trim())
-  : (process.env.NODE_ENV === "production" ? [] : [/^https?:\/\/localhost(:\d+)?$/, /\.replit\.dev$/, /\.repl\.co$/]);
+  : [/^https?:\/\/localhost(:\d+)?$/, /\.replit\.dev$/, /\.repl\.co$/, /\.replit\.app$/];
 
 app.use(cors({
   credentials: true,
@@ -48,5 +48,19 @@ app.use(express.urlencoded({ extended: true }));
 app.use(authMiddleware);
 
 app.use("/api", router);
+
+app.use(
+  (
+    err: Error,
+    _req: import("express").Request,
+    res: import("express").Response,
+    _next: import("express").NextFunction,
+  ) => {
+    logger.error(err, "Unhandled route error");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 export default app;

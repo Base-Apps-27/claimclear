@@ -44,19 +44,30 @@ artifacts-monorepo/
 
 ## Architecture Notes
 
+### Error Handling
+All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHandler.ts`) which catches unhandled rejections and forwards them to Express's error handler. The global error handler in `app.ts` logs errors via pino and returns clean `{ error: "Internal server error" }` JSON responses — no stack traces leak to clients.
+
+### Auth Middleware
+- `requireAuth` — checks session auth + approval status
+- `requireAdmin` — checks session auth + admin role (replaces inline admin checks)
+- `requireBotToken` — checks `X-Bot-Token` header
+- `requireAuthOrBot` — accepts either session auth or bot token
+
 ### Frontend Routing
 The ClaimClear frontend is served through the API server via http-proxy-middleware in dev mode. In production, it's served as static files. The frontend is mounted at `/claimclear/` path.
 
-### Database Entities (9 tables)
+### Database Entities (11 tables)
 - `users` — Replit Auth users (varchar ID)
+- `sessions` — auth session storage (sid + JSON payload + expire)
 - `claims` — rejected claims (serial ID)
-- `notes` — claim notes/comments
+- `notes` — claim notes/comments (with ownership tracking via `author`)
 - `audit_logs` — full audit trail
-- `error_types` — categorized denial reasons
+- `error_types` — categorized denial reasons with decision trees
 - `portal_submissions` — MAS portal submission tracking
 - `bot_instances` — Playwright bot instance registry
-- `presence` — real-time user presence (heartbeat-based)
-- `sessions` — auth session storage
+- `bot_activity_log` — per-submission bot action log
+- `presence_logs` — real-time user presence (heartbeat-based, unique on claim_id + user_email)
+- `conversations` + `messages` — AI chat conversations
 
 ### Status Flow
 New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resolved/Denied
@@ -67,14 +78,39 @@ New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resol
   - `/api/bot/instances` — Bot instance CRUD (register, heartbeat, stop)
   - `/api/bot/portal-submissions/poll`, `/claim`, `/complete`, `/fail` — Bot workflow
 - `/api/bot-instances` — Read-only listing for authenticated human users
+- `/api/admin/*` — Admin middleware (`requireAdmin`)
 - All other `/api/*` routes — Session auth required (`requireAuth`)
 - Bot authenticates via `X-Bot-Token` header (env: `BOT_SERVICE_TOKEN`)
 
-### Daily Brief
-- Generates styled HTML email summary with pipeline stats
+### Dashboard & Daily Brief
+- Dashboard uses DB-level aggregation (`GROUP BY`, `SUM`, `COUNT`) — no full table scans
+- Shared `daysRemaining()` utility in `src/lib/dates.ts`
+- Daily brief generates styled HTML email with pipeline stats, expiring claims
 - Sends via SMTP when configured (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`)
-- Recipients: queries users table for email addresses; falls back to `DAILY_BRIEF_RECIPIENTS` env var or `SMTP_USER`
-- Returns `{ sent: boolean, message: string }` per OpenAPI spec
+
+### Decision Trees
+- Native `DecisionTree` format: `{ rootNodeId, nodes: Record<string, DecisionTreeNode> }` where each node has `id`, `question`, `helpText`, `options[]`, and `evidenceRequirements[]`
+- SOP analyzer and build-tree-from-text AI endpoints convert legacy yes/no tree format to native DecisionTree format automatically
+- Legacy format (`question/yesLabel/noLabel/yesChild/noChild`) still supported via `legacyToTree()` in frontend
+
+### CORS
+CORS origins allow Replit domains (`*.replit.dev`, `*.repl.co`, `*.replit.app`) and localhost by default. Override with `CORS_ORIGINS` env var (comma-separated list).
+
+### Import
+- Batch insert (up to 100 rows per batch) — no N+1 queries
+- Duplicate detection via single `IN` query on conf numbers
+
+### Presence
+- Uses `ON CONFLICT (claim_id, user_email) DO UPDATE` for atomic heartbeat upsert (no race conditions)
+
+### User Management
+- `upsertUser` uses `ON CONFLICT DO UPDATE` for atomic user creation/update
+- First user auto-promoted to admin with approved status
+- OIDC discovery uses singleton with promise-based mutex (no concurrent discovery calls)
+
+### Bot
+- Bot retry resets submission to "pending" before retrying (no double-processing of "in_progress" records)
+- Notes are deletable only by their author or admin users
 
 ### CSS Theme
 Agape brand: dark navy primary (221 50% 16%), blue interactive (219 85% 52%), orange accent (12 79% 57%), navy sidebar. Logo: Agape teardrop "A" mark with orange accent stroke. Brand hex values: navy #1B2A4A, blue #3478F6, orange #E85D3A, gold #E5A332.
@@ -99,8 +135,10 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to the Vite dev server in development.
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`
-- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes
+- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`, global error handler
+- Middleware: `src/middlewares/` — authMiddleware, requireAuth, requireAdmin, requireBotToken
+- Utilities: `src/lib/` — asyncHandler, auth (OIDC + sessions), dates, logger
+- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes, anthropic conversations
 - Bot routes: `src/routes/bot-portal.ts` (bot-only portal submission endpoints), `src/routes/bot-instances.ts` (bot instance management)
 - Bot scripts: `src/bot/portal-bot.ts` (Playwright automation for MAS portal), `src/bot/save-session.ts` (session saver)
 - Depends on: `@workspace/db`, `@workspace/api-zod`
@@ -135,3 +173,7 @@ Generated React Query hooks and fetch client.
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package.
+
+## Known Issues
+
+- Claimclear Vite workflow reports FAILED status due to platform port detection timing — the dev server starts correctly but the port probe times out. The app works when the process is running.

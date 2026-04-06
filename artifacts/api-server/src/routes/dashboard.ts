@@ -1,40 +1,55 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, or, gt, and, count } from "drizzle-orm";
+import { eq, sql, gt, and, or, count, sum } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, portalSubmissionsTable, botInstancesTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
+import { daysRemaining } from "../lib/dates";
 
 const router: IRouter = Router();
 
-function daysRemaining(serviceDate: string | null): number | null {
-  if (!serviceDate) return null;
-  const deadline = new Date(serviceDate);
-  deadline.setDate(deadline.getDate() + 30);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  deadline.setHours(0, 0, 0, 0);
-  return Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
+const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 
-router.get("/dashboard/summary", async (_req, res): Promise<void> => {
-  const allClaims = await db.select().from(claimsTable);
+router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
+  const statusCountsRaw = await db
+    .select({ status: claimsTable.status, count: count() })
+    .from(claimsTable)
+    .groupBy(claimsTable.status);
 
-  const needsEvidence = allClaims.filter(c => c.status === "New" || c.status === "Needs Evidence").length;
-  const portalQueued = allClaims.filter(c => c.status === "Portal Queued" || c.status === "Generating Email" || c.status === "Ready to Review").length;
-  const awaitingResponse = allClaims.filter(c => c.status === "Awaiting Response").length;
+  const statusCounts = Object.fromEntries(statusCountsRaw.map(r => [r.status, r.count]));
 
-  const total = allClaims.length;
-  const newCount = allClaims.filter(c => c.status === "New").length;
-  const resolved = allClaims.filter(c => c.status === "Resolved").length;
-  const denied = allClaims.filter(c => c.status === "Denied").length;
-  const onHold = allClaims.filter(c => c.status === "On Hold").length;
+  const needsEvidence = (statusCounts["New"] || 0) + (statusCounts["Needs Evidence"] || 0);
+  const portalQueued = (statusCounts["Portal Queued"] || 0) + (statusCounts["Generating Email"] || 0) + (statusCounts["Ready to Review"] || 0);
+  const awaitingResponse = statusCounts["Awaiting Response"] || 0;
+  const total = statusCountsRaw.reduce((s, r) => s + r.count, 0);
+  const newCount = statusCounts["New"] || 0;
+  const resolved = statusCounts["Resolved"] || 0;
+  const denied = statusCounts["Denied"] || 0;
+  const onHold = statusCounts["On Hold"] || 0;
 
-  const totalClaimed = allClaims.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
-  const totalApproved = allClaims.reduce((sum, c) => sum + (parseFloat(c.approvedAmount || "0") || 0), 0);
+  const [amountsResult] = await db
+    .select({
+      totalClaimed: sum(claimsTable.claimAmount),
+      totalApproved: sum(claimsTable.approvedAmount),
+    })
+    .from(claimsTable);
 
-  const openStatuses = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"];
-  const openClaims = allClaims.filter(c => openStatuses.includes(c.status));
-  const expiringClaims = openClaims
-    .filter(c => c.date)
+  const totalClaimed = parseFloat(amountsResult.totalClaimed || "0");
+  const totalApproved = parseFloat(amountsResult.totalApproved || "0");
+
+  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
+
+  const openClaimsWithDates = await db
+    .select({
+      id: claimsTable.id,
+      confNumber: claimsTable.confNumber,
+      date: claimsTable.date,
+      claimAmount: claimsTable.claimAmount,
+      status: claimsTable.status,
+    })
+    .from(claimsTable)
+    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
+
+  const expiringClaims = openClaimsWithDates
     .map(c => {
       const dl = daysRemaining(c.date);
       return { id: c.id, confNumber: c.confNumber, date: c.date!, claimAmount: c.claimAmount, status: c.status, daysLeft: dl! };
@@ -42,14 +57,19 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
     .filter(c => c.daysLeft !== null && c.daysLeft <= 10)
     .sort((a, b) => a.daysLeft - b.daysLeft);
 
-  const recentClaims = allClaims
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 10);
+  const recentClaims = await db.select().from(claimsTable)
+    .orderBy(sql`${claimsTable.createdAt} DESC`)
+    .limit(10);
 
-  const allSubmissions = await db.select().from(portalSubmissionsTable);
-  const pending = allSubmissions.filter(s => s.status === "pending").length;
-  const submitted = allSubmissions.filter(s => s.status === "submitted").length;
-  const failed = allSubmissions.filter(s => s.status === "failed").length;
+  const submissionCountsRaw = await db
+    .select({ status: portalSubmissionsTable.status, count: count() })
+    .from(portalSubmissionsTable)
+    .groupBy(portalSubmissionsTable.status);
+
+  const subCounts = Object.fromEntries(submissionCountsRaw.map(r => [r.status, r.count]));
+  const pending = subCounts["pending"] || 0;
+  const submitted = subCounts["submitted"] || 0;
+  const failed = subCounts["failed"] || 0;
   const totalSubs = submitted + failed;
   const successRate = totalSubs > 0 ? ((submitted / totalSubs) * 100).toFixed(1) : "0";
 
@@ -66,6 +86,6 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
     portalStats: { pending, submitted, failed, successRate },
     botInstances,
   });
-});
+}));
 
 export default router;

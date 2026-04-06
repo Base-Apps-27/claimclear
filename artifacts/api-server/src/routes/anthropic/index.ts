@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, conversations, messages } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { asyncHandler } from "../../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -10,15 +11,15 @@ function parseId(raw: string | string[]): number {
   return parseInt(s, 10);
 }
 
-router.get("/", async (_req, res): Promise<void> => {
+router.get("/", asyncHandler(async (_req, res): Promise<void> => {
   const rows = await db
     .select()
     .from(conversations)
     .orderBy(desc(conversations.createdAt));
   res.json(rows);
-});
+}));
 
-router.post("/", async (req, res): Promise<void> => {
+router.post("/", asyncHandler(async (req, res): Promise<void> => {
   const { title } = req.body;
   if (!title) {
     res.status(400).json({ error: "title is required" });
@@ -30,9 +31,9 @@ router.post("/", async (req, res): Promise<void> => {
     .values({ title })
     .returning();
   res.status(201).json(conversation);
-});
+}));
 
-router.get("/:id", async (req, res): Promise<void> => {
+router.get("/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid id" });
@@ -56,9 +57,9 @@ router.get("/:id", async (req, res): Promise<void> => {
     .orderBy(messages.createdAt);
 
   res.json({ ...conversation, messages: msgs });
-});
+}));
 
-router.delete("/:id", async (req, res): Promise<void> => {
+router.delete("/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid id" });
@@ -76,9 +77,9 @@ router.delete("/:id", async (req, res): Promise<void> => {
   }
 
   res.sendStatus(204);
-});
+}));
 
-router.get("/:id/messages", async (req, res): Promise<void> => {
+router.get("/:id/messages", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid id" });
@@ -92,9 +93,9 @@ router.get("/:id/messages", async (req, res): Promise<void> => {
     .orderBy(messages.createdAt);
 
   res.json(msgs);
-});
+}));
 
-router.post("/:id/messages", async (req, res): Promise<void> => {
+router.post("/:id/messages", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid id" });
@@ -170,6 +171,6 @@ router.post("/:id/messages", async (req, res): Promise<void> => {
     res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
     res.end();
   }
-});
+}));
 
 export default router;

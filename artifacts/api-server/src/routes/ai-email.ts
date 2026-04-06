@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, errorTypesTable, auditLogsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -85,7 +86,7 @@ Respond with JSON in this exact format:
   return parsed;
 }
 
-router.post("/claims/:id/generate-email", async (req, res): Promise<void> => {
+router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -135,6 +136,6 @@ router.post("/claims/:id/generate-email", async (req, res): Promise<void> => {
   });
 
   res.json(updated);
-});
+}));
 
 export default router;

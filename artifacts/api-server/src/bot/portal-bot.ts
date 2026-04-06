@@ -423,10 +423,16 @@ async function mainLoop() {
                 await processSubmission(context, claimed);
               } catch (firstErr: unknown) {
                 const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-                console.warn(`[BOT] Submission ${sub.id} failed on first attempt: ${firstMsg}. Retrying in 10s...`);
+                console.warn(`[BOT] Submission ${sub.id} failed on first attempt: ${firstMsg}. Resetting to pending and retrying in 10s...`);
+                try {
+                  await api(`/bot/portal-submissions/${sub.id}/retry`, { method: "POST" });
+                } catch { /* ignore reset failure */ }
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 try {
-                  await processSubmission(context, claimed);
+                  const reclaimed = await claimSubmission(sub.id);
+                  if (reclaimed) {
+                    await processSubmission(context, reclaimed);
+                  }
                 } catch (retryErr: unknown) {
                   const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
                   console.error(`[BOT] Submission ${sub.id} failed on retry: ${retryMsg}`);

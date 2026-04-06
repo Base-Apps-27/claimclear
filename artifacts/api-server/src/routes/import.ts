@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
-router.post("/import", async (req, res): Promise<void> => {
+router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   const { rows, duplicateAction } = req.body;
   const dupAction = duplicateAction || "skip";
 
@@ -20,14 +21,39 @@ router.post("/import", async (req, res): Promise<void> => {
   let updated = 0;
   const duplicates: string[] = [];
 
-  for (const row of rows) {
-    if (!row.confNumber) { skipped++; continue; }
-    const confStr = String(row.confNumber).trim();
-    if (!confStr || isNaN(Number(confStr))) { skipped++; continue; }
+  const seenConfNumbers = new Set<string>();
+  const validRows = rows
+    .filter(row => {
+      if (!row.confNumber) return false;
+      const confStr = String(row.confNumber).trim();
+      if (confStr.length === 0 || isNaN(Number(confStr))) return false;
+      if (seenConfNumbers.has(confStr)) return false;
+      seenConfNumbers.add(confStr);
+      return true;
+    })
+    .map(row => ({ ...row, confNumber: String(row.confNumber).trim() }));
 
-    const existing = await db.select().from(claimsTable).where(eq(claimsTable.confNumber, confStr));
+  const skippedCount = rows.length - validRows.length;
+  skipped += skippedCount;
 
-    if (existing.length > 0) {
+  if (validRows.length === 0) {
+    res.json({ success: true, created: 0, skipped: rows.length, updated: 0, duplicates: [], total: rows.length, batchId });
+    return;
+  }
+
+  const confNumbers = validRows.map(r => r.confNumber);
+  const existingClaims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
+    .from(claimsTable)
+    .where(inArray(claimsTable.confNumber, confNumbers));
+
+  const existingMap = new Map(existingClaims.map(c => [c.confNumber, c.id]));
+
+  const toInsert: (typeof claimsTable.$inferInsert)[] = [];
+
+  for (const row of validRows) {
+    const existingId = existingMap.get(row.confNumber);
+
+    if (existingId != null) {
       if (dupAction === "update") {
         const updateData: Partial<typeof claimsTable.$inferInsert> = {};
         if (row.date) updateData.date = row.date;
@@ -40,31 +66,38 @@ router.post("/import", async (req, res): Promise<void> => {
         }
 
         if (Object.keys(updateData).length > 0) {
-          await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, existing[0].id));
+          await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, existingId));
           updated++;
         } else {
           skipped++;
         }
       } else {
-        duplicates.push(confStr);
+        duplicates.push(row.confNumber);
         skipped++;
       }
-      continue;
+    } else {
+      toInsert.push({
+        confNumber: row.confNumber,
+        date: row.date || null,
+        refNumber: row.refNumber || "",
+        clientNumber: row.clientNumber || "",
+        carNumber: String(row.carNumber || ""),
+        errorDetails: row.errorDetails || "",
+        claimAmount: row.claimAmount != null ? String(typeof row.claimAmount === "number" ? row.claimAmount : parseFloat(row.claimAmount) || 0) : null,
+        status: "New",
+        outcome: "Pending",
+        importBatch: batchId,
+      });
     }
+  }
 
-    await db.insert(claimsTable).values({
-      confNumber: confStr,
-      date: row.date || null,
-      refNumber: row.refNumber || "",
-      clientNumber: row.clientNumber || "",
-      carNumber: String(row.carNumber || ""),
-      errorDetails: row.errorDetails || "",
-      claimAmount: row.claimAmount != null ? String(typeof row.claimAmount === "number" ? row.claimAmount : parseFloat(row.claimAmount) || 0) : null,
-      status: "New",
-      outcome: "Pending",
-      importBatch: batchId,
-    });
-    created++;
+  if (toInsert.length > 0) {
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+      const batch = toInsert.slice(i, i + BATCH_SIZE);
+      await db.insert(claimsTable).values(batch);
+    }
+    created = toInsert.length;
   }
 
   res.json({
@@ -76,6 +109,6 @@ router.post("/import", async (req, res): Promise<void> => {
     total: rows.length,
     batchId,
   });
-});
+}));
 
 export default router;

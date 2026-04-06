@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { notesTable, auditLogsTable } from "@workspace/db";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router: IRouter = Router();
 
@@ -10,7 +11,7 @@ function parseId(raw: string | string[]): number {
   return parseInt(s, 10);
 }
 
-router.get("/claims/:id/notes", async (req, res): Promise<void> => {
+router.get("/claims/:id/notes", asyncHandler(async (req, res): Promise<void> => {
   const claimId = parseId(req.params.id);
   if (isNaN(claimId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -19,9 +20,9 @@ router.get("/claims/:id/notes", async (req, res): Promise<void> => {
     .orderBy(desc(notesTable.createdAt));
 
   res.json(notes);
-});
+}));
 
-router.post("/claims/:id/notes", async (req, res): Promise<void> => {
+router.post("/claims/:id/notes", asyncHandler(async (req, res): Promise<void> => {
   const claimId = parseId(req.params.id);
   if (isNaN(claimId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -46,16 +47,26 @@ router.post("/claims/:id/notes", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(note);
-});
+}));
 
-router.delete("/notes/:id", async (req, res): Promise<void> => {
+router.delete("/notes/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [note] = await db.delete(notesTable).where(eq(notesTable.id, id)).returning();
+  const [note] = await db.select().from(notesTable).where(eq(notesTable.id, id));
   if (!note) { res.status(404).json({ error: "Note not found" }); return; }
 
-  const author = req.user?.displayName || req.user?.email || "Unknown";
+  const userEmail = req.user?.email || "";
+  const isOwner = note.author === req.user?.displayName || note.author === userEmail;
+  const isAdmin = req.user?.role === "admin";
+  if (!isOwner && !isAdmin) {
+    res.status(403).json({ error: "You can only delete your own notes" });
+    return;
+  }
+
+  await db.delete(notesTable).where(eq(notesTable.id, id));
+
+  const author = req.user?.displayName || userEmail || "Unknown";
   await db.insert(auditLogsTable).values({
     claimId: note.claimId,
     action: "note_deleted",
@@ -65,6 +76,6 @@ router.delete("/notes/:id", async (req, res): Promise<void> => {
   });
 
   res.sendStatus(204);
-});
+}));
 
 export default router;

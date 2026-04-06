@@ -17,15 +17,23 @@ export interface SessionData {
 }
 
 let oidcConfig: client.Configuration | null = null;
+let oidcConfigPromise: Promise<client.Configuration> | null = null;
 
 export async function getOidcConfig(): Promise<client.Configuration> {
-  if (!oidcConfig) {
-    oidcConfig = await client.discovery(
-      new URL(ISSUER_URL),
-      process.env.REPL_ID!,
-    );
-  }
-  return oidcConfig;
+  if (oidcConfig) return oidcConfig;
+  if (oidcConfigPromise) return oidcConfigPromise;
+  oidcConfigPromise = client.discovery(
+    new URL(ISSUER_URL),
+    process.env.REPL_ID!,
+  ).then(config => {
+    oidcConfig = config;
+    oidcConfigPromise = null;
+    return config;
+  }).catch(err => {
+    oidcConfigPromise = null;
+    throw err;
+  });
+  return oidcConfigPromise;
 }
 
 export async function createSession(data: SessionData): Promise<string> {

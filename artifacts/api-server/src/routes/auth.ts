@@ -5,6 +5,8 @@ import {
 } from "@workspace/api-zod";
 import { db, usersTable } from "@workspace/db";
 import { eq, sql, count } from "drizzle-orm";
+import { asyncHandler } from "../lib/asyncHandler";
+import { requireAdmin } from "../middlewares/requireAdmin";
 import {
   clearSession,
   getOidcConfig,
@@ -66,20 +68,6 @@ async function upsertUser(claims: Record<string, unknown>) {
       | null,
   };
 
-  const [existing] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.id, userData.id));
-
-  if (existing) {
-    const [user] = await db
-      .update(usersTable)
-      .set({ ...userData, updatedAt: new Date() })
-      .where(eq(usersTable.id, userData.id))
-      .returning();
-    return user;
-  }
-
   const [{ value: userCount }] = await db.select({ value: count() }).from(usersTable);
   const isFirstUser = userCount === 0;
 
@@ -89,6 +77,16 @@ async function upsertUser(claims: Record<string, unknown>) {
       ...userData,
       role: isFirstUser ? "admin" : "user",
       status: isFirstUser ? "approved" : "pending",
+    })
+    .onConflictDoUpdate({
+      target: usersTable.id,
+      set: {
+        email: sql`EXCLUDED.email`,
+        firstName: sql`EXCLUDED.first_name`,
+        lastName: sql`EXCLUDED.last_name`,
+        profileImageUrl: sql`EXCLUDED.profile_image_url`,
+        updatedAt: new Date(),
+      },
     })
     .returning();
   return user;
@@ -128,11 +126,7 @@ router.get("/auth/session", (req: Request, res: Response) => {
   });
 });
 
-router.get("/admin/users", async (req: Request, res: Response) => {
-  if (!req.isAuthenticated() || req.user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
+router.get("/admin/users", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
   res.json(users.map(u => ({
     id: u.id,
@@ -144,13 +138,9 @@ router.get("/admin/users", async (req: Request, res: Response) => {
     status: u.status,
     createdAt: u.createdAt,
   })));
-});
+}));
 
-router.patch("/admin/users/:userId/approve", async (req: Request, res: Response) => {
-  if (!req.isAuthenticated() || req.user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
+router.patch("/admin/users/:userId/approve", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.params.userId as string;
   const [user] = await db
     .update(usersTable)
@@ -162,13 +152,9 @@ router.patch("/admin/users/:userId/approve", async (req: Request, res: Response)
     return;
   }
   res.json({ message: "User approved", user: { id: user.id, email: user.email, status: user.status } });
-});
+}));
 
-router.patch("/admin/users/:userId/deny", async (req: Request, res: Response) => {
-  if (!req.isAuthenticated() || req.user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
+router.patch("/admin/users/:userId/deny", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.params.userId as string;
   const [user] = await db
     .update(usersTable)
@@ -180,13 +166,9 @@ router.patch("/admin/users/:userId/deny", async (req: Request, res: Response) =>
     return;
   }
   res.json({ message: "User denied", user: { id: user.id, email: user.email, status: user.status } });
-});
+}));
 
-router.patch("/admin/users/:userId/role", async (req: Request, res: Response) => {
-  if (!req.isAuthenticated() || req.user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
+router.patch("/admin/users/:userId/role", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.params.userId as string;
   const { role } = req.body;
   if (!role || !["admin", "user"].includes(role)) {
@@ -203,7 +185,7 @@ router.patch("/admin/users/:userId/role", async (req: Request, res: Response) =>
     return;
   }
   res.json({ message: "Role updated", user: { id: user.id, email: user.email, role: user.role } });
-});
+}));
 
 router.get("/login", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
