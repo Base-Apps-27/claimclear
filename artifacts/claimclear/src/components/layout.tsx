@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@workspace/replit-auth-web";
+import { SessionCountdown } from "@/components/session-countdown";
 import {
   Sidebar,
   SidebarContent,
@@ -226,6 +227,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </main>
         </div>
+        <SessionCountdown />
       </div>
     </SidebarProvider>
   );

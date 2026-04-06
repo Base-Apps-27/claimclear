@@ -5,9 +5,18 @@ import {
   getSessionId,
   getSession,
   touchSession,
+  SESSION_ABSOLUTE_TTL,
+  SESSION_IDLE_TIMEOUT,
   type SessionExpiry,
 } from "../lib/auth";
 import { logger } from "../lib/logger";
+
+export interface SessionTiming {
+  absoluteRemainingMs: number;
+  idleRemainingMs: number;
+  absoluteTotalMs: number;
+  idleTotalMs: number;
+}
 
 declare global {
   namespace Express {
@@ -18,6 +27,7 @@ declare global {
 
       user?: User | undefined;
       sessionExpiry?: SessionExpiry;
+      sessionTiming?: SessionTiming;
     }
 
     export interface AuthedRequest {
@@ -68,6 +78,21 @@ export async function authMiddleware(
   }
 
   const now = Date.now();
+
+  const absoluteRemaining = session.createdAt
+    ? Math.max(0, SESSION_ABSOLUTE_TTL - (now - session.createdAt))
+    : SESSION_ABSOLUTE_TTL;
+  const idleRemaining = session.lastActivity
+    ? Math.max(0, SESSION_IDLE_TIMEOUT - (now - session.lastActivity))
+    : SESSION_IDLE_TIMEOUT;
+
+  req.sessionTiming = {
+    absoluteRemainingMs: absoluteRemaining,
+    idleRemainingMs: idleRemaining,
+    absoluteTotalMs: SESSION_ABSOLUTE_TTL,
+    idleTotalMs: SESSION_IDLE_TIMEOUT,
+  };
+
   const lastTouch = lastTouchMap.get(sid) ?? 0;
   if (now - lastTouch > TOUCH_INTERVAL) {
     lastTouchMap.set(sid, now);

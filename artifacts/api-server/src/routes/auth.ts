@@ -130,6 +130,14 @@ router.get("/auth/session", (req: Request, res: Response) => {
   });
 });
 
+router.get("/auth/session-info", (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || !req.user || !req.sessionTiming) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  res.json(req.sessionTiming);
+});
+
 router.get("/admin/users", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
   res.json(users.map(u => ({
