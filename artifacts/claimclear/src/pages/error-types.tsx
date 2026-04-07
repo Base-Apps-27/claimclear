@@ -438,7 +438,7 @@ export default function ErrorTypes() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setEditingId(null); setShowCreate(false); } }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>

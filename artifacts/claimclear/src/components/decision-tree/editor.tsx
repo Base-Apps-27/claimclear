@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -28,10 +28,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, X, HelpCircle, ChevronDown, ChevronRight,
-  FileText, Copy, Play, GitBranch, ArrowRight, Layers,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Plus, X, HelpCircle, ChevronDown,
+  FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
-  Camera, Upload,
+  Settings, Trash2, GripVertical,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -94,10 +99,10 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="gap-1"><GitBranch className="h-3 w-3" />{stats.nodes} nodes</Badge>
-          <Badge variant="outline" className="gap-1"><ArrowRight className="h-3 w-3" />{stats.paths} paths</Badge>
-          <Badge variant="outline" className="gap-1"><Layers className="h-3 w-3" />{stats.depth} levels deep</Badge>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="gap-1 text-xs"><GitBranch className="h-3 w-3" />{stats.nodes} nodes</Badge>
+          <Badge variant="outline" className="gap-1 text-xs"><ArrowRight className="h-3 w-3" />{stats.paths} paths</Badge>
+          <Badge variant="outline" className="gap-1 text-xs"><Layers className="h-3 w-3" />{stats.depth} levels</Badge>
         </div>
         <div className="flex gap-2">
           {onTest && (
@@ -110,36 +115,29 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
           </Button>
         </div>
       </div>
-      <NodeEditor tree={tree} nodeId={tree.rootId} onChange={onChange} depth={0} />
+
+      <div className="overflow-x-auto pb-8">
+        <div className="flex justify-center min-w-max py-4">
+          <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
+        </div>
+      </div>
     </div>
   );
 }
 
-function NodeEditor({
+function FlowNode({
   tree,
   nodeId,
   onChange,
-  depth,
+  isRoot,
 }: {
   tree: DecisionTree;
   nodeId: string;
   onChange: (tree: DecisionTree) => void;
-  depth: number;
+  isRoot?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(depth < 2);
-  const [showHelp, setShowHelp] = useState(false);
-  const [showEvidence, setShowEvidence] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(false);
   const node = tree.nodes.find(n => n.id === nodeId);
   if (!node) return null;
-
-  const depthColors = [
-    "border-l-blue-400",
-    "border-l-green-400",
-    "border-l-amber-400",
-    "border-l-purple-400",
-    "border-l-pink-400",
-  ];
 
   const updateNode = (updates: Partial<TreeNode>) => {
     onChange({
@@ -180,7 +178,6 @@ function NodeEditor({
       question: "",
       options: [{ label: "Yes" }, { label: "No" }],
     };
-    updateOption(optIdx, { childId, outcomeType: undefined, outcomeLabel: undefined });
     onChange({
       ...tree,
       nodes: [...tree.nodes.map(n =>
@@ -207,6 +204,23 @@ function NodeEditor({
     });
   };
 
+  const deleteNode = () => {
+    if (isRoot) {
+      onChange({ ...tree, nodes: [], rootId: "" });
+      return;
+    }
+    const parentInfo = findParent(tree, nodeId);
+    if (!parentInfo) return;
+    const { parentNode, optionIndex } = parentInfo;
+    let newNodes = removeSubtree(tree.nodes, nodeId);
+    newNodes = newNodes.map(n =>
+      n.id === parentNode.id
+        ? { ...n, options: n.options.map((o, i) => i === optionIndex ? { ...o, childId: undefined } : o) }
+        : n
+    );
+    onChange({ ...tree, nodes: newNodes });
+  };
+
   const addEvidenceReq = () => {
     const reqs = node.evidenceRequirements || [];
     updateNode({
@@ -226,203 +240,398 @@ function NodeEditor({
     });
   };
 
-  return (
-    <Card className={`border-l-4 ${depthColors[depth % depthColors.length]} shadow-sm`}>
-      <CardContent className="p-3 space-y-3">
-        <div className="flex items-start gap-2">
-          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 mt-0.5" onClick={() => setExpanded(!expanded)}>
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-          <div className="flex-1 space-y-1">
-            <Input
-              value={node.question}
-              onChange={e => updateNode({ question: e.target.value })}
-              placeholder="What question should staff answer at this step?"
-              className="text-sm font-medium"
-            />
-          </div>
-          <div className="flex gap-1 shrink-0">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHelp(!showHelp)} title="Add help text">
-              <HelpCircle className={`h-3.5 w-3.5 ${node.helpText ? "text-blue-500" : ""}`} />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowInstructions(!showInstructions)} title="Add instructions & reference image">
-              <Info className={`h-3.5 w-3.5 ${node.instructionText || node.instructionImageUrl ? "text-indigo-500" : ""}`} />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowEvidence(!showEvidence)} title="Per-node evidence">
-              <FileText className={`h-3.5 w-3.5 ${node.evidenceRequirements?.length ? "text-violet-500" : ""}`} />
-            </Button>
-          </div>
-        </div>
+  const nodeNumber = tree.nodes.findIndex(n => n.id === nodeId) + 1;
 
-        {showHelp && (
-          <Textarea
-            value={node.helpText || ""}
-            onChange={e => updateNode({ helpText: e.target.value || undefined })}
-            placeholder="Help text for staff (e.g., 'Check the GPS tab in RouteMaster for breadcrumb data')"
-            rows={2}
-            className="text-xs"
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative z-10 w-[340px]">
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow bg-white">
+          <CardContent className="p-0">
+            <div className="bg-slate-50 border-b border-slate-100 p-2.5 rounded-t-xl flex justify-between items-center">
+              <Badge variant="outline" className="bg-white text-slate-500 font-medium font-mono text-[10px] tracking-wider uppercase">
+                Q{nodeNumber}
+              </Badge>
+              <div className="flex items-center gap-0.5">
+                <NodeSettingsPopover
+                  node={node}
+                  updateNode={updateNode}
+                  addEvidenceReq={addEvidenceReq}
+                  updateEvidenceReq={updateEvidenceReq}
+                  removeEvidenceReq={removeEvidenceReq}
+                />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={deleteNode}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <Textarea
+                value={node.question}
+                onChange={e => updateNode({ question: e.target.value })}
+                className="text-sm font-medium text-slate-800 resize-none min-h-[50px] border-transparent hover:border-slate-200 focus-visible:border-slate-300 focus-visible:ring-0 p-1 -m-1 shadow-none"
+                placeholder="Enter question here..."
+              />
+
+              {(node.helpText || (node.evidenceRequirements && node.evidenceRequirements.length > 0)) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {node.helpText && (
+                    <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal text-[10px] cursor-help">
+                      <HelpCircle className="h-2.5 w-2.5 mr-1" /> Help text
+                    </Badge>
+                  )}
+                  {node.evidenceRequirements && node.evidenceRequirements.length > 0 && (
+                    <Badge variant="secondary" className="bg-violet-50 text-violet-700 border-violet-200 font-normal text-[10px]">
+                      <FileText className="h-2.5 w-2.5 mr-1" /> {node.evidenceRequirements.length} evidence
+                    </Badge>
+                  )}
+                  {(node.instructionText || node.instructionImageUrl) && (
+                    <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-normal text-[10px]">
+                      <Info className="h-2.5 w-2.5 mr-1" /> Instructions
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="w-px h-6 bg-slate-300" />
+
+      <div className="flex justify-center relative">
+        {node.options.length > 1 && (
+          <div
+            className="absolute top-0 h-px bg-slate-300"
+            style={{
+              left: `${100 / (node.options.length * 2)}%`,
+              right: `${100 / (node.options.length * 2)}%`,
+            }}
           />
         )}
 
-        {showInstructions && (
-          <div className="bg-indigo-50 dark:bg-indigo-950/20 rounded-md p-2 space-y-2">
-            <Label className="text-xs font-medium text-indigo-700">Step-by-step instructions</Label>
-            <Textarea
-              value={node.instructionText || ""}
-              onChange={e => updateNode({ instructionText: e.target.value || undefined })}
-              placeholder="Detailed instructions for this step (e.g., 'Navigate to MAS portal > Manage Trips > Search Trip by Invoice...')"
-              rows={3}
-              className="text-xs"
-            />
-            <Label className="text-xs font-medium text-indigo-700">Reference image URL (optional)</Label>
-            <Input
-              value={node.instructionImageUrl || ""}
-              onChange={e => updateNode({ instructionImageUrl: e.target.value || undefined })}
-              placeholder="/objects/uploads/abc123 or https://..."
-              className="text-xs h-7"
-            />
-          </div>
-        )}
+        {node.options.map((opt, i) => {
+          const isFirst = i === 0;
+          const isLast = i === node.options.length - 1;
 
-        {showEvidence && (
-          <div className="bg-violet-50 dark:bg-violet-950/20 rounded-md p-2 space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium text-violet-700">Evidence required at this step</Label>
-              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={addEvidenceReq}>
-                <Plus className="h-3 w-3 mr-1" />Add
-              </Button>
-            </div>
-            {(node.evidenceRequirements || []).map((req, i) => (
-              <div key={req.key} className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={req.required}
-                    onChange={e => updateEvidenceReq(i, { required: e.target.checked })}
-                    className="rounded"
-                    title="Required?"
-                  />
-                  <Input
-                    value={req.label}
-                    onChange={e => updateEvidenceReq(i, { label: e.target.value })}
-                    placeholder="Evidence item..."
-                    className="text-xs h-7 flex-1"
-                  />
-                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer" title="Accepts image upload">
-                    <input
-                      type="checkbox"
-                      checked={req.acceptsImage !== false}
-                      onChange={e => updateEvidenceReq(i, { acceptsImage: e.target.checked })}
-                      className="rounded h-3 w-3"
-                    />
-                    <ImageIcon className="h-3 w-3" />
-                  </label>
-                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer" title="Accepts text notes">
-                    <input
-                      type="checkbox"
-                      checked={!!req.acceptsText}
-                      onChange={e => updateEvidenceReq(i, { acceptsText: e.target.checked })}
-                      className="rounded h-3 w-3"
-                    />
-                    <FileText className="h-3 w-3" />
-                  </label>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeEvidenceReq(i)}>
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          return (
+            <div key={i} className="flex flex-col items-center relative px-4">
+              {node.options.length > 1 && (
+                <div
+                  className="absolute top-0 h-px bg-slate-300"
+                  style={{
+                    left: isFirst ? '50%' : 0,
+                    width: isFirst || isLast ? '50%' : '100%',
+                  }}
+                />
+              )}
 
-        {expanded && (
-          <div className="space-y-2 ml-4">
-            {node.options.map((opt, i) => (
-              <div key={i} className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs shrink-0 min-w-[40px] justify-center">
-                    {i + 1}
-                  </Badge>
-                  <Input
-                    value={opt.label}
-                    onChange={e => updateOption(i, { label: e.target.value })}
-                    placeholder="Answer label"
-                    className="text-xs h-7 w-36"
-                  />
+              <div className="relative z-10 flex flex-col items-center">
+                <div className="w-px h-4 bg-slate-300" />
 
-                  {!opt.childId ? (
-                    <div className="flex items-center gap-2 flex-1">
-                      <Select
-                        value={opt.outcomeType || ""}
-                        onValueChange={(val) => {
-                          if (val === "sub_question") {
-                            addChildNode(i);
-                          } else {
-                            const ot = val as OutcomeType;
-                            updateOption(i, { outcomeType: ot, outcomeLabel: OUTCOME_LABELS[ot] });
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-48">
-                          <SelectValue placeholder="Select action..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sub_question">
-                            <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />Add sub-question</span>
-                          </SelectItem>
-                          <SelectItem value="portal_dispute">
-                            <span className="flex items-center gap-1"><Send className="h-3 w-3 text-green-600" />Portal Dispute</span>
-                          </SelectItem>
-                          <SelectItem value="dispute">
-                            <span className="flex items-center gap-1"><Mail className="h-3 w-3 text-blue-600" />Email Dispute</span>
-                          </SelectItem>
-                          <SelectItem value="internal">
-                            <span className="flex items-center gap-1"><Ban className="h-3 w-3 text-red-600" />Resolve Internally</span>
-                          </SelectItem>
-                          <SelectItem value="hold">
-                            <span className="flex items-center gap-1"><PauseCircle className="h-3 w-3 text-amber-600" />Place on Hold</span>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {opt.outcomeType && (() => {
-                        const colors = OUTCOME_COLORS[opt.outcomeType];
-                        const Icon = OUTCOME_ICONS[opt.outcomeType];
-                        return (
-                          <Badge className={`${colors.bg} ${colors.text} border ${colors.border} text-[10px] gap-1`}>
-                            <Icon className="h-3 w-3" />{OUTCOME_LABELS[opt.outcomeType]}
-                          </Badge>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => convertToLeaf(i)}>
-                      Convert to outcome
-                    </Button>
-                  )}
+                <OptionPill
+                  opt={opt}
+                  node={node}
+                  optionIndex={i}
+                  canRemove={node.options.length > 2}
+                  onChange={onChange}
+                  tree={tree}
+                  updateOption={(updates) => updateOption(i, updates)}
+                  removeOption={() => removeOption(i)}
+                  addChildNode={() => addChildNode(i)}
+                  convertToLeaf={() => convertToLeaf(i)}
+                  setOutcome={(ot: OutcomeType) => {
+                    updateOption(i, { outcomeType: ot, outcomeLabel: OUTCOME_LABELS[ot], childId: undefined });
+                  }}
+                />
 
-                  {node.options.length > 2 && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-destructive" onClick={() => removeOption(i)}>
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
+                <div className="w-px h-4 bg-slate-300" />
 
-                {opt.childId && (
-                  <div className="ml-6">
-                    <NodeEditor tree={tree} nodeId={opt.childId} onChange={onChange} depth={depth + 1} />
-                  </div>
+                {opt.childId ? (
+                  <FlowNode tree={tree} nodeId={opt.childId} onChange={onChange} />
+                ) : opt.outcomeType ? (
+                  <OutcomeTerminal outcomeType={opt.outcomeType} outcomeLabel={opt.outcomeLabel} />
+                ) : (
+                  <button
+                    className="border-2 border-dashed border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 rounded-lg px-3 py-2 text-xs flex items-center gap-1 bg-slate-50/50 transition-colors"
+                    onClick={() => addChildNode(i)}
+                  >
+                    <Plus className="h-3 w-3" /> Add Step
+                  </button>
                 )}
               </div>
-            ))}
+            </div>
+          );
+        })}
 
-            <Button variant="ghost" size="sm" className="text-xs gap-1 ml-10" onClick={addOption}>
-              <Plus className="h-3 w-3" />Add another option
+        <div className="flex flex-col items-center justify-start pl-3 pt-0">
+          <div className="w-px h-4 bg-transparent" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-[10px] rounded-full border-dashed bg-white text-slate-400 hover:text-slate-700 hover:border-slate-400 shadow-sm px-2"
+            onClick={addOption}
+          >
+            <Plus className="h-2.5 w-2.5 mr-0.5" /> Option
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OptionPill({
+  opt,
+  node,
+  optionIndex,
+  canRemove,
+  tree,
+  onChange,
+  updateOption,
+  removeOption,
+  addChildNode,
+  convertToLeaf,
+  setOutcome,
+}: {
+  opt: TreeOption;
+  node: TreeNode;
+  optionIndex: number;
+  canRemove: boolean;
+  tree: DecisionTree;
+  onChange: (tree: DecisionTree) => void;
+  updateOption: (updates: Partial<TreeOption>) => void;
+  removeOption: () => void;
+  addChildNode: () => void;
+  convertToLeaf: () => void;
+  setOutcome: (ot: OutcomeType) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="group flex items-center bg-white border border-slate-200 hover:border-blue-400 shadow-sm rounded-full pl-3 pr-2 py-1 text-xs font-medium text-slate-700 transition-colors max-w-[200px]">
+          <span className="truncate">{opt.label}</span>
+          <ChevronDown className="h-3 w-3 ml-1.5 text-slate-400 group-hover:text-blue-500 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-3" align="center">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500">Option Label</Label>
+            <Input
+              value={opt.label}
+              onChange={e => updateOption({ label: e.target.value })}
+              className="h-7 text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500">Action / Next Step</Label>
+            <Select
+              value={opt.childId ? "sub_question" : opt.outcomeType || ""}
+              onValueChange={(val) => {
+                if (val === "sub_question") {
+                  if (!opt.childId) addChildNode();
+                } else {
+                  setOutcome(val as OutcomeType);
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Select action..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sub_question">
+                  <span className="flex items-center gap-1.5"><GitBranch className="h-3 w-3" />Ask sub-question</span>
+                </SelectItem>
+                <SelectItem value="portal_dispute">
+                  <span className="flex items-center gap-1.5"><Send className="h-3 w-3 text-green-600" />Portal Dispute</span>
+                </SelectItem>
+                <SelectItem value="dispute">
+                  <span className="flex items-center gap-1.5"><Mail className="h-3 w-3 text-blue-600" />Email Dispute</span>
+                </SelectItem>
+                <SelectItem value="internal">
+                  <span className="flex items-center gap-1.5"><Ban className="h-3 w-3 text-red-600" />Resolve Internally</span>
+                </SelectItem>
+                <SelectItem value="hold">
+                  <span className="flex items-center gap-1.5"><PauseCircle className="h-3 w-3 text-amber-600" />Place on Hold</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {opt.childId && (
+            <Button variant="ghost" size="sm" className="w-full h-7 text-xs text-slate-500 hover:text-red-600 justify-start" onClick={convertToLeaf}>
+              Convert to outcome
+            </Button>
+          )}
+          {canRemove && (
+            <Button variant="ghost" size="sm" className="w-full h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 justify-start" onClick={removeOption}>
+              <Trash2 className="h-3 w-3 mr-1.5" /> Remove Option
+            </Button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function OutcomeTerminal({ outcomeType, outcomeLabel }: { outcomeType: OutcomeType; outcomeLabel?: string }) {
+  const colors = OUTCOME_COLORS[outcomeType];
+  const Icon = OUTCOME_ICONS[outcomeType];
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="h-1.5 w-1.5 rounded-full border-2 border-slate-300 bg-white mb-1.5" />
+      <div className={`px-3 py-2.5 rounded-xl border flex flex-col items-center text-center w-[170px] shadow-sm ${colors.bg} ${colors.border}`}>
+        <div className={`h-8 w-8 rounded-full flex items-center justify-center mb-1.5 ${colors.bg} border ${colors.border}`}>
+          <Icon className={`h-4 w-4 ${colors.text}`} />
+        </div>
+        <span className={`text-[9px] font-bold ${colors.text} uppercase tracking-wider mb-0.5`}>
+          {outcomeType.replace('_', ' ')}
+        </span>
+        <span className="text-[11px] text-slate-700 font-medium leading-snug">
+          {outcomeLabel || OUTCOME_LABELS[outcomeType]}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function NodeSettingsPopover({
+  node,
+  updateNode,
+  addEvidenceReq,
+  updateEvidenceReq,
+  removeEvidenceReq,
+}: {
+  node: TreeNode;
+  updateNode: (updates: Partial<TreeNode>) => void;
+  addEvidenceReq: () => void;
+  updateEvidenceReq: (idx: number, updates: Partial<EvidenceReq>) => void;
+  removeEvidenceReq: (idx: number) => void;
+}) {
+  const hasContent = !!(node.helpText || node.instructionText || node.instructionImageUrl || (node.evidenceRequirements && node.evidenceRequirements.length > 0));
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${hasContent ? "text-blue-500 bg-blue-50 hover:bg-blue-100" : "text-slate-400 hover:text-slate-600"}`}
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0 max-h-[400px] overflow-y-auto" align="end">
+        <div className="p-3 border-b border-slate-100 bg-slate-50">
+          <p className="text-xs font-semibold text-slate-700">Node Settings</p>
+        </div>
+
+        <div className="p-3 border-b border-slate-100 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
+            <Label className="text-xs font-medium text-slate-600">Help Text</Label>
+          </div>
+          <Textarea
+            value={node.helpText || ""}
+            onChange={e => updateNode({ helpText: e.target.value || undefined })}
+            placeholder="Help text shown to staff as a tooltip..."
+            rows={2}
+            className="text-xs"
+          />
+        </div>
+
+        <div className="p-3 border-b border-slate-100 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5 text-slate-400" />
+            <Label className="text-xs font-medium text-slate-600">Instructions</Label>
+          </div>
+          <Textarea
+            value={node.instructionText || ""}
+            onChange={e => updateNode({ instructionText: e.target.value || undefined })}
+            placeholder="Step-by-step instructions for staff..."
+            rows={3}
+            className="text-xs"
+          />
+          <Input
+            value={node.instructionImageUrl || ""}
+            onChange={e => updateNode({ instructionImageUrl: e.target.value || undefined })}
+            placeholder="Reference image URL (optional)"
+            className="text-xs h-7"
+          />
+        </div>
+
+        <div className="p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-slate-400" />
+              <Label className="text-xs font-medium text-slate-600">Evidence Requirements</Label>
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-blue-600" onClick={addEvidenceReq}>
+              <Plus className="h-3 w-3 mr-1" />Add
             </Button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          {(node.evidenceRequirements || []).length === 0 && (
+            <p className="text-[10px] text-slate-400 text-center py-2">No evidence required at this step</p>
+          )}
+
+          {(node.evidenceRequirements || []).map((req, i) => (
+            <div key={req.key} className="border border-slate-200 rounded-md p-2 bg-white space-y-2">
+              <div className="flex items-center gap-1.5">
+                <GripVertical className="h-3 w-3 text-slate-300 cursor-grab shrink-0" />
+                <Input
+                  value={req.label}
+                  onChange={e => updateEvidenceReq(i, { label: e.target.value })}
+                  placeholder="Evidence item..."
+                  className="text-xs h-6 flex-1"
+                />
+                <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-400 hover:text-red-500 shrink-0" onClick={() => removeEvidenceReq(i)}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] pl-4">
+                <div className="flex items-center gap-1">
+                  <Switch
+                    checked={req.required}
+                    onCheckedChange={checked => updateEvidenceReq(i, { required: checked })}
+                    className="scale-[0.6]"
+                  />
+                  <span className="text-slate-500">Required</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Switch
+                    checked={req.acceptsImage !== false}
+                    onCheckedChange={checked => updateEvidenceReq(i, { acceptsImage: checked })}
+                    className="scale-[0.6]"
+                  />
+                  <ImageIcon className="h-2.5 w-2.5 text-slate-400" />
+                </div>
+                <div className="flex items-center gap-1">
+                  <Switch
+                    checked={!!req.acceptsText}
+                    onCheckedChange={checked => updateEvidenceReq(i, { acceptsText: checked })}
+                    className="scale-[0.6]"
+                  />
+                  <FileText className="h-2.5 w-2.5 text-slate-400" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
+}
+
+function findParent(tree: DecisionTree, nodeId: string): { parentNode: TreeNode; optionIndex: number } | null {
+  for (const n of tree.nodes) {
+    for (let i = 0; i < n.options.length; i++) {
+      if (n.options[i].childId === nodeId) {
+        return { parentNode: n, optionIndex: i };
+      }
+    }
+  }
+  return null;
 }
 
 function removeSubtree(nodes: TreeNode[], rootId: string): TreeNode[] {
