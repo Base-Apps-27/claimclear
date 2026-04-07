@@ -39,6 +39,12 @@ tags:
     description: Anthropic AI chat operations
   - name: errorDetailMappings
     description: Error detail to error type mappings
+  - name: Storage
+    description: Object storage upload and serving endpoints
+  - name: evidenceTypes
+    description: Reusable evidence type library
+  - name: claimEvidence
+    description: Evidence collected for claims
 
 paths:
   /healthz:
@@ -1142,6 +1148,169 @@ paths:
           content:
             text/event-stream: {}
 
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+      responses:
+        '200':
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+
+  /evidence-types:
+    get:
+      tags: [evidenceTypes]
+      operationId: listEvidenceTypes
+      summary: List all evidence types
+      responses:
+        '200':
+          description: Evidence types list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evidenceTypes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvidenceTypeResponse'
+                required:
+                  - evidenceTypes
+    post:
+      tags: [evidenceTypes]
+      operationId: createEvidenceType
+      summary: Create an evidence type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceTypeBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceTypeResponse'
+
+  /evidence-types/{id}:
+    put:
+      tags: [evidenceTypes]
+      operationId: updateEvidenceType
+      summary: Update an evidence type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceTypeBody'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceTypeResponse'
+    delete:
+      tags: [evidenceTypes]
+      operationId: deleteEvidenceType
+      summary: Delete an evidence type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+
+  /claims/{claimId}/evidence:
+    get:
+      tags: [claimEvidence]
+      operationId: listClaimEvidence
+      summary: List evidence for a claim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Evidence list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evidence:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClaimEvidenceResponse'
+                required:
+                  - evidence
+    post:
+      tags: [claimEvidence]
+      operationId: addClaimEvidence
+      summary: Add evidence to a claim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddClaimEvidenceBody'
+      responses:
+        '201':
+          description: Evidence added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimEvidenceResponse'
+
+  /claims/{claimId}/evidence/{evidenceId}:
+    delete:
+      tags: [claimEvidence]
+      operationId: deleteClaimEvidence
+      summary: Delete evidence from a claim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: evidenceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+
 components:
   schemas:
     HealthStatus:
@@ -2207,3 +2376,120 @@ components:
           type: integer
       required:
         - updated
+
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+        contentType:
+          type: string
+          minLength: 1
+
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+        objectPath:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/UploadUrlRequest'
+
+    EvidenceTypeBody:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        acceptsImage:
+          type: boolean
+        acceptsText:
+          type: boolean
+        instructionText:
+          type: string
+        instructionImageUrl:
+          type: string
+
+    EvidenceTypeResponse:
+      type: object
+      required: [id, name, acceptsImage, acceptsText, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        acceptsImage:
+          type: boolean
+        acceptsText:
+          type: boolean
+        instructionText:
+          type: string
+          nullable: true
+        instructionImageUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    AddClaimEvidenceBody:
+      type: object
+      required: [evidenceTypeName]
+      properties:
+        evidenceTypeId:
+          type: integer
+        evidenceTypeName:
+          type: string
+        treeNodeId:
+          type: string
+        imageUrl:
+          type: string
+        notes:
+          type: string
+
+    ClaimEvidenceResponse:
+      type: object
+      required: [id, claimId, evidenceTypeName, collectedAt]
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+        evidenceTypeId:
+          type: integer
+          nullable: true
+        evidenceTypeName:
+          type: string
+        treeNodeId:
+          type: string
+          nullable: true
+        imageUrl:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        collectedBy:
+          type: string
+          nullable: true
+        collectedAt:
+          type: string

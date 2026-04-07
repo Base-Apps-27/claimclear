@@ -721,6 +721,64 @@ export interface BulkAssignResult {
   updated: number;
 }
 
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 1 */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata?: UploadUrlRequest;
+}
+
+export interface EvidenceTypeBody {
+  name: string;
+  description?: string;
+  category?: string;
+  acceptsImage?: boolean;
+  acceptsText?: boolean;
+  instructionText?: string;
+  instructionImageUrl?: string;
+}
+
+export interface EvidenceTypeResponse {
+  id: number;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  acceptsImage: boolean;
+  acceptsText: boolean;
+  instructionText?: string | null;
+  instructionImageUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AddClaimEvidenceBody {
+  evidenceTypeId?: number;
+  evidenceTypeName: string;
+  treeNodeId?: string;
+  imageUrl?: string;
+  notes?: string;
+}
+
+export interface ClaimEvidenceResponse {
+  id: number;
+  claimId: number;
+  evidenceTypeId?: number | null;
+  evidenceTypeName: string;
+  treeNodeId?: string | null;
+  imageUrl?: string | null;
+  notes?: string | null;
+  collectedBy?: string | null;
+  collectedAt: string;
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -764,4 +822,12 @@ export const ListClaimsOutcome = {
 
 export type ListPortalSubmissionsParams = {
   status?: string;
+};
+
+export type ListEvidenceTypes200 = {
+  evidenceTypes: EvidenceTypeResponse[];
+};
+
+export type ListClaimEvidence200 = {
+  evidence: ClaimEvidenceResponse[];
 };

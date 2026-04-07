@@ -8,6 +8,7 @@ import {
   useUpdateClaimWorkflow,
   usePlaceClaimOnHold,
   useCreatePortalSubmission,
+  useAddClaimEvidence,
   getListClaimsQueryKey,
   useGetErrorType,
 } from "@workspace/api-client-react";
@@ -26,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send,
-  PauseCircle, FileText, ArrowRight, Eye, Clipboard
+  PauseCircle, FileText, ArrowRight, Eye, Clipboard, TreeDeciduous
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
 import {
@@ -48,11 +49,23 @@ function WorkflowPlayer({
   const updateWorkflow = useUpdateClaimWorkflow();
   const placeHold = usePlaceClaimOnHold();
   const createSubmission = useCreatePortalSubmission();
+  const addEvidence = useAddClaimEvidence();
 
   const errorTypeId = claim.errorTypeId ? parseInt(claim.errorTypeId, 10) : 0;
   const { data: errorType } = useGetErrorType(errorTypeId, {
     query: { queryKey: [`/api/error-types/${errorTypeId}`], enabled: !!errorTypeId },
   });
+
+  const rawTree = errorType?.decisionTree as Record<string, unknown> | undefined;
+  let parsedTree: DecisionTree | null = null;
+  if (rawTree) {
+    if ("nodes" in rawTree && "rootId" in rawTree) {
+      parsedTree = rawTree as unknown as DecisionTree;
+    } else if ("question" in rawTree) {
+      parsedTree = legacyToTree(rawTree as unknown as LegacyTreeNode);
+    }
+  }
+  const hasTree = !!parsedTree;
 
   const workflowProgress = (claim.workflowProgress as Record<string, unknown>) ?? {};
   const currentStep = (workflowProgress.currentStep as string) ?? "review";
@@ -63,13 +76,20 @@ function WorkflowPlayer({
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
 
-  const steps = [
+  const treeSteps = [
+    { id: "review", label: "Review", icon: Eye, tooltip: "Review the claim details before following the SOP." },
+    { id: "sop", label: "Follow SOP", icon: TreeDeciduous, tooltip: "Follow the decision tree for this error type. Evidence is collected inline at each step." },
+    { id: "submit", label: "Act", icon: Send, tooltip: "Execute the recommended action from the decision tree." },
+  ];
+
+  const genericSteps = [
     { id: "review", label: "Review Claim", icon: Eye, tooltip: "Review the claim details, confirmation number, dates, and error type before proceeding." },
     { id: "evidence", label: "Gather Evidence", icon: FileText, tooltip: "Collect supporting evidence: GPS logs, driver statements, trip records, and documentation." },
     { id: "decide", label: "Decision", icon: Clipboard, tooltip: "Make a decision on how to handle this claim: dispute via portal, resolve internally, or place on hold." },
     { id: "submit", label: "Submit to Portal", icon: Send, tooltip: "Queue the claim for automated submission to the MAS Transportation Provider Support Portal." },
   ];
 
+  const steps = hasTree ? treeSteps : genericSteps;
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
   const advanceStep = async (nextStep: string) => {
@@ -110,6 +130,27 @@ function WorkflowPlayer({
     setHoldReason("");
     invalidate();
     onComplete();
+  };
+
+  const handleEvidenceCollected = async (evidence: {
+    evidenceTypeId?: number;
+    evidenceTypeName: string;
+    treeNodeId: string;
+    imageUrl?: string;
+    notes?: string;
+  }) => {
+    try {
+      await addEvidence.mutateAsync({
+        claimId: claim.id,
+        data: {
+          evidenceTypeId: evidence.evidenceTypeId,
+          evidenceTypeName: evidence.evidenceTypeName,
+          treeNodeId: evidence.treeNodeId,
+          imageUrl: evidence.imageUrl,
+          notes: evidence.notes,
+        },
+      });
+    } catch {}
   };
 
   return (
@@ -174,15 +215,25 @@ function WorkflowPlayer({
             )}
             <Separator />
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  handleStatusUpdate("Needs Evidence");
-                  advanceStep("evidence");
-                }}
-              >
-                Proceed to Evidence <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
+              {hasTree ? (
+                <Button
+                  size="sm"
+                  onClick={() => advanceStep("sop")}
+                >
+                  <TreeDeciduous className="h-4 w-4 mr-1" />
+                  Follow SOP <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    handleStatusUpdate("Needs Evidence");
+                    advanceStep("evidence");
+                  }}
+                >
+                  Proceed to Evidence <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -195,7 +246,50 @@ function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "evidence" && (
+      {currentStep === "sop" && hasTree && parsedTree && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TreeDeciduous className="h-4 w-4" />
+              {errorType?.name || "Decision Tree"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {errorType?.guidance && (
+              <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm mb-3">
+                <p className="font-medium text-xs mb-1">SOP Guidance</p>
+                <p className="text-xs whitespace-pre-line">{errorType.guidance}</p>
+              </div>
+            )}
+            <div className="min-w-0 overflow-hidden">
+              <TreePlayer
+                tree={parsedTree}
+                claimId={claim.id}
+                onEvidenceCollected={handleEvidenceCollected}
+                onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
+                  if (outcomeType === "portal_dispute" || outcomeType === "dispute") {
+                    advanceStep("submit");
+                  } else if (outcomeType === "hold") {
+                    setShowHoldDialog(true);
+                  } else if (outcomeType === "internal") {
+                    const lower = outcomeLabel.toLowerCase();
+                    const isDeny = lower.includes("deny") || lower.includes("denied");
+                    const finalStatus = isDeny ? "Denied" : "Resolved";
+                    updateStatus.mutateAsync({ id: claim.id, data: { status: finalStatus } }).then(() => {
+                      invalidate();
+                      onComplete();
+                    });
+                  } else {
+                    advanceStep("submit");
+                  }
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === "evidence" && !hasTree && (
         <Card>
           <CardHeader><CardTitle className="text-base">Gather Evidence</CardTitle></CardHeader>
           <CardContent className="space-y-3">
@@ -256,117 +350,62 @@ function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "decide" && (
+      {currentStep === "decide" && !hasTree && (
         <Card>
           <CardHeader><CardTitle className="text-base">Decision</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {errorType?.guidance && (
-              <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm mb-3">
-                <p className="font-medium text-xs mb-1">SOP Guidance</p>
-                <p className="text-xs whitespace-pre-line">{errorType.guidance}</p>
-              </div>
-            )}
-
-            {errorType?.decisionTree ? (() => {
-              const rawTree = errorType.decisionTree as Record<string, unknown>;
-              let tree: DecisionTree | null = null;
-              if ("nodes" in rawTree && "rootId" in rawTree) {
-                tree = rawTree as unknown as DecisionTree;
-              } else if ("question" in rawTree) {
-                tree = legacyToTree(rawTree as unknown as LegacyTreeNode);
-              }
-              if (!tree) return null;
-              return (
-                <div className="min-w-0 overflow-hidden">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Follow the decision tree for <span className="font-medium">{errorType.name}</span>:
-                  </p>
-                  <TreePlayer
-                    tree={tree}
-                    onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
-                      if (outcomeType === "portal_dispute") {
-                        advanceStep("submit");
-                      } else if (outcomeType === "hold") {
-                        setShowHoldDialog(true);
-                      } else if (outcomeType === "dispute") {
-                        advanceStep("submit");
-                      } else if (outcomeType === "internal") {
-                        const lower = outcomeLabel.toLowerCase();
-                        const isDeny = lower.includes("deny") || lower.includes("denied");
-                        const finalStatus = isDeny ? "Denied" : "Resolved";
-                        updateStatus.mutateAsync({ id: claim.id, data: { status: finalStatus } }).then(() => {
-                          invalidate();
-                          onComplete();
-                        });
-                      } else {
-                        advanceStep("submit");
-                      }
-                    }}
-                  />
-                </div>
-              );
-            })() : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Choose how to resolve this claim based on the evidence gathered.
-                </p>
-                <div className="grid grid-cols-1 gap-2">
-                  <Button
-                    className="justify-start"
-                    onClick={() => advanceStep("submit")}
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    Submit Dispute to MAS Portal
-                    <span className="ml-auto text-xs opacity-70">Automated submission</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => setShowHoldDialog(true)}
-                  >
-                    <PauseCircle className="h-4 w-4 mr-2" />
-                    Place on Hold
-                    <span className="ml-auto text-xs opacity-70">Pending additional info</span>
-                  </Button>
-                  <WrapTooltip content="Close this claim as resolved without submitting a dispute. Use when evidence confirms the original denial was correct or the issue was resolved another way.">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-green-700"
-                      onClick={async () => {
-                        await updateStatus.mutateAsync({
-                          id: claim.id,
-                          data: { status: "Resolved" },
-                        });
-                        invalidate();
-                        onComplete();
-                      }}
-                    >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Mark as Resolved
-                      <span className="ml-auto text-xs opacity-70">No dispute needed</span>
-                    </Button>
-                  </WrapTooltip>
-                  <WrapTooltip content="Close this claim as denied. Use when the evidence does not support a dispute and no further action can be taken.">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-red-700"
-                      onClick={async () => {
-                        await updateStatus.mutateAsync({
-                          id: claim.id,
-                          data: { status: "Denied" },
-                        });
-                        invalidate();
-                        onComplete();
-                      }}
-                    >
-                      <AlertTriangle className="h-4 w-4 mr-2" />
-                      Mark as Denied
-                      <span className="ml-auto text-xs opacity-70">Cannot dispute</span>
-                    </Button>
-                  </WrapTooltip>
-                </div>
-              </>
-            )}
+            <p className="text-sm text-muted-foreground">
+              Choose how to resolve this claim based on the evidence gathered.
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                className="justify-start"
+                onClick={() => advanceStep("submit")}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Submit Dispute to MAS Portal
+                <span className="ml-auto text-xs opacity-70">Automated submission</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="justify-start"
+                onClick={() => setShowHoldDialog(true)}
+              >
+                <PauseCircle className="h-4 w-4 mr-2" />
+                Place on Hold
+                <span className="ml-auto text-xs opacity-70">Pending additional info</span>
+              </Button>
+              <WrapTooltip content="Close this claim as resolved without submitting a dispute.">
+                <Button
+                  variant="outline"
+                  className="justify-start text-green-700"
+                  onClick={async () => {
+                    await updateStatus.mutateAsync({ id: claim.id, data: { status: "Resolved" } });
+                    invalidate();
+                    onComplete();
+                  }}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Mark as Resolved
+                  <span className="ml-auto text-xs opacity-70">No dispute needed</span>
+                </Button>
+              </WrapTooltip>
+              <WrapTooltip content="Close this claim as denied. Evidence does not support a dispute.">
+                <Button
+                  variant="outline"
+                  className="justify-start text-red-700"
+                  onClick={async () => {
+                    await updateStatus.mutateAsync({ id: claim.id, data: { status: "Denied" } });
+                    invalidate();
+                    onComplete();
+                  }}
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Mark as Denied
+                  <span className="ml-auto text-xs opacity-70">Cannot dispute</span>
+                </Button>
+              </WrapTooltip>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -393,9 +432,9 @@ function WorkflowPlayer({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => advanceStep("decide")}
+                onClick={() => advanceStep(hasTree ? "sop" : "decide")}
               >
-                Back to Decision
+                Back
               </Button>
               <Button
                 size="sm"

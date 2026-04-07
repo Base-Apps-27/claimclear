@@ -1703,3 +1703,141 @@ export const SendAnthropicMessageParams = zod.object({
 export const SendAnthropicMessageBody = zod.object({
   content: zod.string(),
 });
+
+/**
+ * @summary Request a presigned URL for file upload
+ */
+
+export const RequestUploadUrlBody = zod.object({
+  name: zod.string().min(1),
+  size: zod.number().min(1),
+  contentType: zod.string().min(1),
+});
+
+export const RequestUploadUrlResponse = zod.object({
+  uploadURL: zod.string().url(),
+  objectPath: zod.string(),
+  metadata: zod
+    .object({
+      name: zod.string().min(1),
+      size: zod.number().min(1),
+      contentType: zod.string().min(1),
+    })
+    .optional(),
+});
+
+/**
+ * @summary List all evidence types
+ */
+export const ListEvidenceTypesResponse = zod.object({
+  evidenceTypes: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      description: zod.string().nullish(),
+      category: zod.string().nullish(),
+      acceptsImage: zod.boolean(),
+      acceptsText: zod.boolean(),
+      instructionText: zod.string().nullish(),
+      instructionImageUrl: zod.string().nullish(),
+      createdAt: zod.string(),
+      updatedAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Create an evidence type
+ */
+export const CreateEvidenceTypeBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  category: zod.string().optional(),
+  acceptsImage: zod.boolean().optional(),
+  acceptsText: zod.boolean().optional(),
+  instructionText: zod.string().optional(),
+  instructionImageUrl: zod.string().optional(),
+});
+
+/**
+ * @summary Update an evidence type
+ */
+export const UpdateEvidenceTypeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateEvidenceTypeBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  category: zod.string().optional(),
+  acceptsImage: zod.boolean().optional(),
+  acceptsText: zod.boolean().optional(),
+  instructionText: zod.string().optional(),
+  instructionImageUrl: zod.string().optional(),
+});
+
+export const UpdateEvidenceTypeResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  category: zod.string().nullish(),
+  acceptsImage: zod.boolean(),
+  acceptsText: zod.boolean(),
+  instructionText: zod.string().nullish(),
+  instructionImageUrl: zod.string().nullish(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Delete an evidence type
+ */
+export const DeleteEvidenceTypeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List evidence for a claim
+ */
+export const ListClaimEvidenceParams = zod.object({
+  claimId: zod.coerce.number(),
+});
+
+export const ListClaimEvidenceResponse = zod.object({
+  evidence: zod.array(
+    zod.object({
+      id: zod.number(),
+      claimId: zod.number(),
+      evidenceTypeId: zod.number().nullish(),
+      evidenceTypeName: zod.string(),
+      treeNodeId: zod.string().nullish(),
+      imageUrl: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      collectedBy: zod.string().nullish(),
+      collectedAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Add evidence to a claim
+ */
+export const AddClaimEvidenceParams = zod.object({
+  claimId: zod.coerce.number(),
+});
+
+export const AddClaimEvidenceBody = zod.object({
+  evidenceTypeId: zod.number().optional(),
+  evidenceTypeName: zod.string(),
+  treeNodeId: zod.string().optional(),
+  imageUrl: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Delete evidence from a claim
+ */
+export const DeleteClaimEvidenceParams = zod.object({
+  claimId: zod.coerce.number(),
+  evidenceId: zod.coerce.number(),
+});

@@ -61,7 +61,7 @@ All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHand
 ### Frontend Routing
 The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.
 
-### Database Entities (12 tables)
+### Database Entities (14 tables)
 - `users` — Replit Auth users (varchar ID)
 - `sessions` — auth session storage (sid + JSON payload + expire)
 - `claims` — rejected claims (serial ID)
@@ -73,6 +73,8 @@ The ClaimClear frontend is served at the root path `/`. In production, it's serv
 - `bot_instances` — Playwright bot instance registry
 - `bot_activity_log` — per-submission bot action log
 - `presence_logs` — real-time user presence (heartbeat-based, unique on claim_id + user_email)
+- `evidence_types` — reusable evidence type library (name, category, accepts image/text)
+- `claim_evidence` — evidence collected per claim (linked to tree node where collected)
 - `conversations` + `messages` — AI chat conversations
 
 ### Error Type Auto-Match & Bulk Assignment
@@ -104,10 +106,19 @@ New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resol
 - Daily brief generates styled HTML email with pipeline stats, expiring claims
 - Sends via SMTP when configured (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`)
 
-### Decision Trees
-- Native `DecisionTree` format: `{ rootNodeId, nodes: Record<string, DecisionTreeNode> }` where each node has `id`, `question`, `helpText`, `options[]`, and `evidenceRequirements[]`
+### Decision Trees & Tree-Driven Queue
+- Native `DecisionTree` format: `{ rootId, nodes: TreeNode[] }` where each node has `id`, `question`, `helpText`, `instructionText`, `instructionImageUrl`, `options[]`, and `evidenceRequirements[]`
 - SOP analyzer and build-tree-from-text AI endpoints convert legacy yes/no tree format to native DecisionTree format automatically
 - Legacy format (`question/yesLabel/noLabel/yesChild/noChild`) still supported via `legacyToTree()` in frontend
+- **Tree-driven queue**: When an error type has a decision tree, the queue uses 3-step flow: Review → Follow SOP (tree + inline evidence) → Act. Generic 4-step flow (Review → Evidence → Decide → Submit) for claims without trees.
+- **Inline evidence collection**: Tree nodes can require evidence (`evidenceRequirements[]`). Each requirement has `key`, `label`, `required`, `acceptsImage`, `acceptsText`, optional `evidenceTypeId` (references evidence_types library). Evidence is collected inline at each tree step and saved to `claim_evidence` table.
+- **Rich instructions**: Each node can have `instructionText` (step-by-step guide) and `instructionImageUrl` (reference screenshot/image). Displayed prominently in the TreePlayer.
+
+### Evidence Infrastructure
+- **Object Storage**: GCS-backed file upload via `POST /api/storage/uploads/request-url` (returns presigned URL) + `GET /api/storage/objects/*` (serve uploaded files)
+- **Evidence Types Library**: `evidence_types` table — reusable evidence definitions (name, description, category, acceptsImage, acceptsText, instructionText, instructionImageUrl). CRUD via `/api/evidence-types`
+- **Claim Evidence**: `claim_evidence` table — evidence collected per claim, linked to tree node where collected. CRUD via `/api/claims/:claimId/evidence`
+- **Claim Detail Evidence Section**: Shows all collected evidence with thumbnails, tree node context, collector info, timestamps, and delete capability
 
 ### CORS
 CORS origins allow Replit domains (`*.replit.dev`, `*.repl.co`, `*.replit.app`) and localhost by default. Override with `CORS_ORIGINS` env var (comma-separated list).
@@ -173,7 +184,7 @@ Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to th
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`, global error handler
 - Middleware: `src/middlewares/` — authMiddleware, requireAuth, requireAdmin, requireBotToken
 - Utilities: `src/lib/` — asyncHandler, auth (OIDC + sessions), dates, logger
-- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes, anthropic conversations
+- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes, anthropic conversations, storage (upload/serve), evidence types CRUD, claim evidence CRUD
 - Bot routes: `src/routes/bot-portal.ts` (bot-only portal submission endpoints), `src/routes/bot-instances.ts` (bot instance management)
 - Bot scripts: `src/bot/portal-bot.ts` (Playwright automation for MAS portal), `src/bot/save-session.ts` (session saver)
 - Depends on: `@workspace/db`, `@workspace/api-zod`

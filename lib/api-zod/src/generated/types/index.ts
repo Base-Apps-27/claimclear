@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./addClaimEvidenceBody";
 export * from "./analyzeSOPBody";
 export * from "./anthropicConversation";
 export * from "./anthropicConversationWithMessages";
@@ -19,6 +20,7 @@ export * from "./botInstanceResponse";
 export * from "./botPresenceEntry";
 export * from "./bulkAssignErrorTypeBody";
 export * from "./bulkAssignResult";
+export * from "./claimEvidenceResponse";
 export * from "./claimResponse";
 export * from "./claimResponseEvidenceChecklist";
 export * from "./claimResponseEvidenceFiles";
@@ -47,6 +49,8 @@ export * from "./errorTypeResponse";
 export * from "./errorTypeResponseDecisionTree";
 export * from "./errorTypeResponseDisputeReasonsLibrary";
 export * from "./errorTypeResponseEvidenceRequirements";
+export * from "./evidenceTypeBody";
+export * from "./evidenceTypeResponse";
 export * from "./exchangeMobileAuthorizationCodeBody";
 export * from "./expiringClaim";
 export * from "./failSubmissionBody";
@@ -58,9 +62,11 @@ export * from "./healthStatus";
 export * from "./importClaimRow";
 export * from "./importClaimsBody";
 export * from "./importSummary";
+export * from "./listClaimEvidence200";
 export * from "./listClaimsOutcome";
 export * from "./listClaimsParams";
 export * from "./listClaimsStatus";
+export * from "./listEvidenceTypes200";
 export * from "./listPortalSubmissionsParams";
 export * from "./lookupMappingsBody";
 export * from "./lookupMappingsResponse";
@@ -103,3 +109,5 @@ export * from "./updateErrorTypeBodyDisputeReasonsLibrary";
 export * from "./updateErrorTypeBodyEvidenceRequirements";
 export * from "./updateWorkflowBody";
 export * from "./updateWorkflowBodyWorkflowProgress";
+export * from "./uploadUrlRequest";
+export * from "./uploadUrlResponse";

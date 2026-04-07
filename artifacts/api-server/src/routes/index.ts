@@ -20,6 +20,9 @@ import dailyBriefRouter from "./daily-brief";
 import aiEmailRouter from "./ai-email";
 import sopAnalyzerRouter from "./sop-analyzer";
 import anthropicRouter from "./anthropic";
+import storageRouter from "./storage";
+import evidenceTypesRouter from "./evidence-types";
+import claimEvidenceRouter from "./claim-evidence";
 
 const router: IRouter = Router();
 
@@ -33,8 +36,10 @@ router.use("/daily-brief", requireAuthOrBot, dailyBriefRouter);
 
 router.use(requireAuth);
 
+router.use(storageRouter);
 router.use("/bot-instances", botInstancesReadRouter);
 router.use(claimEventsRouter);
+router.use(claimEvidenceRouter);
 router.use(claimsRouter);
 router.use(notesRouter);
 router.use(auditLogsRouter);

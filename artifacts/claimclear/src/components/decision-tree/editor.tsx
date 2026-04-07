@@ -30,7 +30,8 @@ import {
 import {
   Plus, X, HelpCircle, ChevronDown, ChevronRight,
   FileText, Copy, Play, GitBranch, ArrowRight, Layers,
-  Send, Ban, PauseCircle, Mail,
+  Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
+  Camera, Upload,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -128,6 +129,7 @@ function NodeEditor({
   const [expanded, setExpanded] = useState(depth < 2);
   const [showHelp, setShowHelp] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const node = tree.nodes.find(n => n.id === nodeId);
   if (!node) return null;
 
@@ -243,6 +245,9 @@ function NodeEditor({
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHelp(!showHelp)} title="Add help text">
               <HelpCircle className={`h-3.5 w-3.5 ${node.helpText ? "text-blue-500" : ""}`} />
             </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowInstructions(!showInstructions)} title="Add instructions & reference image">
+              <Info className={`h-3.5 w-3.5 ${node.instructionText || node.instructionImageUrl ? "text-indigo-500" : ""}`} />
+            </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowEvidence(!showEvidence)} title="Per-node evidence">
               <FileText className={`h-3.5 w-3.5 ${node.evidenceRequirements?.length ? "text-violet-500" : ""}`} />
             </Button>
@@ -259,6 +264,26 @@ function NodeEditor({
           />
         )}
 
+        {showInstructions && (
+          <div className="bg-indigo-50 dark:bg-indigo-950/20 rounded-md p-2 space-y-2">
+            <Label className="text-xs font-medium text-indigo-700">Step-by-step instructions</Label>
+            <Textarea
+              value={node.instructionText || ""}
+              onChange={e => updateNode({ instructionText: e.target.value || undefined })}
+              placeholder="Detailed instructions for this step (e.g., 'Navigate to MAS portal > Manage Trips > Search Trip by Invoice...')"
+              rows={3}
+              className="text-xs"
+            />
+            <Label className="text-xs font-medium text-indigo-700">Reference image URL (optional)</Label>
+            <Input
+              value={node.instructionImageUrl || ""}
+              onChange={e => updateNode({ instructionImageUrl: e.target.value || undefined })}
+              placeholder="/objects/uploads/abc123 or https://..."
+              className="text-xs h-7"
+            />
+          </div>
+        )}
+
         {showEvidence && (
           <div className="bg-violet-50 dark:bg-violet-950/20 rounded-md p-2 space-y-2">
             <div className="flex items-center justify-between">
@@ -268,22 +293,43 @@ function NodeEditor({
               </Button>
             </div>
             {(node.evidenceRequirements || []).map((req, i) => (
-              <div key={req.key} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={req.required}
-                  onChange={e => updateEvidenceReq(i, { required: e.target.checked })}
-                  className="rounded"
-                />
-                <Input
-                  value={req.label}
-                  onChange={e => updateEvidenceReq(i, { label: e.target.value })}
-                  placeholder="Evidence item..."
-                  className="text-xs h-7 flex-1"
-                />
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeEvidenceReq(i)}>
-                  <X className="h-3 w-3" />
-                </Button>
+              <div key={req.key} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={req.required}
+                    onChange={e => updateEvidenceReq(i, { required: e.target.checked })}
+                    className="rounded"
+                    title="Required?"
+                  />
+                  <Input
+                    value={req.label}
+                    onChange={e => updateEvidenceReq(i, { label: e.target.value })}
+                    placeholder="Evidence item..."
+                    className="text-xs h-7 flex-1"
+                  />
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer" title="Accepts image upload">
+                    <input
+                      type="checkbox"
+                      checked={req.acceptsImage !== false}
+                      onChange={e => updateEvidenceReq(i, { acceptsImage: e.target.checked })}
+                      className="rounded h-3 w-3"
+                    />
+                    <ImageIcon className="h-3 w-3" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer" title="Accepts text notes">
+                    <input
+                      type="checkbox"
+                      checked={!!req.acceptsText}
+                      onChange={e => updateEvidenceReq(i, { acceptsText: e.target.checked })}
+                      className="rounded h-3 w-3"
+                    />
+                    <FileText className="h-3 w-3" />
+                  </label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeEvidenceReq(i)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

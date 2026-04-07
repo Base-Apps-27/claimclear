@@ -11,6 +11,8 @@ import {
   useCreatePortalSubmission,
   useListPortalSubmissions, getListPortalSubmissionsQueryKey,
   useListBotActivity, getListBotActivityQueryKey,
+  useListClaimEvidence, getListClaimEvidenceQueryKey,
+  useDeleteClaimEvidence,
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
@@ -145,6 +147,11 @@ export default function ClaimDetail() {
 
   const { viewers, botActivity: botPresenceActivity } = usePresence(claimId);
   useClaimEvents(claimId);
+
+  const { data: collectedEvidence } = useListClaimEvidence(claimId, {
+    query: { queryKey: getListClaimEvidenceQueryKey(claimId), enabled: !!claimId },
+  });
+  const deleteEvidence = useDeleteClaimEvidence();
 
   const updateClaim = useUpdateClaim();
   const updateStatus = useUpdateClaimStatus();
@@ -403,7 +410,74 @@ export default function ClaimDetail() {
 
           <Card>
             <CardHeader><CardTitle>Evidence</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
+              {(() => {
+                const evidenceItems = Array.isArray(collectedEvidence?.evidence) ? collectedEvidence.evidence : [];
+                if (evidenceItems.length > 0) {
+                  return (
+                    <div className="space-y-3">
+                      <Label className="text-xs text-muted-foreground">Collected Evidence ({evidenceItems.length} items)</Label>
+                      <div className="grid gap-3">
+                        {evidenceItems.map((ev: Record<string, unknown>) => (
+                          <div key={ev.id as number} className="border rounded-lg p-3 space-y-2 bg-muted/30">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="text-sm font-medium">{ev.evidenceTypeName as string}</p>
+                                {ev.treeNodeId && (
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Tree node: {ev.treeNodeId as string}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground">
+                                  {ev.collectedBy && `by ${ev.collectedBy as string} · `}
+                                  {formatDateTime(ev.collectedAt as string)}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive"
+                                  onClick={() => {
+                                    deleteEvidence.mutateAsync({ claimId, evidenceId: ev.id as number }).then(() => {
+                                      queryClient.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(claimId) });
+                                    });
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            {ev.imageUrl && (
+                              <a
+                                href={(ev.imageUrl as string).startsWith("/objects/")
+                                  ? `/api/storage${ev.imageUrl as string}`
+                                  : ev.imageUrl as string}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block"
+                              >
+                                <img
+                                  src={(ev.imageUrl as string).startsWith("/objects/")
+                                    ? `/api/storage${ev.imageUrl as string}`
+                                    : ev.imageUrl as string}
+                                  alt={ev.evidenceTypeName as string}
+                                  className="rounded border max-h-40 w-auto hover:opacity-90 transition-opacity"
+                                />
+                              </a>
+                            )}
+                            {ev.notes && (
+                              <p className="text-xs bg-white dark:bg-background rounded p-2 border">{ev.notes as string}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div>
                 <Label className="text-xs text-muted-foreground">Evidence Notes</Label>
                 <p className="text-sm mt-1">{claim.evidenceNotes || "No evidence notes yet."}</p>
@@ -463,7 +537,13 @@ export default function ClaimDetail() {
                   {(() => {
                     const progress = claim.workflowProgress as Record<string, unknown>;
                     const currentStep = (progress.currentStep as string) || "review";
-                    const steps = [
+                    const isSopFlow = currentStep === "sop" ||
+                      (claim.errorTypeName && currentStep !== "evidence" && currentStep !== "decide");
+                    const steps = isSopFlow ? [
+                      { id: "review", label: "Review", icon: Eye },
+                      { id: "sop", label: "Follow SOP", icon: FileText },
+                      { id: "submit", label: "Act", icon: Send },
+                    ] : [
                       { id: "review", label: "Review", icon: Eye },
                       { id: "evidence", label: "Evidence", icon: FileText },
                       { id: "decide", label: "Decision", icon: ChevronRight },

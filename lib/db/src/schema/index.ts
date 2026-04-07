@@ -8,5 +8,7 @@ export * from "./presence-logs";
 export * from "./bot-instances";
 export * from "./bot-activity-log";
 export * from "./error-detail-mappings";
+export * from "./evidence-types";
+export * from "./claim-evidence";
 export * from "./conversations";
 export * from "./messages";

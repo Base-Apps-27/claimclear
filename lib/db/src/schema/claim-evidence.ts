@@ -1,0 +1,21 @@
+import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+import { claimsTable } from "./claims";
+import { evidenceTypesTable } from "./evidence-types";
+
+export const claimEvidenceTable = pgTable("claim_evidence", {
+  id: serial("id").primaryKey(),
+  claimId: integer("claim_id").notNull().references(() => claimsTable.id, { onDelete: "cascade" }),
+  evidenceTypeId: integer("evidence_type_id").references(() => evidenceTypesTable.id, { onDelete: "set null" }),
+  evidenceTypeName: text("evidence_type_name").notNull(),
+  treeNodeId: text("tree_node_id"),
+  imageUrl: text("image_url"),
+  notes: text("notes"),
+  collectedBy: text("collected_by"),
+  collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertClaimEvidenceSchema = createInsertSchema(claimEvidenceTable).omit({ id: true, collectedAt: true });
+export type InsertClaimEvidence = z.infer<typeof insertClaimEvidenceSchema>;
+export type ClaimEvidence = typeof claimEvidenceTable.$inferSelect;

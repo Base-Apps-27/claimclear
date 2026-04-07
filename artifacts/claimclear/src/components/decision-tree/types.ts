@@ -4,12 +4,17 @@ export interface EvidenceReq {
   key: string;
   label: string;
   required: boolean;
+  evidenceTypeId?: number;
+  acceptsImage?: boolean;
+  acceptsText?: boolean;
 }
 
 export interface TreeNode {
   id: string;
   question: string;
   helpText?: string;
+  instructionText?: string;
+  instructionImageUrl?: string;
   options: TreeOption[];
   evidenceRequirements?: EvidenceReq[];
 }
@@ -243,9 +248,9 @@ export const TEMPLATES: Record<string, { name: string; tree: DecisionTree }> = {
           question: "Can completion be verified by GPS, member signature/receipt, and dispatch timestamps?",
           helpText: "All three pieces of evidence are required: (1) GPS route showing pickup and drop-off, (2) signed member receipt, (3) dispatch timestamps confirming completion before cancellation.",
           evidenceRequirements: [
-            { key: "gps_screenshot", label: "GPS Screenshot", required: true },
-            { key: "receipt_signed", label: "Signed Member Receipt", required: true },
-            { key: "mas_portal_screenshot", label: "MAS Portal Invoice/Trip Screenshot", required: true },
+            { key: "gps_screenshot", label: "GPS Screenshot", required: true, acceptsImage: true },
+            { key: "receipt_signed", label: "Signed Member Receipt", required: true, acceptsImage: true },
+            { key: "mas_portal_screenshot", label: "MAS Portal Invoice/Trip Screenshot", required: true, acceptsImage: true },
           ],
           options: [
             { label: "Yes, all evidence available", childId: "mas_q3" },
@@ -274,7 +279,7 @@ export const TEMPLATES: Record<string, { name: string; tree: DecisionTree }> = {
           question: "Is the Correction Request option available in the MAS portal for this invoice?",
           helpText: "Access the MAS portal: Manage Trips > Search Trip by Invoice. Check whether the Correction Request button is available. Ensure submission is within the 30-day deadline.",
           evidenceRequirements: [
-            { key: "correction_explanation", label: "Brief written explanation of why correction is needed", required: true },
+            { key: "correction_explanation", label: "Brief written explanation of why correction is needed", required: true, acceptsText: true },
           ],
           options: [
             { label: "Yes, Correction Request available", outcomeType: "portal_dispute" as OutcomeType, outcomeLabel: "Submit correction request through MAS portal" },
