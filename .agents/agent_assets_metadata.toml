@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "Xxqh_iy-EYH2NCfl5X1Sl"
+uri = "file://artifacts/training-guide/public/hero.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "QEL8FKJ1_4H9pI75AA33K"
+uri = "file://artifacts/training-guide/public/section-bg.png"
+type = "image"
+title = "generated_image"

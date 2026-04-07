@@ -1,0 +1,114 @@
+[
+  {
+    "id": "a1b2c3d4-0001-4000-8000-000000000001",
+    "position": 1,
+    "filepath": "src/pages/slides/TitleSlide.tsx",
+    "title": "ClaimClear Training Guide",
+    "description": "Title slide with hero image and Agape branding",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0002-4000-8000-000000000002",
+    "position": 2,
+    "filepath": "src/pages/slides/WhatIsClaimClear.tsx",
+    "title": "What is ClaimClear?",
+    "description": "Overview of the platform: Import, Decide, Submit",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0003-4000-8000-000000000003",
+    "position": 3,
+    "filepath": "src/pages/slides/GettingStarted.tsx",
+    "title": "Sign In and Navigate",
+    "description": "How to sign in and navigate the sidebar modules",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0004-4000-8000-000000000004",
+    "position": 4,
+    "filepath": "src/pages/slides/Dashboard.tsx",
+    "title": "The Dashboard",
+    "description": "Pipeline metrics, expiring claims, and bot status",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0005-4000-8000-000000000005",
+    "position": 5,
+    "filepath": "src/pages/slides/ImportClaims.tsx",
+    "title": "Import Claims",
+    "description": "Uploading MAS reports with auto-mapping and classification",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0006-4000-8000-000000000006",
+    "position": 6,
+    "filepath": "src/pages/slides/SectionWorkflow.tsx",
+    "title": "Processing Claims",
+    "description": "Section divider for the core workflow section",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0007-4000-8000-000000000007",
+    "position": 7,
+    "filepath": "src/pages/slides/WorkQueue.tsx",
+    "title": "The Work Queue",
+    "description": "Task-oriented split-pane view for daily processing",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0008-4000-8000-000000000008",
+    "position": 8,
+    "filepath": "src/pages/slides/DecisionWorkflows.tsx",
+    "title": "Workflow Player",
+    "description": "Guided decision trees for each error type",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0009-4000-8000-000000000009",
+    "position": 9,
+    "filepath": "src/pages/slides/ClaimDetails.tsx",
+    "title": "Claim Details",
+    "description": "Deep dive into individual claims with all features",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0010-4000-8000-000000000010",
+    "position": 10,
+    "filepath": "src/pages/slides/PortalSubmissions.tsx",
+    "title": "Portal Submissions",
+    "description": "Automated MAS portal dispute submissions via bot fleet",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0011-4000-8000-000000000011",
+    "position": 11,
+    "filepath": "src/pages/slides/ErrorTypes.tsx",
+    "title": "Error Types and SOPs",
+    "description": "Admin configuration of error classifications and decision trees",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0012-4000-8000-000000000012",
+    "position": 12,
+    "filepath": "src/pages/slides/SummaryAnalytics.tsx",
+    "title": "Summary and Reports",
+    "description": "Financial performance metrics and trend analysis",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0013-4000-8000-000000000013",
+    "position": 13,
+    "filepath": "src/pages/slides/DailyRoutine.tsx",
+    "title": "Putting It All Together",
+    "description": "A typical daily routine using ClaimClear",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0014-4000-8000-000000000014",
+    "position": 14,
+    "filepath": "src/pages/slides/ClosingSlide.tsx",
+    "title": "Ready to Start",
+    "description": "Closing slide with access information",
+    "speakerNotes": ""
+  }
+]

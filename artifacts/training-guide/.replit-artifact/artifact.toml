@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/training-guide/"
+title = "ClaimClear Training Guide"
+version = "1.0.0"
+id = "artifacts/training-guide"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/training-guide/" ]
+localPort = 5924
+
+[services.development]
+run = "node serve-dev.mjs"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/training-guide", "run", "build" ]
+publicDir = "artifacts/training-guide/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "5924"
+BASE_PATH = "/training-guide/"
