@@ -442,18 +442,18 @@ export default function ErrorTypes() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setEditingId(null); setShowCreate(false); } }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="workflow" className="flex-1 min-h-0 flex flex-col">
-            <TabsList className="grid w-full grid-cols-3 shrink-0">
+          <Tabs defaultValue="workflow">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="workflow" className="gap-1"><TreeDeciduous className="h-3 w-3" />Workflow Tree</TabsTrigger>
               <TabsTrigger value="basics">Details</TabsTrigger>
               <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Builder</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="ai-analyzer" className="flex-1 min-h-0 overflow-y-auto space-y-4 mt-4">
+            <TabsContent value="ai-analyzer" className="space-y-4 mt-4">
               <Tabs defaultValue="sop-analyzer">
                 <TabsList className="w-full grid grid-cols-3">
                   <TabsTrigger value="sop-analyzer" className="text-xs gap-1"><Sparkles className="h-3 w-3" />SOP Analyzer</TabsTrigger>
@@ -522,7 +522,7 @@ export default function ErrorTypes() {
               </Tabs>
             </TabsContent>
 
-            <TabsContent value="basics" className="flex-1 min-h-0 overflow-y-auto space-y-4 mt-4">
+            <TabsContent value="basics" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="flex items-center gap-1">
@@ -585,7 +585,7 @@ export default function ErrorTypes() {
               </div>
             </TabsContent>
 
-            <TabsContent value="workflow" className="flex-1 min-h-0 mt-4 min-w-0">
+            <TabsContent value="workflow" className="mt-4">
               <TreeEditor
                 tree={form.decisionTree}
                 onChange={(tree) => setForm({ ...form, decisionTree: tree })}
@@ -594,7 +594,7 @@ export default function ErrorTypes() {
             </TabsContent>
           </Tabs>
 
-          <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={() => { setEditingId(null); setShowCreate(false); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.name}>{editingId ? "Update" : "Create"}</Button>
           </div>

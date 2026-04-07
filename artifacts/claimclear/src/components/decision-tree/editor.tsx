@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   type DecisionTree,
   type TreeNode,
@@ -36,8 +36,11 @@ import {
   Plus, X, HelpCircle, ChevronDown,
   FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
-  Settings, Trash2, GripVertical, Maximize,
+  Settings, Trash2, GripVertical, Maximize, ZoomIn, ZoomOut, RotateCcw,
 } from "lucide-react";
+
+const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0];
+const DEFAULT_ZOOM = 0.75;
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
   portal_dispute: Send,
@@ -54,9 +57,11 @@ interface TreeEditorProps {
 
 export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   const [showTemplates, setShowTemplates] = useState(false);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const treeIdRef = useRef<string | null>(null);
 
-  const centerTree = useCallback(() => {
+  const centerTree = useCallback((instant?: boolean) => {
     const container = scrollRef.current;
     if (!container) return;
     const inner = container.firstElementChild as HTMLElement;
@@ -64,9 +69,26 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
     container.scrollTo({
       left: (inner.scrollWidth - container.clientWidth) / 2,
       top: 0,
-      behavior: "smooth",
+      behavior: instant ? "instant" : "smooth",
     });
   }, []);
+
+  useEffect(() => {
+    if (tree && tree.rootId !== treeIdRef.current) {
+      treeIdRef.current = tree.rootId;
+      requestAnimationFrame(() => centerTree(true));
+    }
+  }, [tree, centerTree]);
+
+  const zoomIn = () => {
+    const idx = ZOOM_LEVELS.indexOf(zoom);
+    if (idx < ZOOM_LEVELS.length - 1) setZoom(ZOOM_LEVELS[idx + 1]);
+  };
+  const zoomOut = () => {
+    const idx = ZOOM_LEVELS.indexOf(zoom);
+    if (idx > 0) setZoom(ZOOM_LEVELS[idx - 1]);
+  };
+  const resetZoom = () => setZoom(DEFAULT_ZOOM);
 
   if (!tree) {
     return (
@@ -108,16 +130,17 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   }
 
   const stats = { paths: countPaths(tree), depth: getMaxDepth(tree), nodes: tree.nodes.length };
+  const zoomPct = Math.round(zoom * 100);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between shrink-0 pb-3 border-b border-slate-100">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="gap-1 text-xs"><GitBranch className="h-3 w-3" />{stats.nodes} nodes</Badge>
           <Badge variant="outline" className="gap-1 text-xs"><ArrowRight className="h-3 w-3" />{stats.paths} paths</Badge>
           <Badge variant="outline" className="gap-1 text-xs"><Layers className="h-3 w-3" />{stats.depth} levels</Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-1">
           <Button variant="outline" size="sm" onClick={centerTree} className="gap-1" title="Center tree">
             <Maximize className="h-3 w-3" />Center
           </Button>
@@ -132,9 +155,29 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto pt-4 -mx-2">
-        <div className="inline-flex justify-center w-full min-w-max py-4 px-4 pb-12">
-          <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
+      <div className="relative rounded-lg border border-slate-200 bg-slate-50/50 overflow-hidden" style={{ height: "50vh" }}>
+        <div
+          ref={scrollRef}
+          className="absolute inset-0 overflow-auto"
+        >
+          <div
+            className="inline-flex min-w-full justify-center py-6 px-8 pb-16"
+            style={{ transform: `scale(${zoom})`, transformOrigin: "top center", minWidth: "max-content" }}
+          >
+            <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
+          </div>
+        </div>
+
+        <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-slate-200 rounded-lg p-1 shadow-sm z-10">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={zoomOut} disabled={zoom <= ZOOM_LEVELS[0]} title="Zoom out">
+            <ZoomOut className="h-3.5 w-3.5" />
+          </Button>
+          <button onClick={resetZoom} className="text-[11px] font-mono text-slate-500 hover:text-slate-700 w-10 text-center" title="Reset zoom">
+            {zoomPct}%
+          </button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={zoomIn} disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} title="Zoom in">
+            <ZoomIn className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
     </div>
