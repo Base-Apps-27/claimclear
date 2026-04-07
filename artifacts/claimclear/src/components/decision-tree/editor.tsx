@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   type DecisionTree,
   type TreeNode,
@@ -36,7 +36,7 @@ import {
   Plus, X, HelpCircle, ChevronDown,
   FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
-  Settings, Trash2, GripVertical,
+  Settings, Trash2, GripVertical, Maximize,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -95,6 +95,19 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   }
 
   const stats = { paths: countPaths(tree), depth: getMaxDepth(tree), nodes: tree.nodes.length };
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const centerTree = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const inner = container.firstElementChild as HTMLElement;
+    if (!inner) return;
+    container.scrollTo({
+      left: (inner.scrollWidth - container.clientWidth) / 2,
+      top: 0,
+      behavior: "smooth",
+    });
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -105,6 +118,9 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
           <Badge variant="outline" className="gap-1 text-xs"><Layers className="h-3 w-3" />{stats.depth} levels</Badge>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={centerTree} className="gap-1" title="Center tree">
+            <Maximize className="h-3 w-3" />Center
+          </Button>
           {onTest && (
             <Button variant="outline" size="sm" onClick={() => onTest(tree)} className="gap-1">
               <Play className="h-3 w-3" />Test
@@ -116,7 +132,7 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto pt-4 -mx-2">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto pt-4 -mx-2">
         <div className="inline-flex justify-center w-full min-w-max py-4 px-4 pb-12">
           <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
         </div>
