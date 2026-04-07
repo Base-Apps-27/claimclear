@@ -353,9 +353,9 @@ function NodeEditor({
                   {!opt.childId ? (
                     <div className="flex items-center gap-2 flex-1">
                       <Select
-                        value={opt.outcomeType || "none"}
+                        value={opt.outcomeType || ""}
                         onValueChange={(val) => {
-                          if (val === "none") {
+                          if (val === "sub_question") {
                             addChildNode(i);
                           } else {
                             const ot = val as OutcomeType;
@@ -364,10 +364,10 @@ function NodeEditor({
                         }}
                       >
                         <SelectTrigger className="h-7 text-xs w-48">
-                          <SelectValue placeholder="What happens?" />
+                          <SelectValue placeholder="Select action..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">
+                          <SelectItem value="sub_question">
                             <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />Add sub-question</span>
                           </SelectItem>
                           <SelectItem value="portal_dispute">
