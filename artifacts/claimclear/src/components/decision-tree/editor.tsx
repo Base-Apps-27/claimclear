@@ -97,8 +97,8 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   const stats = { paths: countPaths(tree), depth: getMaxDepth(tree), nodes: tree.nodes.length };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between shrink-0 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="gap-1 text-xs"><GitBranch className="h-3 w-3" />{stats.nodes} nodes</Badge>
           <Badge variant="outline" className="gap-1 text-xs"><ArrowRight className="h-3 w-3" />{stats.paths} paths</Badge>
@@ -116,8 +116,8 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
         </div>
       </div>
 
-      <div className="overflow-x-auto pb-8 -mx-2">
-        <div className="inline-flex justify-center w-full min-w-max py-4 px-4">
+      <div className="flex-1 min-h-0 overflow-auto pt-4 -mx-2">
+        <div className="inline-flex justify-center w-full min-w-max py-4 px-4 pb-12">
           <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
         </div>
       </div>
@@ -244,7 +244,7 @@ function FlowNode({
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative z-10 w-[260px]">
+      <div className="relative z-10 w-[340px]">
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow bg-white">
           <CardContent className="p-0">
             <div className="bg-slate-50 border-b border-slate-100 p-2.5 rounded-t-xl flex justify-between items-center">
@@ -315,7 +315,7 @@ function FlowNode({
           const isLast = i === node.options.length - 1;
 
           return (
-            <div key={i} className="flex flex-col items-center relative px-2">
+            <div key={i} className="flex flex-col items-center relative px-4">
               {node.options.length > 1 && (
                 <div
                   className="absolute top-0 h-px bg-slate-300"
@@ -408,7 +408,7 @@ function OptionPill({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="group flex items-center bg-white border border-slate-200 hover:border-blue-400 shadow-sm rounded-full pl-3 pr-2 py-1 text-xs font-medium text-slate-700 transition-colors max-w-[170px]">
+        <button className="group flex items-center bg-white border border-slate-200 hover:border-blue-400 shadow-sm rounded-full pl-3 pr-2 py-1 text-xs font-medium text-slate-700 transition-colors max-w-[200px]">
           <span className="truncate">{opt.label}</span>
           <ChevronDown className="h-3 w-3 ml-1.5 text-slate-400 group-hover:text-blue-500 shrink-0" />
         </button>
@@ -480,7 +480,7 @@ function OutcomeTerminal({ outcomeType, outcomeLabel }: { outcomeType: OutcomeTy
   return (
     <div className="flex flex-col items-center">
       <div className="h-1.5 w-1.5 rounded-full border-2 border-slate-300 bg-white mb-1.5" />
-      <div className={`px-3 py-2.5 rounded-xl border flex flex-col items-center text-center w-[150px] shadow-sm ${colors.bg} ${colors.border}`}>
+      <div className={`px-3 py-2.5 rounded-xl border flex flex-col items-center text-center w-[170px] shadow-sm ${colors.bg} ${colors.border}`}>
         <div className={`h-8 w-8 rounded-full flex items-center justify-center mb-1.5 ${colors.bg} border ${colors.border}`}>
           <Icon className={`h-4 w-4 ${colors.text}`} />
         </div>
