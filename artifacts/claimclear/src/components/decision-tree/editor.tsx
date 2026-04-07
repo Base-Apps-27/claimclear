@@ -110,8 +110,8 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   }, []);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between sticky top-0 z-10 bg-white pb-3 border-b border-slate-100">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between shrink-0 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="gap-1 text-xs"><GitBranch className="h-3 w-3" />{stats.nodes} nodes</Badge>
           <Badge variant="outline" className="gap-1 text-xs"><ArrowRight className="h-3 w-3" />{stats.paths} paths</Badge>
@@ -132,7 +132,7 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="overflow-auto max-h-[55vh]">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto pt-4 -mx-2">
         <div className="inline-flex justify-center w-full min-w-max py-4 px-4 pb-12">
           <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
         </div>
