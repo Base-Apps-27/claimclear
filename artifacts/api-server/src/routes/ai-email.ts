@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, errorTypesTable, auditLogsTable } from "@workspace/db";
+import { claimsTable, errorTypesTable, auditLogsTable, appSettingsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent } from "../lib/sse";
@@ -36,12 +36,18 @@ Transportation Provider`;
   return { subject, body };
 }
 
+async function getDefaultDisputeInstructions(): Promise<string> {
+  const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "default_dispute_instructions"));
+  return row?.value || "";
+}
+
 async function generateWithLLM(
   claim: typeof claimsTable.$inferSelect,
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
 ): Promise<{ subject: string; body: string }> {
-  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || "";
+  const defaultInstructions = await getDefaultDisputeInstructions();
+  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
   const prompt = `Write a professional dispute email for a rejected NEMT (Non-Emergency Medical Transportation) claim.
 
 Claim details:

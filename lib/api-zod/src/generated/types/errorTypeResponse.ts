@@ -28,6 +28,8 @@ export interface ErrorTypeResponse {
   decisionTree?: ErrorTypeResponseDecisionTree;
   /** @nullable */
   emailTemplate?: string | null;
+  /** @nullable */
+  disputeInstructions?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

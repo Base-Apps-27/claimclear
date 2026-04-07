@@ -282,6 +282,8 @@ export interface ErrorTypeResponse {
   decisionTree?: ErrorTypeResponseDecisionTree;
   /** @nullable */
   emailTemplate?: string | null;
+  /** @nullable */
+  disputeInstructions?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -306,6 +308,7 @@ export interface CreateErrorTypeBody {
   evidenceRequirements?: CreateErrorTypeBodyEvidenceRequirements;
   decisionTree?: CreateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
+  disputeInstructions?: string;
 }
 
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
@@ -328,6 +331,17 @@ export interface UpdateErrorTypeBody {
   evidenceRequirements?: UpdateErrorTypeBodyEvidenceRequirements;
   decisionTree?: UpdateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
+  disputeInstructions?: string;
+}
+
+export interface AppSettingsResponse {
+  /** @nullable */
+  default_dispute_instructions?: string | null;
+}
+
+export interface UpdateAppSettingsBody {
+  /** @nullable */
+  default_dispute_instructions?: string | null;
 }
 
 export interface ImportClaimRow {

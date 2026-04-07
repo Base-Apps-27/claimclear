@@ -45,6 +45,8 @@ tags:
     description: Reusable evidence type library
   - name: claimEvidence
     description: Evidence collected for claims
+  - name: appSettings
+    description: Application settings
 
 paths:
   /healthz:
@@ -564,6 +566,36 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /app-settings:
+    get:
+      operationId: getAppSettings
+      tags: [appSettings]
+      summary: Get all application settings
+      responses:
+        "200":
+          description: Settings key-value map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettingsResponse"
+    put:
+      operationId: updateAppSettings
+      tags: [appSettings]
+      summary: Update application settings (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAppSettingsBody"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettingsResponse"
 
   /import:
     post:
@@ -1625,6 +1657,8 @@ components:
           type: ["object", "null"]
         emailTemplate:
           type: ["string", "null"]
+        disputeInstructions:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -1654,6 +1688,8 @@ components:
           type: object
         emailTemplate:
           type: string
+        disputeInstructions:
+          type: string
       required:
         - name
 
@@ -1678,6 +1714,20 @@ components:
           type: object
         emailTemplate:
           type: string
+        disputeInstructions:
+          type: string
+
+    AppSettingsResponse:
+      type: object
+      properties:
+        default_dispute_instructions:
+          type: ["string", "null"]
+
+    UpdateAppSettingsBody:
+      type: object
+      properties:
+        default_dispute_instructions:
+          type: ["string", "null"]
 
     ImportClaimsBody:
       type: object

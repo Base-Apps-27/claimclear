@@ -746,6 +746,7 @@ export const ListErrorTypesResponseItem = zod.object({
   evidenceRequirements: zod.object({}).passthrough().nullish(),
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
+  disputeInstructions: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -764,6 +765,7 @@ export const CreateErrorTypeBody = zod.object({
   evidenceRequirements: zod.object({}).passthrough().optional(),
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
+  disputeInstructions: zod.string().optional(),
 });
 
 /**
@@ -784,6 +786,7 @@ export const GetErrorTypeResponse = zod.object({
   evidenceRequirements: zod.object({}).passthrough().nullish(),
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
+  disputeInstructions: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -805,6 +808,7 @@ export const UpdateErrorTypeBody = zod.object({
   evidenceRequirements: zod.object({}).passthrough().optional(),
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
+  disputeInstructions: zod.string().optional(),
 });
 
 export const UpdateErrorTypeResponse = zod.object({
@@ -818,6 +822,7 @@ export const UpdateErrorTypeResponse = zod.object({
   evidenceRequirements: zod.object({}).passthrough().nullish(),
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
+  disputeInstructions: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -827,6 +832,24 @@ export const UpdateErrorTypeResponse = zod.object({
  */
 export const DeleteErrorTypeParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Get all application settings
+ */
+export const GetAppSettingsResponse = zod.object({
+  default_dispute_instructions: zod.string().nullish(),
+});
+
+/**
+ * @summary Update application settings (admin only)
+ */
+export const UpdateAppSettingsBody = zod.object({
+  default_dispute_instructions: zod.string().nullish(),
+});
+
+export const UpdateAppSettingsResponse = zod.object({
+  default_dispute_instructions: zod.string().nullish(),
 });
 
 /**

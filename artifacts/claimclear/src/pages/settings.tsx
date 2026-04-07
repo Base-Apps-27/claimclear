@@ -1,11 +1,12 @@
-import { useTriggerDailyBrief, useListBotInstances } from "@workspace/api-client-react";
+import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield } from "lucide-react";
+import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -24,12 +25,32 @@ export default function Settings() {
   const { user } = useAuth();
   const triggerBrief = useTriggerDailyBrief();
   const { data: botInstances } = useListBotInstances();
+  const { data: appSettings } = useGetAppSettings();
+  const updateAppSettings = useUpdateAppSettings();
   const [briefResult, setBriefResult] = useState<string | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [disputeInstructions, setDisputeInstructions] = useState("");
+  const [disputeInstructionsSaved, setDisputeInstructionsSaved] = useState(false);
+  const [disputeInstructionsLoaded, setDisputeInstructionsLoaded] = useState(false);
 
   const isAdmin = user?.role === "admin";
+
+  useEffect(() => {
+    if (appSettings && !disputeInstructionsLoaded) {
+      setDisputeInstructions(appSettings.default_dispute_instructions || "");
+      setDisputeInstructionsLoaded(true);
+    }
+  }, [appSettings, disputeInstructionsLoaded]);
+
+  const handleSaveDisputeInstructions = async () => {
+    await updateAppSettings.mutateAsync({
+      data: { default_dispute_instructions: disputeInstructions || null },
+    });
+    setDisputeInstructionsSaved(true);
+    setTimeout(() => setDisputeInstructionsSaved(false), 3000);
+  };
 
   const fetchUsers = useCallback(async () => {
     if (!isAdmin) return;
@@ -284,6 +305,41 @@ export default function Settings() {
                 )}
               </>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Default Dispute Instructions
+              <InfoTooltip content="Set default instructions that the AI uses when generating dispute notes for portal submissions and emails. These apply to all error types unless an error type has its own custom instructions." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              These instructions guide the AI when writing dispute notes. They apply to all error types by default. Individual error types can override these with their own instructions.
+            </p>
+            <Textarea
+              value={disputeInstructions}
+              onChange={e => setDisputeInstructions(e.target.value)}
+              rows={6}
+              className="text-sm"
+              placeholder="Always reference GPS breadcrumb data when available.&#10;Emphasize that the trip was completed as scheduled.&#10;Keep tone professional but assertive.&#10;Mention specific evidence documents by name."
+            />
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleSaveDisputeInstructions}
+                disabled={updateAppSettings.isPending}
+              >
+                {updateAppSettings.isPending ? "Saving..." : "Save Instructions"}
+              </Button>
+              {disputeInstructionsSaved && (
+                <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

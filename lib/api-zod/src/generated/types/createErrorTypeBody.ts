@@ -19,4 +19,5 @@ export interface CreateErrorTypeBody {
   evidenceRequirements?: CreateErrorTypeBodyEvidenceRequirements;
   decisionTree?: CreateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
+  disputeInstructions?: string;
 }

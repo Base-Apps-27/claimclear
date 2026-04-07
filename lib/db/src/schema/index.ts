@@ -12,3 +12,4 @@ export * from "./evidence-types";
 export * from "./claim-evidence";
 export * from "./conversations";
 export * from "./messages";
+export * from "./app-settings";

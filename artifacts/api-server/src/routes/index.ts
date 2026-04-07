@@ -23,6 +23,7 @@ import anthropicRouter from "./anthropic";
 import storageRouter from "./storage";
 import evidenceTypesRouter from "./evidence-types";
 import claimEvidenceRouter from "./claim-evidence";
+import appSettingsRouter from "./app-settings";
 
 const router: IRouter = Router();
 
@@ -51,6 +52,7 @@ router.use(presenceRouter);
 router.use(dashboardRouter);
 router.use(aiEmailRouter);
 router.use(sopAnalyzerRouter);
+router.use(appSettingsRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

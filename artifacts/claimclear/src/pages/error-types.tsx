@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListErrorTypes, getListErrorTypesQueryKey,
   useCreateErrorType, useUpdateErrorType, useDeleteErrorType,
-  useAnalyzeSOPText,
+  useAnalyzeSOPText, useGetAppSettings,
 } from "@workspace/api-client-react";
 import type { ErrorTypeResponse } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -292,6 +292,8 @@ interface ErrorTypeFormState {
 export default function ErrorTypes() {
   const queryClient = useQueryClient();
   const { data: errorTypes, isLoading } = useListErrorTypes();
+  const { data: appSettings } = useGetAppSettings();
+  const defaultDisputeInstructions = appSettings?.default_dispute_instructions || "";
   const createErrorType = useCreateErrorType();
   const updateErrorType = useUpdateErrorType();
   const deleteErrorType = useDeleteErrorType();
@@ -427,9 +429,11 @@ export default function ErrorTypes() {
                   ) : (
                     <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />No Workflow</Badge>
                   )}
-                  {(et as Record<string, unknown>).disputeInstructions && (
-                    <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />Dispute Instructions</Badge>
-                  )}
+                  {(et as Record<string, unknown>).disputeInstructions ? (
+                    <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />Custom Dispute Instructions</Badge>
+                  ) : defaultDisputeInstructions ? (
+                    <Badge variant="outline" className="text-muted-foreground"><FileText className="h-3 w-3 mr-1" />Using Default Instructions</Badge>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
@@ -548,8 +552,36 @@ export default function ErrorTypes() {
                   Dispute Instructions
                   <InfoTooltip content="General writing guidelines the AI uses when generating dispute notes for portal submissions. The AI combines these with the specific dispute reason from the workflow tree to write unique, human-sounding notes each time." />
                 </Label>
-                <p className="text-xs text-muted-foreground mb-1">Guidelines for the AI when writing dispute notes. The workflow tree determines the specific dispute reason — these instructions control the tone and content style.</p>
-                <Textarea value={form.disputeInstructions} onChange={e => setForm({ ...form, disputeInstructions: e.target.value })} rows={5} className="text-xs" placeholder="Always reference GPS breadcrumb data when available.&#10;Emphasize that the trip was completed as scheduled.&#10;Keep tone professional but assertive.&#10;Mention specific evidence documents by name." />
+                {form.disputeInstructions ? (
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="secondary" className="text-xs">Custom Override</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      onClick={() => setForm({ ...form, disputeInstructions: "" })}
+                    >
+                      Revert to default
+                    </Button>
+                  </div>
+                ) : defaultDisputeInstructions ? (
+                  <p className="text-xs text-muted-foreground mb-1">Using default instructions from Settings. Add text below to override for this error type.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mb-1">No default instructions set. Add custom instructions below or set defaults in Settings.</p>
+                )}
+                <Textarea
+                  value={form.disputeInstructions}
+                  onChange={e => setForm({ ...form, disputeInstructions: e.target.value })}
+                  rows={5}
+                  className="text-xs"
+                  placeholder={defaultDisputeInstructions || "Always reference GPS breadcrumb data when available.\nEmphasize that the trip was completed as scheduled.\nKeep tone professional but assertive.\nMention specific evidence documents by name."}
+                />
+                {!form.disputeInstructions && defaultDisputeInstructions && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Show default instructions</summary>
+                    <pre className="mt-1 p-2 bg-muted rounded text-xs whitespace-pre-wrap">{defaultDisputeInstructions}</pre>
+                  </details>
+                )}
               </div>
             </TabsContent>
 

@@ -1,19 +1,25 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+async function getDefaultDisputeInstructions(): Promise<string> {
+  const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "default_dispute_instructions"));
+  return row?.value || "";
+}
+
 async function generatePortalDescription(
   claim: typeof claimsTable.$inferSelect,
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
 ): Promise<string> {
-  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || "";
+  const defaultInstructions = await getDefaultDisputeInstructions();
+  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
 
   const prompt = `Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.
 
