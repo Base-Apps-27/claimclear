@@ -15,7 +15,7 @@ paths = [ "/" ]
 localPort = 5173
 
 [services.development]
-run = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/claimclear run dev"
+run = "cd artifacts/claimclear && PORT=5173 BASE_PATH=/ npx vite --config vite.config.ts --host 0.0.0.0"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/claimclear", "run", "build" ]
