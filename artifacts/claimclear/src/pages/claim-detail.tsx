@@ -13,8 +13,9 @@ import {
   useListBotActivity, getListBotActivityQueryKey,
   useListClaimEvidence, getListClaimEvidenceQueryKey,
   useDeleteClaimEvidence,
+  useListErrorTypes, getListErrorTypesQueryKey, useCreateErrorType,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -33,7 +34,7 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
-  ChevronRight, ArrowRight, Eye
+  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2
 } from "lucide-react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -163,6 +164,16 @@ export default function ClaimDetail() {
   const deleteNote = useDeleteNote();
   const generateEmail = useGenerateClaimEmail();
   const createSubmission = useCreatePortalSubmission();
+
+  const { data: errorTypesData } = useListErrorTypes();
+  const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
+  const createErrorType = useCreateErrorType();
+
+  const [showErrorTypeSelector, setShowErrorTypeSelector] = useState(false);
+  const [showCreateErrorType, setShowCreateErrorType] = useState(false);
+  const [newErrorType, setNewErrorType] = useState({ name: "", category: "", description: "" });
+  const [errorTypeAssigning, setErrorTypeAssigning] = useState(false);
+  const [errorTypeError, setErrorTypeError] = useState("");
   const { data: portalSubmissions } = useListPortalSubmissions(
     undefined,
     { query: { queryKey: getListPortalSubmissionsQueryKey(), enabled: !!claimId } }
@@ -216,6 +227,45 @@ export default function ClaimDetail() {
     queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
     queryClient.invalidateQueries({ queryKey: getListClaimNotesQueryKey(claimId) });
     queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+  };
+
+  const handleAssignErrorType = async (errorType: ErrorTypeResponse) => {
+    setErrorTypeAssigning(true);
+    setErrorTypeError("");
+    try {
+      await updateClaim.mutateAsync({
+        id: claimId,
+        data: { errorTypeId: String(errorType.id), errorTypeName: errorType.name },
+      });
+      invalidate();
+      setShowErrorTypeSelector(false);
+    } catch {
+      setErrorTypeError("Failed to assign error type. Please try again.");
+    } finally {
+      setErrorTypeAssigning(false);
+    }
+  };
+
+  const handleCreateAndAssignErrorType = async () => {
+    if (!newErrorType.name.trim()) return;
+    setErrorTypeAssigning(true);
+    setErrorTypeError("");
+    try {
+      const created = await createErrorType.mutateAsync({ data: newErrorType });
+      queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
+      await updateClaim.mutateAsync({
+        id: claimId,
+        data: { errorTypeId: String(created.id), errorTypeName: created.name },
+      });
+      invalidate();
+      setShowCreateErrorType(false);
+      setShowErrorTypeSelector(false);
+      setNewErrorType({ name: "", category: "", description: "" });
+    } catch {
+      setErrorTypeError("Failed to create or assign error type. Please try again.");
+    } finally {
+      setErrorTypeAssigning(false);
+    }
   };
 
   const handleSave = async () => {
@@ -329,6 +379,141 @@ export default function ClaimDetail() {
                   ) : (
                     <p className="text-sm mt-1">{claim.errorDetails || "-"}</p>
                   )}
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs text-muted-foreground">Error Type</Label>
+                  <div className="mt-1">
+                    {claim.errorTypeName ? (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="flex items-center gap-1">
+                          <Tag className="h-3 w-3" />
+                          {claim.errorTypeName}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-muted-foreground"
+                          onClick={() => setShowErrorTypeSelector(true)}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100"
+                        onClick={() => setShowErrorTypeSelector(true)}
+                      >
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Assign Error Type
+                      </Button>
+                    )}
+
+                    <Dialog open={showErrorTypeSelector} onOpenChange={(open) => {
+                      setShowErrorTypeSelector(open);
+                      if (!open) {
+                        setShowCreateErrorType(false);
+                        setNewErrorType({ name: "", category: "", description: "" });
+                        setErrorTypeError("");
+                      }
+                    }}>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>{claim.errorTypeName ? "Change Error Type" : "Assign Error Type"}</DialogTitle>
+                        </DialogHeader>
+                        {errorTypeError && (
+                          <div className="bg-red-50 text-red-800 text-sm p-2 rounded border border-red-200">
+                            {errorTypeError}
+                          </div>
+                        )}
+                        {!showCreateErrorType ? (
+                          <div className="space-y-3">
+                            <div className="max-h-[300px] overflow-y-auto space-y-1">
+                              {errorTypes.map((et) => (
+                                <button
+                                  key={et.id}
+                                  className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-muted transition-colors flex items-center justify-between ${
+                                    String(claim.errorTypeId) === String(et.id) ? "bg-primary/10 border border-primary/30" : "border border-transparent"
+                                  }`}
+                                  onClick={() => handleAssignErrorType(et)}
+                                  disabled={errorTypeAssigning}
+                                >
+                                  <div>
+                                    <p className="font-medium">{et.name}</p>
+                                    {et.category && <p className="text-xs text-muted-foreground">{et.category}</p>}
+                                  </div>
+                                  {String(claim.errorTypeId) === String(et.id) && (
+                                    <CheckCircle className="h-4 w-4 text-primary" />
+                                  )}
+                                </button>
+                              ))}
+                              {errorTypes.length === 0 && (
+                                <p className="text-sm text-muted-foreground text-center py-4">No error types defined yet.</p>
+                              )}
+                            </div>
+                            <Separator />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => setShowCreateErrorType(true)}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Create New Error Type
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div>
+                              <Label>Name <span className="text-destructive">*</span></Label>
+                              <Input
+                                value={newErrorType.name}
+                                onChange={e => setNewErrorType({ ...newErrorType, name: e.target.value })}
+                                placeholder="e.g. Duplicate Charge"
+                                className="mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label>Category</Label>
+                              <Input
+                                value={newErrorType.category}
+                                onChange={e => setNewErrorType({ ...newErrorType, category: e.target.value })}
+                                placeholder="e.g. Billing"
+                                className="mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label>Description</Label>
+                              <Textarea
+                                value={newErrorType.description}
+                                onChange={e => setNewErrorType({ ...newErrorType, description: e.target.value })}
+                                placeholder="Describe this error type..."
+                                className="mt-1"
+                                rows={3}
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={handleCreateAndAssignErrorType}
+                                disabled={!newErrorType.name.trim() || errorTypeAssigning}
+                                className="flex-1"
+                              >
+                                {errorTypeAssigning ? (
+                                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Creating...</>
+                                ) : (
+                                  "Create & Assign"
+                                )}
+                              </Button>
+                              <Button variant="ghost" onClick={() => setShowCreateErrorType(false)}>
+                                Back
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                 </div>
               </div>
             </CardContent>
