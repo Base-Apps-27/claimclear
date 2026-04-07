@@ -54,6 +54,19 @@ interface TreeEditorProps {
 
 export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   const [showTemplates, setShowTemplates] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const centerTree = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const inner = container.firstElementChild as HTMLElement;
+    if (!inner) return;
+    container.scrollTo({
+      left: (inner.scrollWidth - container.clientWidth) / 2,
+      top: 0,
+      behavior: "smooth",
+    });
+  }, []);
 
   if (!tree) {
     return (
@@ -95,19 +108,6 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   }
 
   const stats = { paths: countPaths(tree), depth: getMaxDepth(tree), nodes: tree.nodes.length };
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const centerTree = useCallback(() => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const inner = container.firstElementChild as HTMLElement;
-    if (!inner) return;
-    container.scrollTo({
-      left: (inner.scrollWidth - container.clientWidth) / 2,
-      top: 0,
-      behavior: "smooth",
-    });
-  }, []);
 
   return (
     <div className="flex flex-col h-full">
