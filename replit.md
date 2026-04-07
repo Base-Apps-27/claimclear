@@ -1,225 +1,58 @@
-# Workspace
+# ClaimClear Project
 
 ## Overview
+ClaimClear is a full NEMT (Non-Emergency Medical Transportation) rejected claims dispute tracker platform. It is designed to import rejected claims, guide staff through decision-tree workflows for dispute resolution, and automate the submission of disputes to the MAS Transportation Provider Support Portal using Playwright bots. The project aims to streamline the claims dispute process, reduce financial losses, and improve operational efficiency for NEMT providers.
 
-pnpm workspace monorepo using TypeScript. ClaimClear — a full NEMT rejected claims dispute tracker platform. Imports rejected claims, guides staff through decision-tree workflows, and submits disputes via Playwright bot automation to the MAS Transportation Provider Support Portal.
+## User Preferences
+I want to emphasize iterative development and prefer detailed explanations when new features are introduced or significant changes are made. I appreciate clear, concise communication and enjoy seeing functional programming paradigms where they enhance code readability and maintainability. Please ask before making any major architectural changes or introducing new external dependencies.
 
-## Stack
+## System Architecture
+The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
-- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
-- **Auth**: Replit Auth (OpenID Connect with PKCE)
-- **AI**: Anthropic Claude (via Replit AI Integrations proxy)
-- **Bot automation**: Playwright
+**Technology Stack:**
+- **Monorepo:** pnpm workspaces
+- **Backend:** Node.js 24, Express 5, PostgreSQL, Drizzle ORM, Zod for validation
+- **Frontend:** React, Vite, Tailwind CSS, shadcn/ui
+- **Authentication:** Replit Auth (OpenID Connect with PKCE)
+- **AI:** Anthropic Claude (via Replit AI Integrations proxy)
+- **Bot Automation:** Playwright
+- **API Codegen:** Orval (from OpenAPI spec)
+- **Build Tool:** esbuild
 
-## Structure
+**Core Architectural Decisions:**
+- **Error Handling:** All async route handlers are wrapped to catch unhandled rejections and forward them to a global Express error handler, which logs errors and returns generic JSON responses to prevent information leakage.
+- **Authentication:** Session-based authentication with both absolute and idle timeouts. Session validity is managed via the database, not OIDC token expiry. Specific middleware exists for general authentication, admin roles, and bot token verification.
+- **Frontend Serving:** The React + Vite frontend is built as static files and served by the Express API server. In development, the API server serves the production build from `artifacts/claimclear/dist/public/`. In production, the same approach is used. This unified serving approach ensures both API and frontend are on the same port (8080), avoiding port detection issues.
+- **Database Design:** A PostgreSQL database managed by Drizzle ORM stores 14 entities including users, sessions, claims, notes, audit logs, error types, portal submissions, bot instances, presence logs, evidence types, claim evidence, and AI conversations.
+- **Claim Workflow & Statuses:** Claims progress through statuses like New, Needs Evidence, Portal Queued, Awaiting Response, On Hold, Resolved, or Denied.
+- **Decision Trees:** A native `DecisionTree` format supports complex branching logic, questions, help text, instructions, options, and evidence requirements. AI endpoints assist in converting SOPs into decision trees. The queue system integrates a 3-step (Review → Follow SOP → Act) or 4-step (Review → Evidence → Decide → Submit) workflow depending on the presence of a decision tree.
+- **Evidence Management:** Supports object storage (GCS-backed presigned URLs), a reusable evidence types library, and claim-specific evidence collection linked to decision tree nodes.
+- **Real-time Updates (SSE):** Server-Sent Events are used to push claim changes and presence updates to connected clients in real-time, enabling features like collision detection and instant UI updates.
+- **Collision Detection:** Advisory-only presence system using heartbeats and SSE to notify users of others viewing or bots processing the same claim.
+- **API Security:** Routes are protected with specific authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) based on their function.
+- **UI/UX:** The application adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
+- **TypeScript Monorepo:** Utilizes TypeScript composite projects and `pnpm workspaces` for robust type-checking and dependency management across packages.
 
-```text
-artifacts-monorepo/
-├── artifacts/
-│   ├── api-server/         # Express API server (port 8080)
-│   │   └── src/bot/        # Playwright bot scripts
-│   └── claimclear/         # React + Vite frontend (proxied through API server)
-├── lib/
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   ├── integrations-anthropic-ai/ # Anthropic AI SDK client
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/
-│   └── src/
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-├── tsconfig.json
-└── package.json
-```
+**Project Structure:**
+- `artifacts/api-server/` — Express API server, also serves the built frontend static files
+- `artifacts/claimclear/` — React + Vite frontend (built to `dist/public/`, served by API server)
+- `artifacts/mockup-sandbox/` — Design/component preview sandbox (port 8081)
+- `lib/` — Shared libraries: `db` (Drizzle ORM), `api-spec` (OpenAPI), `api-zod` (Generated Zod schemas), `api-client-react` (Generated React Query hooks), `integrations-anthropic-ai` (Anthropic AI SDK client)
+- `scripts/` — Utility scripts
 
-## Architecture Notes
+**Port Configuration:**
+- Port 8080: API Server (Express) — serves both `/api/*` routes AND static frontend at `/`
+- Port 8081: Mockup Sandbox (Vite) — design preview at `/__mockup`
+- Port 5173: ClaimClear Vite dev server (development only, not used in production)
 
-### Error Handling
-All async route handlers are wrapped in `asyncHandler()` (see `src/lib/asyncHandler.ts`) which catches unhandled rejections and forwards them to Express's error handler. The global error handler in `app.ts` logs errors via pino and returns clean `{ error: "Internal server error" }` JSON responses — no stack traces leak to clients.
+**Production Build:**
+- The production build first builds the ClaimClear frontend (`pnpm --filter @workspace/claimclear run build`), then builds the API server (`pnpm --filter @workspace/api-server run build`)
+- The API server's `app.ts` serves static files from `artifacts/claimclear/dist/public/` and falls back to `index.html` for SPA routing
 
-### Auth Middleware
-- `requireAuth` — checks session auth + approval status
-- `requireAdmin` — checks session auth + admin role (replaces inline admin checks)
-- `requireBotToken` — checks `X-Bot-Token` header
-- `requireAuthOrBot` — accepts either session auth or bot token
-- **Session validity is based on DB session TTL, NOT OIDC token expiry.** OIDC tokens are only used during login for identity verification.
-- **Absolute TTL**: 8 hours (`SESSION_ABSOLUTE_TTL`) — max session lifetime regardless of activity
-- **Idle timeout**: 30 minutes (`SESSION_IDLE_TIMEOUT`) — session expires after 30 min of inactivity; each request resets the idle timer (via `touchSession`, throttled to 1 DB write/min)
-- **Expiry detection**: `getSession()` returns `{ data, expiry }` where expiry is `"expired_absolute"` | `"expired_idle"` | `null`. The `/auth/user` endpoint passes `sessionExpiry` to the frontend, which shows context-specific messages on the login screen.
-- **Frontend 401 handling**: QueryClient retries detect 401 and reload the page, which re-checks auth and shows the appropriate expiry message.
-
-### Frontend Routing
-The ClaimClear frontend is served at the root path `/`. In production, it's served as static files. Custom domain: `cc.agapeny.app`.
-
-### Database Entities (14 tables)
-- `users` — Replit Auth users (varchar ID)
-- `sessions` — auth session storage (sid + JSON payload + expire)
-- `claims` — rejected claims (serial ID)
-- `notes` — claim notes/comments (with ownership tracking via `author`)
-- `audit_logs` — full audit trail
-- `error_types` — categorized denial reasons with decision trees
-- `error_detail_mappings` — maps normalized error detail text to error type IDs (for auto-classification during import)
-- `portal_submissions` — MAS portal submission tracking
-- `bot_instances` — Playwright bot instance registry
-- `bot_activity_log` — per-submission bot action log
-- `presence_logs` — real-time user presence (heartbeat-based, unique on claim_id + user_email)
-- `evidence_types` — reusable evidence type library (name, category, accepts image/text)
-- `claim_evidence` — evidence collected per claim (linked to tree node where collected)
-- `conversations` + `messages` — AI chat conversations
-
-### Error Type Auto-Match & Bulk Assignment
-- During import, a "Classify" step groups claims by unique error detail text and looks up previously saved mappings via `POST /api/error-detail-mappings/lookup`. Known matches are pre-filled; unrecognized error details can be assigned from existing error types. Confirmed mappings are saved via `POST /api/error-detail-mappings` for future imports.
-- Fuzzy matching uses case-insensitive, whitespace-normalized text comparison.
-- The All Claims page has multi-select checkboxes and a bulk "Assign Error Type" action (`POST /api/claims/bulk-assign-error-type`) that updates all selected claims and creates audit log entries.
-
-### Status Flow
-New → Needs Evidence → Portal Queued → Awaiting Response → On Hold/Resolved/Denied
-
-### API Route Auth Architecture
-- `/api/healthz`, `/api/auth/*` — Public (no auth)
-- `/api/bot/*` — Bot service token only (`requireBotToken`)
-  - `/api/bot/instances` — Bot instance CRUD (register, heartbeat, stop)
-  - `/api/bot/portal-submissions/poll`, `/claim`, `/complete`, `/fail` — Bot workflow
-- `/api/bot-instances` — Read-only listing for authenticated human users
-- `/api/admin/*` — Admin middleware (`requireAdmin`)
-- All other `/api/*` routes — Session auth required (`requireAuth`)
-- Bot authenticates via `X-Bot-Token` header (env: `BOT_SERVICE_TOKEN`)
-
-### Financial Model
-- **Vendor prepayment rate**: ~70% approximate (`VENDOR_PREPAY_RATE = 0.70`). Actual rate varies per claim and can be 100%+.
-- **Total Exposure** = claim amount × 1.70 (claim + ~70% vendor prepayment). This is an approximate total financial loss if a claim isn't recovered. Labeled as "approx." throughout the UI.
-- Dashboard, Summary, and Daily Brief all show `totalExposure` alongside `totalClaimed` and `totalApproved`.
-
-### Dashboard & Daily Brief
-- Dashboard uses DB-level aggregation (`GROUP BY`, `SUM`, `COUNT`) — no full table scans
-- Shared `daysRemaining()` utility in `src/lib/dates.ts`
-- Daily brief generates styled HTML email with pipeline stats, expiring claims
-- Sends via SMTP when configured (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`)
-
-### Decision Trees & Tree-Driven Queue
-- Native `DecisionTree` format: `{ rootId, nodes: TreeNode[] }` where each node has `id`, `question`, `helpText`, `instructionText`, `instructionImageUrl`, `options[]`, and `evidenceRequirements[]`
-- SOP analyzer and build-tree-from-text AI endpoints convert legacy yes/no tree format to native DecisionTree format automatically
-- Legacy format (`question/yesLabel/noLabel/yesChild/noChild`) still supported via `legacyToTree()` in frontend
-- **Tree-driven queue**: When an error type has a decision tree, the queue uses 3-step flow: Review → Follow SOP (tree + inline evidence) → Act. Generic 4-step flow (Review → Evidence → Decide → Submit) for claims without trees.
-- **Inline evidence collection**: Tree nodes can require evidence (`evidenceRequirements[]`). Each requirement has `key`, `label`, `required`, `acceptsImage`, `acceptsText`, optional `evidenceTypeId` (references evidence_types library). Evidence is collected inline at each tree step and saved to `claim_evidence` table.
-- **Rich instructions**: Each node can have `instructionText` (step-by-step guide) and `instructionImageUrl` (reference screenshot/image). Displayed prominently in the TreePlayer.
-
-### Evidence Infrastructure
-- **Object Storage**: GCS-backed file upload via `POST /api/storage/uploads/request-url` (returns presigned URL) + `GET /api/storage/objects/*` (serve uploaded files)
-- **Evidence Types Library**: `evidence_types` table — reusable evidence definitions (name, description, category, acceptsImage, acceptsText, instructionText, instructionImageUrl). CRUD via `/api/evidence-types`
-- **Claim Evidence**: `claim_evidence` table — evidence collected per claim, linked to tree node where collected. CRUD via `/api/claims/:claimId/evidence`
-- **Claim Detail Evidence Section**: Shows all collected evidence with thumbnails, tree node context, collector info, timestamps, and delete capability
-
-### CORS
-CORS origins allow Replit domains (`*.replit.dev`, `*.repl.co`, `*.replit.app`) and localhost by default. Override with `CORS_ORIGINS` env var (comma-separated list).
-
-### Import
-- Batch insert (up to 100 rows per batch) — no N+1 queries
-- Duplicate detection via single `IN` query on conf numbers
-
-### Presence & Collision Detection
-- Uses `ON CONFLICT (claim_id, user_email) DO UPDATE` for atomic heartbeat upsert (no race conditions)
-- `GET /api/presence/:claimId` returns `{ viewers: PresenceViewer[], botActivity: BotPresenceEntry[] }` — includes both human viewers and active bot operations (portal submissions with `in_progress` status)
-- SSE presence events (`viewer_joined`, `viewer_left`, `bot_started`, `bot_completed`) broadcast via `broadcastPresenceEvent()` for instant UI updates
-- Prominent blue collision banner at top of claim detail when other users are viewing
-- Amber/orange bot activity banner when automated processes (portal submission, AI email) are active on the claim
-- Viewer avatars have pulsating ring animation and styled Tooltip (not browser-native title)
-- Both banners use slide-in/fade-out entrance/exit animations
-- Advisory only — no hard locking or action blocking
-
-### Real-Time Updates (SSE)
-- Server-Sent Events push claim changes and presence updates to all connected viewers in real time
-- `GET /api/claims/:id/events` — per-claim SSE stream for claim detail pages (events: `claim_update`, `presence_update`)
-- `GET /api/claims/events` — global SSE stream for claims list/queue pages
-- In-memory client tracking in `src/lib/sse.ts` with keep-alive pings every 25s
-- All claim mutation routes (status, outcome, evidence, hold, workflow, notes) emit SSE events via `broadcastClaimEvent()`
-- Presence routes and bot endpoints emit SSE events via `broadcastPresenceEvent()` for real-time collision detection
-- Frontend `useClaimEvents(claimId)` hook: opens EventSource, invalidates React Query caches on `claim_update` and `presence_update` events, shows toast for remote changes
-- Frontend `useClaimsListEvents()` hook: opens global EventSource, invalidates all claims list queries
-- Indefinite exponential backoff reconnection (caps at 30s intervals, resets on successful connection)
-- Toasts skip the current user's own actions to avoid redundant feedback
-
-### User Management
-- `upsertUser` uses `ON CONFLICT DO UPDATE` for atomic user creation/update
-- First user auto-promoted to admin with approved status
-- OIDC discovery uses singleton with promise-based mutex (no concurrent discovery calls)
-
-### Bot
-- Bot retry resets submission to "pending" before retrying (no double-processing of "in_progress" records)
-- Notes are deletable only by their author or admin users
-
-### CSS Theme
-Agape brand: dark navy primary (221 50% 16%), blue interactive (219 85% 52%), orange accent (12 79% 57%), navy sidebar. Logo: Agape teardrop "A" mark with orange accent stroke. Brand hex values: navy #1B2A4A, blue #3478F6, orange #E85D3A, gold #E5A332.
-
-## TypeScript & Composite Projects
-
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references.
-
-- **Always typecheck from the root** — run `pnpm run typecheck`
-- **`emitDeclarationOnly`** — only emit `.d.ts` files during typecheck
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array
-
-## Root Scripts
-
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly`
-
-## Packages
-
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/`. Proxies `/claimclear/` to the Vite dev server in development.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, proxy middleware, routes at `/api`, global error handler
-- Middleware: `src/middlewares/` — authMiddleware, requireAuth, requireAdmin, requireBotToken
-- Utilities: `src/lib/` — asyncHandler, auth (OIDC + sessions), dates, logger
-- Routes: claims CRUD, error types, CSV import, portal submissions, bot instances, presence, dashboard summary, daily brief, AI email generation, SOP analyzer, audit logs, notes, anthropic conversations, storage (upload/serve), evidence types CRUD, claim evidence CRUD
-- Bot routes: `src/routes/bot-portal.ts` (bot-only portal submission endpoints), `src/routes/bot-instances.ts` (bot instance management)
-- Bot scripts: `src/bot/portal-bot.ts` (Playwright automation for MAS portal), `src/bot/save-session.ts` (session saver)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-
-### `artifacts/claimclear` (`@workspace/claimclear`)
-
-React + Vite frontend with 10 pages:
-- Dashboard, Queue (split-panel with decision-tree workflow player), All Claims, Claim Detail (portal submission tracking, bot activity timeline, evidence checklist), New Claim, Import (RFC-compliant CSV parser), Error Types (structured SOP builder with decision-tree editor), Portal Submissions, Summary, Settings
-- Queue page: 4-step workflow (Review → Evidence → Decide → Submit), fetches error type's decision tree for guided branching, uses error type's evidence requirements for checklist. Decision tree player supports multi-option nodes, undo/back, help text, progress indicator, per-node evidence, and color-coded structured outcomes.
-- Error Types: Tabbed editor (AI Analyzer, Basics, SOP & Guidance, Evidence & Reasons, Decision Tree) with AI-powered SOP analysis. AI Analyzer has 3 sub-tabs: SOP Analyzer (paste SOP text → generates all fields), Describe Workflow (natural language → AI generates tree), Guided Builder (conversational step-by-step wizard). Decision Tree tab uses visual card-based editor with multi-option nodes, outcome type dropdowns, help text, per-node evidence, collapse/expand, and templates.
-- Decision tree components extracted to `src/components/decision-tree/` (types.ts, editor.tsx, player.tsx, index.ts). Supports new multi-option node format + backward-compatible legacy yes/no conversion.
-- Uses `@workspace/api-client-react` for API hooks
-- Uses `@workspace/replit-auth-web` for authentication
-- Presence system with heartbeat hooks
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-OpenAPI 3.1 spec and Orval codegen config.
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client.
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package.
-
-## Known Issues
-
-- Claimclear Vite workflow reports FAILED status due to platform port detection timing — the dev server starts correctly but the port probe times out. The app works when the process is running.
+## External Dependencies
+- **PostgreSQL:** Primary database.
+- **Anthropic Claude:** AI capabilities for SOP analysis and email generation, accessed via Replit AI Integrations proxy.
+- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
+- **Google Cloud Storage (GCS):** Used for object storage of evidence files.
+- **SMTP Service:** For sending daily brief emails.
+- **Replit Auth:** OpenID Connect with PKCE for user authentication.
