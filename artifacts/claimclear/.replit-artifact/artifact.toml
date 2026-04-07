@@ -12,10 +12,10 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/" ]
-localPort = 8080
+localPort = 5173
 
 [services.development]
-run = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/claimclear run build --watch"
+run = "node serve-dev.mjs"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/claimclear", "run", "build" ]
