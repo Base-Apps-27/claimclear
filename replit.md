@@ -51,7 +51,7 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 
 ## External Dependencies
 - **PostgreSQL:** Primary database.
-- **Anthropic Claude:** AI capabilities for SOP analysis and email generation, accessed via Replit AI Integrations proxy.
+- **Anthropic Claude:** AI capabilities for SOP analysis, dispute note generation (portal submissions), and email generation, accessed via Replit AI Integrations proxy. Portal dispute notes are generated at queue time (not in the bot process) using the error type's `disputeInstructions` field for tone/content guidelines and the decision tree's `outcomeLabel` as the specific dispute reason.
 - **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
 - **Google Cloud Storage (GCS):** Used for object storage of evidence files.
 - **SMTP Service:** For sending daily brief emails.

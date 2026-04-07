@@ -41,6 +41,7 @@ async function generateWithLLM(
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
 ): Promise<{ subject: string; body: string }> {
+  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || "";
   const prompt = `Write a professional dispute email for a rejected NEMT (Non-Emergency Medical Transportation) claim.
 
 Claim details:
@@ -53,12 +54,20 @@ Claim details:
 - Error type: ${claim.errorTypeName || "Unknown"}
 ${errorType?.description ? `- Error description: ${errorType.description}` : ""}
 
-Reason for dispute: ${disputeReason}
+Reason for dispute (from workflow decision): ${disputeReason}
 
 ${claim.evidenceNotes ? `Evidence gathered: ${claim.evidenceNotes}` : ""}
-${errorType?.guidance ? `SOP guidance: ${errorType.guidance}` : ""}
+${errorType?.guidance ? `SOP context: ${errorType.guidance}` : ""}
 
-Generate a professional, concise dispute email addressed to "MAS Support Team". The email should clearly state the dispute reason, reference the evidence, and request reconsideration.
+${instructions ? `IMPORTANT — Follow these guidelines for tone, content, and structure of the email:\n${instructions}` : ""}
+
+Write a professional, concise dispute email addressed to "MAS Support Team". The email should:
+- Sound natural and human — vary the phrasing each time, do NOT use a rigid template
+- Clearly state the dispute reason using the information above
+- Reference the specific evidence that supports the dispute
+- Request reconsideration
+- Be factual and persuasive without being adversarial
+- Keep a professional but conversational tone
 
 Respond with JSON in this exact format:
 {"subject": "email subject line", "body": "full email body text"}`;
@@ -72,7 +81,7 @@ Respond with JSON in this exact format:
         content: prompt,
       },
     ],
-    system: "You are a professional NEMT claims dispute specialist. Write clear, factual, and persuasive dispute emails. Always respond with valid JSON containing subject and body fields.",
+    system: "You are a professional NEMT claims dispute specialist writing on behalf of a transportation provider. Write clear, factual, and persuasive dispute emails. Each email should read naturally — vary sentence structure, word choice, and phrasing so no two emails sound identical. Avoid boilerplate or robotic language. Always respond with valid JSON containing subject and body fields.",
   });
 
   const textBlock = message.content.find((b: any) => b.type === "text");

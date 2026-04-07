@@ -73,6 +73,7 @@ function WorkflowPlayer({
   const [evidenceNotes, setEvidenceNotes] = useState(claim.evidenceNotes || "");
   const [holdReason, setHoldReason] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
+  const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
 
@@ -115,7 +116,7 @@ function WorkflowPlayer({
 
   const handlePortalSubmit = async () => {
     await createSubmission.mutateAsync({
-      data: { claimId: claim.id },
+      data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
     });
     await handleStatusUpdate("Portal Queued");
     onComplete();
@@ -267,6 +268,7 @@ function WorkflowPlayer({
                 claimId={claim.id}
                 onEvidenceCollected={handleEvidenceCollected}
                 onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
+                  setTreeOutcomeLabel(outcomeLabel);
                   if (outcomeType === "portal_dispute" || outcomeType === "dispute") {
                     advanceStep("submit");
                   } else if (outcomeType === "hold") {
@@ -418,12 +420,15 @@ function WorkflowPlayer({
               <p className="font-medium">Ready for Portal Submission</p>
               <p className="mt-1 text-xs">
                 This will queue the claim for automated submission to the MAS Transportation Provider Support Portal.
-                The bot will fill out the dispute form with claim details and evidence.
+                The AI will generate a unique dispute note based on the claim details, evidence, and error type guidelines.
               </p>
             </div>
             <div className="text-sm space-y-1">
               <p><span className="text-muted-foreground">Conf #:</span> {claim.confNumber}</p>
               <p><span className="text-muted-foreground">Amount:</span> {formatCurrency(claim.claimAmount)}</p>
+              {treeOutcomeLabel && (
+                <p><span className="text-muted-foreground">Dispute Reason:</span> <span className="font-medium">{treeOutcomeLabel}</span></p>
+              )}
               {claim.evidenceNotes && (
                 <p><span className="text-muted-foreground">Evidence:</span> {claim.evidenceNotes}</p>
               )}

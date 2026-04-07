@@ -484,6 +484,7 @@ interface ErrorTypeFormState {
   guidance: string;
   recommendedActions: string;
   emailTemplate: string;
+  disputeInstructions: string;
   reasons: DisputeReason[];
   requirements: EvidenceRequirement[];
   decisionTree: DecisionTree | null;
@@ -506,7 +507,7 @@ export default function ErrorTypes() {
 
   const emptyForm: ErrorTypeFormState = {
     name: "", category: "", description: "", guidance: "",
-    recommendedActions: "", emailTemplate: "",
+    recommendedActions: "", emailTemplate: "", disputeInstructions: "",
     reasons: [], requirements: [], decisionTree: null,
   };
 
@@ -528,6 +529,7 @@ export default function ErrorTypes() {
         guidance: result.guidance || "",
         recommendedActions: result.recommendedActions || "",
         emailTemplate: form.emailTemplate,
+        disputeInstructions: form.disputeInstructions,
         reasons: parseReasons(result.disputeReasonsLibrary as Record<string, unknown> | null),
         requirements: parseRequirements(result.evidenceRequirements as Record<string, unknown> | null),
         decisionTree: legacyTree ? legacyToTree(legacyTree) : null,
@@ -558,6 +560,7 @@ export default function ErrorTypes() {
       guidance: et.guidance || "",
       recommendedActions: et.recommendedActions || "",
       emailTemplate: et.emailTemplate || "",
+      disputeInstructions: (et as Record<string, unknown>).disputeInstructions as string || "",
       reasons: parseReasons(et.disputeReasonsLibrary as Record<string, unknown> | null),
       requirements: parseRequirements(et.evidenceRequirements as Record<string, unknown> | null),
       decisionTree: convertedTree,
@@ -573,6 +576,7 @@ export default function ErrorTypes() {
       guidance: form.guidance,
       recommendedActions: form.recommendedActions,
       emailTemplate: form.emailTemplate,
+      disputeInstructions: form.disputeInstructions,
       disputeReasonsLibrary: serializeReasons(form.reasons),
       evidenceRequirements: serializeRequirements(form.requirements),
       decisionTree: form.decisionTree
@@ -782,11 +786,11 @@ export default function ErrorTypes() {
               </div>
               <div>
                 <Label className="flex items-center gap-1">
-                  Email Template
-                  <InfoTooltip content="The email template used when generating dispute emails for this error type. Use {{confNumber}}, {{date}}, and {{amount}} as placeholders that will be filled in automatically." />
+                  Dispute Instructions
+                  <InfoTooltip content="General writing guidelines the AI uses when generating dispute notes for portal submissions. Unlike a rigid template, these are flexible instructions — the AI will vary its language each time while following your tone and content guidelines." />
                 </Label>
-                <p className="text-xs text-muted-foreground mb-1">Template for dispute emails. Use {"{{confNumber}}"}, {"{{date}}"}, {"{{amount}}"} as placeholders.</p>
-                <Textarea value={form.emailTemplate} onChange={e => setForm({ ...form, emailTemplate: e.target.value })} rows={6} className="font-mono text-xs" placeholder="Dear MAS Support,&#10;&#10;We are writing to dispute the rejection of trip {{confNumber}}..." />
+                <p className="text-xs text-muted-foreground mb-1">Guidelines for the AI when writing dispute notes. The AI will use these along with claim details and the specific dispute reason from the decision tree to generate unique, human-sounding portal submissions each time.</p>
+                <Textarea value={form.disputeInstructions} onChange={e => setForm({ ...form, disputeInstructions: e.target.value })} rows={6} className="text-xs" placeholder="Always reference GPS breadcrumb data when available.&#10;Emphasize that the trip was completed as scheduled.&#10;Keep tone professional but assertive.&#10;Mention specific evidence documents by name." />
               </div>
             </TabsContent>
 

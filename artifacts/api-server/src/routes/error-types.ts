@@ -30,6 +30,7 @@ router.post("/error-types", asyncHandler(async (req, res): Promise<void> => {
     evidenceRequirements: body.evidenceRequirements || null,
     decisionTree: body.decisionTree || null,
     emailTemplate: body.emailTemplate || null,
+    disputeInstructions: body.disputeInstructions || null,
   }).returning();
 
   res.status(201).json(errorType);
@@ -51,7 +52,7 @@ router.patch("/error-types/:id", asyncHandler(async (req, res): Promise<void> =>
 
   const updateData: Partial<typeof errorTypesTable.$inferInsert> = {};
   const fields = ["name", "category", "description", "guidance", "recommendedActions",
-    "disputeReasonsLibrary", "evidenceRequirements", "decisionTree", "emailTemplate"] as const;
+    "disputeReasonsLibrary", "evidenceRequirements", "decisionTree", "emailTemplate", "disputeInstructions"] as const;
   for (const f of fields) {
     if (req.body[f] !== undefined) {
       (updateData as Record<string, unknown>)[f] = req.body[f];

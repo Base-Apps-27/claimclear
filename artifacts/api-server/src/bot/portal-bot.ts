@@ -396,6 +396,10 @@ async function processSubmission(context: BrowserContext, submission: PortalSubm
 }
 
 function buildDescription(sub: PortalSubmission): string {
+  if (sub.descriptionHtml && sub.descriptionHtml.trim()) {
+    return sub.descriptionHtml;
+  }
+
   return `Dispute for Confirmation Number: ${sub.confNumber || "N/A"}
 Service Date: ${sub.serviceDate || "N/A"}
 Reference Number: ${sub.refNumber || "N/A"}

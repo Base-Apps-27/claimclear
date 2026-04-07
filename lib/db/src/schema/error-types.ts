@@ -13,6 +13,7 @@ export const errorTypesTable = pgTable("error_types", {
   evidenceRequirements: jsonb("evidence_requirements"),
   decisionTree: jsonb("decision_tree"),
   emailTemplate: text("email_template"),
+  disputeInstructions: text("dispute_instructions"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
