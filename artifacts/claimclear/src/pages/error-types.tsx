@@ -17,8 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
-  BookOpen, X, ChevronDown, ChevronRight, Sparkles, Loader2,
-  MessageSquare, Wand2, Copy, Send, ArrowRight, Ban
+  X, Sparkles, Loader2,
+  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle
 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
 import {
@@ -27,158 +27,6 @@ import {
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
 
-interface DisputeReason {
-  key: string;
-  label: string;
-  description: string;
-}
-
-interface EvidenceRequirement {
-  key: string;
-  label: string;
-  required: boolean;
-}
-
-function DisputeReasonsEditor({
-  reasons,
-  onChange,
-}: {
-  reasons: DisputeReason[];
-  onChange: (reasons: DisputeReason[]) => void;
-}) {
-  const addReason = () => {
-    onChange([...reasons, { key: `reason_${Date.now()}`, label: "", description: "" }]);
-  };
-
-  const updateReason = (index: number, field: keyof DisputeReason, value: string) => {
-    const updated = [...reasons];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange(updated);
-  };
-
-  const removeReason = (index: number) => {
-    onChange(reasons.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium flex items-center gap-1.5">
-          Dispute Reasons
-          <InfoTooltip content="Pre-defined reasons staff can select when filing a dispute. Each reason includes a label (shown to staff) and a description with talking points for the dispute." />
-        </Label>
-        <Button type="button" variant="outline" size="sm" onClick={addReason}>
-          <Plus className="h-3 w-3 mr-1" /> Add Reason
-        </Button>
-      </div>
-      {reasons.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No dispute reasons defined yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {reasons.map((reason, i) => (
-            <div key={reason.key} className="border rounded-md p-3 space-y-2 bg-muted/30">
-              <div className="flex items-start gap-2">
-                <div className="flex-1 space-y-2">
-                  <Input
-                    value={reason.label}
-                    onChange={(e) => updateReason(i, "label", e.target.value)}
-                    placeholder="Reason name (e.g., GPS data confirms trip)"
-                    className="text-sm"
-                  />
-                  <Input
-                    value={reason.description}
-                    onChange={(e) => updateReason(i, "description", e.target.value)}
-                    placeholder="Description or talking points"
-                    className="text-sm"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive shrink-0"
-                  onClick={() => removeReason(i)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EvidenceRequirementsEditor({
-  requirements,
-  onChange,
-}: {
-  requirements: EvidenceRequirement[];
-  onChange: (requirements: EvidenceRequirement[]) => void;
-}) {
-  const addRequirement = () => {
-    onChange([...requirements, { key: `ev_${Date.now()}`, label: "", required: true }]);
-  };
-
-  const updateRequirement = (index: number, field: keyof EvidenceRequirement, value: string | boolean) => {
-    const updated = [...requirements];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange(updated);
-  };
-
-  const removeRequirement = (index: number) => {
-    onChange(requirements.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium flex items-center gap-1.5">
-          Evidence Requirements
-          <InfoTooltip content="Documents and data staff must collect before a dispute can proceed. Mark items as 'Required' to enforce they are checked off in the evidence gathering step." />
-        </Label>
-        <Button type="button" variant="outline" size="sm" onClick={addRequirement}>
-          <Plus className="h-3 w-3 mr-1" /> Add Requirement
-        </Button>
-      </div>
-      {requirements.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No evidence requirements defined yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {requirements.map((req, i) => (
-            <div key={req.key} className="border rounded-md p-3 bg-muted/30 flex items-center gap-3">
-              <label className="flex items-center gap-2 shrink-0">
-                <input
-                  type="checkbox"
-                  checked={req.required}
-                  onChange={(e) => updateRequirement(i, "required", e.target.checked)}
-                  className="rounded"
-                />
-                <span className="text-xs text-muted-foreground">Required</span>
-              </label>
-              <Input
-                value={req.label}
-                onChange={(e) => updateRequirement(i, "label", e.target.value)}
-                placeholder="Evidence item (e.g., GPS breadcrumb log)"
-                className="text-sm flex-1"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive shrink-0"
-                onClick={() => removeRequirement(i)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ConversationalWizard({
   onComplete,
@@ -433,60 +281,11 @@ function NaturalLanguageBuilder({
   );
 }
 
-function parseReasons(raw: Record<string, unknown> | null | undefined): DisputeReason[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item: Record<string, unknown>, i: number) => ({
-      key: (item.key as string) || `reason_${i}`,
-      label: (item.label as string) || "",
-      description: (item.description as string) || "",
-    }));
-  }
-  return Object.entries(raw).map(([key, val]) => ({
-    key,
-    label: typeof val === "object" && val ? ((val as Record<string, unknown>).label as string) || key : typeof val === "string" ? val : key,
-    description: typeof val === "object" && val ? ((val as Record<string, unknown>).description as string) || "" : "",
-  }));
-}
-
-function parseRequirements(raw: Record<string, unknown> | null | undefined): EvidenceRequirement[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item: Record<string, unknown>, i: number) => ({
-      key: (item.key as string) || `ev_${i}`,
-      label: (item.label as string) || "",
-      required: item.required !== false,
-    }));
-  }
-  return Object.entries(raw).map(([key, val]) => ({
-    key,
-    label: typeof val === "object" && val ? ((val as Record<string, unknown>).label as string) || key : typeof val === "string" ? val : key,
-    required: typeof val === "object" && val ? ((val as Record<string, unknown>).required as boolean) !== false : true,
-  }));
-}
-
-function serializeReasons(reasons: DisputeReason[]): Record<string, unknown> {
-  return Object.fromEntries(
-    reasons.filter((r) => r.label).map((r) => [r.key, { label: r.label, description: r.description }])
-  );
-}
-
-function serializeRequirements(reqs: EvidenceRequirement[]): Record<string, unknown> {
-  return Object.fromEntries(
-    reqs.filter((r) => r.label).map((r) => [r.key, { label: r.label, required: r.required }])
-  );
-}
-
 interface ErrorTypeFormState {
   name: string;
   category: string;
   description: string;
-  guidance: string;
-  recommendedActions: string;
-  emailTemplate: string;
   disputeInstructions: string;
-  reasons: DisputeReason[];
-  requirements: EvidenceRequirement[];
   decisionTree: DecisionTree | null;
 }
 
@@ -506,9 +305,8 @@ export default function ErrorTypes() {
   const [testTree, setTestTree] = useState<DecisionTree | null>(null);
 
   const emptyForm: ErrorTypeFormState = {
-    name: "", category: "", description: "", guidance: "",
-    recommendedActions: "", emailTemplate: "", disputeInstructions: "",
-    reasons: [], requirements: [], decisionTree: null,
+    name: "", category: "", description: "", disputeInstructions: "",
+    decisionTree: null,
   };
 
   const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
@@ -526,12 +324,7 @@ export default function ErrorTypes() {
         name: result.name || form.name || "",
         category: result.category || "",
         description: result.description || "",
-        guidance: result.guidance || "",
-        recommendedActions: result.recommendedActions || "",
-        emailTemplate: form.emailTemplate,
         disputeInstructions: form.disputeInstructions,
-        reasons: parseReasons(result.disputeReasonsLibrary as Record<string, unknown> | null),
-        requirements: parseRequirements(result.evidenceRequirements as Record<string, unknown> | null),
         decisionTree: legacyTree ? legacyToTree(legacyTree) : null,
       });
     } catch (err: unknown) {
@@ -557,12 +350,7 @@ export default function ErrorTypes() {
       name: et.name || "",
       category: et.category || "",
       description: et.description || "",
-      guidance: et.guidance || "",
-      recommendedActions: et.recommendedActions || "",
-      emailTemplate: et.emailTemplate || "",
       disputeInstructions: (et as Record<string, unknown>).disputeInstructions as string || "",
-      reasons: parseReasons(et.disputeReasonsLibrary as Record<string, unknown> | null),
-      requirements: parseRequirements(et.evidenceRequirements as Record<string, unknown> | null),
       decisionTree: convertedTree,
     });
     setEditingId(et.id);
@@ -573,12 +361,7 @@ export default function ErrorTypes() {
       name: form.name,
       category: form.category,
       description: form.description,
-      guidance: form.guidance,
-      recommendedActions: form.recommendedActions,
-      emailTemplate: form.emailTemplate,
       disputeInstructions: form.disputeInstructions,
-      disputeReasonsLibrary: serializeReasons(form.reasons),
-      evidenceRequirements: serializeRequirements(form.requirements),
       decisionTree: form.decisionTree
         ? (JSON.parse(JSON.stringify(form.decisionTree)) as unknown as Record<string, unknown>)
         : undefined,
@@ -638,20 +421,14 @@ export default function ErrorTypes() {
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground space-y-2">
                 {et.description && <p className="line-clamp-2">{et.description}</p>}
-                {et.guidance && (
-                  <div className="bg-blue-50 text-blue-800 text-xs p-2 rounded">
-                    <span className="font-medium">SOP:</span> {et.guidance.substring(0, 100)}{et.guidance.length > 100 ? "..." : ""}
-                  </div>
-                )}
                 <div className="flex gap-2 flex-wrap">
-                  {et.disputeReasonsLibrary && Object.keys(et.disputeReasonsLibrary).length > 0 && (
-                    <Badge variant="secondary"><BookOpen className="h-3 w-3 mr-1" />{Object.keys(et.disputeReasonsLibrary).length} reasons</Badge>
+                  {et.decisionTree ? (
+                    <Badge variant="secondary" className="text-green-700"><TreeDeciduous className="h-3 w-3 mr-1" />Workflow Tree</Badge>
+                  ) : (
+                    <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />No Workflow</Badge>
                   )}
-                  {et.evidenceRequirements && Object.keys(et.evidenceRequirements).length > 0 && (
-                    <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />{Object.keys(et.evidenceRequirements).length} requirements</Badge>
-                  )}
-                  {et.decisionTree && (
-                    <Badge variant="secondary"><TreeDeciduous className="h-3 w-3 mr-1" />Decision Tree</Badge>
+                  {(et as Record<string, unknown>).disputeInstructions && (
+                    <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />Dispute Instructions</Badge>
                   )}
                 </div>
               </CardContent>
@@ -665,13 +442,11 @@ export default function ErrorTypes() {
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="ai-analyzer">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Analyzer</TabsTrigger>
-              <TabsTrigger value="basics">Basics</TabsTrigger>
-              <TabsTrigger value="sop">SOP & Guidance</TabsTrigger>
-              <TabsTrigger value="evidence">Evidence & Reasons</TabsTrigger>
-              <TabsTrigger value="workflow">Decision Tree</TabsTrigger>
+          <Tabs defaultValue="workflow">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="workflow" className="gap-1"><TreeDeciduous className="h-3 w-3" />Workflow Tree</TabsTrigger>
+              <TabsTrigger value="basics">Details</TabsTrigger>
+              <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Builder</TabsTrigger>
             </TabsList>
 
             <TabsContent value="ai-analyzer" className="space-y-4 mt-4">
@@ -685,8 +460,8 @@ export default function ErrorTypes() {
                 <TabsContent value="sop-analyzer" className="mt-3">
                   <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      Paste your Standard Operating Procedure text and the AI will generate all fields: name, category, description, guidance, dispute reasons, evidence requirements, and a decision tree.
-                      <InfoTooltip content="The SOP Analyzer uses AI to parse your procedure document and automatically fill in all error type fields. Paste the full SOP text — the more detail you provide, the better the generated output." />
+                      Paste your Standard Operating Procedure text and the AI will generate a workflow tree with embedded evidence collection, plus the name, category, and description.
+                      <InfoTooltip content="The SOP Analyzer uses AI to parse your procedure document and generate a decision tree workflow. The tree captures the full SOP logic — questions, branching, evidence collection at each step, and outcomes. Paste the full SOP text for best results." />
                     </p>
                     <Textarea
                       value={sopText}
@@ -704,14 +479,14 @@ export default function ErrorTypes() {
                         {sopAnalyzing ? (
                           <><Loader2 className="h-4 w-4 animate-spin" />Analyzing...</>
                         ) : (
-                          <><Sparkles className="h-4 w-4" />Analyze & Generate All Fields</>
+                          <><Sparkles className="h-4 w-4" />Analyze & Build Workflow</>
                         )}
                       </Button>
                       {sopAnalyzing && <span className="text-xs text-muted-foreground">This may take 10-20 seconds...</span>}
                     </div>
                     {sopError && <p className="text-sm text-red-600">{sopError}</p>}
                     {form.name && sopText && !sopAnalyzing && (
-                      <p className="text-xs text-green-600">Analysis complete. Review the generated fields in the other tabs, then save.</p>
+                      <p className="text-xs text-green-600">Analysis complete. Review the workflow tree and details, then save.</p>
                     )}
                   </div>
                 </TabsContent>
@@ -755,7 +530,7 @@ export default function ErrorTypes() {
                 <div>
                   <Label className="flex items-center gap-1">
                     Category
-                    <InfoTooltip content="Group related error types together (e.g., 'GPS Issues', 'Scheduling'). Categories help staff filter and find relevant SOPs faster." />
+                    <InfoTooltip content="Group related error types together (e.g., 'GPS Issues', 'Scheduling'). Categories help staff filter and find relevant error types faster." />
                   </Label>
                   <Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="e.g., GPS Issues, Scheduling" />
                 </div>
@@ -767,43 +542,15 @@ export default function ErrorTypes() {
                 </Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Describe when this error type applies..." />
               </div>
-            </TabsContent>
-
-            <TabsContent value="sop" className="space-y-4 mt-4">
-              <div>
-                <Label>Staff Guidance (SOP)</Label>
-                <p className="text-xs text-muted-foreground mb-1">Step-by-step instructions for staff handling this error type</p>
-                <Textarea
-                  value={form.guidance}
-                  onChange={e => setForm({ ...form, guidance: e.target.value })}
-                  rows={6}
-                  placeholder="1. Review claim details and error code&#10;2. Check GPS breadcrumb data&#10;3. Verify trip log against scheduled trip&#10;4. If data confirms trip, proceed to dispute..."
-                />
-              </div>
-              <div>
-                <Label>Recommended Actions</Label>
-                <Textarea value={form.recommendedActions} onChange={e => setForm({ ...form, recommendedActions: e.target.value })} rows={3} placeholder="Actions staff should take..." />
-              </div>
+              <Separator />
               <div>
                 <Label className="flex items-center gap-1">
                   Dispute Instructions
-                  <InfoTooltip content="General writing guidelines the AI uses when generating dispute notes for portal submissions. Unlike a rigid template, these are flexible instructions — the AI will vary its language each time while following your tone and content guidelines." />
+                  <InfoTooltip content="General writing guidelines the AI uses when generating dispute notes for portal submissions. The AI combines these with the specific dispute reason from the workflow tree to write unique, human-sounding notes each time." />
                 </Label>
-                <p className="text-xs text-muted-foreground mb-1">Guidelines for the AI when writing dispute notes. The AI will use these along with claim details and the specific dispute reason from the decision tree to generate unique, human-sounding portal submissions each time.</p>
-                <Textarea value={form.disputeInstructions} onChange={e => setForm({ ...form, disputeInstructions: e.target.value })} rows={6} className="text-xs" placeholder="Always reference GPS breadcrumb data when available.&#10;Emphasize that the trip was completed as scheduled.&#10;Keep tone professional but assertive.&#10;Mention specific evidence documents by name." />
+                <p className="text-xs text-muted-foreground mb-1">Guidelines for the AI when writing dispute notes. The workflow tree determines the specific dispute reason — these instructions control the tone and content style.</p>
+                <Textarea value={form.disputeInstructions} onChange={e => setForm({ ...form, disputeInstructions: e.target.value })} rows={5} className="text-xs" placeholder="Always reference GPS breadcrumb data when available.&#10;Emphasize that the trip was completed as scheduled.&#10;Keep tone professional but assertive.&#10;Mention specific evidence documents by name." />
               </div>
-            </TabsContent>
-
-            <TabsContent value="evidence" className="space-y-6 mt-4">
-              <EvidenceRequirementsEditor
-                requirements={form.requirements}
-                onChange={(requirements) => setForm({ ...form, requirements })}
-              />
-              <Separator />
-              <DisputeReasonsEditor
-                reasons={form.reasons}
-                onChange={(reasons) => setForm({ ...form, reasons })}
-              />
             </TabsContent>
 
             <TabsContent value="workflow" className="space-y-4 mt-4 min-w-0 overflow-x-auto">

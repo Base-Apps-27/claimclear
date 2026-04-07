@@ -4,7 +4,6 @@ import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import {
   useListClaims,
   useUpdateClaimStatus,
-  useUpdateClaimEvidence,
   useUpdateClaimWorkflow,
   usePlaceClaimOnHold,
   useCreatePortalSubmission,
@@ -19,7 +18,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send,
-  PauseCircle, FileText, ArrowRight, Eye, Clipboard, TreeDeciduous
+  PauseCircle, FileText, ArrowRight, Eye, TreeDeciduous
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
 import {
@@ -45,7 +43,6 @@ function WorkflowPlayer({
 }) {
   const queryClient = useQueryClient();
   const updateStatus = useUpdateClaimStatus();
-  const updateEvidence = useUpdateClaimEvidence();
   const updateWorkflow = useUpdateClaimWorkflow();
   const placeHold = usePlaceClaimOnHold();
   const createSubmission = useCreatePortalSubmission();
@@ -69,28 +66,17 @@ function WorkflowPlayer({
 
   const workflowProgress = (claim.workflowProgress as Record<string, unknown>) ?? {};
   const currentStep = (workflowProgress.currentStep as string) ?? "review";
-  const checklist = (claim.evidenceChecklist as Record<string, boolean>) ?? {};
-  const [evidenceNotes, setEvidenceNotes] = useState(claim.evidenceNotes || "");
   const [holdReason, setHoldReason] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
 
-  const treeSteps = [
-    { id: "review", label: "Review", icon: Eye, tooltip: "Review the claim details before following the SOP." },
-    { id: "sop", label: "Follow SOP", icon: TreeDeciduous, tooltip: "Follow the decision tree for this error type. Evidence is collected inline at each step." },
+  const steps = [
+    { id: "review", label: "Review", icon: Eye, tooltip: "Review the claim details before following the workflow." },
+    { id: "sop", label: "Follow Workflow", icon: TreeDeciduous, tooltip: "Follow the decision tree for this error type. Evidence is collected inline at each step." },
     { id: "submit", label: "Act", icon: Send, tooltip: "Execute the recommended action from the decision tree." },
   ];
-
-  const genericSteps = [
-    { id: "review", label: "Review Claim", icon: Eye, tooltip: "Review the claim details, confirmation number, dates, and error type before proceeding." },
-    { id: "evidence", label: "Gather Evidence", icon: FileText, tooltip: "Collect supporting evidence: GPS logs, driver statements, trip records, and documentation." },
-    { id: "decide", label: "Decision", icon: Clipboard, tooltip: "Make a decision on how to handle this claim: dispute via portal, resolve internally, or place on hold." },
-    { id: "submit", label: "Submit to Portal", icon: Send, tooltip: "Queue the claim for automated submission to the MAS Transportation Provider Support Portal." },
-  ];
-
-  const steps = hasTree ? treeSteps : genericSteps;
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
   const advanceStep = async (nextStep: string) => {
@@ -103,14 +89,6 @@ function WorkflowPlayer({
 
   const handleStatusUpdate = async (status: string) => {
     await updateStatus.mutateAsync({ id: claim.id, data: { status } });
-    invalidate();
-  };
-
-  const handleSaveEvidence = async () => {
-    await updateEvidence.mutateAsync({
-      id: claim.id,
-      data: { evidenceNotes, evidenceChecklist: checklist },
-    });
     invalidate();
   };
 
@@ -215,34 +193,53 @@ function WorkflowPlayer({
               </div>
             )}
             <Separator />
-            <div className="flex gap-2">
-              {hasTree ? (
+            {hasTree ? (
+              <div className="flex gap-2">
                 <Button
                   size="sm"
                   onClick={() => advanceStep("sop")}
                 >
                   <TreeDeciduous className="h-4 w-4 mr-1" />
-                  Follow SOP <ArrowRight className="h-4 w-4 ml-1" />
+                  Follow Workflow <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
-              ) : (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    handleStatusUpdate("Needs Evidence");
-                    advanceStep("evidence");
-                  }}
+                  variant="outline"
+                  onClick={() => setShowHoldDialog(true)}
                 >
-                  Proceed to Evidence <ArrowRight className="h-4 w-4 ml-1" />
+                  <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowHoldDialog(true)}
-              >
-                <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
-              </Button>
-            </div>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-sm space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">Workflow Required</p>
+                    <p className="text-xs mt-1">
+                      {claim.errorTypeName
+                        ? `The error type "${claim.errorTypeName}" does not have a workflow tree defined. An admin needs to add a decision tree workflow to this error type before claims can be processed.`
+                        : "This claim does not have an error type assigned. Please assign an error type with a workflow tree from the claim details page before processing."
+                      }
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-6">
+                  <Link href={`/claims/${claim.id}`}>
+                    <Button size="sm" variant="outline">
+                      Go to Claim Details
+                    </Button>
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowHoldDialog(true)}
+                  >
+                    <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -252,16 +249,10 @@ function WorkflowPlayer({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TreeDeciduous className="h-4 w-4" />
-              {errorType?.name || "Decision Tree"}
+              {errorType?.name || "Workflow"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {errorType?.guidance && (
-              <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm mb-3">
-                <p className="font-medium text-xs mb-1">SOP Guidance</p>
-                <p className="text-xs whitespace-pre-line">{errorType.guidance}</p>
-              </div>
-            )}
             <div className="min-w-0 overflow-hidden">
               <TreePlayer
                 tree={parsedTree}
@@ -286,127 +277,6 @@ function WorkflowPlayer({
                   }
                 }}
               />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {currentStep === "evidence" && !hasTree && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Gather Evidence</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Evidence Checklist</Label>
-              <div className="space-y-1.5">
-                {(errorType?.evidenceRequirements && typeof errorType.evidenceRequirements === "object"
-                  ? Object.values(errorType.evidenceRequirements as Record<string, Record<string, unknown>>)
-                      .map((r) => (r.label as string) || "")
-                      .filter(Boolean)
-                  : ["GPS breadcrumbs reviewed", "Trip logs verified", "Driver statement obtained", "Photos/documentation attached"]
-                ).map(
-                  (item) => (
-                    <label key={item} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!checklist[item]}
-                        onChange={(e) => {
-                          const updated = { ...checklist, [item]: e.target.checked };
-                          updateEvidence.mutateAsync({
-                            id: claim.id,
-                            data: { evidenceChecklist: updated },
-                          }).then(invalidate);
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      {item}
-                    </label>
-                  ),
-                )}
-              </div>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Evidence Notes</Label>
-              <Textarea
-                value={evidenceNotes}
-                onChange={(e) => setEvidenceNotes(e.target.value)}
-                rows={3}
-                placeholder="Describe the evidence gathered..."
-                className="mt-1"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={handleSaveEvidence}>
-                Save Progress
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  handleSaveEvidence();
-                  advanceStep("decide");
-                }}
-              >
-                Proceed to Decision <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {currentStep === "decide" && !hasTree && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Decision</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Choose how to resolve this claim based on the evidence gathered.
-            </p>
-            <div className="grid grid-cols-1 gap-2">
-              <Button
-                className="justify-start"
-                onClick={() => advanceStep("submit")}
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Submit Dispute to MAS Portal
-                <span className="ml-auto text-xs opacity-70">Automated submission</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="justify-start"
-                onClick={() => setShowHoldDialog(true)}
-              >
-                <PauseCircle className="h-4 w-4 mr-2" />
-                Place on Hold
-                <span className="ml-auto text-xs opacity-70">Pending additional info</span>
-              </Button>
-              <WrapTooltip content="Close this claim as resolved without submitting a dispute.">
-                <Button
-                  variant="outline"
-                  className="justify-start text-green-700"
-                  onClick={async () => {
-                    await updateStatus.mutateAsync({ id: claim.id, data: { status: "Resolved" } });
-                    invalidate();
-                    onComplete();
-                  }}
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Mark as Resolved
-                  <span className="ml-auto text-xs opacity-70">No dispute needed</span>
-                </Button>
-              </WrapTooltip>
-              <WrapTooltip content="Close this claim as denied. Evidence does not support a dispute.">
-                <Button
-                  variant="outline"
-                  className="justify-start text-red-700"
-                  onClick={async () => {
-                    await updateStatus.mutateAsync({ id: claim.id, data: { status: "Denied" } });
-                    invalidate();
-                    onComplete();
-                  }}
-                >
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  Mark as Denied
-                  <span className="ml-auto text-xs opacity-70">Cannot dispute</span>
-                </Button>
-              </WrapTooltip>
             </div>
           </CardContent>
         </Card>
@@ -437,7 +307,7 @@ function WorkflowPlayer({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => advanceStep(hasTree ? "sop" : "decide")}
+                onClick={() => advanceStep("sop")}
               >
                 Back
               </Button>
