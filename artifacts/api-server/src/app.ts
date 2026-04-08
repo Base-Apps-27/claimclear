@@ -59,6 +59,20 @@ const clientDistPath = path.resolve(
   "public",
 );
 
+const trainingGuideDistPath = path.resolve(
+  import.meta.dirname,
+  "..",
+  "..",
+  "training-guide",
+  "dist",
+  "public",
+);
+
+app.use("/training-guide", express.static(trainingGuideDistPath));
+app.get("/training-guide/{*splat}", (_req, res) => {
+  res.sendFile(path.join(trainingGuideDistPath, "index.html"));
+});
+
 app.use(express.static(clientDistPath));
 
 app.get("/{*splat}", (_req, res, next) => {

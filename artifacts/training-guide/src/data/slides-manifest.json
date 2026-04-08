@@ -36,7 +36,7 @@
     "position": 5,
     "filepath": "src/pages/slides/ImportClaims.tsx",
     "title": "Import Claims",
-    "description": "Uploading MAS reports with auto-mapping and classification",
+    "description": "Morning workflow: attestation, export, clean Member Name column, upload to ClaimClear",
     "speakerNotes": ""
   },
   {
@@ -44,7 +44,7 @@
     "position": 6,
     "filepath": "src/pages/slides/SectionWorkflow.tsx",
     "title": "Processing Claims",
-    "description": "Section divider for the core workflow section",
+    "description": "Section divider: Attest, Export, Clean, Upload, Process flow",
     "speakerNotes": ""
   },
   {

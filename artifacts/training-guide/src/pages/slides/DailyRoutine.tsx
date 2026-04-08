@@ -13,18 +13,18 @@ export default function DailyRoutine() {
         <div className="flex gap-[2vw]" style={{ marginTop: "4vh", flex: 1 }}>
           <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
             <span className="font-display text-orange font-extrabold" style={{ fontSize: "2.5vw" }}>AM</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Start with the Dashboard</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Check expiring claims first, then review bot status and any failed submissions</p>
+            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Attestation &amp; Upload</p>
+            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Submit attestation on MAS portal. Export claims that couldn't be submitted, remove the Member Name column, and upload to ClaimClear.</p>
           </div>
           <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
-            <span className="font-display text-accent font-extrabold" style={{ fontSize: "2.5vw" }}>MID</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Process the Work Queue</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Work through Action Required claims -- follow decision trees, collect evidence, queue for submission</p>
+            <span className="font-display text-accent font-extrabold" style={{ fontSize: "2.5vw" }}>DAY</span>
+            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Process Claims</p>
+            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Work through the Action Required queue -- follow decision trees, collect evidence, and queue claims for portal submission</p>
           </div>
           <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
-            <span className="font-display text-white/60 font-extrabold" style={{ fontSize: "2.5vw" }}>PM</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Import and Review</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Import any new rejection reports, verify portal submissions completed, check the Summary page</p>
+            <span className="font-display text-white/60 font-extrabold" style={{ fontSize: "2.5vw" }}>EOD</span>
+            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Review &amp; Verify</p>
+            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Check Dashboard for bot status, verify portal submissions completed, review the Summary page for progress</p>
           </div>
         </div>
       </div>
