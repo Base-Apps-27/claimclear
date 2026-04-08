@@ -37,6 +37,7 @@ import {
   FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
   Settings, Trash2, GripVertical, Maximize, ZoomIn, ZoomOut, RotateCcw,
+  Upload, ExternalLink, Loader2,
 } from "lucide-react";
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0];
@@ -344,7 +345,7 @@ function FlowNode({
                       <FileText className="h-2.5 w-2.5 mr-1" /> {node.evidenceRequirements.length} evidence
                     </Badge>
                   )}
-                  {(node.instructionText || node.instructionImageUrl) && (
+                  {(node.instructionText || node.instructionImageUrl || node.instructionImagePath || node.instructionLinkUrl) && (
                     <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-normal text-[10px]">
                       <Info className="h-2.5 w-2.5 mr-1" /> Instructions
                     </Badge>
@@ -567,7 +568,7 @@ function NodeSettingsPopover({
   updateEvidenceReq: (idx: number, updates: Partial<EvidenceReq>) => void;
   removeEvidenceReq: (idx: number) => void;
 }) {
-  const hasContent = !!(node.helpText || node.instructionText || node.instructionImageUrl || (node.evidenceRequirements && node.evidenceRequirements.length > 0));
+  const hasContent = !!(node.helpText || node.instructionText || node.instructionImageUrl || node.instructionImagePath || node.instructionLinkUrl || (node.evidenceRequirements && node.evidenceRequirements.length > 0));
 
   return (
     <Popover>
@@ -611,12 +612,36 @@ function NodeSettingsPopover({
             rows={3}
             className="text-xs"
           />
-          <Input
-            value={node.instructionImageUrl || ""}
-            onChange={e => updateNode({ instructionImageUrl: e.target.value || undefined })}
-            placeholder="Reference image URL (optional)"
-            className="text-xs h-7"
-          />
+
+          <div className="space-y-1.5">
+            <Label className="text-[10px] text-slate-500 flex items-center gap-1">
+              <ImageIcon className="h-3 w-3" /> Reference Image
+            </Label>
+            <InstructionImageUploader
+              imagePath={node.instructionImagePath}
+              imageUrl={node.instructionImageUrl}
+              onUploaded={(path) => updateNode({ instructionImagePath: path, instructionImageUrl: undefined })}
+              onRemove={() => updateNode({ instructionImagePath: undefined, instructionImageUrl: undefined })}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[10px] text-slate-500 flex items-center gap-1">
+              <ExternalLink className="h-3 w-3" /> Reference Link
+            </Label>
+            <Input
+              value={node.instructionLinkUrl || ""}
+              onChange={e => updateNode({ instructionLinkUrl: e.target.value || undefined })}
+              placeholder="https://example.com/reference-page"
+              className="text-xs h-7"
+            />
+            <Input
+              value={node.instructionLinkLabel || ""}
+              onChange={e => updateNode({ instructionLinkLabel: e.target.value || undefined })}
+              placeholder="Link label (e.g. View MAS Portal Guide)"
+              className="text-xs h-7"
+            />
+          </div>
         </div>
 
         <div className="p-3 space-y-2">
@@ -679,6 +704,98 @@ function NodeSettingsPopover({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function InstructionImageUploader({
+  imagePath,
+  imageUrl,
+  onUploaded,
+  onRemove,
+}: {
+  imagePath?: string;
+  imageUrl?: string;
+  onUploaded: (path: string) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  const currentSrc = preview
+    || (imagePath?.startsWith("/objects/") ? `/api/storage${imagePath}` : imagePath)
+    || (imageUrl?.startsWith("/objects/") ? `/api/storage${imageUrl}` : imageUrl)
+    || null;
+
+  if (currentSrc) {
+    return (
+      <div className="relative group">
+        <img src={currentSrc} alt="Instruction reference" className="rounded border max-h-28 w-auto" />
+        {uploading && (
+          <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+          </div>
+        )}
+        {!uploading && (
+          <button
+            onClick={() => { setPreview(null); onRemove(); }}
+            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          setPreview(URL.createObjectURL(file));
+          setUploading(true);
+          try {
+            const res = await fetch("/api/storage/uploads/request-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                name: file.name,
+                size: file.size,
+                contentType: file.type,
+              }),
+            });
+            const { uploadURL, objectPath } = await res.json();
+            await fetch(uploadURL, {
+              method: "PUT",
+              headers: { "Content-Type": file.type },
+              body: file,
+            });
+            onUploaded(objectPath);
+          } catch {
+            setPreview(null);
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="text-xs gap-1 h-7"
+        onClick={() => inputRef.current?.click()}
+      >
+        <Upload className="h-3 w-3" />
+        Upload Image
+      </Button>
+    </div>
   );
 }
 

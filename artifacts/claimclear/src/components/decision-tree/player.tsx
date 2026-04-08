@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronRight, Undo2, HelpCircle, CheckCircle2,
   Send, Ban, PauseCircle, Mail, FileText, Camera,
-  Upload, X, Image as ImageIcon, Info, Loader2,
+  Upload, X, Image as ImageIcon, Info, Loader2, ExternalLink,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -217,33 +217,35 @@ export function TreePlayer({ tree, onOutcome, isTestMode, claimId, onEvidenceCol
             </div>
           )}
 
-          {currentNode.instructionText && (
+          {(currentNode.instructionText || currentNode.instructionImagePath || currentNode.instructionImageUrl || currentNode.instructionLinkUrl) && (
             <div className="bg-indigo-50 dark:bg-indigo-950/20 rounded-md p-3 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Info className="h-3.5 w-3.5 text-indigo-600" />
-                <span className="text-xs font-medium text-indigo-700">Instructions</span>
-              </div>
-              <p className="text-xs text-indigo-800 whitespace-pre-line">{currentNode.instructionText}</p>
-              {currentNode.instructionImageUrl && (
-                <img
-                  src={currentNode.instructionImageUrl.startsWith("/objects/")
-                    ? `/api/storage${currentNode.instructionImageUrl}`
-                    : currentNode.instructionImageUrl}
-                  alt="Instruction reference"
-                  className="rounded-md border max-h-48 w-auto mt-2"
-                />
+              {currentNode.instructionText && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <Info className="h-3.5 w-3.5 text-indigo-600" />
+                    <span className="text-xs font-medium text-indigo-700">Instructions</span>
+                  </div>
+                  <p className="text-xs text-indigo-800 whitespace-pre-line">{currentNode.instructionText}</p>
+                </>
+              )}
+              {(() => {
+                const imgSrc = currentNode.instructionImagePath || currentNode.instructionImageUrl;
+                if (!imgSrc) return null;
+                const src = imgSrc.startsWith("/objects/") ? `/api/storage${imgSrc}` : imgSrc;
+                return <img src={src} alt="Instruction reference" className="rounded-md border max-h-48 w-auto mt-1" />;
+              })()}
+              {currentNode.instructionLinkUrl && (
+                <a
+                  href={currentNode.instructionLinkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 hover:text-indigo-900 underline underline-offset-2 mt-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {currentNode.instructionLinkLabel || "Open Reference"}
+                </a>
               )}
             </div>
-          )}
-
-          {!currentNode.instructionText && currentNode.instructionImageUrl && (
-            <img
-              src={currentNode.instructionImageUrl.startsWith("/objects/")
-                ? `/api/storage${currentNode.instructionImageUrl}`
-                : currentNode.instructionImageUrl}
-              alt="Instruction reference"
-              className="rounded-md border max-h-48 w-auto"
-            />
           )}
 
           {hasEvidence && (

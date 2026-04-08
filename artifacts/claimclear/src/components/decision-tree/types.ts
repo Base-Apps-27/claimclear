@@ -15,6 +15,9 @@ export interface TreeNode {
   helpText?: string;
   instructionText?: string;
   instructionImageUrl?: string;
+  instructionImagePath?: string;
+  instructionLinkUrl?: string;
+  instructionLinkLabel?: string;
   options: TreeOption[];
   evidenceRequirements?: EvidenceReq[];
 }
