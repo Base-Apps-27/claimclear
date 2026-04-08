@@ -13,6 +13,19 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Link } from "wouter";
 import { Search, Filter, Tag, X, Loader2, CheckCircle2 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+
+const STATUSES = [
+  "New", "Needs Evidence", "Portal Queued", "Generating Email",
+  "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
+] as const;
+
+const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved"] as const;
 
 export default function ClaimsList() {
   useClaimsListEvents();
@@ -23,12 +36,26 @@ export default function ClaimsList() {
   const [bulkErrorTypeId, setBulkErrorTypeId] = useState("");
   const [bulkAssignSuccess, setBulkAssignSuccess] = useState("");
 
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterOutcome, setFilterOutcome] = useState("");
+  const [filterErrorTypeId, setFilterErrorTypeId] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const activeFilterCount = [filterStatus, filterOutcome, filterErrorTypeId].filter(Boolean).length;
+
   const { data, isLoading } = useListClaims({
     search: search || undefined,
+    status: filterStatus || undefined,
+    outcome: filterOutcome || undefined,
     limit: 50,
   }, {
     query: {
-      queryKey: getListClaimsQueryKey({ search: search || undefined, limit: 50 })
+      queryKey: getListClaimsQueryKey({
+        search: search || undefined,
+        status: filterStatus || undefined,
+        outcome: filterOutcome || undefined,
+        limit: 50,
+      })
     }
   });
 
@@ -36,7 +63,11 @@ export default function ClaimsList() {
   const bulkAssign = useBulkAssignErrorType();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
-  const claims: ClaimResponse[] = data?.claims ?? [];
+  let claims: ClaimResponse[] = data?.claims ?? [];
+
+  if (filterErrorTypeId) {
+    claims = claims.filter(c => c.errorTypeId === filterErrorTypeId);
+  }
 
   const allSelected = claims.length > 0 && claims.every((c) => selectedIds.has(c.id));
   const someSelected = selectedIds.size > 0;
@@ -82,6 +113,12 @@ export default function ClaimsList() {
       setTimeout(() => setBulkAssignSuccess(""), 3000);
     } catch {
     }
+  };
+
+  const clearFilters = () => {
+    setFilterStatus("");
+    setFilterOutcome("");
+    setFilterErrorTypeId("");
   };
 
   return (
@@ -162,9 +199,76 @@ export default function ClaimsList() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
-              <Filter className="mr-2 h-4 w-4" /> Filter
-            </Button>
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-muted-foreground gap-1">
+                <X className="h-3 w-3" /> Clear filters
+              </Button>
+            )}
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={activeFilterCount > 0 ? "border-primary text-primary" : ""}>
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <span className="ml-1.5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold h-4 w-4 inline-flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-4 space-y-4" align="end">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Status</Label>
+                  <Select value={filterStatus || "__all__"} onValueChange={v => setFilterStatus(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All statuses</SelectItem>
+                      {STATUSES.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Error Type</Label>
+                  <Select value={filterErrorTypeId || "__all__"} onValueChange={v => setFilterErrorTypeId(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All error types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All error types</SelectItem>
+                      {errorTypes.map(et => (
+                        <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Outcome</Label>
+                  <Select value={filterOutcome || "__all__"} onValueChange={v => setFilterOutcome(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All outcomes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All outcomes</SelectItem>
+                      {OUTCOMES.map(o => (
+                        <SelectItem key={o} value={o}>{o}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-between pt-2 border-t">
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs">
+                    Clear all
+                  </Button>
+                  <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">
+                    Done
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -199,6 +303,12 @@ export default function ClaimsList() {
                   </th>
                   <th className="px-4 py-3 font-medium">
                     <span className="flex items-center gap-1">
+                      Error Description
+                      <InfoTooltip content="The raw error/denial reason from the MAS report. Use this to identify the issue and assign the correct error type." side="bottom" />
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="flex items-center gap-1">
                       Error Type
                       <InfoTooltip content="The classification of the denial or error. Each error type has its own SOP, evidence requirements, and decision tree." side="bottom" />
                     </span>
@@ -226,11 +336,11 @@ export default function ClaimsList() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Loading claims...</td>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">Loading claims...</td>
                   </tr>
                 ) : claims.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No claims found.</td>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No claims found.</td>
                   </tr>
                 ) : (
                   claims.map((claim) => (
@@ -245,12 +355,17 @@ export default function ClaimsList() {
                       <td className="px-4 py-3 font-medium text-primary">
                         <Link href={`/claims/${claim.id}`}>{claim.confNumber}</Link>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(claim.date)}</td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(claim.date)}</td>
                       <td className="px-4 py-3">{claim.clientNumber || '-'}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate" title={claim.errorTypeName || ''}>
-                        {claim.errorTypeName || 'Unknown'}
+                      <td className="px-4 py-3 max-w-[250px]">
+                        <span className="text-xs text-muted-foreground line-clamp-2" title={claim.errorDetails || ''}>
+                          {claim.errorDetails || '-'}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 font-medium">{formatCurrency(claim.claimAmount)}</td>
+                      <td className="px-4 py-3 max-w-[160px] truncate" title={claim.errorTypeName || ''}>
+                        {claim.errorTypeName || <span className="text-muted-foreground italic">Unassigned</span>}
+                      </td>
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(claim.claimAmount)}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={claim.status} />
                       </td>
