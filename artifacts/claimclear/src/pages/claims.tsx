@@ -65,7 +65,9 @@ export default function ClaimsList() {
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
   let claims: ClaimResponse[] = data?.claims ?? [];
 
-  if (filterErrorTypeId) {
+  if (filterErrorTypeId === "__unassigned__") {
+    claims = claims.filter(c => !c.errorTypeId);
+  } else if (filterErrorTypeId) {
     claims = claims.filter(c => c.errorTypeId === filterErrorTypeId);
   }
 
@@ -193,10 +195,18 @@ export default function ClaimsList() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="Search by Conf #, Client, Error..." 
-              className="pl-9"
+              className="pl-9 pr-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {activeFilterCount > 0 && (
@@ -239,6 +249,7 @@ export default function ClaimsList() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">All error types</SelectItem>
+                      <SelectItem value="__unassigned__">Unassigned</SelectItem>
                       {errorTypes.map(et => (
                         <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
                       ))}
