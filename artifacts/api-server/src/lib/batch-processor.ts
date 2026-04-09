@@ -165,50 +165,61 @@ async function processSequentially(job: BatchJob): Promise<void> {
 async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
 ): Promise<void> {
-  const { spawn } = await import("child_process");
-  const path = await import("path");
+  const { runBatchWorker } = await import("../bot/batch-worker");
 
-  return new Promise((resolve, reject) => {
-    const botScript = path.resolve(
-      import.meta.dirname, "..", "bot", "batch-worker.ts"
-    );
+  const workerSub: import("../bot/batch-worker").PortalSubmission = {
+    id: sub.id,
+    confNumber: sub.confNumber || "",
+    serviceDate: sub.serviceDate || "",
+    refNumber: sub.refNumber || "",
+    clientNumber: sub.clientNumber || "",
+    carNumber: sub.carNumber || "",
+    claimAmount: sub.claimAmount,
+    errorTypeName: sub.errorTypeName || "",
+    errorDetails: sub.errorDetails || "",
+    issueType: sub.issueType || "",
+    subject: sub.subject || "",
+    requesterEmail: sub.requesterEmail || "",
+    transportationProviderName: sub.transportationProviderName || "",
+    phoneNumber: sub.phoneNumber || "",
+    invoiceNumber: sub.invoiceNumber || "",
+    gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || "",
+    descriptionHtml: sub.descriptionHtml || "",
+    disputeReason: sub.disputeReason || "",
+    evidenceNotes: sub.evidenceNotes || "",
+    attachmentUrls: [],
+  };
 
-    const child = spawn("npx", ["tsx", botScript], {
-      env: {
-        ...process.env,
-        BATCH_SUBMISSION_ID: String(sub.id),
-        MAS_PORTAL_USERNAME: process.env.MAS_PORTAL_USERNAME || "",
-        MAS_PORTAL_PASSWORD: process.env.MAS_PORTAL_PASSWORD || "",
-        API_BASE_URL: `http://localhost:${process.env.PORT || 8080}/api`,
-        BOT_SERVICE_TOKEN: process.env.BOT_SERVICE_TOKEN || "",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 120000,
+  const dryRun = process.env.BOT_DRY_RUN === "true";
+  const result = await runBatchWorker(workerSub, dryRun);
+
+  if (dryRun) {
+    await db.update(portalSubmissionsTable).set({
+      status: "dry_run",
+    }).where(eq(portalSubmissionsTable.id, sub.id));
+
+    await db.insert(botActivityLogTable).values({
+      submissionId: sub.id,
+      botInstanceId: null,
+      action: "dry_run_complete",
+      success: true,
+      message: `Dry run screenshot saved: ${result.screenshotPath}`,
     });
+  } else {
+    await db.update(portalSubmissionsTable).set({
+      status: "submitted",
+      portalTicketId: result.ticketId || null,
+      submittedAt: new Date(),
+    }).where(eq(portalSubmissionsTable.id, sub.id));
 
-    let stdout = "";
-    let stderr = "";
+    await db.insert(botActivityLogTable).values({
+      submissionId: sub.id,
+      botInstanceId: null,
+      action: "submission_complete",
+      success: true,
+      message: `Submitted successfully. Ticket: ${result.ticketId || "N/A"}`,
+    });
+  }
 
-    child.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        logger.info({ submissionId: sub.id }, "Batch worker completed successfully");
-        resolve();
-      } else {
-        const msg = stderr.trim() || stdout.trim() || `Worker exited with code ${code}`;
-        logger.error({ submissionId: sub.id, code, stderr: stderr.slice(-500) }, "Batch worker failed");
-        reject(new Error(msg.slice(0, 500)));
-      }
-    });
-
-    child.on("error", (err) => {
-      reject(new Error(`Failed to spawn batch worker: ${err.message}`));
-    });
-  });
+  logger.info({ submissionId: sub.id, ticketId: result.ticketId, dryRun }, "Batch worker completed successfully");
 }

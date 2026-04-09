@@ -1,22 +1,12 @@
 import { chromium } from "playwright";
 import path from "path";
 import fs from "fs";
+import { logger } from "../lib/logger";
 
-const SUBMISSION_ID = parseInt(process.env.BATCH_SUBMISSION_ID || "0", 10);
-const API_BASE = process.env.API_BASE_URL || "http://localhost:8080/api";
-const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://mastransportation.force.com/support";
+const PORTAL_URL = "https://mastransportation.force.com/support";
 const SESSION_DIR = path.resolve("bot-session");
-const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
-const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
-const BOT_TOKEN = process.env.BOT_SERVICE_TOKEN || "";
-const BOT_DRY_RUN = process.env.BOT_DRY_RUN === "true";
 
-if (!SUBMISSION_ID) {
-  console.error("[BATCH-WORKER] BATCH_SUBMISSION_ID is required");
-  process.exit(1);
-}
-
-interface PortalSubmission {
+export interface PortalSubmission {
   id: number;
   confNumber: string;
   serviceDate: string;
@@ -39,23 +29,6 @@ interface PortalSubmission {
   attachmentUrls: string[];
 }
 
-async function api(endpoint: string, opts: RequestInit = {}): Promise<unknown> {
-  const url = `${API_BASE}${endpoint}`;
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Bot-Token": BOT_TOKEN,
-      ...(opts.headers as Record<string, string>),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${opts.method || "GET"} ${endpoint} failed (${res.status}): ${text}`);
-  }
-  return res.json();
-}
-
 function buildDescription(sub: PortalSubmission): string {
   if (sub.descriptionHtml?.trim()) return sub.descriptionHtml;
 
@@ -73,22 +46,15 @@ Dispute Reason: ${sub.disputeReason || "N/A"}
 Evidence Notes: ${sub.evidenceNotes || "N/A"}`;
 }
 
-async function run() {
+export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Promise<{ ticketId?: string; screenshotPath?: string }> {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
   }
 
-  console.log(`[BATCH-WORKER] Processing submission ${SUBMISSION_ID}`);
+  const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
+  const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 
-  const sub = await api(`/bot/portal-submissions/${SUBMISSION_ID}/claim`, {
-    method: "POST",
-    body: JSON.stringify({ botInstanceId: null }),
-  }) as PortalSubmission;
-
-  if (!sub) {
-    console.error("[BATCH-WORKER] Could not claim submission");
-    process.exit(1);
-  }
+  logger.info({ submissionId: sub.id }, "Batch worker: launching browser");
 
   const browser = await chromium.launch({
     headless: true,
@@ -96,10 +62,9 @@ async function run() {
   });
 
   let context;
-  if (fs.existsSync(path.join(SESSION_DIR, "state.json"))) {
-    context = await browser.newContext({
-      storageState: path.join(SESSION_DIR, "state.json"),
-    });
+  const statePath = path.join(SESSION_DIR, "state.json");
+  if (fs.existsSync(statePath)) {
+    context = await browser.newContext({ storageState: statePath });
   } else {
     context = await browser.newContext();
   }
@@ -116,7 +81,7 @@ async function run() {
         throw new Error("Portal login required - MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
 
-      console.log("[BATCH-WORKER] Login required...");
+      logger.info({ submissionId: sub.id }, "Batch worker: login required");
       await loginButton.click();
       await page.waitForTimeout(2000);
 
@@ -190,63 +155,43 @@ async function run() {
       if (descTextarea) await descTextarea.fill(sub.descriptionHtml || buildDescription(sub));
     }
 
-    console.log("[BATCH-WORKER] Form fields populated");
+    logger.info({ submissionId: sub.id }, "Batch worker: form fields populated");
 
-    if (BOT_DRY_RUN) {
-      const screenshotPath = path.join(SESSION_DIR, `dry-run-${SUBMISSION_ID}-${Date.now()}.png`);
+    if (dryRun) {
+      const screenshotPath = path.join(SESSION_DIR, `dry-run-${sub.id}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
-      await api(`/bot/portal-submissions/${SUBMISSION_ID}/complete-dry-run`, {
-        method: "POST",
-        body: JSON.stringify({ botInstanceId: null, screenshotPath }),
-      });
-      console.log("[BATCH-WORKER] Dry run completed");
-    } else {
-      const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit")');
-      if (submitButton) {
-        await submitButton.click();
-        await page.waitForTimeout(5000);
-
-        const confirmationText = await page.textContent("body");
-        const ticketMatch = confirmationText?.match(/(?:ticket|request|case|confirmation)\s*(?:#|number|id)?\s*[:.]?\s*(\w+)/i);
-        const ticketId = ticketMatch ? ticketMatch[1] : `portal-${Date.now()}`;
-
-        await api(`/bot/portal-submissions/${SUBMISSION_ID}/complete`, {
-          method: "POST",
-          body: JSON.stringify({ portalTicketId: ticketId, botInstanceId: null }),
-        });
-        console.log(`[BATCH-WORKER] Submission completed with ticket ${ticketId}`);
-      } else {
-        throw new Error("Submit button not found on portal page");
-      }
+      await context.storageState({ path: statePath });
+      await page.close();
+      await browser.close();
+      logger.info({ submissionId: sub.id }, "Batch worker: dry run completed");
+      return { screenshotPath };
     }
 
-    await context.storageState({ path: path.join(SESSION_DIR, "state.json") });
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.error(`[BATCH-WORKER] Failed: ${errMsg}`);
+    const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit")');
+    if (submitButton) {
+      await submitButton.click();
+      await page.waitForTimeout(5000);
 
+      const confirmationText = await page.textContent("body");
+      const ticketMatch = confirmationText?.match(/(?:ticket|request|case|confirmation)\s*(?:#|number|id)?\s*[:.]?\s*(\w+)/i);
+      const ticketId = ticketMatch ? ticketMatch[1] : `portal-${Date.now()}`;
+
+      await context.storageState({ path: statePath });
+      await page.close();
+      await browser.close();
+      logger.info({ submissionId: sub.id, ticketId }, "Batch worker: submission completed");
+      return { ticketId };
+    } else {
+      throw new Error("Submit button not found on portal page");
+    }
+  } catch (error) {
     try {
-      const screenshotPath = path.join(SESSION_DIR, `error-${SUBMISSION_ID}-${Date.now()}.png`);
+      const screenshotPath = path.join(SESSION_DIR, `error-${sub.id}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
     } catch {}
 
-    await api(`/bot/portal-submissions/${SUBMISSION_ID}/fail`, {
-      method: "POST",
-      body: JSON.stringify({ errorMessage: errMsg, botInstanceId: null }),
-    }).catch(() => {});
-
-    await page.close();
-    await browser.close();
-    process.exit(1);
+    await page.close().catch(() => {});
+    await browser.close().catch(() => {});
+    throw error;
   }
-
-  await page.close();
-  await browser.close();
-  console.log("[BATCH-WORKER] Done");
-  process.exit(0);
 }
-
-run().catch(err => {
-  console.error("[BATCH-WORKER] Fatal:", err);
-  process.exit(1);
-});
