@@ -24,6 +24,7 @@ import storageRouter from "./storage";
 import evidenceTypesRouter from "./evidence-types";
 import claimEvidenceRouter from "./claim-evidence";
 import appSettingsRouter from "./app-settings";
+import batchJobsRouter from "./batch-jobs";
 
 const router: IRouter = Router();
 
@@ -53,6 +54,7 @@ router.use(dashboardRouter);
 router.use(aiEmailRouter);
 router.use(sopAnalyzerRouter);
 router.use(appSettingsRouter);
+router.use(batchJobsRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

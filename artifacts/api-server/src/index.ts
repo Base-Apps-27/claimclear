@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import cron from "node-cron";
+import { startBatchJob } from "./lib/batch-processor";
 
 const rawPort = process.env["PORT"];
 
@@ -23,3 +25,13 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+cron.schedule("0 0 * * *", async () => {
+  logger.info("Midnight cron: processing all pending portal submissions");
+  try {
+    const job = await startBatchJob("all", "Midnight Auto-Process");
+    logger.info({ batchId: job.id, total: job.total }, "Midnight batch job started");
+  } catch (err) {
+    logger.info("Midnight cron: no pending submissions to process");
+  }
+}, { timezone: "America/New_York" });
