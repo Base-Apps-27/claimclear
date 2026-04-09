@@ -233,8 +233,14 @@ function NaturalLanguageBuilder({
       }
       const data = await res.json();
       if (data.decisionTree) {
-        const converted = legacyToTree(data.decisionTree as LegacyTreeNode);
-        setPreview(converted);
+        const rawTree = data.decisionTree as Record<string, unknown>;
+        let converted: DecisionTree | null = null;
+        if ("nodes" in rawTree && "rootId" in rawTree) {
+          converted = rawTree as unknown as DecisionTree;
+        } else if ("question" in rawTree) {
+          converted = legacyToTree(rawTree as unknown as LegacyTreeNode);
+        }
+        if (converted) setPreview(converted);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to generate tree");
@@ -321,13 +327,21 @@ export default function ErrorTypes() {
       const result = await analyzeSOP.mutateAsync({
         data: { sopText, errorTypeName: form.name || undefined },
       });
-      const legacyTree = result.decisionTree as unknown as LegacyTreeNode | null;
+      const rawTree = result.decisionTree as Record<string, unknown> | null;
+      let convertedTree: DecisionTree | null = null;
+      if (rawTree) {
+        if ("nodes" in rawTree && "rootId" in rawTree) {
+          convertedTree = rawTree as unknown as DecisionTree;
+        } else if ("question" in rawTree) {
+          convertedTree = legacyToTree(rawTree as unknown as LegacyTreeNode);
+        }
+      }
       setForm({
         name: result.name || form.name || "",
         category: result.category || "",
         description: result.description || "",
         disputeInstructions: form.disputeInstructions,
-        decisionTree: legacyTree ? legacyToTree(legacyTree) : null,
+        decisionTree: convertedTree,
       });
     } catch (err: unknown) {
       setSopError(err instanceof Error ? err.message : "Analysis failed");
