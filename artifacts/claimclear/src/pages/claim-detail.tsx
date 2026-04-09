@@ -34,9 +34,11 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
-  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2
+  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous
 } from "lucide-react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
+import { RefNumber } from "@/components/ref-number";
+import { WorkflowPlayer } from "@/components/workflow-player";
 
 function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
   const { data: botActivity } = useListBotActivity(sub.id, {
@@ -347,7 +349,6 @@ export default function ClaimDetail() {
                 {[
                   { label: "Conf #", key: "confNumber" },
                   { label: "Date", key: "date" },
-                  { label: "Ref #", key: "refNumber" },
                   { label: "Client #", key: "clientNumber" },
                   { label: "Car #", key: "carNumber" },
                   { label: "Amount", key: "claimAmount" },
@@ -368,6 +369,20 @@ export default function ClaimDetail() {
                     )}
                   </div>
                 ))}
+                <div className="col-span-2">
+                  <Label className="text-xs text-muted-foreground">Ref #</Label>
+                  {editing ? (
+                    <Input
+                      value={editData.refNumber || ""}
+                      onChange={e => setEditData({ ...editData, refNumber: e.target.value })}
+                      className="mt-1"
+                    />
+                  ) : (
+                    <div className="mt-1">
+                      <RefNumber value={claim.refNumber} className="text-sm" />
+                    </div>
+                  )}
+                </div>
                 <div className="col-span-2">
                   <Label className="text-xs text-muted-foreground">Error Details</Label>
                   {editing ? (
@@ -516,6 +531,23 @@ export default function ClaimDetail() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TreeDeciduous className="h-5 w-5" />
+                Dispute Workflow
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WorkflowPlayer
+                claim={claim}
+                showClaimContext={false}
+                showDetailsLink={false}
+                onComplete={() => invalidate()}
+              />
             </CardContent>
           </Card>
 
@@ -716,54 +748,6 @@ export default function ClaimDetail() {
             </Card>
           )}
 
-          {claim.workflowProgress && typeof claim.workflowProgress === "object" && (
-            <Card>
-              <CardHeader><CardTitle>Workflow Progress</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {(() => {
-                    const progress = claim.workflowProgress as Record<string, unknown>;
-                    const currentStep = (progress.currentStep as string) || "review";
-                    const isSopFlow = currentStep === "sop" ||
-                      (claim.errorTypeName && currentStep !== "evidence" && currentStep !== "decide");
-                    const steps = isSopFlow ? [
-                      { id: "review", label: "Review", icon: Eye },
-                      { id: "sop", label: "Follow SOP", icon: FileText },
-                      { id: "submit", label: "Act", icon: Send },
-                    ] : [
-                      { id: "review", label: "Review", icon: Eye },
-                      { id: "evidence", label: "Evidence", icon: FileText },
-                      { id: "decide", label: "Decision", icon: ChevronRight },
-                      { id: "submit", label: "Submit", icon: Send },
-                    ];
-                    const currentIndex = steps.findIndex(s => s.id === currentStep);
-                    return (
-                      <div className="flex items-center gap-1">
-                        {steps.map((step, i) => {
-                          const StepIcon = step.icon;
-                          const isComplete = i < currentIndex;
-                          const isCurrent = i === currentIndex;
-                          return (
-                            <div key={step.id} className="flex items-center">
-                              {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-0.5" />}
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
-                                isCurrent ? "bg-primary text-primary-foreground" :
-                                isComplete ? "bg-green-100 text-green-800" :
-                                "bg-muted text-muted-foreground"
-                              }`}>
-                                {isComplete ? <CheckCircle className="h-3 w-3" /> : <StepIcon className="h-3 w-3" />}
-                                {step.label}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         <div className="space-y-6">
