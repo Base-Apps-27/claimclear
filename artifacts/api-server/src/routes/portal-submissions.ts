@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
@@ -132,6 +132,13 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
 
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const existingDrafts = await db.select().from(portalSubmissionsTable)
+    .where(and(eq(portalSubmissionsTable.claimId, claimId), eq(portalSubmissionsTable.status, "draft")));
+  for (const draft of existingDrafts) {
+    await db.update(portalSubmissionsTable).set({ status: "cancelled" })
+      .where(eq(portalSubmissionsTable.id, draft.id));
+  }
 
   const settings = await getPortalSettings();
 

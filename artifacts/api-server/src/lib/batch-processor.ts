@@ -187,7 +187,9 @@ async function processViaExternalBot(
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
-    attachmentUrls: [],
+    attachmentUrls: Array.isArray(sub.attachmentUrls)
+      ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
+      : [],
   };
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
@@ -209,7 +211,7 @@ async function processViaExternalBot(
     await db.update(portalSubmissionsTable).set({
       status: "submitted",
       portalTicketId: result.ticketId || null,
-      submittedAt: new Date(),
+      submittedAt: new Date().toISOString(),
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     await db.insert(botActivityLogTable).values({

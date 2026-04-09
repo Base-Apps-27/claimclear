@@ -6,7 +6,6 @@ import {
   useUpdateClaimWorkflow,
   usePlaceClaimOnHold,
   useRemoveClaimHold,
-  useCreatePortalSubmission,
   useGeneratePortalSubmissionPreview,
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
@@ -57,7 +56,6 @@ export function WorkflowPlayer({
   const updateWorkflow = useUpdateClaimWorkflow();
   const placeHold = usePlaceClaimOnHold();
   const removeHold = useRemoveClaimHold();
-  const createSubmission = useCreatePortalSubmission();
   const generatePreview = useGeneratePortalSubmissionPreview();
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
@@ -183,16 +181,8 @@ export function WorkflowPlayer({
   const handleConfirmSubmit = async () => {
     if (!draftSubmission) return;
     await confirmSubmission.mutateAsync({ id: draftSubmission.id });
-    await handleStatusUpdate("Portal Queued");
     setDraftSubmission(null);
-    onComplete();
-  };
-
-  const handlePortalSubmit = async () => {
-    await createSubmission.mutateAsync({
-      data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
-    });
-    await handleStatusUpdate("Portal Queued");
+    invalidate();
     onComplete();
   };
 

@@ -318,7 +318,7 @@ export default function PortalSubmissions() {
                   )}
                   <span className="font-mono font-semibold text-sm">{sub.confNumber}</span>
                   <WrapTooltip content={statusDescriptions[sub.status] || sub.status}>
-                    <Badge className={`${statusColors[sub.status] || ""} cursor-help`} variant="outline">{sub.status === "dry_run" ? "Dry Run" : sub.status}</Badge>
+                    <Badge className={`${statusColors[sub.status] || ""} cursor-help`} variant="outline">{sub.status === "dry_run" ? "Dry Run" : sub.status === "draft" ? "Draft" : sub.status === "in_progress" ? "In Progress" : sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}</Badge>
                   </WrapTooltip>
                   {sub.portalTicketId && (
                     <WrapTooltip content="The ticket ID assigned by the MAS portal after submission.">
@@ -348,8 +348,8 @@ export default function PortalSubmissions() {
                       </Button>
                     </WrapTooltip>
                   )}
-                  {sub.status === "pending" && (
-                    <WrapTooltip content="Cancel this submission.">
+                  {(sub.status === "pending" || sub.status === "draft") && (
+                    <WrapTooltip content={sub.status === "draft" ? "Discard this draft." : "Cancel this submission."}>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleCancel(sub.id)}>
                         <XCircle className="h-4 w-4" />
                       </Button>
