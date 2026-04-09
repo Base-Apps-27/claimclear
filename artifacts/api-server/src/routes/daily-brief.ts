@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { claimsTable, portalSubmissionsTable, usersTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
+import { sendEmail, isOutlookConnected } from "../lib/outlook";
 
 const router: IRouter = Router();
 
@@ -134,10 +135,31 @@ router.post("/", asyncHandler(async (_req, res): Promise<void> => {
 
   const html = generateBriefHtml(openCount, expiring, expired, totalAtRisk, submitted, failed);
 
-  const smtpConfigured = !!(process.env.SMTP_HOST && process.env.SMTP_USER);
   let emailSent = false;
+  let emailMethod = "none";
 
-  if (smtpConfigured) {
+  let recipients = process.env.DAILY_BRIEF_RECIPIENTS;
+  if (!recipients) {
+    const usersWithEmail = await db.select({ email: usersTable.email }).from(usersTable).where(isNotNull(usersTable.email));
+    const emails = usersWithEmail.map(u => u.email).filter(Boolean);
+    recipients = emails.length > 0 ? emails.join(",") : undefined;
+  }
+
+  const subject = `Agape ClaimClear Daily Brief - ${openCount} open claims, ${expired.length} expired`;
+
+  const outlookAvailable = await isOutlookConnected();
+
+  if (outlookAvailable && recipients) {
+    try {
+      await sendEmail({ to: recipients, subject, html });
+      emailSent = true;
+      emailMethod = "outlook";
+    } catch (err) {
+      console.error("[DAILY BRIEF] Outlook send failed:", err);
+    }
+  }
+
+  if (!emailSent && process.env.SMTP_HOST && process.env.SMTP_USER && recipients) {
     try {
       const nodemailer = await import("nodemailer");
       const transporter = nodemailer.createTransport({
@@ -150,30 +172,23 @@ router.post("/", asyncHandler(async (_req, res): Promise<void> => {
         },
       });
 
-      let recipients = process.env.DAILY_BRIEF_RECIPIENTS;
-      if (!recipients) {
-        const usersWithEmail = await db.select({ email: usersTable.email }).from(usersTable).where(isNotNull(usersTable.email));
-        const emails = usersWithEmail.map(u => u.email).filter(Boolean);
-        recipients = emails.length > 0 ? emails.join(",") : process.env.SMTP_USER;
-      }
-
-      if (recipients) {
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM || process.env.SMTP_USER,
-          to: recipients,
-          subject: `Agape ClaimClear Daily Brief - ${openCount} open claims, ${expired.length} expired`,
-          html,
-        });
-        emailSent = true;
-      }
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: recipients,
+        subject,
+        html,
+      });
+      emailSent = true;
+      emailMethod = "smtp";
     } catch (err) {
-      console.error("[DAILY BRIEF] Failed to send email:", err);
+      console.error("[DAILY BRIEF] SMTP send failed:", err);
     }
   }
 
-  const message = `${openCount} open claims, ${expired.length} expired, $${totalAtRisk.toFixed(2)} at risk. ${submitted} submitted, ${failed} failed portal submissions.${emailSent ? " Email sent." : smtpConfigured ? " Email failed." : " SMTP not configured."}`;
+  const message = `${openCount} open claims, ${expired.length} expired, $${totalAtRisk.toFixed(2)} at risk. ${submitted} submitted, ${failed} failed portal submissions.${emailSent ? ` Email sent via ${emailMethod}.` : " Email not sent (no provider configured or no recipients)."}`;
   res.json({
     sent: emailSent,
+    method: emailMethod,
     message,
   });
 }));

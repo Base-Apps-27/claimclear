@@ -56,5 +56,5 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **Anthropic Claude:** AI capabilities for SOP analysis, dispute note generation (portal submissions), and email generation, accessed via Replit AI Integrations proxy. Portal dispute notes are generated at queue time (not in the bot process) using the error type's `disputeInstructions` field for tone/content guidelines and the decision tree's `outcomeLabel` as the specific dispute reason.
 - **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
 - **Google Cloud Storage (GCS):** Used for object storage of evidence files.
-- **SMTP Service:** For sending daily brief emails.
+- **Microsoft Outlook (Graph API):** Primary email sending via Replit connector (Office 365). Used for daily brief emails. Falls back to SMTP if Outlook is unavailable. Utility: `artifacts/api-server/src/lib/outlook.ts` exports `sendEmail()` and `isOutlookConnected()`.
 - **Replit Auth:** OpenID Connect with PKCE for user authentication.
