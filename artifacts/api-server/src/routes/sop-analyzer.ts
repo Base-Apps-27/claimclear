@@ -10,12 +10,15 @@ function generateNodeId(): string {
 
 interface LegacyNode {
   question: string;
+  helpText?: string;
+  instructionText?: string;
   yesLabel?: string;
   noLabel?: string;
   yesAction?: string;
   noAction?: string;
   yesChild?: LegacyNode;
   noChild?: LegacyNode;
+  evidenceRequirements?: { key: string; label: string; required: boolean; acceptsImage?: boolean; acceptsText?: boolean }[];
 }
 
 type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
@@ -72,7 +75,11 @@ function legacyToDecisionTree(legacy: LegacyNode): DecisionTree {
       options.push({ label: node.noLabel || "No", outcomeType, outcomeLabel: node.noAction });
     }
 
-    nodes.push({ id, question: node.question, options });
+    const treeNode: TreeNode = { id, question: node.question, options };
+    if (node.helpText) treeNode.helpText = node.helpText;
+    if (node.instructionText) (treeNode as any).instructionText = node.instructionText;
+    if (node.evidenceRequirements?.length) treeNode.evidenceRequirements = node.evidenceRequirements;
+    nodes.push(treeNode);
     return id;
   }
 
@@ -121,12 +128,20 @@ Respond with valid JSON in exactly this format:
   ],
   "decisionTree": {
     "question": "First yes/no decision question based on the SOP?",
+    "helpText": "Guidance text explaining what to look for when answering this question (e.g., where to check in dispatch, what records to review)",
+    "instructionText": "Step-by-step instructions for this decision point (e.g., 'Open the MAS portal > Navigate to Manage Trips > Search by invoice number')",
+    "evidenceRequirements": [
+      { "key": "evidence_key", "label": "What evidence to collect at this step", "required": true, "acceptsImage": true, "acceptsText": false }
+    ],
     "yesLabel": "Yes",
     "noLabel": "No",
     "yesAction": "Action if this is a leaf (e.g., 'Submit Portal Dispute')",
     "noAction": "Action if this is a leaf (e.g., 'Deny Claim Internally')",
     "yesChild": {
       "question": "Follow-up question if Yes branch needs more decisions?",
+      "helpText": "Context and guidance for this specific decision",
+      "instructionText": "Detailed steps for how to determine the answer",
+      "evidenceRequirements": [],
       "yesLabel": "Yes",
       "noLabel": "No",
       "yesAction": "Submit Portal Dispute",
@@ -140,6 +155,9 @@ Important:
 - Generate at least 2-3 dispute reasons with detailed key points
 - Generate at least 2-3 evidence requirements
 - The decision tree should be a nested structure with question/yesLabel/noLabel/yesAction/noAction/yesChild/noChild fields
+- EVERY node MUST include "helpText" with guidance on what to look for or check when answering that question
+- EVERY node SHOULD include "instructionText" with step-by-step instructions for the decision point (e.g., where to navigate in the portal, what system to check)
+- Include "evidenceRequirements" array on nodes where evidence should be collected. Each item has: key (snake_case identifier), label (human-readable description), required (boolean), acceptsImage (true if screenshot/photo evidence), acceptsText (true if text/written evidence)
 - Each node has a "question" (the yes/no decision), "yesLabel"/"noLabel" (button labels), and either a child node (yesChild/noChild for further branching) or an action string (yesAction/noAction for terminal steps)
 - If a branch has a child node, omit the action for that branch. If it has an action, omit the child.
 - Common terminal actions: "Submit Portal Dispute", "Deny Claim Internally", "Place on Hold - [reason]", "Resolve - No Dispute Needed"
@@ -215,6 +233,11 @@ ${description}
 Create a nested decision tree in JSON format. The tree should use this structure:
 {
   "question": "The yes/no or multi-choice question to ask",
+  "helpText": "Guidance text explaining what to look for when answering this question (e.g., where to check in dispatch, what records to review, what constitutes a valid answer)",
+  "instructionText": "Step-by-step instructions for this decision point (e.g., 'Open the MAS portal > Navigate to Manage Trips > Search by invoice number')",
+  "evidenceRequirements": [
+    { "key": "snake_case_key", "label": "Description of evidence to collect", "required": true, "acceptsImage": true, "acceptsText": false }
+  ],
   "yesLabel": "Label for the yes/affirmative option",
   "noLabel": "Label for the no/negative option",
   "yesAction": "Terminal action if yes is a leaf (e.g., 'Submit Portal Dispute')",
@@ -225,6 +248,9 @@ Create a nested decision tree in JSON format. The tree should use this structure
 
 Rules:
 - Each node must have a clear "question" that staff can answer
+- EVERY node MUST include "helpText" with context about what to check or look for
+- EVERY node SHOULD include "instructionText" with step-by-step instructions (where to navigate, what system to check, what to click)
+- Include "evidenceRequirements" on nodes where evidence should be collected (screenshots, documents, written explanations). Each item needs: key (snake_case), label (human-readable), required (boolean), acceptsImage (true for screenshots/photos), acceptsText (true for written input)
 - Use yesChild/noChild for branching, yesAction/noAction for terminal outcomes
 - If a branch has a child node, do NOT include an action for that branch
 - Common terminal actions: "Submit Portal Dispute", "Resolve Internally - Deny Claim", "Place on Hold - [reason]", "Send Dispute Email"

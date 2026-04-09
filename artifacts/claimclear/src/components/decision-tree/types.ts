@@ -36,12 +36,15 @@ export interface DecisionTree {
 
 export interface LegacyTreeNode {
   question: string;
+  helpText?: string;
+  instructionText?: string;
   yesLabel?: string;
   noLabel?: string;
   yesAction?: string;
   noAction?: string;
   yesChild?: LegacyTreeNode;
   noChild?: LegacyTreeNode;
+  evidenceRequirements?: EvidenceReq[];
 }
 
 export interface WorkflowStep {
@@ -105,7 +108,11 @@ export function legacyToTree(legacy: LegacyTreeNode): DecisionTree {
       options.push({ label: noLabel });
     }
 
-    nodes.push({ id, question: leg.question, options });
+    const node: TreeNode = { id, question: leg.question, options };
+    if (leg.helpText) node.helpText = leg.helpText;
+    if (leg.instructionText) node.instructionText = leg.instructionText;
+    if (leg.evidenceRequirements?.length) node.evidenceRequirements = leg.evidenceRequirements;
+    nodes.push(node);
     return id;
   }
 
