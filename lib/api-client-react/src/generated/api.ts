@@ -77,6 +77,7 @@ import type {
   UpdateClaimOutcomeBody,
   UpdateClaimStatusBody,
   UpdateErrorTypeBody,
+  UpdatePortalSubmissionDraftBody,
   UpdateWorkflowBody,
   UploadUrlRequest,
   UploadUrlResponse,
@@ -3166,6 +3167,276 @@ export const useCancelPortalSubmission = <
   TContext
 > => {
   return useMutation(getCancelPortalSubmissionMutationOptions(options));
+};
+
+/**
+ * @summary Generate a draft portal submission for review before queuing
+ */
+export const getGeneratePortalSubmissionPreviewUrl = () => {
+  return `/api/portal-submissions/generate-preview`;
+};
+
+export const generatePortalSubmissionPreview = async (
+  createPortalSubmissionBody: CreatePortalSubmissionBody,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getGeneratePortalSubmissionPreviewUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createPortalSubmissionBody),
+    },
+  );
+};
+
+export const getGeneratePortalSubmissionPreviewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePortalSubmissionPreview>>,
+    TError,
+    { data: BodyType<CreatePortalSubmissionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generatePortalSubmissionPreview>>,
+  TError,
+  { data: BodyType<CreatePortalSubmissionBody> },
+  TContext
+> => {
+  const mutationKey = ["generatePortalSubmissionPreview"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generatePortalSubmissionPreview>>,
+    { data: BodyType<CreatePortalSubmissionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generatePortalSubmissionPreview(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GeneratePortalSubmissionPreviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generatePortalSubmissionPreview>>
+>;
+export type GeneratePortalSubmissionPreviewMutationBody =
+  BodyType<CreatePortalSubmissionBody>;
+export type GeneratePortalSubmissionPreviewMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a draft portal submission for review before queuing
+ */
+export const useGeneratePortalSubmissionPreview = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePortalSubmissionPreview>>,
+    TError,
+    { data: BodyType<CreatePortalSubmissionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generatePortalSubmissionPreview>>,
+  TError,
+  { data: BodyType<CreatePortalSubmissionBody> },
+  TContext
+> => {
+  return useMutation(
+    getGeneratePortalSubmissionPreviewMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Update a draft submission before queuing
+ */
+export const getUpdatePortalSubmissionDraftUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/update-draft`;
+};
+
+export const updatePortalSubmissionDraft = async (
+  id: number,
+  updatePortalSubmissionDraftBody: UpdatePortalSubmissionDraftBody,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getUpdatePortalSubmissionDraftUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updatePortalSubmissionDraftBody),
+    },
+  );
+};
+
+export const getUpdatePortalSubmissionDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePortalSubmissionDraft>>,
+    TError,
+    { id: number; data: BodyType<UpdatePortalSubmissionDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePortalSubmissionDraft>>,
+  TError,
+  { id: number; data: BodyType<UpdatePortalSubmissionDraftBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePortalSubmissionDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePortalSubmissionDraft>>,
+    { id: number; data: BodyType<UpdatePortalSubmissionDraftBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePortalSubmissionDraft(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePortalSubmissionDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePortalSubmissionDraft>>
+>;
+export type UpdatePortalSubmissionDraftMutationBody =
+  BodyType<UpdatePortalSubmissionDraftBody>;
+export type UpdatePortalSubmissionDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a draft submission before queuing
+ */
+export const useUpdatePortalSubmissionDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePortalSubmissionDraft>>,
+    TError,
+    { id: number; data: BodyType<UpdatePortalSubmissionDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePortalSubmissionDraft>>,
+  TError,
+  { id: number; data: BodyType<UpdatePortalSubmissionDraftBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePortalSubmissionDraftMutationOptions(options));
+};
+
+/**
+ * @summary Confirm a draft submission and move it to pending status for bot processing
+ */
+export const getConfirmPortalSubmissionUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/confirm`;
+};
+
+export const confirmPortalSubmission = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getConfirmPortalSubmissionUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getConfirmPortalSubmissionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["confirmPortalSubmission"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmPortalSubmission>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmPortalSubmission(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmPortalSubmissionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmPortalSubmission>>
+>;
+
+export type ConfirmPortalSubmissionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Confirm a draft submission and move it to pending status for bot processing
+ */
+export const useConfirmPortalSubmission = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getConfirmPortalSubmissionMutationOptions(options));
 };
 
 /**

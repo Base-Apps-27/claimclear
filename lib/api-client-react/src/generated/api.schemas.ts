@@ -337,11 +337,27 @@ export interface UpdateErrorTypeBody {
 export interface AppSettingsResponse {
   /** @nullable */
   default_dispute_instructions?: string | null;
+  /** @nullable */
+  portal_provider_name?: string | null;
+  /** @nullable */
+  portal_contact_email?: string | null;
+  /** @nullable */
+  portal_contact_phone?: string | null;
+  /** @nullable */
+  portal_default_gps_breadcrumbs?: string | null;
 }
 
 export interface UpdateAppSettingsBody {
   /** @nullable */
   default_dispute_instructions?: string | null;
+  /** @nullable */
+  portal_provider_name?: string | null;
+  /** @nullable */
+  portal_contact_email?: string | null;
+  /** @nullable */
+  portal_contact_phone?: string | null;
+  /** @nullable */
+  portal_default_gps_breadcrumbs?: string | null;
 }
 
 export interface ImportClaimRow {
@@ -836,6 +852,13 @@ export const ListClaimsOutcome = {
 
 export type ListPortalSubmissionsParams = {
   status?: string;
+};
+
+export type UpdatePortalSubmissionDraftBody = {
+  subject?: string;
+  descriptionHtml?: string;
+  issueType?: string;
+  gpsBreadcrumbsAvailable?: string;
 };
 
 export type ListEvidenceTypes200 = {

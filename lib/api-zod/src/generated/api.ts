@@ -839,6 +839,10 @@ export const DeleteErrorTypeParams = zod.object({
  */
 export const GetAppSettingsResponse = zod.object({
   default_dispute_instructions: zod.string().nullish(),
+  portal_provider_name: zod.string().nullish(),
+  portal_contact_email: zod.string().nullish(),
+  portal_contact_phone: zod.string().nullish(),
+  portal_default_gps_breadcrumbs: zod.string().nullish(),
 });
 
 /**
@@ -846,10 +850,18 @@ export const GetAppSettingsResponse = zod.object({
  */
 export const UpdateAppSettingsBody = zod.object({
   default_dispute_instructions: zod.string().nullish(),
+  portal_provider_name: zod.string().nullish(),
+  portal_contact_email: zod.string().nullish(),
+  portal_contact_phone: zod.string().nullish(),
+  portal_default_gps_breadcrumbs: zod.string().nullish(),
 });
 
 export const UpdateAppSettingsResponse = zod.object({
   default_dispute_instructions: zod.string().nullish(),
+  portal_provider_name: zod.string().nullish(),
+  portal_contact_email: zod.string().nullish(),
+  portal_contact_phone: zod.string().nullish(),
+  portal_default_gps_breadcrumbs: zod.string().nullish(),
 });
 
 /**
@@ -1100,6 +1112,163 @@ export const CancelPortalSubmissionParams = zod.object({
 });
 
 export const CancelPortalSubmissionResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  status: zod.enum([
+    "pending",
+    "in_progress",
+    "submitted",
+    "failed",
+    "cancelled",
+    "dry_run",
+  ]),
+  issueType: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  requesterEmail: zod.string().nullish(),
+  transportationProviderName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  gpsBreadcrumbsAvailable: zod.string().nullish(),
+  descriptionHtml: zod.string().nullish(),
+  attachmentUrls: zod.object({}).passthrough().nullish(),
+  confNumber: zod.string().nullish(),
+  serviceDate: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  disputeReason: zod.string().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  workflowHistory: zod.object({}).passthrough().nullish(),
+  portalTicketId: zod.string().nullish(),
+  errorMessage: zod.string().nullish(),
+  submittedAt: zod.string().nullish(),
+  attempts: zod.number(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Generate a draft portal submission for review before queuing
+ */
+export const GeneratePortalSubmissionPreviewBody = zod.object({
+  claimId: zod.number(),
+  issueType: zod.string().optional(),
+  subject: zod.string().optional(),
+  requesterEmail: zod.string().optional(),
+  transportationProviderName: zod.string().optional(),
+  phoneNumber: zod.string().optional(),
+  invoiceNumber: zod.string().optional(),
+  gpsBreadcrumbsAvailable: zod.string().optional(),
+  descriptionHtml: zod.string().optional(),
+  disputeReason: zod.string().optional(),
+});
+
+export const GeneratePortalSubmissionPreviewResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  status: zod.enum([
+    "pending",
+    "in_progress",
+    "submitted",
+    "failed",
+    "cancelled",
+    "dry_run",
+  ]),
+  issueType: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  requesterEmail: zod.string().nullish(),
+  transportationProviderName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  gpsBreadcrumbsAvailable: zod.string().nullish(),
+  descriptionHtml: zod.string().nullish(),
+  attachmentUrls: zod.object({}).passthrough().nullish(),
+  confNumber: zod.string().nullish(),
+  serviceDate: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  disputeReason: zod.string().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  workflowHistory: zod.object({}).passthrough().nullish(),
+  portalTicketId: zod.string().nullish(),
+  errorMessage: zod.string().nullish(),
+  submittedAt: zod.string().nullish(),
+  attempts: zod.number(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update a draft submission before queuing
+ */
+export const UpdatePortalSubmissionDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePortalSubmissionDraftBody = zod.object({
+  subject: zod.string().optional(),
+  descriptionHtml: zod.string().optional(),
+  issueType: zod.string().optional(),
+  gpsBreadcrumbsAvailable: zod.string().optional(),
+});
+
+export const UpdatePortalSubmissionDraftResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  status: zod.enum([
+    "pending",
+    "in_progress",
+    "submitted",
+    "failed",
+    "cancelled",
+    "dry_run",
+  ]),
+  issueType: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  requesterEmail: zod.string().nullish(),
+  transportationProviderName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  gpsBreadcrumbsAvailable: zod.string().nullish(),
+  descriptionHtml: zod.string().nullish(),
+  attachmentUrls: zod.object({}).passthrough().nullish(),
+  confNumber: zod.string().nullish(),
+  serviceDate: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  disputeReason: zod.string().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  workflowHistory: zod.object({}).passthrough().nullish(),
+  portalTicketId: zod.string().nullish(),
+  errorMessage: zod.string().nullish(),
+  submittedAt: zod.string().nullish(),
+  attempts: zod.number(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Confirm a draft submission and move it to pending status for bot processing
+ */
+export const ConfirmPortalSubmissionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ConfirmPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
   status: zod.enum([

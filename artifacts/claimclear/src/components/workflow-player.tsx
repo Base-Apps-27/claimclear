@@ -7,6 +7,9 @@ import {
   usePlaceClaimOnHold,
   useRemoveClaimHold,
   useCreatePortalSubmission,
+  useGeneratePortalSubmissionPreview,
+  useUpdatePortalSubmissionDraft,
+  useConfirmPortalSubmission,
   useAddClaimEvidence,
   getListClaimsQueryKey,
   getGetClaimQueryKey,
@@ -17,12 +20,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { RefNumber } from "@/components/ref-number";
 import {
-  ChevronRight, CheckCircle, AlertTriangle, Send,
+  ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
   PauseCircle, ArrowRight, Eye, TreeDeciduous, Car, Calendar, Hash
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
@@ -52,6 +58,9 @@ export function WorkflowPlayer({
   const placeHold = usePlaceClaimOnHold();
   const removeHold = useRemoveClaimHold();
   const createSubmission = useCreatePortalSubmission();
+  const generatePreview = useGeneratePortalSubmissionPreview();
+  const updateDraft = useUpdatePortalSubmissionDraft();
+  const confirmSubmission = useConfirmPortalSubmission();
   const addEvidence = useAddClaimEvidence();
   const isOnHold = claim.status === "On Hold";
 
@@ -79,6 +88,22 @@ export function WorkflowPlayer({
   const [holdPending, setHoldPending] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
+  const [draftSubmission, setDraftSubmission] = useState<{
+    id: number;
+    subject: string;
+    descriptionHtml: string;
+    issueType: string;
+    gpsBreadcrumbsAvailable: string;
+    requesterEmail: string;
+    transportationProviderName: string;
+    phoneNumber: string;
+    invoiceNumber: string;
+  } | null>(null);
+  const [draftEditing, setDraftEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editIssueType, setEditIssueType] = useState("");
+  const [editGps, setEditGps] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
@@ -104,6 +129,63 @@ export function WorkflowPlayer({
   const handleStatusUpdate = async (status: string) => {
     await updateStatus.mutateAsync({ id: claim.id, data: { status } });
     invalidate();
+  };
+
+  const handleGeneratePreview = async () => {
+    const result = await generatePreview.mutateAsync({
+      data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
+    });
+    const draft = result as Record<string, unknown>;
+    setDraftSubmission({
+      id: draft.id as number,
+      subject: (draft.subject as string) || "",
+      descriptionHtml: (draft.descriptionHtml as string) || "",
+      issueType: (draft.issueType as string) || "",
+      gpsBreadcrumbsAvailable: (draft.gpsBreadcrumbsAvailable as string) || "",
+      requesterEmail: (draft.requesterEmail as string) || "",
+      transportationProviderName: (draft.transportationProviderName as string) || "",
+      phoneNumber: (draft.phoneNumber as string) || "",
+      invoiceNumber: (draft.invoiceNumber as string) || "",
+    });
+    setDraftEditing(false);
+  };
+
+  const handleEditDraft = () => {
+    if (!draftSubmission) return;
+    setEditSubject(draftSubmission.subject);
+    setEditDescription(draftSubmission.descriptionHtml);
+    setEditIssueType(draftSubmission.issueType);
+    setEditGps(draftSubmission.gpsBreadcrumbsAvailable);
+    setDraftEditing(true);
+  };
+
+  const handleSaveDraft = async () => {
+    if (!draftSubmission) return;
+    await updateDraft.mutateAsync({
+      id: draftSubmission.id,
+      data: {
+        subject: editSubject,
+        descriptionHtml: editDescription,
+        issueType: editIssueType,
+        gpsBreadcrumbsAvailable: editGps,
+      },
+    });
+    setDraftSubmission({
+      ...draftSubmission,
+      subject: editSubject,
+      descriptionHtml: editDescription,
+      issueType: editIssueType,
+      gpsBreadcrumbsAvailable: editGps,
+    });
+    setDraftEditing(false);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!draftSubmission) return;
+    await confirmSubmission.mutateAsync({ id: draftSubmission.id });
+    await handleStatusUpdate("Portal Queued");
+    setDraftSubmission(null);
+    onComplete();
   };
 
   const handlePortalSubmit = async () => {
@@ -396,15 +478,15 @@ export function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "submit" && (
+      {currentStep === "submit" && !draftSubmission && (
         <Card>
           <CardHeader><CardTitle className="text-base">Submit to MAS Portal</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm">
               <p className="font-medium">Ready for Portal Submission</p>
               <p className="mt-1 text-xs">
-                This will queue the claim for automated submission to the MAS Transportation Provider Support Portal.
-                The AI will generate a unique dispute note based on the claim details, evidence, and error type guidelines.
+                Generate a preview of the dispute submission. You'll be able to review and edit the subject,
+                dispute text, and portal fields before it's queued for the bot.
               </p>
             </div>
             <div className="text-sm space-y-1">
@@ -413,25 +495,151 @@ export function WorkflowPlayer({
               {treeOutcomeLabel && (
                 <p><span className="text-muted-foreground">Dispute Reason:</span> <span className="font-medium">{treeOutcomeLabel}</span></p>
               )}
-              {claim.evidenceNotes && (
-                <p><span className="text-muted-foreground">Evidence:</span> {claim.evidenceNotes}</p>
-              )}
             </div>
             <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
               <Button
                 size="sm"
-                variant="outline"
-                onClick={() => advanceStep("sop")}
+                onClick={handleGeneratePreview}
+                disabled={generatePreview.isPending}
               >
-                Back
+                {generatePreview.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
+                ) : (
+                  <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === "submit" && draftSubmission && !draftEditing && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Review Submission
+              <Badge variant="outline" className="text-amber-600 border-amber-300">Draft</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-muted-foreground block text-xs mb-0.5">Issue Type</span>
+                <span>{draftSubmission.issueType}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-xs mb-0.5">Subject</span>
+                <span className="font-medium">{draftSubmission.subject}</span>
+              </div>
+              <Separator />
+              <div>
+                <span className="text-muted-foreground block text-xs mb-0.5">Provider</span>
+                <span>{draftSubmission.transportationProviderName || "Not set — configure in Settings"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-muted-foreground block text-xs mb-0.5">Email</span>
+                  <span>{draftSubmission.requesterEmail || "Not set"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-xs mb-0.5">Phone</span>
+                  <span>{draftSubmission.phoneNumber || "Not set"}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-muted-foreground block text-xs mb-0.5">Invoice #</span>
+                  <span className="font-mono">{draftSubmission.invoiceNumber || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-xs mb-0.5">GPS Breadcrumbs</span>
+                  <span>{draftSubmission.gpsBreadcrumbsAvailable || "Not set"}</span>
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <span className="text-muted-foreground block text-xs mb-1">Dispute Text (what the bot will submit)</span>
+                <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border">
+                  {draftSubmission.descriptionHtml}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setDraftSubmission(null)}>Back</Button>
+              <Button size="sm" variant="outline" onClick={handleEditDraft}>
+                <Edit3 className="h-4 w-4 mr-1" />Edit
               </Button>
               <Button
                 size="sm"
-                onClick={handlePortalSubmit}
-                disabled={createSubmission.isPending}
+                onClick={handleConfirmSubmit}
+                disabled={confirmSubmission.isPending}
               >
                 <Send className="h-4 w-4 mr-1" />
-                {createSubmission.isPending ? "Queuing..." : "Queue for Portal Submission"}
+                {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === "submit" && draftSubmission && draftEditing && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Edit Submission
+              <Badge variant="outline" className="text-blue-600 border-blue-300">Editing</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Issue Type</Label>
+                <Select value={editIssueType} onValueChange={setEditIssueType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GPS Control Deviation">GPS Control Deviation</SelectItem>
+                    <SelectItem value="Custom Payment Request">Custom Payment Request</SelectItem>
+                    <SelectItem value="MAS Trips App Issue">MAS Trips App Issue</SelectItem>
+                    <SelectItem value="Vehicle, Driver, or TPP">Vehicle, Driver, or TPP</SelectItem>
+                    <SelectItem value="Zip Code Block">Zip Code Block</SelectItem>
+                    <SelectItem value="Other Issue or Question">Other Issue or Question</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Subject</Label>
+                <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GPS Breadcrumbs Available</Label>
+                <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Dispute Text</Label>
+                <Textarea
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  rows={10}
+                  className="text-sm font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setDraftEditing(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                onClick={handleSaveDraft}
+                disabled={updateDraft.isPending}
+              >
+                {updateDraft.isPending ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           </CardContent>

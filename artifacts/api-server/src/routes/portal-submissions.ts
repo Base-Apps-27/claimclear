@@ -8,18 +8,49 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-async function getDefaultDisputeInstructions(): Promise<string> {
-  const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "default_dispute_instructions"));
-  return row?.value || "";
+interface PortalSettings {
+  providerName: string;
+  contactEmail: string;
+  contactPhone: string;
+  defaultGpsBreadcrumbs: string;
+  defaultDisputeInstructions: string;
+}
+
+async function getPortalSettings(): Promise<PortalSettings> {
+  const rows = await db.select().from(appSettingsTable);
+  const map: Record<string, string> = {};
+  for (const r of rows) map[r.key] = r.value || "";
+  return {
+    providerName: map["portal_provider_name"] || "",
+    contactEmail: map["portal_contact_email"] || "",
+    contactPhone: map["portal_contact_phone"] || "",
+    defaultGpsBreadcrumbs: map["portal_default_gps_breadcrumbs"] || "",
+    defaultDisputeInstructions: map["default_dispute_instructions"] || "",
+  };
+}
+
+function extractInvoiceNumber(refNumber: string | null): string {
+  if (!refNumber) return "";
+  const parts = refNumber.trim().split(/\s+/);
+  return parts[0] || "";
+}
+
+function determineIssueType(errorTypeName: string | null): string {
+  if (!errorTypeName) return "Other Issue or Question";
+  const lower = errorTypeName.toLowerCase();
+  if (lower.includes("gps") || lower.includes("deviation") || lower.includes("breadcrumb")) {
+    return "GPS Control Deviation";
+  }
+  return "Other Issue or Question";
 }
 
 async function generatePortalDescription(
   claim: typeof claimsTable.$inferSelect,
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
+  settings: PortalSettings,
 ): Promise<string> {
-  const defaultInstructions = await getDefaultDisputeInstructions();
-  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
+  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || settings.defaultDisputeInstructions;
 
   const prompt = `Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.
 
@@ -95,6 +126,132 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
   res.json(submissions);
 }));
 
+router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
+  const { claimId, disputeReason } = req.body;
+  if (!claimId) { res.status(400).json({ error: "claimId is required" }); return; }
+
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const settings = await getPortalSettings();
+
+  let errorType: typeof errorTypesTable.$inferSelect | null = null;
+  if (claim.errorTypeId) {
+    const etId = parseInt(claim.errorTypeId, 10);
+    if (!isNaN(etId)) {
+      const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, etId));
+      errorType = et || null;
+    }
+  }
+
+  const reason = disputeReason || "";
+  const issueType = determineIssueType(claim.errorTypeName);
+  const invoiceNumber = extractInvoiceNumber(claim.refNumber);
+  const subject = `Dispute - Conf #${claim.confNumber || "N/A"} - ${claim.errorTypeName || "Claim Correction"}`;
+
+  let generatedDescription = "";
+  try {
+    generatedDescription = await generatePortalDescription(claim, errorType, reason, settings);
+  } catch (err) {
+    logger.warn({ err }, "AI portal description generation failed, using fallback");
+    generatedDescription = buildFallbackDescription(claim, reason);
+  }
+
+  let attachmentUrls: string[] = [];
+  if (claim.evidenceFiles && Array.isArray(claim.evidenceFiles)) {
+    attachmentUrls = (claim.evidenceFiles as Array<Record<string, string> | string>)
+      .map((f) => (typeof f === "string" ? f : f.url))
+      .filter((u): u is string => typeof u === "string" && u.length > 0);
+  }
+
+  const [submission] = await db.insert(portalSubmissionsTable).values({
+    claimId: claim.id,
+    status: "draft",
+    issueType,
+    subject,
+    requesterEmail: settings.contactEmail,
+    transportationProviderName: settings.providerName,
+    phoneNumber: settings.contactPhone,
+    invoiceNumber,
+    gpsBreadcrumbsAvailable: settings.defaultGpsBreadcrumbs,
+    descriptionHtml: generatedDescription,
+    attachmentUrls,
+    confNumber: claim.confNumber || "",
+    serviceDate: claim.date || "",
+    refNumber: claim.refNumber || "",
+    clientNumber: claim.clientNumber || "",
+    carNumber: claim.carNumber || "",
+    claimAmount: claim.claimAmount || null,
+    errorTypeName: claim.errorTypeName || "",
+    errorDetails: claim.errorDetails || "",
+    disputeReason: reason,
+    evidenceNotes: claim.evidenceNotes || "",
+    evidenceFiles: claim.evidenceFiles || null,
+    workflowHistory: claim.workflowProgress || null,
+    attempts: 0,
+  }).returning();
+
+  await db.insert(auditLogsTable).values({
+    claimId: claim.id,
+    action: "portal_draft_created",
+    details: `Portal submission draft generated for review`,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
+  res.json(submission);
+}));
+
+router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+  if (existing.status !== "draft") {
+    res.status(400).json({ error: "Only draft submissions can be edited" });
+    return;
+  }
+
+  const updates: Record<string, string> = {};
+  if (req.body.subject !== undefined) updates.subject = req.body.subject;
+  if (req.body.descriptionHtml !== undefined) updates.descriptionHtml = req.body.descriptionHtml;
+  if (req.body.issueType !== undefined) updates.issueType = req.body.issueType;
+  if (req.body.gpsBreadcrumbsAvailable !== undefined) updates.gpsBreadcrumbsAvailable = req.body.gpsBreadcrumbsAvailable;
+
+  const [sub] = await db.update(portalSubmissionsTable).set(updates)
+    .where(eq(portalSubmissionsTable.id, id)).returning();
+
+  res.json(sub);
+}));
+
+router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+  if (existing.status !== "draft") {
+    res.status(400).json({ error: "Only draft submissions can be confirmed" });
+    return;
+  }
+
+  const [sub] = await db.update(portalSubmissionsTable).set({ status: "pending" })
+    .where(eq(portalSubmissionsTable.id, id)).returning();
+
+  await db.update(claimsTable).set({ status: "Portal Queued" }).where(eq(claimsTable.id, existing.claimId));
+
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    action: "portal_submission_confirmed",
+    details: `Portal submission confirmed and queued for processing`,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
+  res.json(sub);
+}));
+
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { claimId, issueType, subject, requesterEmail, transportationProviderName,
     phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason } = req.body;
@@ -103,6 +260,8 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
 
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const settings = await getPortalSettings();
 
   let errorType: typeof errorTypesTable.$inferSelect | null = null;
   if (claim.errorTypeId) {
@@ -118,7 +277,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   let generatedDescription = descriptionHtml || "";
   if (!generatedDescription && reason) {
     try {
-      generatedDescription = await generatePortalDescription(claim, errorType, reason);
+      generatedDescription = await generatePortalDescription(claim, errorType, reason, settings);
     } catch (err) {
       logger.warn({ err }, "AI portal description generation failed, using fallback");
       generatedDescription = buildFallbackDescription(claim, reason);
@@ -138,13 +297,13 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   const [submission] = await db.insert(portalSubmissionsTable).values({
     claimId: claim.id,
     status: "pending",
-    issueType: issueType || "",
-    subject: subject || `Dispute - ${claim.confNumber}`,
-    requesterEmail: requesterEmail || "",
-    transportationProviderName: transportationProviderName || "",
-    phoneNumber: phoneNumber || "",
-    invoiceNumber: invoiceNumber || claim.refNumber || "",
-    gpsBreadcrumbsAvailable: gpsBreadcrumbsAvailable || "",
+    issueType: issueType || determineIssueType(claim.errorTypeName),
+    subject: subject || `Dispute - Conf #${claim.confNumber || "N/A"} - ${claim.errorTypeName || "Claim Correction"}`,
+    requesterEmail: requesterEmail || settings.contactEmail,
+    transportationProviderName: transportationProviderName || settings.providerName,
+    phoneNumber: phoneNumber || settings.contactPhone,
+    invoiceNumber: invoiceNumber || extractInvoiceNumber(claim.refNumber),
+    gpsBreadcrumbsAvailable: gpsBreadcrumbsAvailable || settings.defaultGpsBreadcrumbs,
     descriptionHtml: generatedDescription,
     attachmentUrls: attachmentUrls,
     confNumber: claim.confNumber || "",

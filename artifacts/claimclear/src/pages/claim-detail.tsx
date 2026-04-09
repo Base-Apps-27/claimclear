@@ -41,29 +41,32 @@ import { RefNumber } from "@/components/ref-number";
 import { WorkflowPlayer } from "@/components/workflow-player";
 
 function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
+  const [showDescription, setShowDescription] = useState(false);
   const { data: botActivity } = useListBotActivity(sub.id, {
     query: { queryKey: getListBotActivityQueryKey(sub.id), enabled: !!sub.id }
   });
+
+  const statusVariant = sub.status === "submitted" ? "default" :
+    sub.status === "failed" ? "destructive" :
+    sub.status === "draft" ? "outline" :
+    sub.status === "dry_run" ? "outline" :
+    "secondary";
+
+  const statusClass = sub.status === "dry_run" ? "border-amber-500 text-amber-700 bg-amber-50" :
+    sub.status === "draft" ? "border-blue-400 text-blue-700 bg-blue-50" : undefined;
 
   return (
     <div className="border rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Submission #{sub.id}</span>
-          <Badge
-            variant={
-              sub.status === "submitted" ? "default" :
-              sub.status === "failed" ? "destructive" :
-              sub.status === "dry_run" ? "outline" :
-              "secondary"
-            }
-            className={sub.status === "dry_run" ? "border-amber-500 text-amber-700 bg-amber-50" : undefined}
-          >
+          <Badge variant={statusVariant} className={statusClass}>
             {sub.status === "submitted" && <CheckCircle className="h-3 w-3 mr-1" />}
             {sub.status === "failed" && <AlertTriangle className="h-3 w-3 mr-1" />}
             {sub.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
+            {sub.status === "draft" && <Edit2 className="h-3 w-3 mr-1" />}
             {sub.status === "dry_run" && <Eye className="h-3 w-3 mr-1" />}
-            {sub.status === "dry_run" ? "Dry Run" : sub.status}
+            {sub.status === "dry_run" ? "Dry Run" : sub.status === "draft" ? "Draft" : sub.status}
           </Badge>
         </div>
         <span className="text-xs text-muted-foreground">
@@ -85,10 +88,27 @@ function SubmissionCard({ submission: sub }: { submission: PortalSubmissionRespo
 
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         {sub.issueType && <div>Issue Type: {sub.issueType}</div>}
-        {sub.subject && <div>Subject: {sub.subject}</div>}
+        {sub.subject && <div className="col-span-2">Subject: {sub.subject}</div>}
         <div>Attempts: {sub.attempts}</div>
         {sub.submittedAt && <div>Submitted: {formatDateTime(sub.submittedAt)}</div>}
       </div>
+
+      {sub.descriptionHtml && (
+        <div>
+          <button
+            onClick={() => setShowDescription(!showDescription)}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <Eye className="h-3 w-3" />
+            {showDescription ? "Hide" : "Show"} Dispute Text
+          </button>
+          {showDescription && (
+            <div className="mt-2 bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border">
+              {sub.descriptionHtml}
+            </div>
+          )}
+        </div>
+      )}
 
       {botActivity && botActivity.length > 0 && (
         <div className="mt-3 border-t pt-3">

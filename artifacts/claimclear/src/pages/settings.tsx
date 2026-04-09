@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -34,6 +37,12 @@ export default function Settings() {
   const [disputeInstructions, setDisputeInstructions] = useState("");
   const [disputeInstructionsSaved, setDisputeInstructionsSaved] = useState(false);
   const [disputeInstructionsLoaded, setDisputeInstructionsLoaded] = useState(false);
+  const [portalProviderName, setPortalProviderName] = useState("");
+  const [portalContactEmail, setPortalContactEmail] = useState("");
+  const [portalContactPhone, setPortalContactPhone] = useState("");
+  const [portalDefaultGps, setPortalDefaultGps] = useState("");
+  const [portalSettingsSaved, setPortalSettingsSaved] = useState(false);
+  const [portalSettingsLoaded, setPortalSettingsLoaded] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -44,12 +53,35 @@ export default function Settings() {
     }
   }, [appSettings, disputeInstructionsLoaded]);
 
+  useEffect(() => {
+    if (appSettings && !portalSettingsLoaded) {
+      setPortalProviderName(appSettings.portal_provider_name || "");
+      setPortalContactEmail(appSettings.portal_contact_email || "");
+      setPortalContactPhone(appSettings.portal_contact_phone || "");
+      setPortalDefaultGps(appSettings.portal_default_gps_breadcrumbs || "");
+      setPortalSettingsLoaded(true);
+    }
+  }, [appSettings, portalSettingsLoaded]);
+
   const handleSaveDisputeInstructions = async () => {
     await updateAppSettings.mutateAsync({
       data: { default_dispute_instructions: disputeInstructions || null },
     });
     setDisputeInstructionsSaved(true);
     setTimeout(() => setDisputeInstructionsSaved(false), 3000);
+  };
+
+  const handleSavePortalSettings = async () => {
+    await updateAppSettings.mutateAsync({
+      data: {
+        portal_provider_name: portalProviderName || null,
+        portal_contact_email: portalContactEmail || null,
+        portal_contact_phone: portalContactPhone || null,
+        portal_default_gps_breadcrumbs: portalDefaultGps || null,
+      },
+    });
+    setPortalSettingsSaved(true);
+    setTimeout(() => setPortalSettingsSaved(false), 3000);
   };
 
   const fetchUsers = useCallback(async () => {
@@ -305,6 +337,68 @@ export default function Settings() {
                 )}
               </>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Portal Configuration
+              <InfoTooltip content="Set your company details that are automatically filled into every MAS portal submission. These values stay the same across all disputes." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="provider-name">Transportation Provider Name</Label>
+              <Input
+                id="provider-name"
+                value={portalProviderName}
+                onChange={e => setPortalProviderName(e.target.value)}
+                placeholder="Agape Transportation"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-email">Requester Email Address</Label>
+              <Input
+                id="contact-email"
+                type="email"
+                value={portalContactEmail}
+                onChange={e => setPortalContactEmail(e.target.value)}
+                placeholder="disputes@agapeny.app"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-phone">Phone Number</Label>
+              <Input
+                id="contact-phone"
+                type="tel"
+                value={portalContactPhone}
+                onChange={e => setPortalContactPhone(e.target.value)}
+                placeholder="(555) 123-4567"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gps-default">Default GPS Breadcrumbs Answer</Label>
+              <Select value={portalDefaultGps || "none"} onValueChange={v => setPortalDefaultGps(v === "none" ? "" : v)}>
+                <SelectTrigger id="gps-default"><SelectValue placeholder="Choose default..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not set</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleSavePortalSettings} disabled={updateAppSettings.isPending}>
+                {updateAppSettings.isPending ? "Saving..." : "Save Portal Settings"}
+              </Button>
+              {portalSettingsSaved && (
+                <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

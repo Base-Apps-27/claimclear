@@ -767,6 +767,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /portal-submissions/generate-preview:
+    post:
+      operationId: generatePortalSubmissionPreview
+      tags: [portalSubmissions]
+      summary: Generate a draft portal submission for review before queuing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortalSubmissionBody"
+      responses:
+        "200":
+          description: Draft submission preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}/update-draft:
+    put:
+      operationId: updatePortalSubmissionDraft
+      tags: [portalSubmissions]
+      summary: Update a draft submission before queuing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject:
+                  type: string
+                descriptionHtml:
+                  type: string
+                issueType:
+                  type: string
+                gpsBreadcrumbsAvailable:
+                  type: string
+      responses:
+        "200":
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
+  /portal-submissions/{id}/confirm:
+    post:
+      operationId: confirmPortalSubmission
+      tags: [portalSubmissions]
+      summary: Confirm a draft submission and move it to pending status for bot processing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Confirmed and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
   /bot/portal-submissions/poll:
     post:
       operationId: pollPortalSubmissions
@@ -1722,11 +1794,27 @@ components:
       properties:
         default_dispute_instructions:
           type: ["string", "null"]
+        portal_provider_name:
+          type: ["string", "null"]
+        portal_contact_email:
+          type: ["string", "null"]
+        portal_contact_phone:
+          type: ["string", "null"]
+        portal_default_gps_breadcrumbs:
+          type: ["string", "null"]
 
     UpdateAppSettingsBody:
       type: object
       properties:
         default_dispute_instructions:
+          type: ["string", "null"]
+        portal_provider_name:
+          type: ["string", "null"]
+        portal_contact_email:
+          type: ["string", "null"]
+        portal_contact_phone:
+          type: ["string", "null"]
+        portal_default_gps_breadcrumbs:
           type: ["string", "null"]
 
     ImportClaimsBody:

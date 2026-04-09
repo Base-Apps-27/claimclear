@@ -9,4 +9,12 @@
 export interface AppSettingsResponse {
   /** @nullable */
   default_dispute_instructions?: string | null;
+  /** @nullable */
+  portal_provider_name?: string | null;
+  /** @nullable */
+  portal_contact_email?: string | null;
+  /** @nullable */
+  portal_contact_phone?: string | null;
+  /** @nullable */
+  portal_default_gps_breadcrumbs?: string | null;
 }

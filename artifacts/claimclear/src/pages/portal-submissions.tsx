@@ -18,6 +18,7 @@ import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertT
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
 const statusColors: Record<string, string> = {
+  draft: "bg-blue-500/20 text-blue-700 border-blue-300",
   pending: "bg-amber-500/20 text-amber-700 border-amber-300",
   in_progress: "bg-blue-500/20 text-blue-700 border-blue-300",
   submitted: "bg-green-500/20 text-green-700 border-green-300",
@@ -27,6 +28,7 @@ const statusColors: Record<string, string> = {
 };
 
 const statusDescriptions: Record<string, string> = {
+  draft: "Preview generated — awaiting review and confirmation before queuing.",
   pending: "Waiting in the queue for processing.",
   in_progress: "Currently being processed — filling out the dispute form on the MAS portal.",
   submitted: "Successfully submitted to the portal. A ticket ID should be assigned.",
@@ -169,6 +171,7 @@ export default function PortalSubmissions() {
             <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="submitted">Submitted</SelectItem>
@@ -385,6 +388,15 @@ export default function PortalSubmissions() {
                 <div className="min-w-0">
                   <span className="text-sm text-muted-foreground">Dispute Reason:</span>
                   <p className="text-sm mt-1 break-words">{selected.disputeReason}</p>
+                </div>
+              )}
+
+              {selected.descriptionHtml && (
+                <div className="min-w-0">
+                  <span className="text-sm text-muted-foreground block mb-1">Dispute Text</span>
+                  <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border break-words">
+                    {selected.descriptionHtml}
+                  </div>
                 </div>
               )}
 

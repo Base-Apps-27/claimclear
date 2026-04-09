@@ -109,6 +109,7 @@ export * from "./updateErrorTypeBody";
 export * from "./updateErrorTypeBodyDecisionTree";
 export * from "./updateErrorTypeBodyDisputeReasonsLibrary";
 export * from "./updateErrorTypeBodyEvidenceRequirements";
+export * from "./updatePortalSubmissionDraftBody";
 export * from "./updateWorkflowBody";
 export * from "./updateWorkflowBodyWorkflowProgress";
 export * from "./uploadUrlRequest";

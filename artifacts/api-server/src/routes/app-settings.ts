@@ -7,7 +7,13 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-const allowedKeys = ["default_dispute_instructions"] as const;
+const allowedKeys = [
+  "default_dispute_instructions",
+  "portal_provider_name",
+  "portal_contact_email",
+  "portal_contact_phone",
+  "portal_default_gps_breadcrumbs",
+] as const;
 type AllowedKey = typeof allowedKeys[number];
 
 function validateSettingsBody(body: unknown): { valid: true; data: Partial<Record<AllowedKey, string | null>> } | { valid: false; error: string } {
