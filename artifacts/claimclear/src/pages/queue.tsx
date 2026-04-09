@@ -87,9 +87,10 @@ function WorkflowPlayer({
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
   const advanceStep = async (nextStep: string) => {
+    const { treeState: _discard, ...cleanProgress } = workflowProgress;
     await updateWorkflow.mutateAsync({
       id: claim.id,
-      data: { workflowProgress: { ...workflowProgress, currentStep: nextStep } },
+      data: { workflowProgress: { ...cleanProgress, currentStep: nextStep } },
     });
     invalidate();
   };
@@ -109,9 +110,10 @@ function WorkflowPlayer({
 
   const handlePlaceHold = async () => {
     const treeState = treePlayerRef.current?.getState();
+    const holdStep = currentStep === "sop" && treeState ? "sop" : currentStep;
     await updateWorkflow.mutateAsync({
       id: claim.id,
-      data: { workflowProgress: { ...workflowProgress, currentStep: "sop", treeState: treeState || undefined } },
+      data: { workflowProgress: { ...workflowProgress, currentStep: holdStep, treeState: treeState || undefined } },
     });
     await placeHold.mutateAsync({
       id: claim.id,
@@ -152,7 +154,7 @@ function WorkflowPlayer({
 
   return (
     <div className="space-y-4">
-      {isOnHold && (
+      {isOnHold ? (
         <Card className="border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-800">
           <CardContent className="py-4 space-y-3">
             <div className="flex items-start gap-3">
@@ -168,6 +170,11 @@ function WorkflowPlayer({
                     On hold since {formatDate(claim.holdPlacedAt)}
                   </p>
                 )}
+                {savedTreeState && savedTreeState.steps.length > 0 && (
+                  <p className="text-xs text-purple-600 dark:text-purple-500 mt-1">
+                    {savedTreeState.steps.length} workflow step{savedTreeState.steps.length !== 1 ? "s" : ""} completed — progress will be restored on resume.
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-2 ml-8">
@@ -180,7 +187,8 @@ function WorkflowPlayer({
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : (
+      <>
 
       <div className="flex items-center gap-2 mb-4">
         {steps.map((step, i) => {
@@ -372,6 +380,9 @@ function WorkflowPlayer({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      </>
       )}
 
       <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>

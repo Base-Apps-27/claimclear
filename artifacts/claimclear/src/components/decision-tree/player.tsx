@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronRight, Undo2, HelpCircle, CheckCircle2,
   Send, Ban, PauseCircle, Mail, FileText, Camera,
-  Upload, X, Image as ImageIcon, Info, Loader2, ExternalLink,
+  Upload, X, Image as ImageIcon, Info, Loader2, ExternalLink, AlertTriangle,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -71,10 +71,15 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   { tree, onOutcome, isTestMode, claimId, initialState, onEvidenceCollected },
   ref
 ) {
-  const [steps, setSteps] = useState<Step[]>(initialState?.steps ?? []);
-  const [currentNodeId, setCurrentNodeId] = useState(initialState?.currentNodeId ?? tree.rootId);
+  const restoredNodeExists = initialState?.currentNodeId
+    ? tree.nodes.some(n => n.id === initialState.currentNodeId)
+    : false;
+  const canRestore = restoredNodeExists && !!initialState;
+  const [steps, setSteps] = useState<Step[]>(canRestore ? initialState.steps : []);
+  const [currentNodeId, setCurrentNodeId] = useState(canRestore ? initialState.currentNodeId : tree.rootId);
   const [outcome, setOutcome] = useState<{ type: OutcomeType; label: string } | null>(null);
-  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>(initialState?.nodeEvidence ?? {});
+  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>(canRestore ? initialState.nodeEvidence : {});
+  const [showRestoreNotice, setShowRestoreNotice] = useState(!!initialState && !canRestore);
 
   useImperativeHandle(ref, () => ({
     getState: () => ({ steps, currentNodeId, nodeEvidence }),
@@ -213,6 +218,27 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     <div className="space-y-3 min-w-0 overflow-hidden">
       {isTestMode && (
         <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Test Mode - no changes will be saved</Badge>
+      )}
+
+      {showRestoreNotice && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-amber-800">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-medium">Workflow was updated since this claim was paused</p>
+            <p className="mt-0.5">Starting from the beginning with the latest workflow version.</p>
+            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] mt-1" onClick={() => setShowRestoreNotice(false)}>Dismiss</Button>
+          </div>
+        </div>
+      )}
+
+      {canRestore && steps.length > 0 && (
+        <div className="flex items-start gap-2 bg-purple-50 border border-purple-200 rounded-md p-2.5 text-purple-800">
+          <PauseCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-medium">Resumed from hold — pick up where you left off</p>
+            <p className="mt-0.5">{steps.length} step{steps.length !== 1 ? "s" : ""} completed previously. Choose your next answer below.</p>
+          </div>
+        </div>
       )}
 
       <div className="flex items-center gap-3">
