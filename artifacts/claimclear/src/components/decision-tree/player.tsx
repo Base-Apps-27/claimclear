@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import {
   type DecisionTree,
   type TreeNode,
@@ -42,11 +42,22 @@ interface EvidenceItem {
   uploading?: boolean;
 }
 
+export interface TreePlayerState {
+  steps: Step[];
+  currentNodeId: string;
+  nodeEvidence: Record<string, Record<string, EvidenceItem>>;
+}
+
+export interface TreePlayerHandle {
+  getState: () => TreePlayerState;
+}
+
 interface PlayerProps {
   tree: DecisionTree;
   onOutcome: (outcomeType: OutcomeType, outcomeLabel: string) => void;
   isTestMode?: boolean;
   claimId?: number;
+  initialState?: TreePlayerState;
   onEvidenceCollected?: (evidence: {
     evidenceTypeId?: number;
     evidenceTypeName: string;
@@ -56,11 +67,18 @@ interface PlayerProps {
   }) => void;
 }
 
-export function TreePlayer({ tree, onOutcome, isTestMode, claimId, onEvidenceCollected }: PlayerProps) {
-  const [steps, setSteps] = useState<Step[]>([]);
-  const [currentNodeId, setCurrentNodeId] = useState(tree.rootId);
+export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function TreePlayer(
+  { tree, onOutcome, isTestMode, claimId, initialState, onEvidenceCollected },
+  ref
+) {
+  const [steps, setSteps] = useState<Step[]>(initialState?.steps ?? []);
+  const [currentNodeId, setCurrentNodeId] = useState(initialState?.currentNodeId ?? tree.rootId);
   const [outcome, setOutcome] = useState<{ type: OutcomeType; label: string } | null>(null);
-  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>({});
+  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>(initialState?.nodeEvidence ?? {});
+
+  useImperativeHandle(ref, () => ({
+    getState: () => ({ steps, currentNodeId, nodeEvidence }),
+  }), [steps, currentNodeId, nodeEvidence]);
 
   const currentNode = tree.nodes.find(n => n.id === currentNodeId);
   const maxDepth = getMaxDepth(tree);
@@ -365,7 +383,7 @@ export function TreePlayer({ tree, onOutcome, isTestMode, claimId, onEvidenceCol
       </Card>
     </div>
   );
-}
+});
 
 function EvidenceImageUploader({
   imagePreview,

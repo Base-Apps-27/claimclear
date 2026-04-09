@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import {
@@ -6,6 +6,7 @@ import {
   useUpdateClaimStatus,
   useUpdateClaimWorkflow,
   usePlaceClaimOnHold,
+  useRemoveClaimHold,
   useCreatePortalSubmission,
   useAddClaimEvidence,
   getListClaimsQueryKey,
@@ -30,6 +31,7 @@ import {
 import { WrapTooltip } from "@/components/info-tooltip";
 import {
   TreePlayer,
+  type TreePlayerHandle, type TreePlayerState,
   type DecisionTree, type LegacyTreeNode, type OutcomeType,
   legacyToTree,
 } from "@/components/decision-tree";
@@ -45,8 +47,10 @@ function WorkflowPlayer({
   const updateStatus = useUpdateClaimStatus();
   const updateWorkflow = useUpdateClaimWorkflow();
   const placeHold = usePlaceClaimOnHold();
+  const removeHold = useRemoveClaimHold();
   const createSubmission = useCreatePortalSubmission();
   const addEvidence = useAddClaimEvidence();
+  const isOnHold = claim.status === "On Hold";
 
   const errorTypeId = claim.errorTypeId ? parseInt(claim.errorTypeId, 10) : 0;
   const { data: errorType } = useGetErrorType(errorTypeId, {
@@ -63,10 +67,13 @@ function WorkflowPlayer({
     }
   }
   const hasTree = !!parsedTree;
+  const treePlayerRef = useRef<TreePlayerHandle>(null);
 
   const workflowProgress = (claim.workflowProgress as Record<string, unknown>) ?? {};
   const currentStep = (workflowProgress.currentStep as string) ?? "review";
+  const savedTreeState = workflowProgress.treeState as TreePlayerState | undefined;
   const [holdReason, setHoldReason] = useState("");
+  const [holdPending, setHoldPending] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
 
@@ -101,12 +108,18 @@ function WorkflowPlayer({
   };
 
   const handlePlaceHold = async () => {
+    const treeState = treePlayerRef.current?.getState();
+    await updateWorkflow.mutateAsync({
+      id: claim.id,
+      data: { workflowProgress: { ...workflowProgress, currentStep: "sop", treeState: treeState || undefined } },
+    });
     await placeHold.mutateAsync({
       id: claim.id,
-      data: { holdReason },
+      data: { holdReason, holdPendingFrom: holdPending || undefined },
     });
     setShowHoldDialog(false);
     setHoldReason("");
+    setHoldPending("");
     invalidate();
     onComplete();
   };
@@ -132,8 +145,43 @@ function WorkflowPlayer({
     } catch {}
   };
 
+  const handleResumeFromHold = async () => {
+    await removeHold.mutateAsync({ id: claim.id });
+    invalidate();
+  };
+
   return (
     <div className="space-y-4">
+      {isOnHold && (
+        <Card className="border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-800">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <PauseCircle className="h-5 w-5 text-purple-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">This claim is on hold</p>
+                <p className="text-sm text-purple-700 dark:text-purple-400">{claim.holdReason}</p>
+                {claim.holdPendingFrom && (
+                  <p className="text-xs text-purple-600 dark:text-purple-500">Pending from: {claim.holdPendingFrom}</p>
+                )}
+                {claim.holdPlacedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    On hold since {formatDate(claim.holdPlacedAt)}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 ml-8">
+              <Button size="sm" onClick={handleResumeFromHold}>
+                <ArrowRight className="h-4 w-4 mr-1" />Resume Workflow
+              </Button>
+              <Link href={`/claims/${claim.id}`}>
+                <Button size="sm" variant="outline">Full Details</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center gap-2 mb-4">
         {steps.map((step, i) => {
           const StepIcon = step.icon;
@@ -255,8 +303,10 @@ function WorkflowPlayer({
           <CardContent className="space-y-3">
             <div className="min-w-0 overflow-hidden">
               <TreePlayer
+                ref={treePlayerRef}
                 tree={parsedTree}
                 claimId={claim.id}
+                initialState={savedTreeState}
                 onEvidenceCollected={handleEvidenceCollected}
                 onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
                   setTreeOutcomeLabel(outcomeLabel);
@@ -326,7 +376,9 @@ function WorkflowPlayer({
 
       <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle>
+            <p className="text-sm text-muted-foreground">Your progress in the workflow will be saved. When the hold is removed, you'll pick up right where you left off.</p>
+          </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Reason for Hold</Label>
@@ -334,6 +386,14 @@ function WorkflowPlayer({
                 value={holdReason}
                 onChange={(e) => setHoldReason(e.target.value)}
                 placeholder="e.g., Waiting for driver statement"
+              />
+            </div>
+            <div>
+              <Label>Pending From</Label>
+              <Input
+                value={holdPending}
+                onChange={(e) => setHoldPending(e.target.value)}
+                placeholder="Person or department, e.g., Operations"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -470,7 +530,7 @@ export default function Queue() {
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No claims on hold.</CardContent></Card>
               ) : (
                 <div className="space-y-2">
-                  {onHoldClaims.map((c) => renderClaimRow(c))}
+                  {onHoldClaims.map((c) => renderClaimRow(c, true))}
                 </div>
               )}
             </TabsContent>

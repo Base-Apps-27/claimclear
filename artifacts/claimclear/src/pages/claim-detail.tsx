@@ -581,6 +581,8 @@ export default function ClaimDetail() {
                 <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-md border border-purple-200 dark:border-purple-800">
                   <p className="text-sm font-medium text-purple-800 dark:text-purple-300">On Hold: {claim.holdReason}</p>
                   {claim.holdPendingFrom && <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Pending from: {claim.holdPendingFrom}</p>}
+                  {claim.holdPlacedAt && <p className="text-xs text-muted-foreground mt-1">Since {formatDate(claim.holdPlacedAt)}</p>}
+                  <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">Workflow progress is saved — removing the hold will resume from where you left off in the Work Queue.</p>
                 </div>
               )}
 
