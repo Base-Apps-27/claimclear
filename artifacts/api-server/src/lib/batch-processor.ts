@@ -1,4 +1,4 @@
-import { eq, inArray, and } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable } from "@workspace/db";
 import { logger } from "./logger";
@@ -117,6 +117,15 @@ async function processSequentially(job: BatchJob): Promise<void> {
 
       await processViaExternalBot(sub);
 
+      broadcastPresenceEvent({
+        type: "bot_completed",
+        claimId: sub.claimId,
+        userName: "Batch Processor",
+        userEmail: null,
+        botProcess: "portal_submission",
+        timestamp: new Date().toISOString(),
+      });
+
       job.results.push({ submissionId: subId, status: "success", message: "Processed successfully" });
       job.succeeded++;
     } catch (err) {
@@ -217,6 +226,19 @@ async function processViaExternalBot(
       portalTicketId: result.ticketId || null,
       submittedAt: new Date().toISOString(),
     }).where(eq(portalSubmissionsTable.id, sub.id));
+
+    await db.update(claimsTable).set({
+      status: "Awaiting Response",
+      disputeEmailSent: true,
+      disputeEmailSentAt: new Date().toISOString(),
+    }).where(eq(claimsTable.id, sub.claimId));
+
+    await db.insert(notesTable).values({
+      claimId: sub.claimId,
+      type: "email_sent",
+      content: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
+      author: "Batch Processor",
+    });
 
     await db.insert(botActivityLogTable).values({
       submissionId: sub.id,

@@ -34,6 +34,7 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **API Security:** Routes are protected with specific authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) based on their function.
 - **Database Indexes:** All major tables have indexes on frequently queried columns (claims: status, confNumber, date, createdAt; portal_submissions: claimId, status; audit_logs: claimId; notes: claimId; claim_evidence: claimId; bot_activity_log: submissionId).
 - **Cron Jobs:** Midnight EST batch job processes pending portal submissions. Weekday 7 AM EST daily brief sends summary email via Outlook/SMTP.
+- **Bot Architecture:** Two bot execution paths share a single browser worker (`batch-worker.ts`): (1) **Batch path** — the primary path used by the midnight cron and manual batch triggers via `batch-processor.ts`, runs in-process; (2) **Standalone bot** (`portal-bot.ts`) — an external polling process (via `pnpm run bot:run`) that claims work via API and delegates browser work to the same `runBatchWorker()` function. Both paths handle login, form filling, GPS conditional fields, mandatory evidence upload with retries, and session persistence. On successful submission, the claim status advances to "Awaiting Response", a note is created, and `disputeEmailSent` is set.
 - **UI/UX:** The application adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
 - **TypeScript Monorepo:** Utilizes TypeScript composite projects and `pnpm workspaces` for robust type-checking and dependency management across packages.
 
@@ -56,7 +57,7 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 ## External Dependencies
 - **PostgreSQL:** Primary database.
 - **Anthropic Claude:** AI capabilities for SOP analysis, dispute note generation (portal submissions), and email generation, accessed via Replit AI Integrations proxy. Portal dispute notes are generated at queue time (not in the bot process) using the error type's `disputeInstructions` field for tone/content guidelines and the decision tree's `outcomeLabel` as the specific dispute reason.
-- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
+- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal. Chromium is a production dependency installed during the build step. The `ensureBrowsersInstalled()` fallback attempts multiple CLI paths if the binary is missing at runtime.
 - **Google Cloud Storage (GCS):** Used for object storage of evidence files.
 - **Microsoft Outlook (Graph API):** Primary email sending via Replit connector (Office 365). Used for daily brief emails. Falls back to SMTP if Outlook is unavailable. Utility: `artifacts/api-server/src/lib/outlook.ts` exports `sendEmail()` and `isOutlookConnected()`.
 - **Replit Auth:** OpenID Connect with PKCE for user authentication.

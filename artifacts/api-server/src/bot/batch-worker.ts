@@ -54,7 +54,7 @@ async function ensureBrowsersInstalled(): Promise<void> {
   for (const cmd of commands) {
     try {
       logger.info(`Trying: ${cmd}`);
-      execSync(cmd, { timeout: 180000, stdio: "pipe", cwd: path.resolve("../../") });
+      execSync(cmd, { timeout: 180000, stdio: "pipe", cwd: process.cwd() });
       const execPath = chromium.executablePath();
       if (fs.existsSync(execPath)) {
         browsersInstalled = true;
@@ -147,6 +147,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   }
 
   const page = await context.newPage();
+  const downloadedFiles: string[] = [];
 
   try {
     await page.goto(PORTAL_URL, { waitUntil: "networkidle", timeout: 30000 });
@@ -249,7 +250,6 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
 
     logger.info({ submissionId: sub.id }, "Batch worker: form fields populated");
 
-    const downloadedFiles: string[] = [];
     const hasEvidence = sub.attachmentUrls && sub.attachmentUrls.length > 0;
 
     if (hasEvidence) {
