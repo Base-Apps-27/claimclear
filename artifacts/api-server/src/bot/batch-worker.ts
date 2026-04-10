@@ -151,6 +151,17 @@ Dispute Reason: ${sub.disputeReason || "N/A"}
 Evidence Notes: ${sub.evidenceNotes || "N/A"}`;
 }
 
+const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
+  "GPS Control Deviation": "gps_control_deviation",
+  "Other Issue or Question": "other_issue_or_question",
+  "Custom Payment Request": "custom_payment_request",
+  "MAS Trips App Issue": "mas_trips_app_issue",
+  "Vehicle, Driver, or TPP": "vehicle,_driver,_or_tpp",
+  "Zip Code Block": "zip_code_block",
+  "Trip Correction": "trip_correction",
+  "Trip Concern": "trip_concern",
+};
+
 export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Promise<{ ticketId?: string; screenshotPath?: string }> {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -161,7 +172,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
   const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 
-  logger.info({ submissionId: sub.id }, "Batch worker: launching browser");
+  logger.info({ submissionId: sub.id, dryRun }, "Batch worker: launching browser");
 
   const browser = await chromium.launch({
     headless: true,
@@ -180,243 +191,175 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   const downloadedFiles: string[] = [];
 
   try {
-    await page.goto(PORTAL_URL, { waitUntil: "networkidle", timeout: 30000 });
+    const ticketFormSlug = FRESHDESK_ISSUE_TYPE_MAP[sub.issueType] || FRESHDESK_ISSUE_TYPE_MAP["Other Issue or Question"];
+    const ticketUrl = `${PORTAL_URL}/support/tickets/new?ticket_form=${ticketFormSlug}`;
+    logger.info({ submissionId: sub.id, ticketUrl }, "Batch worker: navigating to ticket form");
+
+    await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    const loginButton = await page.$('a:has-text("Log In"), button:has-text("Log In"), a:has-text("Sign In")');
-    if (loginButton) {
+    const loginLink = await page.$('a[href*="login"], a:has-text("Login"), a:has-text("Log in"), a:has-text("Sign in")');
+    if (loginLink) {
       if (!MAS_USERNAME || !MAS_PASSWORD) {
-        throw new Error("Portal login required - MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
+        throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
 
-      logger.info({ submissionId: sub.id }, "Batch worker: login required");
-      await loginButton.click();
+      logger.info({ submissionId: sub.id }, "Batch worker: login required, clicking login link");
+      await loginLink.click();
+      await page.waitForLoadState("networkidle", { timeout: 15000 });
       await page.waitForTimeout(2000);
 
-      const usernameInput = await page.$('input[name="username"], input[name="email"], input[type="email"], #username, #email');
-      const passwordInput = await page.$('input[name="password"], input[type="password"], #password');
+      const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
+      const passwordInput = await page.$('input[name="user[password]"], input[name="helpdesk_user[password]"], input[type="password"], #user_password');
 
-      if (usernameInput && passwordInput) {
-        await usernameInput.fill(MAS_USERNAME);
+      if (emailInput && passwordInput) {
+        await emailInput.fill(MAS_USERNAME);
         await passwordInput.fill(MAS_PASSWORD);
         await page.waitForTimeout(500);
 
-        const submitBtn = await page.$('button[type="submit"], input[type="submit"], button:has-text("Log In"), button:has-text("Sign In")');
+        const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
         if (submitBtn) {
           await submitBtn.click();
-          await page.waitForTimeout(5000);
+          await page.waitForLoadState("networkidle", { timeout: 15000 });
+          await page.waitForTimeout(3000);
         }
 
-        const stillOnLogin = await page.$('input[type="password"]');
+        const stillOnLogin = await page.$('input[type="password"]:visible');
         if (stillOnLogin) {
-          throw new Error("Portal login failed - check credentials");
+          throw new Error("Portal login failed — check credentials");
         }
+
+        logger.info({ submissionId: sub.id }, "Batch worker: login successful");
+
+        await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
+        await page.waitForTimeout(2000);
       } else {
-        throw new Error("Portal login form not recognized");
+        throw new Error("Portal login form not recognized — could not find email/password inputs");
       }
     }
 
-    const newRequestLink = await page.$('a:has-text("Submit"), a:has-text("New Request"), a:has-text("Create")');
-    if (newRequestLink) {
-      await newRequestLink.click();
-      await page.waitForTimeout(2000);
+    const formDropdown = await page.$("#helpdesk_ticket_forms_dropdown");
+    if (formDropdown) {
+      const selectedValue = await formDropdown.inputValue();
+      logger.info({ submissionId: sub.id, selectedValue, expected: ticketFormSlug }, "Batch worker: ticket form dropdown value");
+      if (selectedValue !== ticketFormSlug) {
+        await formDropdown.selectOption(ticketFormSlug);
+        await page.waitForLoadState("networkidle", { timeout: 15000 });
+        await page.waitForTimeout(2000);
+        logger.info({ submissionId: sub.id }, "Batch worker: ticket form changed, page reloaded");
+      }
     }
 
-    const formElements = await page.evaluate(() => {
-      const els: { tag: string; type?: string; name?: string; id?: string; classes?: string; label?: string; placeholder?: string }[] = [];
-      document.querySelectorAll("input, select, textarea, [role='combobox'], [role='listbox']").forEach(el => {
-        const htmlEl = el as HTMLElement;
-        els.push({
-          tag: el.tagName.toLowerCase(),
-          type: (el as HTMLInputElement).type || undefined,
-          name: (el as HTMLInputElement).name || undefined,
-          id: el.id || undefined,
-          classes: el.className?.toString().substring(0, 100) || undefined,
-          placeholder: (el as HTMLInputElement).placeholder || undefined,
-          label: (() => {
-            const labelEl = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
-            return labelEl?.textContent?.trim()?.substring(0, 60) || undefined;
-          })(),
-        });
-      });
-      return els;
-    });
-    logger.info({ submissionId: sub.id, formElements: JSON.stringify(formElements) }, "Batch worker: discovered form elements");
+    const mainForm = await page.$("#new_helpdesk_ticket");
+    if (!mainForm) {
+      throw new Error("Freshdesk ticket form (#new_helpdesk_ticket) not found — portal page may not have loaded correctly");
+    }
+    logger.info({ submissionId: sub.id }, "Batch worker: ticket form found, filling fields");
 
     const isGpsIssue = sub.issueType === "GPS Control Deviation";
 
-    const issueTypeSelect = await page.$([
-      'select[name="issue_type"]', '#issue_type', '[data-field="issue_type"]',
-      '#request_issue_type_select',
-      'select#request_fields_issue_type_select',
-      'select[id*="issue"]',
-      'select[id*="type"]',
-      '.nesty-input',
-    ].join(", "));
-
-    if (!issueTypeSelect) {
-      const allSelects = await page.$$("select");
-      logger.info({ submissionId: sub.id, selectCount: allSelects.length }, "Batch worker: no issue type select found by ID, trying all selects");
-      for (const sel of allSelects) {
-        const options = await sel.evaluate((el) => {
-          return Array.from(el.querySelectorAll("option")).map(o => ({ value: o.value, text: o.textContent?.trim() }));
-        });
-        logger.info({ submissionId: sub.id, options: JSON.stringify(options) }, "Batch worker: available select options");
-        const matchingOption = options.find(o =>
-          o.text?.toLowerCase().includes(sub.issueType.toLowerCase()) ||
-          o.value?.toLowerCase().includes(sub.issueType.toLowerCase().replace(/\s+/g, "_"))
-        );
-        if (matchingOption && sub.issueType) {
-          await sel.selectOption(matchingOption.value!);
-          await page.waitForTimeout(2000);
-          logger.info({ submissionId: sub.id, issueType: sub.issueType, selectedValue: matchingOption.value }, "Batch worker: issue type selected via option search");
-          break;
-        }
-      }
-    } else if (sub.issueType) {
-      const tagName = await issueTypeSelect.evaluate(el => el.tagName.toLowerCase());
-      if (tagName === "select") {
-        const options = await issueTypeSelect.evaluate((el) => {
-          return Array.from(el.querySelectorAll("option")).map(o => ({ value: o.value, text: o.textContent?.trim() }));
-        });
-        logger.info({ submissionId: sub.id, options: JSON.stringify(options) }, "Batch worker: issue type select options");
-        const matchingOption = options.find(o =>
-          o.text?.toLowerCase().includes(sub.issueType.toLowerCase()) ||
-          o.value?.toLowerCase().includes(sub.issueType.toLowerCase().replace(/\s+/g, "_"))
-        );
-        if (matchingOption) {
-          await issueTypeSelect.selectOption(matchingOption.value!);
-        } else {
-          await issueTypeSelect.selectOption({ label: sub.issueType });
-        }
-      } else {
-        await issueTypeSelect.click();
-        await page.waitForTimeout(500);
-        const option = await page.$(`[role="option"]:has-text("${sub.issueType}"), li:has-text("${sub.issueType}")`);
-        if (option) await option.click();
-      }
-      await page.waitForTimeout(2000);
-      logger.info({ submissionId: sub.id, issueType: sub.issueType, isGpsIssue }, "Batch worker: issue type selected, waiting for conditional fields");
-    }
-
-    async function findAndFill(selectors: string[], value: string, fieldName: string): Promise<boolean> {
-      for (const sel of selectors) {
-        const el = await page.$(sel);
-        if (el) {
-          const tag = await el.evaluate(e => e.tagName.toLowerCase());
-          if (tag === "select") {
-            await el.selectOption(value);
-          } else {
-            await el.fill(value);
-          }
-          logger.info({ submissionId: sub.id, fieldName, selector: sel }, `Batch worker: filled ${fieldName}`);
-          return true;
-        }
-      }
-      const byLabel = await page.$(`label:has-text("${fieldName}")`);
-      if (byLabel) {
-        const forId = await byLabel.getAttribute("for");
-        if (forId) {
-          const el = await page.$(`#${forId}`);
-          if (el) {
-            await el.fill(value);
-            logger.info({ submissionId: sub.id, fieldName, forId }, `Batch worker: filled ${fieldName} via label`);
-            return true;
-          }
-        }
-      }
-      logger.warn({ submissionId: sub.id, fieldName }, `Batch worker: field not found — ${fieldName}`);
-      return false;
-    }
-
     if (sub.subject) {
-      await findAndFill([
-        'input[name="subject"]', '#subject', '#request_subject',
-        'input[id*="subject"]', '[data-field="subject"] input',
-      ], sub.subject, "Subject");
+      const el = await page.$("#helpdesk_ticket_subject");
+      if (el) {
+        await el.fill(sub.subject);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled Subject");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: Subject field not found");
+      }
     }
 
     if (sub.requesterEmail) {
-      await findAndFill([
-        'input[name="requester_email"]', 'input[name="email"]', '#email',
-        '#request_email', 'input[id*="email"]', 'input[type="email"]',
-      ], sub.requesterEmail, "Email");
+      const el = await page.$("#helpdesk_ticket_email");
+      if (el) {
+        await el.fill(sub.requesterEmail);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled Email");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: Email field not found");
+      }
     }
 
     if (sub.transportationProviderName) {
-      await findAndFill([
-        'input[name="transportation_provider"]', 'input[name="provider"]',
-        'input[id*="provider"]', 'input[id*="transportation"]',
-      ], sub.transportationProviderName, "Transportation Provider");
+      const el = await page.$("#helpdesk_ticket_custom_field_cf_tp_name_4128361");
+      if (el) {
+        await el.fill(sub.transportationProviderName);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled TP Name");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: TP Name field not found");
+      }
     }
 
     if (sub.phoneNumber) {
-      await findAndFill([
-        'input[name="phone"]', 'input[type="tel"]',
-        'input[id*="phone"]', 'input[id*="tel"]',
-      ], sub.phoneNumber, "Phone");
+      const el = await page.$("#helpdesk_ticket_custom_field_cf_phone_number_4128361");
+      if (el) {
+        await el.fill(sub.phoneNumber);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled Phone");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: Phone field not found");
+      }
     }
 
-    if (isGpsIssue && sub.invoiceNumber) {
-      await findAndFill([
-        'input[name="invoice"]', 'input[name="invoice_number"]',
-        'input[id*="invoice"]',
-      ], sub.invoiceNumber, "Invoice Number");
+    if (sub.invoiceNumber) {
+      const el = await page.$("#helpdesk_ticket_custom_field_cf_invoice_number_4128361");
+      if (el) {
+        await el.fill(sub.invoiceNumber);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled Invoice Number");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: Invoice Number field not found");
+      }
     }
 
     if (isGpsIssue && sub.gpsBreadcrumbsAvailable) {
-      const gpsFound = await findAndFill([
-        'select[name="gps_breadcrumbs"]', '#gps_breadcrumbs',
-        'select[id*="gps"]', 'select[id*="breadcrumb"]',
-      ], sub.gpsBreadcrumbsAvailable, "GPS Breadcrumbs");
-      if (!gpsFound) {
-        logger.warn({ submissionId: sub.id }, "Batch worker: GPS breadcrumbs field not found");
+      const el = await page.$("#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361");
+      if (el) {
+        await el.selectOption(sub.gpsBreadcrumbsAvailable);
+        logger.info({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: filled GPS Breadcrumbs");
+      } else {
+        logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found");
       }
     }
 
-    const descriptionFrame = await page.$('iframe.wysiwyg, [data-field="description"] iframe, .fr-element, iframe[id*="description"], .ck-editor iframe');
-    if (descriptionFrame) {
-      const tagName = await descriptionFrame.evaluate(el => el.tagName.toLowerCase());
-      if (tagName === "iframe") {
-        const frame = await descriptionFrame.contentFrame();
-        if (frame) {
-          const body = await frame.$("body");
-          if (body) {
-            await body.click();
-            await frame.evaluate((html: string) => {
-              document.body.innerHTML = html;
-            }, sub.descriptionHtml || buildDescription(sub));
+    const descriptionText = sub.descriptionHtml || buildDescription(sub);
+    const richEditorFrame = await page.$('#helpdesk_ticket_ticket_body_attributes_description_html');
+    if (richEditorFrame) {
+      const isVisible = await richEditorFrame.isVisible();
+      if (isVisible) {
+        await richEditorFrame.fill(descriptionText);
+        logger.info({ submissionId: sub.id }, "Batch worker: filled Description via textarea");
+      } else {
+        const froalaEditor = await page.$('.fr-element.fr-view');
+        if (froalaEditor) {
+          await froalaEditor.click();
+          await froalaEditor.evaluate((el, text) => {
+            el.innerHTML = `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
+          }, descriptionText);
+          logger.info({ submissionId: sub.id }, "Batch worker: filled Description via Froala editor");
+        } else {
+          const contentEditable = await page.$('[contenteditable="true"]');
+          if (contentEditable) {
+            await contentEditable.click();
+            await contentEditable.evaluate((el, text) => {
+              el.innerHTML = `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
+            }, descriptionText);
+            logger.info({ submissionId: sub.id }, "Batch worker: filled Description via contenteditable");
+          } else {
+            logger.warn({ submissionId: sub.id }, "Batch worker: Description field hidden and no rich editor found");
           }
         }
-      } else {
-        await descriptionFrame.fill(sub.descriptionHtml || buildDescription(sub));
       }
-      logger.info({ submissionId: sub.id }, "Batch worker: description filled via rich editor");
     } else {
-      const filled = await findAndFill([
-        'textarea[name="description"]', '#description', '#request_description',
-        'textarea[id*="description"]', '[data-field="description"]',
-        'textarea', '[contenteditable="true"]',
-      ], sub.descriptionHtml || buildDescription(sub), "Description");
-      if (!filled) {
-        const contentEditable = await page.$('[contenteditable="true"]');
-        if (contentEditable) {
-          await contentEditable.click();
-          await page.keyboard.type(sub.descriptionHtml || buildDescription(sub));
-          logger.info({ submissionId: sub.id }, "Batch worker: description typed via contenteditable");
-        }
-      }
+      logger.warn({ submissionId: sub.id }, "Batch worker: Description textarea not found at all");
     }
 
-    const allInputs = await page.evaluate(() => {
-      const results: { id: string; name: string; tag: string; value: string; type: string }[] = [];
-      document.querySelectorAll("input, select, textarea").forEach(el => {
-        const htmlEl = el as HTMLInputElement;
-        results.push({ id: el.id || "", name: htmlEl.name || "", tag: el.tagName.toLowerCase(), value: htmlEl.value?.substring(0, 50) || "", type: htmlEl.type || "" });
-      });
-      return results;
+    const allInputs = await page.$$eval("input:not([type='hidden']), select, textarea", (elements) => {
+      return elements
+        .filter((el) => (el as any).value)
+        .map((el) => ({
+          id: el.id || "",
+          name: (el as any).name || "",
+          value: ((el as any).value || "").substring(0, 80),
+        }));
     });
-    logger.info({ submissionId: sub.id, filledFields: JSON.stringify(allInputs.filter(f => f.value)) }, "Batch worker: form fields populated");
+    logger.info({ submissionId: sub.id, filledFields: JSON.stringify(allInputs) }, "Batch worker: form fields populated");
 
     const hasEvidence = sub.attachmentUrls && sub.attachmentUrls.length > 0;
 
@@ -446,33 +389,23 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
 
       let attached = false;
-      const attachmentBtn = await page.$('button:has-text("Attachment"), a:has-text("Attachment"), button:has-text("Attach"), input[type="file"]');
+      const freshdeskFileInput = await page.$('#upload_file');
+      const filesListInput = await page.$('#files_list');
 
-      if (attachmentBtn) {
-        const tagName = await attachmentBtn.evaluate(el => el.tagName.toLowerCase());
-
-        if (tagName === "input") {
-          await attachmentBtn.setInputFiles(downloadedFiles);
-          attached = true;
-          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via input");
-        } else {
-          for (const filePath of downloadedFiles) {
-            const [fileChooser] = await Promise.all([
-              page.waitForEvent("filechooser", { timeout: 15000 }),
-              attachmentBtn.click(),
-            ]);
-            await fileChooser.setFiles(filePath);
-            await page.waitForTimeout(2000);
-            logger.info({ submissionId: sub.id, file: filePath }, "Batch worker: file attached via chooser");
-          }
-          attached = true;
-        }
+      if (freshdeskFileInput) {
+        await freshdeskFileInput.setInputFiles(downloadedFiles);
+        attached = true;
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via Freshdesk #upload_file input");
+      } else if (filesListInput) {
+        await filesListInput.setInputFiles(downloadedFiles);
+        attached = true;
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via Freshdesk #files_list input");
       } else {
-        const fileInput = await page.$('input[type="file"]');
-        if (fileInput) {
-          await fileInput.setInputFiles(downloadedFiles);
+        const anyFileInput = await page.$('input[type="file"]');
+        if (anyFileInput) {
+          await anyFileInput.setInputFiles(downloadedFiles);
           attached = true;
-          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via hidden input");
+          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via fallback file input");
         }
       }
 
@@ -501,13 +434,18 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       return { screenshotPath };
     }
 
-    const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit")');
+    const submitButton = await page.$('button.new-ticket-submit-button[type="submit"]')
+      || await page.$('#new_helpdesk_ticket button[type="submit"]')
+      || await page.$('button[type="submit"]');
     if (submitButton) {
       await submitButton.click();
+      await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(5000);
 
+      const currentUrl = page.url();
       const confirmationText = await page.textContent("body");
-      const ticketMatch = confirmationText?.match(/(?:ticket|request|case|confirmation)\s*(?:#|number|id)?\s*[:.]?\s*(\w+)/i);
+      const ticketMatch = confirmationText?.match(/ticket\s*(?:#|number|id|:)?\s*(\d+)/i)
+        || currentUrl.match(/tickets\/(\d+)/);
       const ticketId = ticketMatch ? ticketMatch[1] : `portal-${Date.now()}`;
 
       await context.storageState({ path: statePath });
@@ -517,7 +455,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       logger.info({ submissionId: sub.id, ticketId }, "Batch worker: submission completed");
       return { ticketId };
     } else {
-      throw new Error("Submit button not found on portal page");
+      throw new Error("Submit button not found on Freshdesk portal page");
     }
   } catch (error) {
     try {
