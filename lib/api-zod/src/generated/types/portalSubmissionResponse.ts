@@ -59,6 +59,8 @@ export interface PortalSubmissionResponse {
   /** @nullable */
   portalTicketId?: string | null;
   /** @nullable */
+  screenshotUrl?: string | null;
+  /** @nullable */
   errorMessage?: string | null;
   /** @nullable */
   submittedAt?: string | null;

@@ -419,6 +419,15 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
   res.json(sub);
 }));
 
+router.post("/portal-submissions/:id/sandbox-run", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { runSandboxForSubmission } = await import("../lib/batch-processor");
+  const updated = await runSandboxForSubmission(id);
+  res.json(updated);
+}));
+
 router.get("/portal-submissions/:id/activity", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

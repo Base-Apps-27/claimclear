@@ -7,6 +7,7 @@ import {
   useListBotInstances,
   useRegeneratePortalSubmissionText,
   useUpdatePortalSubmissionDraft,
+  useSandboxRunPortalSubmission,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -69,10 +70,12 @@ export default function PortalSubmissions() {
   const [editedText, setEditedText] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [sandboxRunning, setSandboxRunning] = useState<number | null>(null);
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
   const regenerateText = useRegeneratePortalSubmissionText();
   const updateDraft = useUpdatePortalSubmissionDraft();
+  const sandboxRun = useSandboxRunPortalSubmission();
   const { data: botInstances } = useListBotInstances();
   const { data: activityLogs } = useListBotActivity(selectedId || 0, {
     query: { queryKey: getListBotActivityQueryKey(selectedId || 0), enabled: !!selectedId }
@@ -156,6 +159,18 @@ export default function PortalSubmissions() {
   const handleCancel = async (id: number) => {
     await cancelSubmission.mutateAsync({ id });
     invalidate();
+  };
+
+  const handleSandboxRun = async (id: number) => {
+    setSandboxRunning(id);
+    try {
+      await sandboxRun.mutateAsync({ id });
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: getListBotActivityQueryKey(id) });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Sandbox run failed");
+    }
+    setSandboxRunning(null);
   };
 
   const selected = selectedId ? (submissions || []).find(s => s.id === selectedId) : null;
@@ -346,6 +361,19 @@ export default function PortalSubmissions() {
                   <span className="text-xs text-muted-foreground">
                     {sub.createdAt ? formatDateTime(sub.createdAt) : ""}
                   </span>
+                  {["draft", "pending", "failed", "dry_run"].includes(sub.status) && (
+                    <WrapTooltip content="Sandbox run — fill out the portal form without submitting, and capture a screenshot.">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-purple-600"
+                        disabled={sandboxRunning === sub.id}
+                        onClick={(e) => { e.stopPropagation(); handleSandboxRun(sub.id); }}
+                      >
+                        {sandboxRunning === sub.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+                      </Button>
+                    </WrapTooltip>
+                  )}
                   <WrapTooltip content="View full submission details and bot activity timeline.">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedId(sub.id)}>
                       <Eye className="h-4 w-4" />
@@ -477,6 +505,25 @@ export default function PortalSubmissions() {
                       {selected.descriptionHtml}
                     </div>
                   )}
+                </div>
+              )}
+
+              {selected.screenshotUrl && (
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Image className="h-4 w-4 text-purple-600" />
+                    <span className="text-sm font-medium">Sandbox Screenshot</span>
+                    <Badge className="bg-purple-500/20 text-purple-700 border-purple-300 text-[10px]" variant="outline">Dry Run</Badge>
+                  </div>
+                  <div className="border rounded-md overflow-hidden bg-muted/30">
+                    <img
+                      src={`/api/storage${selected.screenshotUrl}`}
+                      alt="Sandbox run screenshot of the filled portal form"
+                      className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => window.open(`/api/storage${selected.screenshotUrl}`, "_blank")}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Click to open full-size in a new tab.</p>
                 </div>
               )}
 

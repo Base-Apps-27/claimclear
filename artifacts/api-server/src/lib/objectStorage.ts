@@ -1,6 +1,7 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Readable } from "stream";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
 import {
   ObjectAclPolicy,
   ObjectPermission,
@@ -187,6 +188,19 @@ export class ObjectStorageService {
     const objectFile = await this.getObjectEntityFile(normalizedPath);
     await setObjectAclPolicy(objectFile, aclPolicy);
     return normalizedPath;
+  }
+
+  async uploadLocalFile(localPath: string, contentType: string = "image/png"): Promise<string> {
+    const privateObjectDir = this.getPrivateObjectDir();
+    const objectId = randomUUID();
+    const ext = localPath.split(".").pop() || "png";
+    const fullPath = `${privateObjectDir}/uploads/${objectId}.${ext}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    const fileBuffer = fs.readFileSync(localPath);
+    await file.save(fileBuffer, { contentType, resumable: false });
+    return `/objects/uploads/${objectId}.${ext}`;
   }
 
   async canAccessObjectEntity({

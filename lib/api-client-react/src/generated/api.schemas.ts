@@ -391,6 +391,7 @@ export type PortalSubmissionResponseStatus =
   (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
 
 export const PortalSubmissionResponseStatus = {
+  draft: "draft",
   pending: "pending",
   in_progress: "in_progress",
   submitted: "submitted",
@@ -468,6 +469,8 @@ export interface PortalSubmissionResponse {
   workflowHistory?: PortalSubmissionResponseWorkflowHistory;
   /** @nullable */
   portalTicketId?: string | null;
+  /** @nullable */
+  screenshotUrl?: string | null;
   /** @nullable */
   errorMessage?: string | null;
   /** @nullable */

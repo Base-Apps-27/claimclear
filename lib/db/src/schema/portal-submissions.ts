@@ -33,6 +33,7 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   evidenceFiles: jsonb("evidence_files"),
   workflowHistory: jsonb("workflow_history"),
   portalTicketId: text("portal_ticket_id"),
+  screenshotUrl: text("screenshot_url"),
   errorMessage: text("error_message"),
   submittedAt: text("submitted_at"),
   attempts: integer("attempts").notNull().default(0),

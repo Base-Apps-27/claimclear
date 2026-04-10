@@ -858,6 +858,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /portal-submissions/{id}/sandbox-run:
+    post:
+      operationId: sandboxRunPortalSubmission
+      tags: [portalSubmissions]
+      summary: Run a single submission in sandbox mode (fills form but does not submit) and saves a screenshot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sandbox run completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
   /bot/portal-submissions/poll:
     post:
       operationId: pollPortalSubmissions
@@ -1909,7 +1928,7 @@ components:
           type: integer
         status:
           type: string
-          enum: ["pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"]
+          enum: ["draft", "pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"]
         issueType:
           type: ["string", "null"]
         subject:
@@ -1953,6 +1972,8 @@ components:
         workflowHistory:
           type: ["object", "null"]
         portalTicketId:
+          type: ["string", "null"]
+        screenshotUrl:
           type: ["string", "null"]
         errorMessage:
           type: ["string", "null"]

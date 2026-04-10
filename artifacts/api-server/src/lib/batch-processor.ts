@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { broadcastPresenceEvent } from "./sse";
+import { ObjectStorageService } from "./objectStorage";
 
 export interface BatchJob {
   id: string;
@@ -250,4 +251,127 @@ async function processViaExternalBot(
   }
 
   logger.info({ submissionId: sub.id, ticketId: result.ticketId, dryRun }, "Batch worker completed successfully");
+}
+
+export async function runSandboxForSubmission(subId: number): Promise<typeof portalSubmissionsTable.$inferSelect> {
+  const [sub] = await db.select().from(portalSubmissionsTable)
+    .where(eq(portalSubmissionsTable.id, subId));
+
+  if (!sub) throw new Error("Submission not found");
+
+  const allowedStatuses = ["draft", "pending", "failed", "dry_run"];
+  if (!allowedStatuses.includes(sub.status)) {
+    throw new Error(`Cannot sandbox-run a submission in "${sub.status}" status`);
+  }
+
+  const previousStatus = sub.status;
+
+  await db.update(portalSubmissionsTable).set({
+    status: "in_progress",
+    attempts: (sub.attempts || 0) + 1,
+  }).where(eq(portalSubmissionsTable.id, subId));
+
+  broadcastPresenceEvent({
+    type: "bot_started",
+    claimId: sub.claimId,
+    userName: "Sandbox Runner",
+    userEmail: null,
+    botProcess: "portal_sandbox",
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    const { runBatchWorker } = await import("../bot/batch-worker");
+
+    const workerSub: import("../bot/batch-worker").PortalSubmission = {
+      id: sub.id,
+      confNumber: sub.confNumber || "",
+      serviceDate: sub.serviceDate || "",
+      refNumber: sub.refNumber || "",
+      clientNumber: sub.clientNumber || "",
+      carNumber: sub.carNumber || "",
+      claimAmount: sub.claimAmount,
+      errorTypeName: sub.errorTypeName || "",
+      errorDetails: sub.errorDetails || "",
+      issueType: sub.issueType || "",
+      subject: sub.subject || "",
+      requesterEmail: sub.requesterEmail || "",
+      transportationProviderName: sub.transportationProviderName || "",
+      phoneNumber: sub.phoneNumber || "",
+      invoiceNumber: sub.invoiceNumber || "",
+      gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || "",
+      descriptionHtml: sub.descriptionHtml || "",
+      disputeReason: sub.disputeReason || "",
+      evidenceNotes: sub.evidenceNotes || "",
+      attachmentUrls: Array.isArray(sub.attachmentUrls)
+        ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
+        : [],
+    };
+
+    const result = await runBatchWorker(workerSub, true);
+
+    let screenshotUrl: string | null = null;
+    if (result.screenshotPath) {
+      try {
+        const storage = new ObjectStorageService();
+        screenshotUrl = await storage.uploadLocalFile(result.screenshotPath, "image/png");
+        const fs = await import("fs");
+        try { fs.unlinkSync(result.screenshotPath); } catch {}
+      } catch (uploadErr) {
+        logger.warn({ err: uploadErr, submissionId: subId }, "Failed to upload sandbox screenshot to object storage");
+      }
+    }
+
+    const [updated] = await db.update(portalSubmissionsTable).set({
+      status: "dry_run",
+      screenshotUrl,
+    }).where(eq(portalSubmissionsTable.id, subId)).returning();
+
+    await db.insert(botActivityLogTable).values({
+      submissionId: subId,
+      botInstanceId: null,
+      action: "sandbox_run_complete",
+      success: true,
+      message: `Sandbox dry run completed${screenshotUrl ? " — screenshot saved" : ""}`,
+      screenshotPath: result.screenshotPath || null,
+    });
+
+    broadcastPresenceEvent({
+      type: "bot_completed",
+      claimId: sub.claimId,
+      userName: "Sandbox Runner",
+      userEmail: null,
+      botProcess: "portal_sandbox",
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, submissionId: subId }, "Sandbox run failed");
+
+    const [updated] = await db.update(portalSubmissionsTable).set({
+      status: previousStatus === "dry_run" ? "dry_run" : "failed",
+      errorMessage: `Sandbox run failed: ${errMsg}`,
+    }).where(eq(portalSubmissionsTable.id, subId)).returning();
+
+    await db.insert(botActivityLogTable).values({
+      submissionId: subId,
+      botInstanceId: null,
+      action: "sandbox_run_failed",
+      success: false,
+      message: errMsg,
+    });
+
+    broadcastPresenceEvent({
+      type: "bot_completed",
+      claimId: sub.claimId,
+      userName: "Sandbox Runner",
+      userEmail: null,
+      botProcess: "portal_sandbox",
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  }
 }

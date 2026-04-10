@@ -3527,6 +3527,93 @@ export const useConfirmPortalSubmission = <
 };
 
 /**
+ * @summary Run a single submission in sandbox mode (fills form but does not submit) and saves a screenshot
+ */
+export const getSandboxRunPortalSubmissionUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/sandbox-run`;
+};
+
+export const sandboxRunPortalSubmission = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getSandboxRunPortalSubmissionUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSandboxRunPortalSubmissionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sandboxRunPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sandboxRunPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["sandboxRunPortalSubmission"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sandboxRunPortalSubmission>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return sandboxRunPortalSubmission(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SandboxRunPortalSubmissionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sandboxRunPortalSubmission>>
+>;
+
+export type SandboxRunPortalSubmissionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run a single submission in sandbox mode (fills form but does not submit) and saves a screenshot
+ */
+export const useSandboxRunPortalSubmission = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sandboxRunPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sandboxRunPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getSandboxRunPortalSubmissionMutationOptions(options));
+};
+
+/**
  * @summary Bot polls for pending submissions (bot token auth)
  */
 export const getPollPortalSubmissionsUrl = () => {

@@ -10,6 +10,7 @@ export type PortalSubmissionResponseStatus =
   (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
 
 export const PortalSubmissionResponseStatus = {
+  draft: "draft",
   pending: "pending",
   in_progress: "in_progress",
   submitted: "submitted",
