@@ -215,8 +215,9 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
 
   const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
-  if (existing.status !== "draft") {
-    res.status(400).json({ error: "Only draft submissions can be edited" });
+  const editableStatuses = ["draft", "pending", "failed"];
+  if (!editableStatuses.includes(existing.status)) {
+    res.status(400).json({ error: "Only draft, pending, or failed submissions can be edited" });
     return;
   }
 
@@ -228,6 +229,48 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
 
   const [sub] = await db.update(portalSubmissionsTable).set(updates)
     .where(eq(portalSubmissionsTable.id, id)).returning();
+
+  res.json(sub);
+}));
+
+router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const editableStatuses = ["draft", "pending", "failed"];
+  if (!editableStatuses.includes(existing.status)) {
+    res.status(400).json({ error: "Cannot regenerate text for submissions in this status" });
+    return;
+  }
+
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, existing.claimId));
+  if (!claim) { res.status(404).json({ error: "Associated claim not found" }); return; }
+
+  const settings = await getPortalSettings();
+
+  let errorType: typeof errorTypesTable.$inferSelect | null = null;
+  if (claim.errorTypeId) {
+    const etId = parseInt(claim.errorTypeId, 10);
+    if (!isNaN(etId)) {
+      const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, etId));
+      errorType = et || null;
+    }
+  }
+
+  let generatedDescription = "";
+  try {
+    generatedDescription = await generatePortalDescription(claim, errorType, existing.disputeReason || "", settings);
+  } catch (err) {
+    logger.warn({ err }, "AI portal description regeneration failed, using fallback");
+    generatedDescription = buildFallbackDescription(claim, existing.disputeReason || "");
+  }
+
+  const [sub] = await db.update(portalSubmissionsTable).set({
+    descriptionHtml: generatedDescription,
+  }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   res.json(sub);
 }));

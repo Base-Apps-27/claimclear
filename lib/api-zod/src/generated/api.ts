@@ -1262,6 +1262,53 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
 });
 
 /**
+ * @summary Regenerate the AI dispute text for a submission
+ */
+export const RegeneratePortalSubmissionTextParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RegeneratePortalSubmissionTextResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  status: zod.enum([
+    "pending",
+    "in_progress",
+    "submitted",
+    "failed",
+    "cancelled",
+    "dry_run",
+  ]),
+  issueType: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  requesterEmail: zod.string().nullish(),
+  transportationProviderName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  gpsBreadcrumbsAvailable: zod.string().nullish(),
+  descriptionHtml: zod.string().nullish(),
+  attachmentUrls: zod.object({}).passthrough().nullish(),
+  confNumber: zod.string().nullish(),
+  serviceDate: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  disputeReason: zod.string().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  workflowHistory: zod.object({}).passthrough().nullish(),
+  portalTicketId: zod.string().nullish(),
+  errorMessage: zod.string().nullish(),
+  submittedAt: zod.string().nullish(),
+  attempts: zod.number(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
  * @summary Confirm a draft submission and move it to pending status for bot processing
  */
 export const ConfirmPortalSubmissionParams = zod.object({

@@ -5,6 +5,8 @@ import {
   useRetryPortalSubmission, useCancelPortalSubmission,
   useListBotActivity, getListBotActivityQueryKey,
   useListBotInstances,
+  useRegeneratePortalSubmissionText,
+  useUpdatePortalSubmissionDraft,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
 const statusColors: Record<string, string> = {
@@ -62,8 +65,14 @@ export default function PortalSubmissions() {
   const { data: submissions, isLoading } = useListPortalSubmissions(
     statusFilter ? { status: statusFilter } : undefined
   );
+  const [editingDisputeText, setEditingDisputeText] = useState(false);
+  const [editedText, setEditedText] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
+  const regenerateText = useRegeneratePortalSubmissionText();
+  const updateDraft = useUpdatePortalSubmissionDraft();
   const { data: botInstances } = useListBotInstances();
   const { data: activityLogs } = useListBotActivity(selectedId || 0, {
     query: { queryKey: getListBotActivityQueryKey(selectedId || 0), enabled: !!selectedId }
@@ -363,21 +372,21 @@ export default function PortalSubmissions() {
         </div>
       )}
 
-      <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+      <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditingDisputeText(false); } }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Submission Details</DialogTitle>
           </DialogHeader>
           {selected && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
               <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
                 <div className="min-w-0"><span className="text-muted-foreground">Conf #:</span> <span className="font-mono break-all">{selected.confNumber}</span></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Status:</span> <WrapTooltip content={statusDescriptions[selected.status] || selected.status}><Badge className={`${statusColors[selected.status] || ""} cursor-help`} variant="outline">{selected.status}</Badge></WrapTooltip></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || "-"}</div>
-                <div className="min-w-0 truncate"><span className="text-muted-foreground">Subject:</span> {selected.subject || "-"}</div>
-                <div className="min-w-0 truncate"><span className="text-muted-foreground">Email:</span> {selected.requesterEmail || "-"}</div>
-                <div className="min-w-0 truncate"><span className="text-muted-foreground">Provider:</span> {selected.transportationProviderName || "-"}</div>
-                <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> {selected.invoiceNumber || "-"}</div>
+                <div className="min-w-0"><span className="text-muted-foreground">Subject:</span> <span className="break-all">{selected.subject || "-"}</span></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Email:</span> <span className="break-all">{selected.requesterEmail || "-"}</span></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Provider:</span> <span className="break-all">{selected.transportationProviderName || "-"}</span></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> <span className="break-all">{selected.invoiceNumber || "-"}</span></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
                 <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
                 {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
@@ -394,10 +403,80 @@ export default function PortalSubmissions() {
 
               {selected.descriptionHtml && (
                 <div className="min-w-0">
-                  <span className="text-sm text-muted-foreground block mb-1">Dispute Text</span>
-                  <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border break-words">
-                    {selected.descriptionHtml}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-muted-foreground">Dispute Text</span>
+                    {["draft", "pending", "failed"].includes(selected.status) && !editingDisputeText && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          disabled={regenerating}
+                          onClick={async () => {
+                            setRegenerating(true);
+                            try {
+                              await regenerateText.mutateAsync({ id: selected.id });
+                              invalidate();
+                            } catch {}
+                            setRegenerating(false);
+                          }}
+                        >
+                          {regenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                          Regenerate
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => { setEditedText(selected.descriptionHtml || ""); setEditingDisputeText(true); }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
                   </div>
+                  {editingDisputeText ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="min-h-[200px] text-sm font-mono"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setEditingDisputeText(false)}
+                        >
+                          <X className="h-3 w-3" />
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          disabled={savingEdit}
+                          onClick={async () => {
+                            setSavingEdit(true);
+                            try {
+                              await updateDraft.mutateAsync({ id: selected.id, data: { descriptionHtml: editedText } });
+                              invalidate();
+                              setEditingDisputeText(false);
+                            } catch {}
+                            setSavingEdit(false);
+                          }}
+                        >
+                          {savingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border break-words overflow-x-hidden">
+                      {selected.descriptionHtml}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -412,8 +491,8 @@ export default function PortalSubmissions() {
                   <div className="space-y-2">
                     {activityLogs.map(log => (
                       <div key={log.id} className="text-sm border-l-2 pl-3 py-1" style={{ borderColor: log.success ? 'var(--color-primary)' : 'var(--color-destructive)' }}>
-                        <p className="font-medium">{log.action}</p>
-                        {log.message && <p className="text-muted-foreground text-xs">{log.message}</p>}
+                        <p className="font-medium break-words">{log.action}</p>
+                        {log.message && <p className="text-muted-foreground text-xs break-words">{log.message}</p>}
                         <p className="text-muted-foreground/70 text-xs">{formatDateTime(log.createdAt)}</p>
                       </div>
                     ))}

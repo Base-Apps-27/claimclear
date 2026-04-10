@@ -3353,6 +3353,93 @@ export const useUpdatePortalSubmissionDraft = <
 };
 
 /**
+ * @summary Regenerate the AI dispute text for a submission
+ */
+export const getRegeneratePortalSubmissionTextUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/regenerate`;
+};
+
+export const regeneratePortalSubmissionText = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getRegeneratePortalSubmissionTextUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRegeneratePortalSubmissionTextMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regeneratePortalSubmissionText>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regeneratePortalSubmissionText>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["regeneratePortalSubmissionText"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regeneratePortalSubmissionText>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return regeneratePortalSubmissionText(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegeneratePortalSubmissionTextMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regeneratePortalSubmissionText>>
+>;
+
+export type RegeneratePortalSubmissionTextMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Regenerate the AI dispute text for a submission
+ */
+export const useRegeneratePortalSubmissionText = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regeneratePortalSubmissionText>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regeneratePortalSubmissionText>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRegeneratePortalSubmissionTextMutationOptions(options));
+};
+
+/**
  * @summary Confirm a draft submission and move it to pending status for bot processing
  */
 export const getConfirmPortalSubmissionUrl = (id: number) => {
