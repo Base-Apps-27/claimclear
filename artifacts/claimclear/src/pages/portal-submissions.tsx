@@ -68,8 +68,11 @@ export default function PortalSubmissions() {
   );
   const [editingDisputeText, setEditingDisputeText] = useState(false);
   const [editedText, setEditedText] = useState("");
+  const [editingFields, setEditingFields] = useState(false);
+  const [fieldEdits, setFieldEdits] = useState<Record<string, string>>({});
   const [regenerating, setRegenerating] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingFields, setSavingFields] = useState(false);
   const [sandboxRunning, setSandboxRunning] = useState<number | null>(null);
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
@@ -400,27 +403,130 @@ export default function PortalSubmissions() {
         </div>
       )}
 
-      <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditingDisputeText(false); } }}>
+      <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditingDisputeText(false); setEditingFields(false); } }}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Submission Details</DialogTitle>
           </DialogHeader>
           {selected && (
             <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
-              <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
-                <div className="min-w-0"><span className="text-muted-foreground">Conf #:</span> <span className="font-mono break-all">{selected.confNumber}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Status:</span> <WrapTooltip content={statusDescriptions[selected.status] || selected.status}><Badge className={`${statusColors[selected.status] || ""} cursor-help`} variant="outline">{selected.status}</Badge></WrapTooltip></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || "-"}</div>
-                <div className="min-w-0"><span className="text-muted-foreground">Subject:</span> <span className="break-all">{selected.subject || "-"}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Email:</span> <span className="break-all">{selected.requesterEmail || "-"}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Provider:</span> <span className="break-all">{selected.transportationProviderName || "-"}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> <span className="break-all">{selected.invoiceNumber || "-"}</span></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
-                <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
-                {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
-                {selected.submittedAt && <div className="min-w-0"><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
-                {selected.errorMessage && <div className="col-span-2 min-w-0"><span className="text-muted-foreground">Error:</span> <span className="text-red-600 break-words">{selected.errorMessage}</span></div>}
-              </div>
+              {(() => {
+                const isEditable = ["draft", "pending", "failed", "dry_run"].includes(selected.status);
+                const issueTypeOptions = [
+                  "GPS Control Deviation",
+                  "Other Issue or Question",
+                  "Custom Payment Request",
+                  "MAS Trips App Issue",
+                  "Vehicle, Driver, or TPP",
+                  "Zip Code Block",
+                ];
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Conf #:</span>
+                        <span className="font-mono text-sm">{selected.confNumber}</span>
+                        <WrapTooltip content={statusDescriptions[selected.status] || selected.status}>
+                          <Badge className={`${statusColors[selected.status] || ""} cursor-help`} variant="outline">{selected.status}</Badge>
+                        </WrapTooltip>
+                      </div>
+                      {isEditable && !editingFields && (
+                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => {
+                          setFieldEdits({
+                            issueType: selected.issueType || "",
+                            subject: selected.subject || "",
+                            requesterEmail: selected.requesterEmail || "",
+                            transportationProviderName: selected.transportationProviderName || "",
+                            phoneNumber: selected.phoneNumber || "",
+                            invoiceNumber: selected.invoiceNumber || "",
+                            gpsBreadcrumbsAvailable: selected.gpsBreadcrumbsAvailable || "",
+                          });
+                          setEditingFields(true);
+                        }}>
+                          <Pencil className="h-3 w-3" /> Edit Fields
+                        </Button>
+                      )}
+                    </div>
+                    {editingFields ? (
+                      <div className="space-y-3 border rounded-md p-3 bg-muted/30">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Issue Type</label>
+                            <select className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.issueType || ""} onChange={e => setFieldEdits(p => ({ ...p, issueType: e.target.value }))}>
+                              <option value="">Select...</option>
+                              {issueTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Subject</label>
+                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.subject || ""} onChange={e => setFieldEdits(p => ({ ...p, subject: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Email</label>
+                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.requesterEmail || ""} onChange={e => setFieldEdits(p => ({ ...p, requesterEmail: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Provider Name</label>
+                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.transportationProviderName || ""} onChange={e => setFieldEdits(p => ({ ...p, transportationProviderName: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Phone</label>
+                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.phoneNumber || ""} onChange={e => setFieldEdits(p => ({ ...p, phoneNumber: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Invoice #</label>
+                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.invoiceNumber || ""} onChange={e => setFieldEdits(p => ({ ...p, invoiceNumber: e.target.value }))} />
+                          </div>
+                          {(fieldEdits.issueType === "GPS Control Deviation") && (
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">GPS Breadcrumbs</label>
+                              <select className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.gpsBreadcrumbsAvailable || ""} onChange={e => setFieldEdits(p => ({ ...p, gpsBreadcrumbsAvailable: e.target.value }))}>
+                                <option value="">Select...</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                                <option value="Unknown">Unknown</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingFields(false)}>
+                            <X className="h-3 w-3" /> Cancel
+                          </Button>
+                          <Button size="sm" className="h-7 text-xs gap-1" disabled={savingFields} onClick={async () => {
+                            setSavingFields(true);
+                            try {
+                              await updateDraft.mutateAsync({ id: selected.id, data: fieldEdits });
+                              invalidate();
+                              setEditingFields(false);
+                            } catch {}
+                            setSavingFields(false);
+                          }}>
+                            {savingFields ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
+                        <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || <span className="text-red-500">Not set</span>}</div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Subject:</span> <span className="break-all">{selected.subject || <span className="text-red-500">Not set</span>}</span></div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Email:</span> <span className="break-all">{selected.requesterEmail || <span className="text-red-500">Not set</span>}</span></div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Provider:</span> <span className="break-all">{selected.transportationProviderName || <span className="text-red-500">Not set</span>}</span></div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Phone:</span> <span className="break-all">{selected.phoneNumber || <span className="text-red-500">Not set</span>}</span></div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> <span className="break-all">{selected.invoiceNumber || "-"}</span></div>
+                        {selected.issueType === "GPS Control Deviation" && (
+                          <div className="min-w-0"><span className="text-muted-foreground">GPS Breadcrumbs:</span> {selected.gpsBreadcrumbsAvailable || "-"}</div>
+                        )}
+                        <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
+                        {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
+                        {selected.submittedAt && <div className="min-w-0"><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
+                        {selected.errorMessage && <div className="col-span-2 min-w-0"><span className="text-muted-foreground">Error:</span> <span className="text-red-600 break-words">{selected.errorMessage}</span></div>}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {selected.disputeReason && (
                 <div className="min-w-0">

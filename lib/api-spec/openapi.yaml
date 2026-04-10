@@ -812,6 +812,14 @@ paths:
                   type: string
                 gpsBreadcrumbsAvailable:
                   type: string
+                requesterEmail:
+                  type: string
+                transportationProviderName:
+                  type: string
+                phoneNumber:
+                  type: string
+                invoiceNumber:
+                  type: string
       responses:
         "200":
           description: Updated draft

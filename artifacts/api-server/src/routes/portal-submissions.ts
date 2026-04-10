@@ -226,6 +226,10 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   if (req.body.descriptionHtml !== undefined) updates.descriptionHtml = req.body.descriptionHtml;
   if (req.body.issueType !== undefined) updates.issueType = req.body.issueType;
   if (req.body.gpsBreadcrumbsAvailable !== undefined) updates.gpsBreadcrumbsAvailable = req.body.gpsBreadcrumbsAvailable;
+  if (req.body.requesterEmail !== undefined) updates.requesterEmail = req.body.requesterEmail;
+  if (req.body.transportationProviderName !== undefined) updates.transportationProviderName = req.body.transportationProviderName;
+  if (req.body.phoneNumber !== undefined) updates.phoneNumber = req.body.phoneNumber;
+  if (req.body.invoiceNumber !== undefined) updates.invoiceNumber = req.body.invoiceNumber;
 
   const [sub] = await db.update(portalSubmissionsTable).set(updates)
     .where(eq(portalSubmissionsTable.id, id)).returning();

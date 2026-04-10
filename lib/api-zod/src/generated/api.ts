@@ -1229,6 +1229,10 @@ export const UpdatePortalSubmissionDraftBody = zod.object({
   descriptionHtml: zod.string().optional(),
   issueType: zod.string().optional(),
   gpsBreadcrumbsAvailable: zod.string().optional(),
+  requesterEmail: zod.string().optional(),
+  transportationProviderName: zod.string().optional(),
+  phoneNumber: zod.string().optional(),
+  invoiceNumber: zod.string().optional(),
 });
 
 export const UpdatePortalSubmissionDraftResponse = zod.object({

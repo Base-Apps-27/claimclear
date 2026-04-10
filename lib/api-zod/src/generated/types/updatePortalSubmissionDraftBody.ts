@@ -11,4 +11,8 @@ export type UpdatePortalSubmissionDraftBody = {
   descriptionHtml?: string;
   issueType?: string;
   gpsBreadcrumbsAvailable?: string;
+  requesterEmail?: string;
+  transportationProviderName?: string;
+  phoneNumber?: string;
+  invoiceNumber?: string;
 };
