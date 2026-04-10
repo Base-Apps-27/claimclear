@@ -1,10 +1,37 @@
 import { chromium } from "playwright";
 import path from "path";
 import fs from "fs";
+import { execSync } from "child_process";
 import { logger } from "../lib/logger";
 
 const PORTAL_URL = "https://mastransportation.force.com/support";
 const SESSION_DIR = path.resolve("bot-session");
+
+let browsersInstalled = false;
+
+async function ensureBrowsersInstalled(): Promise<void> {
+  if (browsersInstalled) return;
+  try {
+    const execPath = chromium.executablePath();
+    if (fs.existsSync(execPath)) {
+      browsersInstalled = true;
+      return;
+    }
+  } catch {}
+
+  logger.info("Playwright browsers not found, installing chromium...");
+  try {
+    execSync("npx playwright install chromium --with-deps 2>&1 || npx playwright install chromium 2>&1", {
+      timeout: 120000,
+      stdio: "pipe",
+    });
+    browsersInstalled = true;
+    logger.info("Playwright chromium installed successfully");
+  } catch (err) {
+    logger.error({ err }, "Failed to install Playwright chromium");
+    throw new Error("Playwright browser installation failed. The bot cannot run without a browser.");
+  }
+}
 
 export interface PortalSubmission {
   id: number;
@@ -50,6 +77,8 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
   }
+
+  await ensureBrowsersInstalled();
 
   const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
   const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
