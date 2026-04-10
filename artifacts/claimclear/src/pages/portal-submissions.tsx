@@ -95,7 +95,7 @@ export default function PortalSubmissions() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/portal-submissions/batch-status/${batchId}`);
+        const res = await fetch(`/api/portal-submissions/batch-status/${batchId}`, { credentials: "include" });
         if (res.ok) {
           const job: BatchJob = await res.json();
           setActiveBatch(job);
@@ -123,6 +123,7 @@ export default function PortalSubmissions() {
       const res = await fetch("/api/portal-submissions/batch-process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ submissionIds: ids }),
       });
       if (!res.ok) {

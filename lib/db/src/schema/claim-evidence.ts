@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -14,7 +14,9 @@ export const claimEvidenceTable = pgTable("claim_evidence", {
   notes: text("notes"),
   collectedBy: text("collected_by"),
   collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("claim_evidence_claim_id_idx").on(table.claimId),
+]);
 
 export const insertClaimEvidenceSchema = createInsertSchema(claimEvidenceTable).omit({ id: true, collectedAt: true });
 export type InsertClaimEvidence = z.infer<typeof insertClaimEvidenceSchema>;

@@ -30,8 +30,10 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **Error Type Model:** Simplified to: name, category, description, decision tree (core), and dispute instructions (AI writing guidelines). Legacy fields (guidance, recommendedActions, emailTemplate, disputeReasonsLibrary, evidenceRequirements) remain in the DB schema for backward compatibility but are not surfaced in the editor UI.
 - **Evidence Management:** Supports object storage (GCS-backed presigned URLs), a reusable evidence types library, and claim-specific evidence collection linked to decision tree nodes.
 - **Real-time Updates (SSE):** Server-Sent Events are used to push claim changes and presence updates to connected clients in real-time, enabling features like collision detection and instant UI updates.
-- **Collision Detection:** Advisory-only presence system using heartbeats and SSE to notify users of others viewing or bots processing the same claim.
+- **Collision Detection:** Advisory-only presence system using heartbeats and SSE to notify users of others viewing or bots processing the same claim. Bot presence map auto-purges stale entries older than 10 minutes.
 - **API Security:** Routes are protected with specific authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) based on their function.
+- **Database Indexes:** All major tables have indexes on frequently queried columns (claims: status, confNumber, date, createdAt; portal_submissions: claimId, status; audit_logs: claimId; notes: claimId; claim_evidence: claimId; bot_activity_log: submissionId).
+- **Cron Jobs:** Midnight EST batch job processes pending portal submissions. Weekday 7 AM EST daily brief sends summary email via Outlook/SMTP.
 - **UI/UX:** The application adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
 - **TypeScript Monorepo:** Utilizes TypeScript composite projects and `pnpm workspaces` for robust type-checking and dependency management across packages.
 

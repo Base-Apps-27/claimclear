@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -38,7 +38,10 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   attempts: integer("attempts").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  index("portal_submissions_claim_id_idx").on(table.claimId),
+  index("portal_submissions_status_idx").on(table.status),
+]);
 
 export const insertPortalSubmissionSchema = createInsertSchema(portalSubmissionsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPortalSubmission = z.infer<typeof insertPortalSubmissionSchema>;

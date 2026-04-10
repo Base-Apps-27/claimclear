@@ -35,3 +35,14 @@ cron.schedule("0 0 * * *", async () => {
     logger.info("Midnight cron: no pending submissions to process");
   }
 }, { timezone: "America/New_York" });
+
+cron.schedule("0 7 * * 1-5", async () => {
+  logger.info("Daily brief cron: sending morning brief");
+  try {
+    const res = await fetch(`http://localhost:${port}/api/daily-brief/trigger`, { method: "POST" });
+    const data = await res.json();
+    logger.info({ result: data }, "Daily brief sent");
+  } catch (err) {
+    logger.error({ err }, "Daily brief cron failed");
+  }
+}, { timezone: "America/New_York" });

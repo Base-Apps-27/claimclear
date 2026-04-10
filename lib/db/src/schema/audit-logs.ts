@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -12,7 +12,9 @@ export const auditLogsTable = pgTable("audit_logs", {
   userEmail: text("user_email"),
   userName: text("user_name"),
   timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("audit_logs_claim_id_idx").on(table.claimId),
+]);
 
 export const insertAuditLogSchema = createInsertSchema(auditLogsTable).omit({ id: true, timestamp: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

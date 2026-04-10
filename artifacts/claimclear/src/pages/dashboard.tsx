@@ -29,6 +29,10 @@ export default function Dashboard() {
 
   if (!summary) return null;
 
+  const pipeline = summary.pipeline ?? {} as Record<string, number>;
+  const amounts = summary.amounts ?? {} as Record<string, string>;
+  const stats = summary.stats ?? {} as Record<string, number>;
+
   return (
     <div className="space-y-8 pb-8">
       <div>
@@ -47,7 +51,7 @@ export default function Dashboard() {
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{summary.pipeline.needsEvidence}</div>
+            <div className="text-2xl font-bold text-amber-600">{pipeline.needsEvidence ?? 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Claims requiring manual review
             </p>
@@ -63,7 +67,7 @@ export default function Dashboard() {
             <Clock className="h-4 w-4 text-violet-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-violet-600">{summary.pipeline.awaitingResponse}</div>
+            <div className="text-2xl font-bold text-violet-600">{pipeline.awaitingResponse ?? 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Submitted to payor portals
             </p>
@@ -79,7 +83,7 @@ export default function Dashboard() {
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.amounts.totalExposure)}</div>
+            <div className="text-2xl font-bold text-red-600">{formatCurrency(amounts.totalExposure)}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Claims + ~70% vendor prepay (approx.)
             </p>
@@ -95,9 +99,9 @@ export default function Dashboard() {
             <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(summary.amounts.totalApproved)}</div>
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(amounts.totalApproved)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {formatCurrency(summary.amounts.totalClaimed)} claimed across {summary.stats.total} claims
+              {formatCurrency(amounts.totalClaimed)} claimed across {stats.total ?? 0} claims
             </p>
           </CardContent>
         </Card>

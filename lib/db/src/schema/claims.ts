@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, numeric, boolean, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, boolean, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -42,7 +42,12 @@ export const claimsTable = pgTable("claims", {
   holdPlacedAt: text("hold_placed_at"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  index("claims_conf_number_idx").on(table.confNumber),
+  index("claims_status_idx").on(table.status),
+  index("claims_date_idx").on(table.date),
+  index("claims_created_at_idx").on(table.createdAt),
+]);
 
 export const insertClaimSchema = createInsertSchema(claimsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertClaim = z.infer<typeof insertClaimSchema>;

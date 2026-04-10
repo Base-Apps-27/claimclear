@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -17,7 +17,9 @@ export const notesTable = pgTable("notes", {
   emailSubject: text("email_subject"),
   extractedInvoiceNumbers: text("extracted_invoice_numbers"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("notes_claim_id_idx").on(table.claimId),
+]);
 
 export const insertNoteSchema = createInsertSchema(notesTable).omit({ id: true, createdAt: true });
 export type InsertNote = z.infer<typeof insertNoteSchema>;

@@ -5,6 +5,7 @@ interface ActiveBotProcess {
 }
 
 const activeProcesses = new Map<string, ActiveBotProcess>();
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
 function makeKey(type: string, claimId: number): string {
   return `${type}:${claimId}`;
@@ -31,3 +32,14 @@ export function getActiveBotProcesses(claimId: number): ActiveBotProcess[] {
   }
   return result;
 }
+
+function purgeStaleProcesses(): void {
+  const now = Date.now();
+  for (const [key, proc] of activeProcesses) {
+    if (now - new Date(proc.startedAt).getTime() > STALE_THRESHOLD_MS) {
+      activeProcesses.delete(key);
+    }
+  }
+}
+
+setInterval(purgeStaleProcesses, 5 * 60 * 1000);

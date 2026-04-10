@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { portalSubmissionsTable } from "./portal-submissions";
@@ -14,7 +14,9 @@ export const botActivityLogTable = pgTable("bot_activity_log", {
   screenshotPath: text("screenshot_path"),
   pageHtmlPath: text("page_html_path"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("bot_activity_log_submission_id_idx").on(table.submissionId),
+]);
 
 export const insertBotActivityLogSchema = createInsertSchema(botActivityLogTable).omit({ id: true, createdAt: true });
 export type InsertBotActivityLog = z.infer<typeof insertBotActivityLogSchema>;

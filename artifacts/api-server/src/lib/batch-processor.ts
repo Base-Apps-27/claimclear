@@ -136,7 +136,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
 
       broadcastPresenceEvent({
         type: "bot_completed",
-        claimId: 0,
+        claimId: sub.claimId,
         userName: "Batch Processor",
         userEmail: null,
         botProcess: "portal_submission",
