@@ -222,63 +222,201 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       await page.waitForTimeout(2000);
     }
 
+    const formElements = await page.evaluate(() => {
+      const els: { tag: string; type?: string; name?: string; id?: string; classes?: string; label?: string; placeholder?: string }[] = [];
+      document.querySelectorAll("input, select, textarea, [role='combobox'], [role='listbox']").forEach(el => {
+        const htmlEl = el as HTMLElement;
+        els.push({
+          tag: el.tagName.toLowerCase(),
+          type: (el as HTMLInputElement).type || undefined,
+          name: (el as HTMLInputElement).name || undefined,
+          id: el.id || undefined,
+          classes: el.className?.toString().substring(0, 100) || undefined,
+          placeholder: (el as HTMLInputElement).placeholder || undefined,
+          label: (() => {
+            const labelEl = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
+            return labelEl?.textContent?.trim()?.substring(0, 60) || undefined;
+          })(),
+        });
+      });
+      return els;
+    });
+    logger.info({ submissionId: sub.id, formElements: JSON.stringify(formElements) }, "Batch worker: discovered form elements");
+
     const isGpsIssue = sub.issueType === "GPS Control Deviation";
 
-    const issueTypeSelect = await page.$('select[name="issue_type"], #issue_type, [data-field="issue_type"]');
-    if (issueTypeSelect && sub.issueType) {
-      await issueTypeSelect.selectOption(sub.issueType);
+    const issueTypeSelect = await page.$([
+      'select[name="issue_type"]', '#issue_type', '[data-field="issue_type"]',
+      '#request_issue_type_select',
+      'select#request_fields_issue_type_select',
+      'select[id*="issue"]',
+      'select[id*="type"]',
+      '.nesty-input',
+    ].join(", "));
+
+    if (!issueTypeSelect) {
+      const allSelects = await page.$$("select");
+      logger.info({ submissionId: sub.id, selectCount: allSelects.length }, "Batch worker: no issue type select found by ID, trying all selects");
+      for (const sel of allSelects) {
+        const options = await sel.evaluate((el) => {
+          return Array.from(el.querySelectorAll("option")).map(o => ({ value: o.value, text: o.textContent?.trim() }));
+        });
+        logger.info({ submissionId: sub.id, options: JSON.stringify(options) }, "Batch worker: available select options");
+        const matchingOption = options.find(o =>
+          o.text?.toLowerCase().includes(sub.issueType.toLowerCase()) ||
+          o.value?.toLowerCase().includes(sub.issueType.toLowerCase().replace(/\s+/g, "_"))
+        );
+        if (matchingOption && sub.issueType) {
+          await sel.selectOption(matchingOption.value!);
+          await page.waitForTimeout(2000);
+          logger.info({ submissionId: sub.id, issueType: sub.issueType, selectedValue: matchingOption.value }, "Batch worker: issue type selected via option search");
+          break;
+        }
+      }
+    } else if (sub.issueType) {
+      const tagName = await issueTypeSelect.evaluate(el => el.tagName.toLowerCase());
+      if (tagName === "select") {
+        const options = await issueTypeSelect.evaluate((el) => {
+          return Array.from(el.querySelectorAll("option")).map(o => ({ value: o.value, text: o.textContent?.trim() }));
+        });
+        logger.info({ submissionId: sub.id, options: JSON.stringify(options) }, "Batch worker: issue type select options");
+        const matchingOption = options.find(o =>
+          o.text?.toLowerCase().includes(sub.issueType.toLowerCase()) ||
+          o.value?.toLowerCase().includes(sub.issueType.toLowerCase().replace(/\s+/g, "_"))
+        );
+        if (matchingOption) {
+          await issueTypeSelect.selectOption(matchingOption.value!);
+        } else {
+          await issueTypeSelect.selectOption({ label: sub.issueType });
+        }
+      } else {
+        await issueTypeSelect.click();
+        await page.waitForTimeout(500);
+        const option = await page.$(`[role="option"]:has-text("${sub.issueType}"), li:has-text("${sub.issueType}")`);
+        if (option) await option.click();
+      }
       await page.waitForTimeout(2000);
       logger.info({ submissionId: sub.id, issueType: sub.issueType, isGpsIssue }, "Batch worker: issue type selected, waiting for conditional fields");
     }
 
-    const subjectInput = await page.$('input[name="subject"], #subject, [data-field="subject"]');
-    if (subjectInput && sub.subject) await subjectInput.fill(sub.subject);
-
-    const emailInput = await page.$('input[name="requester_email"], input[name="email"], #email');
-    if (emailInput && sub.requesterEmail) await emailInput.fill(sub.requesterEmail);
-
-    const providerInput = await page.$('input[name="transportation_provider"], input[name="provider"]');
-    if (providerInput && sub.transportationProviderName) await providerInput.fill(sub.transportationProviderName);
-
-    const phoneInput = await page.$('input[name="phone"], input[type="tel"]');
-    if (phoneInput && sub.phoneNumber) await phoneInput.fill(sub.phoneNumber);
-
-    if (isGpsIssue) {
-      const invoiceInput = await page.$('input[name="invoice"], input[name="invoice_number"]');
-      if (invoiceInput && sub.invoiceNumber) {
-        await invoiceInput.fill(sub.invoiceNumber);
-        logger.info({ submissionId: sub.id }, "Batch worker: invoice number filled (GPS issue)");
-      } else if (!invoiceInput) {
-        logger.warn({ submissionId: sub.id }, "Batch worker: invoice number field not found for GPS issue — portal may not have rendered conditional fields");
-      }
-
-      const gpsSelect = await page.$('select[name="gps_breadcrumbs"], #gps_breadcrumbs');
-      if (gpsSelect && sub.gpsBreadcrumbsAvailable) {
-        await gpsSelect.selectOption(sub.gpsBreadcrumbsAvailable);
-        logger.info({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS breadcrumbs answered");
-      } else if (!gpsSelect) {
-        logger.warn({ submissionId: sub.id }, "Batch worker: GPS breadcrumbs field not found for GPS issue");
-      }
-    }
-
-    const descriptionFrame = await page.$('iframe.wysiwyg, [data-field="description"] iframe');
-    if (descriptionFrame) {
-      const frame = await descriptionFrame.contentFrame();
-      if (frame) {
-        const body = await frame.$("body");
-        if (body) {
-          await body.click();
-          await frame.evaluate((html: string) => {
-            document.body.innerHTML = html;
-          }, sub.descriptionHtml || buildDescription(sub));
+    async function findAndFill(selectors: string[], value: string, fieldName: string): Promise<boolean> {
+      for (const sel of selectors) {
+        const el = await page.$(sel);
+        if (el) {
+          const tag = await el.evaluate(e => e.tagName.toLowerCase());
+          if (tag === "select") {
+            await el.selectOption(value);
+          } else {
+            await el.fill(value);
+          }
+          logger.info({ submissionId: sub.id, fieldName, selector: sel }, `Batch worker: filled ${fieldName}`);
+          return true;
         }
       }
-    } else {
-      const descTextarea = await page.$('textarea[name="description"], #description, [data-field="description"]');
-      if (descTextarea) await descTextarea.fill(sub.descriptionHtml || buildDescription(sub));
+      const byLabel = await page.$(`label:has-text("${fieldName}")`);
+      if (byLabel) {
+        const forId = await byLabel.getAttribute("for");
+        if (forId) {
+          const el = await page.$(`#${forId}`);
+          if (el) {
+            await el.fill(value);
+            logger.info({ submissionId: sub.id, fieldName, forId }, `Batch worker: filled ${fieldName} via label`);
+            return true;
+          }
+        }
+      }
+      logger.warn({ submissionId: sub.id, fieldName }, `Batch worker: field not found — ${fieldName}`);
+      return false;
     }
 
-    logger.info({ submissionId: sub.id }, "Batch worker: form fields populated");
+    if (sub.subject) {
+      await findAndFill([
+        'input[name="subject"]', '#subject', '#request_subject',
+        'input[id*="subject"]', '[data-field="subject"] input',
+      ], sub.subject, "Subject");
+    }
+
+    if (sub.requesterEmail) {
+      await findAndFill([
+        'input[name="requester_email"]', 'input[name="email"]', '#email',
+        '#request_email', 'input[id*="email"]', 'input[type="email"]',
+      ], sub.requesterEmail, "Email");
+    }
+
+    if (sub.transportationProviderName) {
+      await findAndFill([
+        'input[name="transportation_provider"]', 'input[name="provider"]',
+        'input[id*="provider"]', 'input[id*="transportation"]',
+      ], sub.transportationProviderName, "Transportation Provider");
+    }
+
+    if (sub.phoneNumber) {
+      await findAndFill([
+        'input[name="phone"]', 'input[type="tel"]',
+        'input[id*="phone"]', 'input[id*="tel"]',
+      ], sub.phoneNumber, "Phone");
+    }
+
+    if (isGpsIssue && sub.invoiceNumber) {
+      await findAndFill([
+        'input[name="invoice"]', 'input[name="invoice_number"]',
+        'input[id*="invoice"]',
+      ], sub.invoiceNumber, "Invoice Number");
+    }
+
+    if (isGpsIssue && sub.gpsBreadcrumbsAvailable) {
+      const gpsFound = await findAndFill([
+        'select[name="gps_breadcrumbs"]', '#gps_breadcrumbs',
+        'select[id*="gps"]', 'select[id*="breadcrumb"]',
+      ], sub.gpsBreadcrumbsAvailable, "GPS Breadcrumbs");
+      if (!gpsFound) {
+        logger.warn({ submissionId: sub.id }, "Batch worker: GPS breadcrumbs field not found");
+      }
+    }
+
+    const descriptionFrame = await page.$('iframe.wysiwyg, [data-field="description"] iframe, .fr-element, iframe[id*="description"], .ck-editor iframe');
+    if (descriptionFrame) {
+      const tagName = await descriptionFrame.evaluate(el => el.tagName.toLowerCase());
+      if (tagName === "iframe") {
+        const frame = await descriptionFrame.contentFrame();
+        if (frame) {
+          const body = await frame.$("body");
+          if (body) {
+            await body.click();
+            await frame.evaluate((html: string) => {
+              document.body.innerHTML = html;
+            }, sub.descriptionHtml || buildDescription(sub));
+          }
+        }
+      } else {
+        await descriptionFrame.fill(sub.descriptionHtml || buildDescription(sub));
+      }
+      logger.info({ submissionId: sub.id }, "Batch worker: description filled via rich editor");
+    } else {
+      const filled = await findAndFill([
+        'textarea[name="description"]', '#description', '#request_description',
+        'textarea[id*="description"]', '[data-field="description"]',
+        'textarea', '[contenteditable="true"]',
+      ], sub.descriptionHtml || buildDescription(sub), "Description");
+      if (!filled) {
+        const contentEditable = await page.$('[contenteditable="true"]');
+        if (contentEditable) {
+          await contentEditable.click();
+          await page.keyboard.type(sub.descriptionHtml || buildDescription(sub));
+          logger.info({ submissionId: sub.id }, "Batch worker: description typed via contenteditable");
+        }
+      }
+    }
+
+    const allInputs = await page.evaluate(() => {
+      const results: { id: string; name: string; tag: string; value: string; type: string }[] = [];
+      document.querySelectorAll("input, select, textarea").forEach(el => {
+        const htmlEl = el as HTMLInputElement;
+        results.push({ id: el.id || "", name: htmlEl.name || "", tag: el.tagName.toLowerCase(), value: htmlEl.value?.substring(0, 50) || "", type: htmlEl.type || "" });
+      });
+      return results;
+    });
+    logger.info({ submissionId: sub.id, filledFields: JSON.stringify(allInputs.filter(f => f.value)) }, "Batch worker: form fields populated");
 
     const hasEvidence = sub.attachmentUrls && sub.attachmentUrls.length > 0;
 
