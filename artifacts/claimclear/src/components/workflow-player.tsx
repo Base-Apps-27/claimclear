@@ -61,6 +61,10 @@ export function WorkflowPlayer({
   const confirmSubmission = useConfirmPortalSubmission();
   const addEvidence = useAddClaimEvidence();
   const isOnHold = claim.status === "On Hold";
+  const [portalSubmitted, setPortalSubmitted] = useState(false);
+
+  const PORTAL_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"];
+  const isAlreadyQueued = PORTAL_STATUSES.includes(claim.status);
 
   const errorTypeId = claim.errorTypeId ? parseInt(claim.errorTypeId, 10) : 0;
   const { data: errorType } = useGetErrorType(errorTypeId, {
@@ -181,9 +185,12 @@ export function WorkflowPlayer({
   const handleConfirmSubmit = async () => {
     if (!draftSubmission) return;
     await confirmSubmission.mutateAsync({ id: draftSubmission.id });
-    setDraftSubmission(null);
+    setPortalSubmitted(true);
     invalidate();
-    onComplete();
+    setTimeout(() => {
+      setDraftSubmission(null);
+      onComplete();
+    }, 2000);
   };
 
   const handlePlaceHold = async () => {
@@ -468,7 +475,24 @@ export function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "submit" && !draftSubmission && (
+      {currentStep === "submit" && isAlreadyQueued && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Submit to MAS Portal</CardTitle></CardHeader>
+          <CardContent>
+            <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-start gap-2">
+              <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Already Queued</p>
+                <p className="mt-1 text-xs">
+                  This claim is already in "{claim.status}" status and has been queued for portal submission.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {currentStep === "submit" && !isAlreadyQueued && !draftSubmission && (
         <Card>
           <CardHeader><CardTitle className="text-base">Submit to MAS Portal</CardTitle></CardHeader>
           <CardContent className="space-y-3">
@@ -504,7 +528,7 @@ export function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "submit" && draftSubmission && !draftEditing && (
+      {currentStep === "submit" && !isAlreadyQueued && draftSubmission && !draftEditing && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -555,25 +579,32 @@ export function WorkflowPlayer({
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setDraftSubmission(null)}>Back</Button>
-              <Button size="sm" variant="outline" onClick={handleEditDraft}>
-                <Edit3 className="h-4 w-4 mr-1" />Edit
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleConfirmSubmit}
-                disabled={confirmSubmission.isPending}
-              >
-                <Send className="h-4 w-4 mr-1" />
-                {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
-              </Button>
-            </div>
+            {portalSubmitted ? (
+              <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-center gap-2 animate-in fade-in duration-300">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                <span className="font-medium">Claim queued for portal submission successfully.</span>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setDraftSubmission(null)}>Back</Button>
+                <Button size="sm" variant="outline" onClick={handleEditDraft}>
+                  <Edit3 className="h-4 w-4 mr-1" />Edit
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleConfirmSubmit}
+                  disabled={confirmSubmission.isPending}
+                >
+                  <Send className="h-4 w-4 mr-1" />
+                  {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {currentStep === "submit" && draftSubmission && draftEditing && (
+      {currentStep === "submit" && !isAlreadyQueued && draftSubmission && draftEditing && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
