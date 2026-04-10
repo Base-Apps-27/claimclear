@@ -10,6 +10,7 @@ import {
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
   useAddClaimEvidence,
+  useCreateClaimNote,
   getListClaimsQueryKey,
   getGetClaimQueryKey,
   useGetErrorType,
@@ -60,6 +61,7 @@ export function WorkflowPlayer({
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
   const addEvidence = useAddClaimEvidence();
+  const createNote = useCreateClaimNote();
   const isOnHold = claim.status === "On Hold";
   const [portalSubmitted, setPortalSubmitted] = useState(false);
 
@@ -90,6 +92,8 @@ export function WorkflowPlayer({
   const [holdPending, setHoldPending] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
+  const [showConcludeDialog, setShowConcludeDialog] = useState(false);
+  const [concludeNotes, setConcludeNotes] = useState("");
   const [draftSubmission, setDraftSubmission] = useState<{
     id: number;
     subject: string;
@@ -207,6 +211,22 @@ export function WorkflowPlayer({
     setShowHoldDialog(false);
     setHoldReason("");
     setHoldPending("");
+    invalidate();
+    onComplete();
+  };
+
+  const handleConclude = async () => {
+    if (!concludeNotes.trim()) return;
+    const lower = treeOutcomeLabel.toLowerCase();
+    const isDeny = lower.includes("deny") || lower.includes("denied");
+    const finalStatus = isDeny ? "Denied" : "Resolved";
+    await createNote.mutateAsync({
+      id: claim.id,
+      data: { content: concludeNotes.trim(), type: "outcome_recorded" },
+    });
+    await updateStatus.mutateAsync({ id: claim.id, data: { status: finalStatus } });
+    setShowConcludeDialog(false);
+    setConcludeNotes("");
     invalidate();
     onComplete();
   };
@@ -453,22 +473,13 @@ export function WorkflowPlayer({
                 onEvidenceCollected={handleEvidenceCollected}
                 onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
                   setTreeOutcomeLabel(outcomeLabel);
-                  if (outcomeType === "portal_dispute" || outcomeType === "dispute") {
-                    advanceStep("submit");
-                  } else if (outcomeType === "hold") {
+                  if (outcomeType === "hold") {
                     setShowHoldDialog(true);
-                  } else if (outcomeType === "internal") {
-                    const lower = outcomeLabel.toLowerCase();
-                    const isDeny = lower.includes("deny") || lower.includes("denied");
-                    const finalStatus = isDeny ? "Denied" : "Resolved";
-                    updateStatus.mutateAsync({ id: claim.id, data: { status: finalStatus } }).then(() => {
-                      invalidate();
-                      onComplete();
-                    });
-                  } else {
-                    advanceStep("submit");
                   }
                 }}
+                onQueueForPortal={() => advanceStep("submit")}
+                onConclude={() => setShowConcludeDialog(true)}
+                onPlaceHold={() => setShowHoldDialog(true)}
               />
             </div>
           </CardContent>
@@ -698,6 +709,36 @@ export function WorkflowPlayer({
               </Button>
               <Button onClick={handlePlaceHold} disabled={!holdReason}>
                 Place on Hold
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showConcludeDialog} onOpenChange={setShowConcludeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Conclude Claim</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Outcome: <span className="font-medium">{treeOutcomeLabel}</span>. Describe the action taken or next steps so there is a record of the real-life resolution.
+            </p>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Resolution Notes</Label>
+              <Textarea
+                value={concludeNotes}
+                onChange={(e) => setConcludeNotes(e.target.value)}
+                placeholder="e.g., Ride canceled — driver will not be paid. Notified operations team."
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowConcludeDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleConclude} disabled={!concludeNotes.trim() || createNote.isPending || updateStatus.isPending}>
+                {createNote.isPending || updateStatus.isPending ? "Concluding…" : "Conclude"}
               </Button>
             </div>
           </div>

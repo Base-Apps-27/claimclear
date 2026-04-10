@@ -47,6 +47,7 @@ export interface TreePlayerState {
   steps: Step[];
   currentNodeId: string;
   nodeEvidence: Record<string, Record<string, EvidenceItem>>;
+  outcome?: { type: OutcomeType; label: string } | null;
 }
 
 export interface TreePlayerHandle {
@@ -66,10 +67,13 @@ interface PlayerProps {
     imageUrl?: string;
     notes?: string;
   }) => void;
+  onConclude?: () => void;
+  onQueueForPortal?: () => void;
+  onPlaceHold?: () => void;
 }
 
 export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function TreePlayer(
-  { tree, onOutcome, isTestMode, claimId, initialState, onEvidenceCollected },
+  { tree, onOutcome, isTestMode, claimId, initialState, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold },
   ref
 ) {
   const restoredNodeExists = initialState?.currentNodeId
@@ -78,13 +82,19 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   const canRestore = restoredNodeExists && !!initialState;
   const [steps, setSteps] = useState<Step[]>(canRestore ? initialState.steps : []);
   const [currentNodeId, setCurrentNodeId] = useState(canRestore ? initialState.currentNodeId : tree.rootId);
-  const [outcome, setOutcome] = useState<{ type: OutcomeType; label: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ type: OutcomeType; label: string } | null>(canRestore && initialState.outcome ? initialState.outcome : null);
   const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>(canRestore ? initialState.nodeEvidence : {});
   const [showRestoreNotice, setShowRestoreNotice] = useState(!!initialState && !canRestore);
 
   useImperativeHandle(ref, () => ({
-    getState: () => ({ steps, currentNodeId, nodeEvidence }),
-  }), [steps, currentNodeId, nodeEvidence]);
+    getState: () => ({ steps, currentNodeId, nodeEvidence, outcome }),
+  }), [steps, currentNodeId, nodeEvidence, outcome]);
+
+  useEffect(() => {
+    if (canRestore && initialState?.outcome && !isTestMode && initialState.outcome.type !== "hold") {
+      onOutcome(initialState.outcome.type, initialState.outcome.label);
+    }
+  }, []);
 
   const currentNode = tree.nodes.find(n => n.id === currentNodeId);
   const maxDepth = getMaxDepth(tree);
@@ -196,13 +206,33 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
                 Completed in {steps.length} step{steps.length !== 1 ? "s" : ""}
               </p>
             </div>
-            <div className="flex gap-2 justify-center">
+            <div className="flex gap-2 justify-center flex-wrap">
               <Button variant="outline" size="sm" onClick={handleUndo} className="gap-1">
                 <Undo2 className="h-3 w-3" />Go Back
               </Button>
-              <Button variant="outline" size="sm" onClick={handleRestart} className="gap-1">
-                Restart
-              </Button>
+              {isTestMode ? (
+                <Button variant="outline" size="sm" onClick={handleRestart} className="gap-1">
+                  Restart
+                </Button>
+              ) : (
+                <>
+                  {(outcome.type === "portal_dispute" || outcome.type === "dispute") && onQueueForPortal && (
+                    <Button size="sm" onClick={onQueueForPortal} className="gap-1">
+                      <Send className="h-3 w-3" />Continue to Portal Submission
+                    </Button>
+                  )}
+                  {outcome.type === "internal" && onConclude && (
+                    <Button size="sm" onClick={onConclude} className="gap-1">
+                      <CheckCircle2 className="h-3 w-3" />Conclude
+                    </Button>
+                  )}
+                  {onPlaceHold && (
+                    <Button variant="outline" size="sm" onClick={onPlaceHold} className="gap-1">
+                      <PauseCircle className="h-3 w-3" />Place on Hold
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
