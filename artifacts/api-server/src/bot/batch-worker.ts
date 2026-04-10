@@ -193,20 +193,15 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   try {
     const ticketFormSlug = FRESHDESK_ISSUE_TYPE_MAP[sub.issueType] || FRESHDESK_ISSUE_TYPE_MAP["Other Issue or Question"];
     const ticketUrl = `${PORTAL_URL}/support/tickets/new?ticket_form=${ticketFormSlug}`;
-    logger.info({ submissionId: sub.id, ticketUrl }, "Batch worker: navigating to ticket form");
 
-    await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
-    await page.waitForTimeout(2000);
-
-    const loginLink = await page.$('a[href*="login"], a:has-text("Login"), a:has-text("Log in"), a:has-text("Sign in")');
-    if (loginLink) {
+    const needsLogin = !fs.existsSync(statePath);
+    if (needsLogin) {
       if (!MAS_USERNAME || !MAS_PASSWORD) {
         throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
 
-      logger.info({ submissionId: sub.id }, "Batch worker: login required, clicking login link");
-      await loginLink.click();
-      await page.waitForLoadState("networkidle", { timeout: 15000 });
+      logger.info({ submissionId: sub.id }, "Batch worker: no saved session, logging in first");
+      await page.goto(`${PORTAL_URL}/support/login`, { waitUntil: "networkidle", timeout: 30000 });
       await page.waitForTimeout(2000);
 
       const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
@@ -229,13 +224,52 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
           throw new Error("Portal login failed — check credentials");
         }
 
-        logger.info({ submissionId: sub.id }, "Batch worker: login successful");
-
-        await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
-        await page.waitForTimeout(2000);
+        logger.info({ submissionId: sub.id }, "Batch worker: login successful, saving session");
+        await context.storageState({ path: statePath });
       } else {
         throw new Error("Portal login form not recognized — could not find email/password inputs");
       }
+    }
+
+    logger.info({ submissionId: sub.id, ticketUrl }, "Batch worker: navigating to ticket form (authenticated)");
+    await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    const loginLink = await page.$('a[href*="login"], a:has-text("Login"), a:has-text("Log in"), a:has-text("Sign in")');
+    if (loginLink) {
+      logger.info({ submissionId: sub.id }, "Batch worker: session expired, re-logging in");
+      if (!MAS_USERNAME || !MAS_PASSWORD) {
+        throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
+      }
+      await loginLink.click();
+      await page.waitForLoadState("networkidle", { timeout: 15000 });
+      await page.waitForTimeout(2000);
+
+      const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
+      const passwordInput = await page.$('input[name="user[password]"], input[name="helpdesk_user[password]"], input[type="password"], #user_password');
+
+      if (emailInput && passwordInput) {
+        await emailInput.fill(MAS_USERNAME);
+        await passwordInput.fill(MAS_PASSWORD);
+        await page.waitForTimeout(500);
+        const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
+        if (submitBtn) {
+          await submitBtn.click();
+          await page.waitForLoadState("networkidle", { timeout: 15000 });
+          await page.waitForTimeout(3000);
+        }
+        const stillOnLogin = await page.$('input[type="password"]:visible');
+        if (stillOnLogin) {
+          throw new Error("Portal login failed — check credentials");
+        }
+        logger.info({ submissionId: sub.id }, "Batch worker: re-login successful");
+        await context.storageState({ path: statePath });
+      } else {
+        throw new Error("Portal login form not recognized on re-login");
+      }
+
+      await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
+      await page.waitForTimeout(2000);
     }
 
     const formDropdown = await page.$("#helpdesk_ticket_forms_dropdown");
@@ -254,7 +288,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     if (!mainForm) {
       throw new Error("Freshdesk ticket form (#new_helpdesk_ticket) not found — portal page may not have loaded correctly");
     }
-    logger.info({ submissionId: sub.id }, "Batch worker: ticket form found, filling fields");
+    logger.info({ submissionId: sub.id }, "Batch worker: ticket form found, filling fields (no reCAPTCHA when logged in)");
 
     const isGpsIssue = sub.issueType === "GPS Control Deviation";
 
