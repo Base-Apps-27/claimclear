@@ -12,25 +12,38 @@ const SESSION_DIR = path.resolve("bot-session");
 
 let browsersInstalled = false;
 
-function findPlaywrightCli(): string {
+function findPlaywrightJsCli(): string | null {
   const cwd = process.cwd();
-  const candidates = [
-    path.resolve(cwd, "node_modules/.bin/playwright"),
-    path.resolve(cwd, "artifacts/api-server/node_modules/.bin/playwright"),
-    path.resolve(cwd, "node_modules/playwright-core/cli.js"),
+  const jsCandidates = [
+    path.resolve(cwd, "artifacts/api-server/node_modules/playwright/cli.js"),
     path.resolve(cwd, "artifacts/api-server/node_modules/playwright-core/cli.js"),
     path.resolve(cwd, "node_modules/playwright/cli.js"),
-    path.resolve(cwd, "artifacts/api-server/node_modules/playwright/cli.js"),
-    path.join(__dirname, "../node_modules/.bin/playwright"),
+    path.resolve(cwd, "node_modules/playwright-core/cli.js"),
+    path.join(__dirname, "../node_modules/playwright/cli.js"),
     path.join(__dirname, "../node_modules/playwright-core/cli.js"),
   ];
-  for (const c of candidates) {
+  for (const c of jsCandidates) {
     if (fs.existsSync(c)) {
-      logger.info(`Found Playwright CLI at: ${c}`);
+      logger.info(`Found Playwright JS CLI at: ${c}`);
       return c;
     }
   }
-  return "playwright";
+  return null;
+}
+
+function findPlaywrightShellBin(): string | null {
+  const cwd = process.cwd();
+  const binCandidates = [
+    path.resolve(cwd, "artifacts/api-server/node_modules/.bin/playwright"),
+    path.resolve(cwd, "node_modules/.bin/playwright"),
+  ];
+  for (const c of binCandidates) {
+    if (fs.existsSync(c)) {
+      logger.info(`Found Playwright shell bin at: ${c}`);
+      return c;
+    }
+  }
+  return null;
 }
 
 async function ensureBrowsersInstalled(): Promise<void> {
@@ -39,28 +52,45 @@ async function ensureBrowsersInstalled(): Promise<void> {
     const execPath = chromium.executablePath();
     if (fs.existsSync(execPath)) {
       browsersInstalled = true;
+      logger.info(`Chromium already installed at: ${execPath}`);
       return;
     }
   } catch {}
 
   logger.info("Playwright browsers not found, installing chromium...");
-  const cli = findPlaywrightCli();
-  const commands = [
-    `node ${cli} install chromium --with-deps`,
-    `node ${cli} install chromium`,
-    `pnpm exec playwright install chromium`,
-  ];
+
+  const browsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  const envPrefix = browsersPath ? `PLAYWRIGHT_BROWSERS_PATH=${browsersPath} ` : "";
+
+  const commands: string[] = [];
+
+  const jsCli = findPlaywrightJsCli();
+  if (jsCli) {
+    commands.push(`${envPrefix}node ${jsCli} install chromium --with-deps`);
+    commands.push(`${envPrefix}node ${jsCli} install chromium`);
+  }
+
+  const shellBin = findPlaywrightShellBin();
+  if (shellBin) {
+    commands.push(`${envPrefix}${shellBin} install chromium --with-deps`);
+    commands.push(`${envPrefix}${shellBin} install chromium`);
+  }
+
+  commands.push(`${envPrefix}npx playwright install chromium`);
 
   for (const cmd of commands) {
     try {
       logger.info(`Trying: ${cmd}`);
       execSync(cmd, { timeout: 180000, stdio: "pipe", cwd: process.cwd() });
-      const execPath = chromium.executablePath();
-      if (fs.existsSync(execPath)) {
-        browsersInstalled = true;
-        logger.info("Playwright chromium installed successfully");
-        return;
-      }
+      try {
+        const execPath = chromium.executablePath();
+        if (fs.existsSync(execPath)) {
+          browsersInstalled = true;
+          logger.info(`Playwright chromium installed successfully at: ${execPath}`);
+          return;
+        }
+      } catch {}
+      logger.warn("Command succeeded but chromium executable not found at expected path");
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, `Command failed: ${cmd}`);
     }

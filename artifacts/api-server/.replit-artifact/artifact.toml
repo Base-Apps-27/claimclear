@@ -15,7 +15,7 @@ run = "pnpm --filter @workspace/api-server run dev"
 [services.production]
 
 [services.production.build]
-args = ["sh", "-c", "PORT=5173 BASE_PATH='/' pnpm --filter @workspace/claimclear run build && pnpm --filter @workspace/api-server run build && node artifacts/api-server/node_modules/playwright/cli.js install chromium"]
+args = ["sh", "-c", "PORT=5173 BASE_PATH='/' pnpm --filter @workspace/claimclear run build && pnpm --filter @workspace/api-server run build && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers node artifacts/api-server/node_modules/playwright/cli.js install chromium"]
 
 [services.production.build.env]
 NODE_ENV = "production"
@@ -27,6 +27,7 @@ args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
 [services.production.run.env]
 PORT = "8080"
 NODE_ENV = "production"
+PLAYWRIGHT_BROWSERS_PATH = "./pw-browsers"
 
 [services.production.health.startup]
 path = "/api/healthz"
