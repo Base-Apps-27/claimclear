@@ -1,7 +1,10 @@
 import { chromium } from "playwright";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { execSync } from "child_process";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 import { logger } from "../lib/logger";
 
 const PORTAL_URL = "https://mastransportation.force.com/support";
@@ -87,6 +90,18 @@ export interface PortalSubmission {
   disputeReason: string;
   evidenceNotes: string;
   attachmentUrls: string[];
+}
+
+async function downloadToTemp(url: string, index: number): Promise<string> {
+  const ext = path.extname(new URL(url).pathname) || ".png";
+  const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to download ${url}: ${response.status}`);
+  }
+  const fileStream = fs.createWriteStream(tmpFile);
+  await pipeline(Readable.fromWeb(response.body as any), fileStream);
+  return tmpFile;
 }
 
 function buildDescription(sub: PortalSubmission): string {
@@ -219,12 +234,65 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
 
     logger.info({ submissionId: sub.id }, "Batch worker: form fields populated");
 
+    const downloadedFiles: string[] = [];
+    if (sub.attachmentUrls && sub.attachmentUrls.length > 0) {
+      logger.info({ submissionId: sub.id, count: sub.attachmentUrls.length }, "Batch worker: downloading evidence files for upload");
+
+      for (let i = 0; i < sub.attachmentUrls.length; i++) {
+        try {
+          const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i);
+          downloadedFiles.push(tmpPath);
+          logger.info({ submissionId: sub.id, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
+        } catch (err) {
+          logger.warn({ submissionId: sub.id, url: sub.attachmentUrls[i], err: err instanceof Error ? err.message : String(err) }, "Failed to download evidence file, skipping");
+        }
+      }
+
+      if (downloadedFiles.length > 0) {
+        const attachmentBtn = await page.$('button:has-text("Attachment"), a:has-text("Attachment"), button:has-text("Attach"), input[type="file"]');
+
+        if (attachmentBtn) {
+          const tagName = await attachmentBtn.evaluate(el => el.tagName.toLowerCase());
+
+          if (tagName === "input") {
+            await attachmentBtn.setInputFiles(downloadedFiles);
+            logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via input");
+          } else {
+            for (const filePath of downloadedFiles) {
+              const [fileChooser] = await Promise.all([
+                page.waitForEvent("filechooser", { timeout: 10000 }),
+                attachmentBtn.click(),
+              ]);
+              await fileChooser.setFiles(filePath);
+              await page.waitForTimeout(2000);
+              logger.info({ submissionId: sub.id, file: filePath }, "Batch worker: file attached via chooser");
+            }
+          }
+        } else {
+          const fileInput = await page.$('input[type="file"]');
+          if (fileInput) {
+            await fileInput.setInputFiles(downloadedFiles);
+            logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via hidden input");
+          } else {
+            logger.warn({ submissionId: sub.id }, "Batch worker: no attachment element found on portal, skipping file uploads");
+          }
+        }
+      }
+    }
+
+    const cleanupTempFiles = () => {
+      for (const f of downloadedFiles) {
+        try { fs.unlinkSync(f); } catch {}
+      }
+    };
+
     if (dryRun) {
       const screenshotPath = path.join(SESSION_DIR, `dry-run-${sub.id}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       await context.storageState({ path: statePath });
       await page.close();
       await browser.close();
+      cleanupTempFiles();
       logger.info({ submissionId: sub.id }, "Batch worker: dry run completed");
       return { screenshotPath };
     }
@@ -241,6 +309,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       await context.storageState({ path: statePath });
       await page.close();
       await browser.close();
+      cleanupTempFiles();
       logger.info({ submissionId: sub.id, ticketId }, "Batch worker: submission completed");
       return { ticketId };
     } else {
@@ -251,6 +320,10 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const screenshotPath = path.join(SESSION_DIR, `error-${sub.id}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
     } catch {}
+
+    for (const f of downloadedFiles) {
+      try { fs.unlinkSync(f); } catch {}
+    }
 
     await page.close().catch(() => {});
     await browser.close().catch(() => {});
