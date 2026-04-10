@@ -9,6 +9,27 @@ const SESSION_DIR = path.resolve("bot-session");
 
 let browsersInstalled = false;
 
+function findPlaywrightCli(): string {
+  const cwd = process.cwd();
+  const candidates = [
+    path.resolve(cwd, "node_modules/.bin/playwright"),
+    path.resolve(cwd, "artifacts/api-server/node_modules/.bin/playwright"),
+    path.resolve(cwd, "node_modules/playwright-core/cli.js"),
+    path.resolve(cwd, "artifacts/api-server/node_modules/playwright-core/cli.js"),
+    path.resolve(cwd, "node_modules/playwright/cli.js"),
+    path.resolve(cwd, "artifacts/api-server/node_modules/playwright/cli.js"),
+    path.join(__dirname, "../node_modules/.bin/playwright"),
+    path.join(__dirname, "../node_modules/playwright-core/cli.js"),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      logger.info(`Found Playwright CLI at: ${c}`);
+      return c;
+    }
+  }
+  return "playwright";
+}
+
 async function ensureBrowsersInstalled(): Promise<void> {
   if (browsersInstalled) return;
   try {
@@ -20,17 +41,29 @@ async function ensureBrowsersInstalled(): Promise<void> {
   } catch {}
 
   logger.info("Playwright browsers not found, installing chromium...");
-  try {
-    execSync("npx playwright install chromium --with-deps 2>&1 || npx playwright install chromium 2>&1", {
-      timeout: 120000,
-      stdio: "pipe",
-    });
-    browsersInstalled = true;
-    logger.info("Playwright chromium installed successfully");
-  } catch (err) {
-    logger.error({ err }, "Failed to install Playwright chromium");
-    throw new Error("Playwright browser installation failed. The bot cannot run without a browser.");
+  const cli = findPlaywrightCli();
+  const commands = [
+    `node ${cli} install chromium --with-deps`,
+    `node ${cli} install chromium`,
+    `pnpm exec playwright install chromium`,
+  ];
+
+  for (const cmd of commands) {
+    try {
+      logger.info(`Trying: ${cmd}`);
+      execSync(cmd, { timeout: 180000, stdio: "pipe", cwd: path.resolve("../../") });
+      const execPath = chromium.executablePath();
+      if (fs.existsSync(execPath)) {
+        browsersInstalled = true;
+        logger.info("Playwright chromium installed successfully");
+        return;
+      }
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, `Command failed: ${cmd}`);
+    }
   }
+
+  throw new Error("Playwright browser installation failed. The bot cannot run without a browser. Tried multiple installation methods.");
 }
 
 export interface PortalSubmission {

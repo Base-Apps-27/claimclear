@@ -78,6 +78,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
   logger.info({ batchId: job.id, total: job.total }, "Starting batch processing");
 
   for (const subId of job.submissionIds) {
+    let subClaimId: number | null = null;
     try {
       const [sub] = await db.select().from(portalSubmissionsTable)
         .where(and(
@@ -90,6 +91,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
         job.processed++;
         continue;
       }
+      subClaimId = sub.claimId;
 
       await db.update(portalSubmissionsTable).set({
         status: "in_progress",
@@ -134,14 +136,16 @@ async function processSequentially(job: BatchJob): Promise<void> {
         message: errMsg,
       }).catch(() => {});
 
-      broadcastPresenceEvent({
-        type: "bot_completed",
-        claimId: sub.claimId,
-        userName: "Batch Processor",
-        userEmail: null,
-        botProcess: "portal_submission",
-        timestamp: new Date().toISOString(),
-      });
+      if (subClaimId) {
+        broadcastPresenceEvent({
+          type: "bot_completed",
+          claimId: subClaimId,
+          userName: "Batch Processor",
+          userEmail: null,
+          botProcess: "portal_submission",
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       job.results.push({ submissionId: subId, status: "failed", message: errMsg });
       job.failed++;
