@@ -235,49 +235,70 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     logger.info({ submissionId: sub.id }, "Batch worker: form fields populated");
 
     const downloadedFiles: string[] = [];
-    if (sub.attachmentUrls && sub.attachmentUrls.length > 0) {
+    const hasEvidence = sub.attachmentUrls && sub.attachmentUrls.length > 0;
+
+    if (hasEvidence) {
       logger.info({ submissionId: sub.id, count: sub.attachmentUrls.length }, "Batch worker: downloading evidence files for upload");
 
+      const failedDownloads: string[] = [];
       for (let i = 0; i < sub.attachmentUrls.length; i++) {
-        try {
-          const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i);
-          downloadedFiles.push(tmpPath);
-          logger.info({ submissionId: sub.id, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
-        } catch (err) {
-          logger.warn({ submissionId: sub.id, url: sub.attachmentUrls[i], err: err instanceof Error ? err.message : String(err) }, "Failed to download evidence file, skipping");
+        let downloaded = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i);
+            downloadedFiles.push(tmpPath);
+            logger.info({ submissionId: sub.id, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
+            downloaded = true;
+            break;
+          } catch (err) {
+            logger.warn({ submissionId: sub.id, url: sub.attachmentUrls[i], attempt, err: err instanceof Error ? err.message : String(err) }, "Evidence download attempt failed");
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+          }
         }
+        if (!downloaded) failedDownloads.push(sub.attachmentUrls[i]);
       }
 
-      if (downloadedFiles.length > 0) {
-        const attachmentBtn = await page.$('button:has-text("Attachment"), a:has-text("Attachment"), button:has-text("Attach"), input[type="file"]');
+      if (failedDownloads.length > 0) {
+        throw new Error(`Evidence download failed for ${failedDownloads.length} file(s) — cannot submit without evidence. URLs: ${failedDownloads.join(", ")}`);
+      }
 
-        if (attachmentBtn) {
-          const tagName = await attachmentBtn.evaluate(el => el.tagName.toLowerCase());
+      let attached = false;
+      const attachmentBtn = await page.$('button:has-text("Attachment"), a:has-text("Attachment"), button:has-text("Attach"), input[type="file"]');
 
-          if (tagName === "input") {
-            await attachmentBtn.setInputFiles(downloadedFiles);
-            logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via input");
-          } else {
-            for (const filePath of downloadedFiles) {
-              const [fileChooser] = await Promise.all([
-                page.waitForEvent("filechooser", { timeout: 10000 }),
-                attachmentBtn.click(),
-              ]);
-              await fileChooser.setFiles(filePath);
-              await page.waitForTimeout(2000);
-              logger.info({ submissionId: sub.id, file: filePath }, "Batch worker: file attached via chooser");
-            }
-          }
+      if (attachmentBtn) {
+        const tagName = await attachmentBtn.evaluate(el => el.tagName.toLowerCase());
+
+        if (tagName === "input") {
+          await attachmentBtn.setInputFiles(downloadedFiles);
+          attached = true;
+          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via input");
         } else {
-          const fileInput = await page.$('input[type="file"]');
-          if (fileInput) {
-            await fileInput.setInputFiles(downloadedFiles);
-            logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via hidden input");
-          } else {
-            logger.warn({ submissionId: sub.id }, "Batch worker: no attachment element found on portal, skipping file uploads");
+          for (const filePath of downloadedFiles) {
+            const [fileChooser] = await Promise.all([
+              page.waitForEvent("filechooser", { timeout: 15000 }),
+              attachmentBtn.click(),
+            ]);
+            await fileChooser.setFiles(filePath);
+            await page.waitForTimeout(2000);
+            logger.info({ submissionId: sub.id, file: filePath }, "Batch worker: file attached via chooser");
           }
+          attached = true;
+        }
+      } else {
+        const fileInput = await page.$('input[type="file"]');
+        if (fileInput) {
+          await fileInput.setInputFiles(downloadedFiles);
+          attached = true;
+          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via hidden input");
         }
       }
+
+      if (!attached) {
+        throw new Error("Evidence upload failed — no attachment element found on portal page. Cannot submit without evidence.");
+      }
+
+      await page.waitForTimeout(1000);
+      logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: all evidence files attached successfully");
     }
 
     const cleanupTempFiles = () => {
