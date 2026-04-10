@@ -7,7 +7,7 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { logger } from "../lib/logger";
 
-const PORTAL_URL = "https://mastransportation.force.com/support";
+const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://mas.medicaidtransportation.com";
 const SESSION_DIR = path.resolve("bot-session");
 
 let browsersInstalled = false;
