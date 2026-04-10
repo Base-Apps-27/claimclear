@@ -572,16 +572,18 @@ export function WorkflowPlayer({
                   <span>{draftSubmission.phoneNumber || "Not set"}</span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-muted-foreground block text-xs mb-0.5">Invoice #</span>
-                  <span className="font-mono">{draftSubmission.invoiceNumber || "—"}</span>
+              {draftSubmission.issueType === "GPS Control Deviation" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-muted-foreground block text-xs mb-0.5">Invoice #</span>
+                    <span className="font-mono">{draftSubmission.invoiceNumber || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-xs mb-0.5">GPS Breadcrumbs</span>
+                    <span>{draftSubmission.gpsBreadcrumbsAvailable || "Not set"}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs mb-0.5">GPS Breadcrumbs</span>
-                  <span>{draftSubmission.gpsBreadcrumbsAvailable || "Not set"}</span>
-                </div>
-              </div>
+              )}
               <Separator />
               <div>
                 <span className="text-muted-foreground block text-xs mb-1">Dispute Text (what the bot will submit)</span>
@@ -643,17 +645,19 @@ export function WorkflowPlayer({
                 <Label className="text-xs">Subject</Label>
                 <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">GPS Breadcrumbs Available</Label>
-                <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Not set</SelectItem>
-                    <SelectItem value="Yes">Yes</SelectItem>
-                    <SelectItem value="No">No</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {editIssueType === "GPS Control Deviation" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">GPS Breadcrumbs Available</Label>
+                  <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label className="text-xs">Dispute Text</Label>
                 <Textarea

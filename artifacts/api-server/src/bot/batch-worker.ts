@@ -191,10 +191,13 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       await page.waitForTimeout(2000);
     }
 
+    const isGpsIssue = sub.issueType === "GPS Control Deviation";
+
     const issueTypeSelect = await page.$('select[name="issue_type"], #issue_type, [data-field="issue_type"]');
     if (issueTypeSelect && sub.issueType) {
       await issueTypeSelect.selectOption(sub.issueType);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(2000);
+      logger.info({ submissionId: sub.id, issueType: sub.issueType, isGpsIssue }, "Batch worker: issue type selected, waiting for conditional fields");
     }
 
     const subjectInput = await page.$('input[name="subject"], #subject, [data-field="subject"]');
@@ -209,11 +212,23 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     const phoneInput = await page.$('input[name="phone"], input[type="tel"]');
     if (phoneInput && sub.phoneNumber) await phoneInput.fill(sub.phoneNumber);
 
-    const invoiceInput = await page.$('input[name="invoice"], input[name="invoice_number"]');
-    if (invoiceInput && sub.invoiceNumber) await invoiceInput.fill(sub.invoiceNumber);
+    if (isGpsIssue) {
+      const invoiceInput = await page.$('input[name="invoice"], input[name="invoice_number"]');
+      if (invoiceInput && sub.invoiceNumber) {
+        await invoiceInput.fill(sub.invoiceNumber);
+        logger.info({ submissionId: sub.id }, "Batch worker: invoice number filled (GPS issue)");
+      } else if (!invoiceInput) {
+        logger.warn({ submissionId: sub.id }, "Batch worker: invoice number field not found for GPS issue — portal may not have rendered conditional fields");
+      }
 
-    const gpsSelect = await page.$('select[name="gps_breadcrumbs"], #gps_breadcrumbs');
-    if (gpsSelect && sub.gpsBreadcrumbsAvailable) await gpsSelect.selectOption(sub.gpsBreadcrumbsAvailable);
+      const gpsSelect = await page.$('select[name="gps_breadcrumbs"], #gps_breadcrumbs');
+      if (gpsSelect && sub.gpsBreadcrumbsAvailable) {
+        await gpsSelect.selectOption(sub.gpsBreadcrumbsAvailable);
+        logger.info({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS breadcrumbs answered");
+      } else if (!gpsSelect) {
+        logger.warn({ submissionId: sub.id }, "Batch worker: GPS breadcrumbs field not found for GPS issue");
+      }
+    }
 
     const descriptionFrame = await page.$('iframe.wysiwyg, [data-field="description"] iframe');
     if (descriptionFrame) {
