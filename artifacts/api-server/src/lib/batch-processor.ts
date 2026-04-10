@@ -1,9 +1,21 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable } from "@workspace/db";
+import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { broadcastPresenceEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
+
+async function getPortalDefaults() {
+  const rows = await db.select().from(appSettingsTable);
+  const map: Record<string, string> = {};
+  for (const r of rows) map[r.key] = r.value || "";
+  return {
+    providerName: map["portal_provider_name"] || "",
+    contactEmail: map["portal_contact_email"] || "",
+    contactPhone: map["portal_contact_phone"] || "",
+    defaultGpsBreadcrumbs: map["portal_default_gps_breadcrumbs"] || "",
+  };
+}
 
 export interface BatchJob {
   id: string;
@@ -180,6 +192,15 @@ async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
 ): Promise<void> {
   const { runBatchWorker } = await import("../bot/batch-worker");
+  const defaults = await getPortalDefaults();
+
+  const issueType = sub.issueType || (
+    sub.errorTypeName?.toLowerCase().includes("gps") ||
+    sub.errorTypeName?.toLowerCase().includes("deviation") ||
+    sub.errorTypeName?.toLowerCase().includes("breadcrumb")
+      ? "GPS Control Deviation"
+      : "Other Issue or Question"
+  );
 
   const workerSub: import("../bot/batch-worker").PortalSubmission = {
     id: sub.id,
@@ -191,13 +212,13 @@ async function processViaExternalBot(
     claimAmount: sub.claimAmount,
     errorTypeName: sub.errorTypeName || "",
     errorDetails: sub.errorDetails || "",
-    issueType: sub.issueType || "",
-    subject: sub.subject || "",
-    requesterEmail: sub.requesterEmail || "",
-    transportationProviderName: sub.transportationProviderName || "",
-    phoneNumber: sub.phoneNumber || "",
+    issueType,
+    subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
+    requesterEmail: sub.requesterEmail || defaults.contactEmail,
+    transportationProviderName: sub.transportationProviderName || defaults.providerName,
+    phoneNumber: sub.phoneNumber || defaults.contactPhone,
     invoiceNumber: sub.invoiceNumber || "",
-    gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || "",
+    gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs,
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
@@ -282,6 +303,15 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
   try {
     const { runBatchWorker } = await import("../bot/batch-worker");
+    const defaults = await getPortalDefaults();
+
+    const issueType = sub.issueType || (
+      sub.errorTypeName?.toLowerCase().includes("gps") ||
+      sub.errorTypeName?.toLowerCase().includes("deviation") ||
+      sub.errorTypeName?.toLowerCase().includes("breadcrumb")
+        ? "GPS Control Deviation"
+        : "Other Issue or Question"
+    );
 
     const workerSub: import("../bot/batch-worker").PortalSubmission = {
       id: sub.id,
@@ -293,13 +323,13 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       claimAmount: sub.claimAmount,
       errorTypeName: sub.errorTypeName || "",
       errorDetails: sub.errorDetails || "",
-      issueType: sub.issueType || "",
-      subject: sub.subject || "",
-      requesterEmail: sub.requesterEmail || "",
-      transportationProviderName: sub.transportationProviderName || "",
-      phoneNumber: sub.phoneNumber || "",
+      issueType,
+      subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
+      requesterEmail: sub.requesterEmail || defaults.contactEmail,
+      transportationProviderName: sub.transportationProviderName || defaults.providerName,
+      phoneNumber: sub.phoneNumber || defaults.contactPhone,
       invoiceNumber: sub.invoiceNumber || "",
-      gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || "",
+      gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs,
       descriptionHtml: sub.descriptionHtml || "",
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",

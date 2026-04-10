@@ -134,10 +134,30 @@ async function downloadToTemp(url: string, index: number): Promise<string> {
   return tmpFile;
 }
 
-function buildDescription(sub: PortalSubmission): string {
-  if (sub.descriptionHtml?.trim()) return sub.descriptionHtml;
+function markdownToHtml(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .split(/\n{2,}/)
+    .map(block => {
+      const trimmed = block.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<ol')) return trimmed;
+      return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
 
-  return `Dispute for Confirmation Number: ${sub.confNumber || "N/A"}
+function buildDescription(sub: PortalSubmission): string {
+  const raw = sub.descriptionHtml?.trim()
+    ? sub.descriptionHtml
+    : `Dispute for Confirmation Number: ${sub.confNumber || "N/A"}
 Service Date: ${sub.serviceDate || "N/A"}
 Reference Number: ${sub.refNumber || "N/A"}
 Client Number: ${sub.clientNumber || "N/A"}
@@ -149,6 +169,8 @@ Error Details: ${sub.errorDetails || "N/A"}
 Dispute Reason: ${sub.disputeReason || "N/A"}
 
 Evidence Notes: ${sub.evidenceNotes || "N/A"}`;
+
+  return markdownToHtml(raw);
 }
 
 const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
@@ -288,7 +310,17 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     if (!mainForm) {
       throw new Error("Freshdesk ticket form (#new_helpdesk_ticket) not found — portal page may not have loaded correctly");
     }
-    logger.info({ submissionId: sub.id }, "Batch worker: ticket form found, filling fields (no reCAPTCHA when logged in)");
+    logger.info({
+      submissionId: sub.id,
+      issueType: sub.issueType,
+      subject: sub.subject?.substring(0, 50),
+      email: sub.requesterEmail,
+      tpName: sub.transportationProviderName,
+      phone: sub.phoneNumber,
+      invoice: sub.invoiceNumber,
+      hasDescription: !!sub.descriptionHtml,
+      attachmentCount: sub.attachmentUrls?.length || 0,
+    }, "Batch worker: ticket form found, filling fields with submission data");
 
     const isGpsIssue = sub.issueType === "GPS Control Deviation";
 
