@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import {
   type DecisionTree,
   type TreeNode,
@@ -13,9 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/hooks/use-toast";
 import {
   ChevronRight, Undo2, HelpCircle, CheckCircle2,
-  Send, Ban, PauseCircle, Mail, FileText, Camera,
+  Send, Ban, PauseCircle, Mail, FileText, ClipboardPaste,
   Upload, X, Image as ImageIcon, Info, Loader2, ExternalLink, AlertTriangle,
 } from "lucide-react";
 
@@ -425,6 +426,47 @@ function EvidenceImageUploader({
   onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const ext = imageType.split("/")[1] || "png";
+          const file = new File([blob], `pasted-image.${ext}`, { type: imageType });
+          onUpload(file);
+          return;
+        }
+      }
+      toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
+    } catch {
+      toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
+    }
+  }, [onUpload]);
+
+  const handlePasteEvent = useCallback((e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) onUpload(file);
+        return;
+      }
+    }
+    toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
+  }, [onUpload]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("paste", handlePasteEvent);
+    return () => el.removeEventListener("paste", handlePasteEvent);
+  }, [handlePasteEvent]);
 
   if (imagePreview || imageUrl) {
     const src = imagePreview || (imageUrl?.startsWith("/objects/") ? `/api/storage${imageUrl}` : imageUrl!);
@@ -449,7 +491,7 @@ function EvidenceImageUploader({
   }
 
   return (
-    <div className="flex gap-2">
+    <div ref={containerRef} className="flex gap-2" tabIndex={0}>
       <input
         ref={inputRef}
         type="file"
@@ -475,16 +517,10 @@ function EvidenceImageUploader({
         variant="outline"
         size="sm"
         className="text-xs gap-1"
-        onClick={() => {
-          if (inputRef.current) {
-            inputRef.current.setAttribute("capture", "environment");
-            inputRef.current.click();
-            inputRef.current.removeAttribute("capture");
-          }
-        }}
+        onClick={handlePasteImage}
       >
-        <Camera className="h-3 w-3" />
-        Take Photo
+        <ClipboardPaste className="h-3 w-3" />
+        Paste Image
       </Button>
     </div>
   );
