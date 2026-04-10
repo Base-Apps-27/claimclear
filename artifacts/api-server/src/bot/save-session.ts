@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 const SESSION_DIR = path.resolve("bot-session");
-const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://mas.medicaidtransportation.com";
+const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://tpissues.medanswering.com";
 
 async function saveSession() {
   console.log("[SESSION] Starting interactive session saver...");
