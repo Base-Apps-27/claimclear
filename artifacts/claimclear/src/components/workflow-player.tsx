@@ -110,6 +110,10 @@ export function WorkflowPlayer({
   const [editDescription, setEditDescription] = useState("");
   const [editIssueType, setEditIssueType] = useState("");
   const [editGps, setEditGps] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editProvider, setEditProvider] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editInvoice, setEditInvoice] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
@@ -162,6 +166,10 @@ export function WorkflowPlayer({
     setEditDescription(draftSubmission.descriptionHtml);
     setEditIssueType(draftSubmission.issueType);
     setEditGps(draftSubmission.gpsBreadcrumbsAvailable);
+    setEditEmail(draftSubmission.requesterEmail);
+    setEditProvider(draftSubmission.transportationProviderName);
+    setEditPhone(draftSubmission.phoneNumber);
+    setEditInvoice(draftSubmission.invoiceNumber);
     setDraftEditing(true);
   };
 
@@ -174,6 +182,10 @@ export function WorkflowPlayer({
         descriptionHtml: editDescription,
         issueType: editIssueType,
         gpsBreadcrumbsAvailable: editGps,
+        requesterEmail: editEmail,
+        transportationProviderName: editProvider,
+        phoneNumber: editPhone,
+        invoiceNumber: editInvoice,
       },
     });
     setDraftSubmission({
@@ -182,6 +194,10 @@ export function WorkflowPlayer({
       descriptionHtml: editDescription,
       issueType: editIssueType,
       gpsBreadcrumbsAvailable: editGps,
+      requesterEmail: editEmail,
+      transportationProviderName: editProvider,
+      phoneNumber: editPhone,
+      invoiceNumber: editInvoice,
     });
     setDraftEditing(false);
   };
@@ -539,7 +555,18 @@ export function WorkflowPlayer({
         </Card>
       )}
 
-      {currentStep === "submit" && !isAlreadyQueued && draftSubmission && !draftEditing && (
+      {currentStep === "submit" && !isAlreadyQueued && draftSubmission && !draftEditing && (() => {
+        const missingFields = [];
+        if (!draftSubmission.issueType) missingFields.push("Issue Type");
+        if (!draftSubmission.subject) missingFields.push("Subject");
+        if (!draftSubmission.requesterEmail) missingFields.push("Email");
+        if (!draftSubmission.transportationProviderName) missingFields.push("Provider");
+        if (!draftSubmission.phoneNumber) missingFields.push("Phone");
+        if (!draftSubmission.descriptionHtml) missingFields.push("Dispute Text");
+        const hasMissing = missingFields.length > 0;
+        const fieldVal = (val: string | undefined, label?: string) =>
+          val ? <span>{val}</span> : <span className="text-red-500 font-medium">Not set</span>;
+        return (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -548,50 +575,54 @@ export function WorkflowPlayer({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-3 text-sm">
-              <div>
-                <span className="text-muted-foreground block text-xs mb-0.5">Issue Type</span>
-                <span>{draftSubmission.issueType}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-xs mb-0.5">Subject</span>
-                <span className="font-medium">{draftSubmission.subject}</span>
-              </div>
-              <Separator />
-              <div>
-                <span className="text-muted-foreground block text-xs mb-0.5">Provider</span>
-                <span>{draftSubmission.transportationProviderName || "Not set — configure in Settings"}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+            {hasMissing && (
+              <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-md text-sm flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                 <div>
-                  <span className="text-muted-foreground block text-xs mb-0.5">Email</span>
-                  <span>{draftSubmission.requesterEmail || "Not set"}</span>
+                  <p className="font-medium">Missing required fields</p>
+                  <p className="text-xs mt-0.5">The following fields are empty: {missingFields.join(", ")}. Click Edit to fill them in before queuing.</p>
                 </div>
-                <div>
-                  <span className="text-muted-foreground block text-xs mb-0.5">Phone</span>
-                  <span>{draftSubmission.phoneNumber || "Not set"}</span>
-                </div>
+              </div>
+            )}
+            <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">Portal Form Fields</div>
+            <div className="border rounded-md divide-y text-sm">
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Issue Type</span>
+                <span className="col-span-2">{fieldVal(draftSubmission.issueType)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Subject</span>
+                <span className="col-span-2 font-medium break-words">{fieldVal(draftSubmission.subject)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Email</span>
+                <span className="col-span-2">{fieldVal(draftSubmission.requesterEmail)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Provider Name</span>
+                <span className="col-span-2">{fieldVal(draftSubmission.transportationProviderName)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Phone</span>
+                <span className="col-span-2">{fieldVal(draftSubmission.phoneNumber)}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Invoice #</span>
+                <span className="col-span-2 font-mono">{draftSubmission.invoiceNumber || "—"}</span>
               </div>
               {draftSubmission.issueType === "GPS Control Deviation" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <span className="text-muted-foreground block text-xs mb-0.5">Invoice #</span>
-                    <span className="font-mono">{draftSubmission.invoiceNumber || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-xs mb-0.5">GPS Breadcrumbs</span>
-                    <span>{draftSubmission.gpsBreadcrumbsAvailable || "Not set"}</span>
-                  </div>
+                <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                  <span className="text-muted-foreground">GPS Breadcrumbs</span>
+                  <span className="col-span-2">{fieldVal(draftSubmission.gpsBreadcrumbsAvailable)}</span>
                 </div>
               )}
-              <Separator />
-              <div>
-                <span className="text-muted-foreground block text-xs mb-1">Dispute Text (what the bot will submit)</span>
-                <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border">
-                  {draftSubmission.descriptionHtml}
-                </div>
-              </div>
             </div>
+
+            <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs mt-4">Dispute Write-Up</div>
+            <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border max-h-64 overflow-y-auto">
+              {draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>}
+            </div>
+
             {portalSubmitted ? (
               <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-center gap-2 animate-in fade-in duration-300">
                 <CheckCircle className="h-4 w-4 flex-shrink-0" />
@@ -606,7 +637,7 @@ export function WorkflowPlayer({
                 <Button
                   size="sm"
                   onClick={handleConfirmSubmit}
-                  disabled={confirmSubmission.isPending}
+                  disabled={confirmSubmission.isPending || hasMissing}
                 >
                   <Send className="h-4 w-4 mr-1" />
                   {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
@@ -615,7 +646,8 @@ export function WorkflowPlayer({
             )}
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       {currentStep === "submit" && !isAlreadyQueued && draftSubmission && draftEditing && (
         <Card>
