@@ -73,6 +73,7 @@ export default function PortalSubmissions() {
   const [regenerating, setRegenerating] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [savingFields, setSavingFields] = useState(false);
+  const [saveFieldsError, setSaveFieldsError] = useState("");
   const [sandboxRunning, setSandboxRunning] = useState<number | null>(null);
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
@@ -489,18 +490,26 @@ export default function PortalSubmissions() {
                             </div>
                           )}
                         </div>
+                        {saveFieldsError && (
+                          <p className="text-xs text-red-600 text-right">{saveFieldsError}</p>
+                        )}
                         <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingFields(false)}>
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditingFields(false); setSaveFieldsError(""); }}>
                             <X className="h-3 w-3" /> Cancel
                           </Button>
                           <Button size="sm" className="h-7 text-xs gap-1" disabled={savingFields} onClick={async () => {
                             setSavingFields(true);
+                            setSaveFieldsError("");
                             try {
                               await updateDraft.mutateAsync({ id: selected.id, data: fieldEdits });
                               invalidate();
                               setEditingFields(false);
-                            } catch {}
-                            setSavingFields(false);
+                            } catch (err: unknown) {
+                              const msg = err instanceof Error ? err.message : "Failed to save. Please try again.";
+                              setSaveFieldsError(msg);
+                            } finally {
+                              setSavingFields(false);
+                            }
                           }}>
                             {savingFields ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save
                           </Button>

@@ -215,9 +215,9 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
 
   const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
-  const editableStatuses = ["draft", "pending", "failed"];
+  const editableStatuses = ["draft", "pending", "failed", "dry_run"];
   if (!editableStatuses.includes(existing.status)) {
-    res.status(400).json({ error: "Only draft, pending, or failed submissions can be edited" });
+    res.status(400).json({ error: "Only draft, pending, failed, or dry_run submissions can be edited" });
     return;
   }
 
