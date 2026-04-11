@@ -677,19 +677,41 @@ export function WorkflowPlayer({
                 <Label className="text-xs">Subject</Label>
                 <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} />
               </div>
-              {editIssueType === "GPS Control Deviation" && (
+              <Separator />
+              <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Contact &amp; Account Info</div>
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">GPS Breadcrumbs Available</Label>
-                  <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not set</SelectItem>
-                      <SelectItem value="Yes">Yes</SelectItem>
-                      <SelectItem value="No">No</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs">Email</Label>
+                  <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="e.g. accounting@company.com" />
                 </div>
-              )}
+                <div className="space-y-1">
+                  <Label className="text-xs">Phone</Label>
+                  <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="e.g. 7185852222" />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">Provider Name</Label>
+                  <Input value={editProvider} onChange={e => setEditProvider(e.target.value)} placeholder="e.g. Agape Luxury Corp" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Invoice #</Label>
+                  <Input value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Optional" />
+                </div>
+                {editIssueType === "GPS Control Deviation" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">GPS Breadcrumbs Available</Label>
+                    <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not set</SelectItem>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                        <SelectItem value="Unknown">Unknown</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <Separator />
               <div className="space-y-1">
                 <Label className="text-xs">Dispute Text</Label>
                 <Textarea
