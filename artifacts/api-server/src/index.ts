@@ -2,6 +2,28 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import cron from "node-cron";
 import { startBatchJob } from "./lib/batch-processor";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
+
+(async () => {
+  try {
+    await db.execute(sql`
+      UPDATE portal_submissions ps
+      SET attachment_urls = (
+        SELECT COALESCE(json_agg(ce.image_url), '[]'::json)
+        FROM claim_evidence ce
+        WHERE ce.claim_id = ps.claim_id
+          AND ce.image_url IS NOT NULL
+          AND ce.image_url != ''
+      )
+      WHERE (ps.attachment_urls IS NULL OR ps.attachment_urls::text = '[]' OR ps.attachment_urls::text = 'null')
+        AND ps.claim_id IS NOT NULL
+    `);
+    logger.info("One-time migration: backfilled attachment_urls from claim_evidence");
+  } catch (err) {
+    logger.warn({ err }, "One-time migration: attachment_urls backfill failed");
+  }
+})();
 
 const rawPort = process.env["PORT"];
 
