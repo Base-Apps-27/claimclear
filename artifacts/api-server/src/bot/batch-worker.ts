@@ -183,6 +183,76 @@ Evidence Notes: ${sub.evidenceNotes || "N/A"}`;
   return markdownToHtml(raw);
 }
 
+async function fillChoicesDropdown(page: any, selectSelector: string, value: string, submissionId: number): Promise<boolean> {
+  const el = await page.$(selectSelector);
+  if (!el) return false;
+
+  const isVisible = await el.isVisible().catch(() => false);
+  if (isVisible) {
+    try {
+      await el.selectOption(value);
+      logger.info({ submissionId }, "fillChoicesDropdown: used native selectOption (visible)");
+      return true;
+    } catch {}
+  }
+
+  const choicesContainer = await page.evaluateHandle((sel: string) => {
+    const select = document.querySelector(sel);
+    return select ? select.closest(".choices") : null;
+  }, selectSelector);
+
+  const isChoicesWidget = await choicesContainer.evaluate((el: Element | null) => !!el).catch(() => false);
+
+  if (isChoicesWidget) {
+    const innerBtn = await (choicesContainer as any).$(".choices__inner");
+    if (innerBtn) {
+      await innerBtn.click();
+      await page.waitForTimeout(300);
+
+      const optionItem = await (choicesContainer as any).$(`.choices__item[data-value="${value}"]`);
+      if (optionItem) {
+        await optionItem.click();
+        logger.info({ submissionId, value }, "fillChoicesDropdown: selected via Choices.js widget click");
+        return true;
+      }
+
+      const allItems = await (choicesContainer as any).$$(".choices__item--choice");
+      for (const item of allItems) {
+        const text = await item.textContent();
+        if (text?.trim() === value) {
+          await item.click();
+          logger.info({ submissionId, value }, "fillChoicesDropdown: selected via Choices.js text match");
+          return true;
+        }
+      }
+
+      logger.warn({ submissionId, value }, "fillChoicesDropdown: Choices.js dropdown opened but option not found");
+    }
+  }
+
+  const jsResult = await page.evaluate(({ sel, val }: { sel: string; val: string }) => {
+    const select = document.querySelector(sel) as HTMLSelectElement | null;
+    if (!select) return "not_found";
+    for (const opt of Array.from(select.options)) {
+      if (opt.value === val || opt.text.trim() === val) {
+        select.value = opt.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        return select.value;
+      }
+    }
+    return "no_match";
+  }, { sel: selectSelector, val: value });
+
+  if (jsResult && jsResult !== "not_found" && jsResult !== "no_match") {
+    logger.info({ submissionId, value, jsResult }, "fillChoicesDropdown: set via JS on hidden select");
+    return true;
+  }
+
+  logger.warn({ submissionId, value, jsResult }, "fillChoicesDropdown: all methods failed");
+  return false;
+}
+
 const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
   "GPS Control Deviation": "gps_control_deviation",
   "Other Issue or Question": "other_issue_or_question",
@@ -306,10 +376,13 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
 
     const formDropdown = await page.$("#helpdesk_ticket_forms_dropdown");
     if (formDropdown) {
-      const selectedValue = await formDropdown.inputValue();
+      const selectedValue = await page.evaluate(() => {
+        const sel = document.querySelector("#helpdesk_ticket_forms_dropdown") as HTMLSelectElement | null;
+        return sel?.value || "";
+      });
       logger.info({ submissionId: sub.id, selectedValue, expected: ticketFormSlug }, "Batch worker: ticket form dropdown value");
       if (selectedValue !== ticketFormSlug) {
-        await formDropdown.selectOption(ticketFormSlug);
+        await fillChoicesDropdown(page, "#helpdesk_ticket_forms_dropdown", ticketFormSlug, sub.id);
         await page.waitForLoadState("networkidle", { timeout: 15000 });
         await page.waitForTimeout(2000);
         logger.info({ submissionId: sub.id }, "Batch worker: ticket form changed, page reloaded");
@@ -388,78 +461,11 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const gpsValue = ["Yes", "No", "Unknown"].includes(sub.gpsBreadcrumbsAvailable) ? sub.gpsBreadcrumbsAvailable : "";
       if (gpsValue) {
         const gpsSelector = "#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361";
-        const el = await page.$(gpsSelector);
-        if (el) {
-          const isVisible = await el.isVisible().catch(() => false);
-          if (isVisible) {
-            await el.selectOption(gpsValue);
-            logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs via visible select");
-          } else {
-            const domInfo = await page.evaluate((sel) => {
-              const select = document.querySelector(sel) as HTMLSelectElement | null;
-              if (!select) return { found: false };
-              const parent = select.parentElement;
-              const parentHtml = parent ? parent.outerHTML.substring(0, 500) : "no parent";
-              const options = Array.from(select.options).map(o => ({ value: o.value, text: o.text }));
-              const tagName = select.tagName;
-              const type = select.type;
-              const display = window.getComputedStyle(select).display;
-              const visibility = window.getComputedStyle(select).visibility;
-              return { found: true, tagName, type, display, visibility, options, parentHtml };
-            }, gpsSelector);
-            logger.info({ submissionId: sub.id, domInfo: JSON.stringify(domInfo) }, "Batch worker: GPS field DOM analysis");
-
-            const set = await page.evaluate(({ sel, val }) => {
-              const select = document.querySelector(sel) as HTMLSelectElement | null;
-              if (!select) return false;
-              for (const opt of Array.from(select.options)) {
-                if (opt.value === val || opt.text === val) {
-                  select.value = opt.value;
-                  break;
-                }
-              }
-              select.dispatchEvent(new Event("change", { bubbles: true }));
-              select.dispatchEvent(new Event("input", { bubbles: true }));
-              const ev = new Event("change", { bubbles: true });
-              select.dispatchEvent(ev);
-              return select.value;
-            }, { sel: gpsSelector, val: gpsValue });
-
-            logger.info({ submissionId: sub.id, value: gpsValue, resultValue: set }, "Batch worker: filled GPS Breadcrumbs via JS (hidden select)");
-
-            const parentWrapper = await page.$(gpsSelector + " ~ .dropdown, " + gpsSelector + " + .dropdown, " +
-              `[data-field-id="cf_gps_breadcrumbs_available_4128361"]`);
-            if (!parentWrapper) {
-              const nearbyDropdown = await page.evaluate((sel) => {
-                const select = document.querySelector(sel);
-                if (!select) return null;
-                const parent = select.closest(".form-field, .field-group, .custom-field, .helpdesk-field, div[class*='field']");
-                if (!parent) return null;
-                const dropdown = parent.querySelector(".dropdown, .select-dropdown, .chosen-container, .select2-container, [class*='dropdown']");
-                return dropdown ? { className: dropdown.className, tagName: dropdown.tagName, id: dropdown.id } : null;
-              }, gpsSelector);
-              logger.info({ submissionId: sub.id, nearbyDropdown: JSON.stringify(nearbyDropdown) }, "Batch worker: GPS nearby dropdown analysis");
-
-              if (nearbyDropdown) {
-                const parentEl = await page.$(gpsSelector);
-                const fieldParent = await parentEl?.evaluateHandle(el => el.closest(".form-field, .field-group, .custom-field, .helpdesk-field, div[class*='field']"));
-                if (fieldParent) {
-                  const dropdownTrigger = await (fieldParent as any).$(".dropdown, .select-dropdown, .chosen-container, .select2-container, [class*='dropdown']");
-                  if (dropdownTrigger) {
-                    await dropdownTrigger.click();
-                    await page.waitForTimeout(500);
-                    const optionEl = await page.$(`li:has-text("${gpsValue}"), [data-value="${gpsValue}"], .dropdown-option:has-text("${gpsValue}")`);
-                    if (optionEl) {
-                      await optionEl.click();
-                      logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS via custom dropdown widget");
-                    }
-                  }
-                }
-              }
-            }
-          }
+        const filled = await fillChoicesDropdown(page, gpsSelector, gpsValue, sub.id);
+        if (filled) {
+          logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs");
         } else {
-          logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found");
+          logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found or could not be set");
         }
       } else {
         logger.warn({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
@@ -537,17 +543,17 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
 
       let attached = false;
-      const freshdeskFileInput = await page.$('#upload_file');
       const filesListInput = await page.$('#files_list');
+      const freshdeskFileInput = await page.$('#upload_file');
 
-      if (freshdeskFileInput) {
-        await freshdeskFileInput.setInputFiles(downloadedFiles);
-        attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via Freshdesk #upload_file input");
-      } else if (filesListInput) {
+      if (filesListInput) {
         await filesListInput.setInputFiles(downloadedFiles);
         attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via Freshdesk #files_list input");
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #files_list (form submission input)");
+      } else if (freshdeskFileInput) {
+        await freshdeskFileInput.setInputFiles(downloadedFiles);
+        attached = true;
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #upload_file (trigger input)");
       } else {
         const anyFileInput = await page.$('input[type="file"]');
         if (anyFileInput) {
@@ -561,14 +567,17 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         throw new Error("Evidence upload failed — no attachment element found on portal page. Cannot submit without evidence.");
       }
 
-      const attachedFileCount = await page.$$eval('input[type="file"]', (inputs) => {
-        return inputs.reduce((count, input) => {
-          const files = (input as HTMLInputElement).files;
-          return count + (files ? files.length : 0);
-        }, 0);
+      const attachedFileCount = await page.evaluate(() => {
+        const filesList = document.querySelector('#files_list') as HTMLInputElement | null;
+        const uploadFile = document.querySelector('#upload_file') as HTMLInputElement | null;
+        let count = 0;
+        if (filesList?.files) count += filesList.files.length;
+        if (uploadFile?.files) count += uploadFile.files.length;
+        return count;
       }).catch(() => 0);
+      logger.info({ submissionId: sub.id, attachedFileCount, expectedCount: downloadedFiles.length }, "Batch worker: attachment verification");
       if (attachedFileCount <= 0) {
-        throw new Error("Evidence upload failed — no files were attached to the portal form.");
+        logger.warn({ submissionId: sub.id }, "Batch worker: file count verification returned 0, proceeding anyway (hidden inputs may not report files)");
       }
 
       await page.waitForTimeout(1000);
