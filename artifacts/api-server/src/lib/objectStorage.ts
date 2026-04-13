@@ -192,9 +192,45 @@ export class ObjectStorageService {
 
   async downloadObjectToTemp(objectPath: string, index: number = 0): Promise<string> {
     const file = await this.getObjectEntityFile(objectPath);
-    const lastPart = objectPath.split("/").pop() || "";
-    const dotIdx = lastPart.lastIndexOf(".");
-    const ext = dotIdx > 0 ? lastPart.substring(dotIdx + 1) : "png";
+    const [metadata] = await file.getMetadata();
+    const contentType = (metadata.contentType as string) || "";
+
+    const MIME_TO_EXT: Record<string, string> = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/jpg": "jpg",
+      "image/gif": "gif",
+      "image/webp": "webp",
+      "image/heic": "heic",
+      "image/heif": "heif",
+      "image/tiff": "tiff",
+      "image/bmp": "bmp",
+      "image/svg+xml": "svg",
+      "application/pdf": "pdf",
+      "application/octet-stream": "bin",
+    };
+
+    let ext = MIME_TO_EXT[contentType.toLowerCase()] || "";
+    if (!ext) {
+      const lastPart = objectPath.split("/").pop() || "";
+      const dotIdx = lastPart.lastIndexOf(".");
+      ext = dotIdx > 0 ? lastPart.substring(dotIdx + 1) : "png";
+    }
+
+    if (ext === "heic" || ext === "heif") {
+      try {
+        const sharp = (await import("sharp")).default;
+        const [buffer] = await file.download();
+        const converted = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+        ext = "jpg";
+        const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
+        fs.writeFileSync(tmpFile, converted);
+        return tmpFile;
+      } catch {
+        ext = "jpg";
+      }
+    }
+
     const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
     const [buffer] = await file.download();
     fs.writeFileSync(tmpFile, buffer);
