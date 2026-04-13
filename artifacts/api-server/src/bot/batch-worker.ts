@@ -133,24 +133,27 @@ async function downloadToTemp(url: string, index: number): Promise<string> {
       logger.info({ url, tmpPath: result }, "downloadToTemp: downloaded from object storage");
       return result;
     } catch (objErr) {
-      logger.warn({ url, err: objErr instanceof Error ? objErr.message : String(objErr) }, "downloadToTemp: object storage download failed, trying HTTP fallback via /objects/ route");
-      const apiBase = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : `http://localhost:${process.env.PORT || 8080}`;
-      const httpUrl = `${apiBase}${url}`;
+      const objErrMsg = objErr instanceof Error ? objErr.message : String(objErr);
+      logger.warn({ url, err: objErrMsg }, "downloadToTemp: object storage download failed, trying HTTP fallback via /api/storage/objects/ route");
+      const apiBase = `http://localhost:${process.env.PORT || 8080}`;
+      const storagePath = url.replace(/^\/objects\//, "/api/storage/objects/");
+      const httpUrl = `${apiBase}${storagePath}`;
       try {
-        const ext = path.extname(url) || ".png";
+        const lastPart = url.split("/").pop() || "";
+        const dotIdx = lastPart.lastIndexOf(".");
+        const ext = dotIdx > 0 ? "." + lastPart.substring(dotIdx + 1) : ".png";
         const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
         const response = await fetch(httpUrl);
         if (!response.ok || !response.body) {
-          throw new Error(`HTTP fallback failed: ${response.status}`);
+          throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
         }
         const fileStream = fs.createWriteStream(tmpFile);
         await pipeline(Readable.fromWeb(response.body as any), fileStream);
-        logger.info({ url, httpUrl, tmpPath: tmpFile }, "downloadToTemp: downloaded via HTTP fallback");
+        const fileSize = fs.statSync(tmpFile).size;
+        logger.info({ url, httpUrl, tmpPath: tmpFile, fileSize }, "downloadToTemp: downloaded via HTTP fallback");
         return tmpFile;
       } catch (httpErr) {
-        throw new Error(`Evidence download failed for ${url}: object storage error: ${objErr instanceof Error ? objErr.message : String(objErr)}, HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+        throw new Error(`Evidence download failed for ${url}: GCS error: ${objErrMsg}, HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
       }
     }
   }
