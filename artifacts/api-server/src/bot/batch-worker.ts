@@ -374,11 +374,16 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
     }
 
-    if (isGpsIssue && sub.gpsBreadcrumbsAvailable) {
+    if (isGpsIssue) {
       const el = await page.$("#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361");
       if (el) {
-        await el.selectOption(sub.gpsBreadcrumbsAvailable);
-        logger.info({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: filled GPS Breadcrumbs");
+        const gpsValue = ["Yes", "No", "Unknown"].includes(sub.gpsBreadcrumbsAvailable) ? sub.gpsBreadcrumbsAvailable : "";
+        if (gpsValue) {
+          await el.selectOption(gpsValue);
+          logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs");
+        } else {
+          logger.warn({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
+        }
       } else {
         logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found");
       }
@@ -477,6 +482,16 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
 
       if (!attached) {
         throw new Error("Evidence upload failed — no attachment element found on portal page. Cannot submit without evidence.");
+      }
+
+      const attachedFileCount = await page.$$eval('input[type="file"]', (inputs) => {
+        return inputs.reduce((count, input) => {
+          const files = (input as HTMLInputElement).files;
+          return count + (files ? files.length : 0);
+        }, 0);
+      }).catch(() => 0);
+      if (attachedFileCount <= 0) {
+        throw new Error("Evidence upload failed — no files were attached to the portal form.");
       }
 
       await page.waitForTimeout(1000);
