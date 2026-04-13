@@ -85,7 +85,12 @@ export default function PortalSubmissions() {
     query: { queryKey: getListBotActivityQueryKey(selectedId || 0), enabled: !!selectedId }
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPortalSubmissionsQueryKey() });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListPortalSubmissionsQueryKey() });
+    if (selectedId) {
+      queryClient.invalidateQueries({ queryKey: ["getPortalSubmission", selectedId] });
+    }
+  };
 
   const pendingSubmissions = (submissions || []).filter(s => s.status === "pending");
   const allPendingChecked = pendingSubmissions.length > 0 && pendingSubmissions.every(s => checkedIds.has(s.id));
