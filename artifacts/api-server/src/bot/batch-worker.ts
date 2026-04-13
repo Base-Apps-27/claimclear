@@ -543,23 +543,24 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
 
       let attached = false;
-      const filesListInput = await page.$('#files_list');
       const freshdeskFileInput = await page.$('#upload_file');
+      const filesListInput = await page.$('#files_list');
 
-      if (filesListInput) {
+      if (freshdeskFileInput) {
+        await freshdeskFileInput.setInputFiles(downloadedFiles);
+        await page.waitForTimeout(2000);
+        attached = true;
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #upload_file (triggers Freshdesk JS handler)");
+      } else if (filesListInput) {
         await filesListInput.setInputFiles(downloadedFiles);
         attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #files_list (form submission input)");
-      } else if (freshdeskFileInput) {
-        await freshdeskFileInput.setInputFiles(downloadedFiles);
-        attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #upload_file (trigger input)");
+        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #files_list fallback");
       } else {
         const anyFileInput = await page.$('input[type="file"]');
         if (anyFileInput) {
           await anyFileInput.setInputFiles(downloadedFiles);
           attached = true;
-          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via fallback file input");
+          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via generic file input fallback");
         }
       }
 
@@ -567,17 +568,16 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         throw new Error("Evidence upload failed — no attachment element found on portal page. Cannot submit without evidence.");
       }
 
-      const attachedFileCount = await page.evaluate(() => {
-        const filesList = document.querySelector('#files_list') as HTMLInputElement | null;
-        const uploadFile = document.querySelector('#upload_file') as HTMLInputElement | null;
-        let count = 0;
-        if (filesList?.files) count += filesList.files.length;
-        if (uploadFile?.files) count += uploadFile.files.length;
-        return count;
-      }).catch(() => 0);
-      logger.info({ submissionId: sub.id, attachedFileCount, expectedCount: downloadedFiles.length }, "Batch worker: attachment verification");
-      if (attachedFileCount <= 0) {
-        logger.warn({ submissionId: sub.id }, "Batch worker: file count verification returned 0, proceeding anyway (hidden inputs may not report files)");
+      const attachmentVerification = await page.evaluate(() => {
+        const attachList = document.querySelector('#attachments_list');
+        const childCount = attachList?.children?.length || 0;
+        const fileNames = Array.from(attachList?.querySelectorAll('.file-name') || []).map(el => el.textContent?.trim() || '');
+        const filesListCount = (document.querySelector('#files_list') as HTMLInputElement)?.files?.length || 0;
+        return { childCount, fileNames, filesListCount };
+      }).catch(() => ({ childCount: 0, fileNames: [] as string[], filesListCount: 0 }));
+      logger.info({ submissionId: sub.id, verification: JSON.stringify(attachmentVerification), expectedCount: downloadedFiles.length }, "Batch worker: attachment verification");
+      if (attachmentVerification.childCount <= 0 && attachmentVerification.filesListCount <= 0) {
+        throw new Error("Evidence upload failed — files were set but Freshdesk did not register them. No attachments visible in form.");
       }
 
       await page.waitForTimeout(1000);
