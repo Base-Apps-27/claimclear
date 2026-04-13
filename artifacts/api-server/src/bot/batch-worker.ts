@@ -385,17 +385,84 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     }
 
     if (isGpsIssue) {
-      const el = await page.$("#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361");
-      if (el) {
-        const gpsValue = ["Yes", "No", "Unknown"].includes(sub.gpsBreadcrumbsAvailable) ? sub.gpsBreadcrumbsAvailable : "";
-        if (gpsValue) {
-          await el.selectOption(gpsValue);
-          logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs");
+      const gpsValue = ["Yes", "No", "Unknown"].includes(sub.gpsBreadcrumbsAvailable) ? sub.gpsBreadcrumbsAvailable : "";
+      if (gpsValue) {
+        const gpsSelector = "#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361";
+        const el = await page.$(gpsSelector);
+        if (el) {
+          const isVisible = await el.isVisible().catch(() => false);
+          if (isVisible) {
+            await el.selectOption(gpsValue);
+            logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs via visible select");
+          } else {
+            const domInfo = await page.evaluate((sel) => {
+              const select = document.querySelector(sel) as HTMLSelectElement | null;
+              if (!select) return { found: false };
+              const parent = select.parentElement;
+              const parentHtml = parent ? parent.outerHTML.substring(0, 500) : "no parent";
+              const options = Array.from(select.options).map(o => ({ value: o.value, text: o.text }));
+              const tagName = select.tagName;
+              const type = select.type;
+              const display = window.getComputedStyle(select).display;
+              const visibility = window.getComputedStyle(select).visibility;
+              return { found: true, tagName, type, display, visibility, options, parentHtml };
+            }, gpsSelector);
+            logger.info({ submissionId: sub.id, domInfo: JSON.stringify(domInfo) }, "Batch worker: GPS field DOM analysis");
+
+            const set = await page.evaluate(({ sel, val }) => {
+              const select = document.querySelector(sel) as HTMLSelectElement | null;
+              if (!select) return false;
+              for (const opt of Array.from(select.options)) {
+                if (opt.value === val || opt.text === val) {
+                  select.value = opt.value;
+                  break;
+                }
+              }
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              select.dispatchEvent(new Event("input", { bubbles: true }));
+              const ev = new Event("change", { bubbles: true });
+              select.dispatchEvent(ev);
+              return select.value;
+            }, { sel: gpsSelector, val: gpsValue });
+
+            logger.info({ submissionId: sub.id, value: gpsValue, resultValue: set }, "Batch worker: filled GPS Breadcrumbs via JS (hidden select)");
+
+            const parentWrapper = await page.$(gpsSelector + " ~ .dropdown, " + gpsSelector + " + .dropdown, " +
+              `[data-field-id="cf_gps_breadcrumbs_available_4128361"]`);
+            if (!parentWrapper) {
+              const nearbyDropdown = await page.evaluate((sel) => {
+                const select = document.querySelector(sel);
+                if (!select) return null;
+                const parent = select.closest(".form-field, .field-group, .custom-field, .helpdesk-field, div[class*='field']");
+                if (!parent) return null;
+                const dropdown = parent.querySelector(".dropdown, .select-dropdown, .chosen-container, .select2-container, [class*='dropdown']");
+                return dropdown ? { className: dropdown.className, tagName: dropdown.tagName, id: dropdown.id } : null;
+              }, gpsSelector);
+              logger.info({ submissionId: sub.id, nearbyDropdown: JSON.stringify(nearbyDropdown) }, "Batch worker: GPS nearby dropdown analysis");
+
+              if (nearbyDropdown) {
+                const parentEl = await page.$(gpsSelector);
+                const fieldParent = await parentEl?.evaluateHandle(el => el.closest(".form-field, .field-group, .custom-field, .helpdesk-field, div[class*='field']"));
+                if (fieldParent) {
+                  const dropdownTrigger = await (fieldParent as any).$(".dropdown, .select-dropdown, .chosen-container, .select2-container, [class*='dropdown']");
+                  if (dropdownTrigger) {
+                    await dropdownTrigger.click();
+                    await page.waitForTimeout(500);
+                    const optionEl = await page.$(`li:has-text("${gpsValue}"), [data-value="${gpsValue}"], .dropdown-option:has-text("${gpsValue}")`);
+                    if (optionEl) {
+                      await optionEl.click();
+                      logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS via custom dropdown widget");
+                    }
+                  }
+                }
+              }
+            }
+          }
         } else {
-          logger.warn({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
+          logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found");
         }
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found");
+        logger.warn({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
       }
     }
 
