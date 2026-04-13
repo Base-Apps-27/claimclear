@@ -192,7 +192,9 @@ export class ObjectStorageService {
 
   async downloadObjectToTemp(objectPath: string, index: number = 0): Promise<string> {
     const file = await this.getObjectEntityFile(objectPath);
-    const ext = objectPath.split(".").pop() || "png";
+    const lastPart = objectPath.split("/").pop() || "";
+    const dotIdx = lastPart.lastIndexOf(".");
+    const ext = dotIdx > 0 ? lastPart.substring(dotIdx + 1) : "png";
     const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
     const [buffer] = await file.download();
     fs.writeFileSync(tmpFile, buffer);

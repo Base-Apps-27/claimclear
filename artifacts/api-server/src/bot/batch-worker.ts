@@ -123,10 +123,36 @@ export interface PortalSubmission {
 }
 
 async function downloadToTemp(url: string, index: number): Promise<string> {
+  logger.info({ url, index }, "downloadToTemp: starting download");
+
   if (url.startsWith("/objects/")) {
-    const { ObjectStorageService } = await import("../lib/objectStorage");
-    const storage = new ObjectStorageService();
-    return storage.downloadObjectToTemp(url, index);
+    try {
+      const { ObjectStorageService } = await import("../lib/objectStorage");
+      const storage = new ObjectStorageService();
+      const result = await storage.downloadObjectToTemp(url, index);
+      logger.info({ url, tmpPath: result }, "downloadToTemp: downloaded from object storage");
+      return result;
+    } catch (objErr) {
+      logger.warn({ url, err: objErr instanceof Error ? objErr.message : String(objErr) }, "downloadToTemp: object storage download failed, trying HTTP fallback via /objects/ route");
+      const apiBase = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : `http://localhost:${process.env.PORT || 8080}`;
+      const httpUrl = `${apiBase}${url}`;
+      try {
+        const ext = path.extname(url) || ".png";
+        const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
+        const response = await fetch(httpUrl);
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP fallback failed: ${response.status}`);
+        }
+        const fileStream = fs.createWriteStream(tmpFile);
+        await pipeline(Readable.fromWeb(response.body as any), fileStream);
+        logger.info({ url, httpUrl, tmpPath: tmpFile }, "downloadToTemp: downloaded via HTTP fallback");
+        return tmpFile;
+      } catch (httpErr) {
+        throw new Error(`Evidence download failed for ${url}: object storage error: ${objErr instanceof Error ? objErr.message : String(objErr)}, HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+      }
+    }
   }
 
   if (fs.existsSync(url)) {
