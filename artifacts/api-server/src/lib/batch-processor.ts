@@ -200,13 +200,7 @@ async function processViaExternalBot(
   const { runBatchWorker } = await import("../bot/batch-worker");
   const defaults = await getPortalDefaults();
 
-  const issueType = sub.issueType || (
-    sub.errorTypeName?.toLowerCase().includes("gps") ||
-    sub.errorTypeName?.toLowerCase().includes("deviation") ||
-    sub.errorTypeName?.toLowerCase().includes("breadcrumb")
-      ? "GPS Control Deviation"
-      : "Other Issue or Question"
-  );
+  const issueType = sub.issueType || "Other Issue or Question";
 
   const workerSub: import("../bot/batch-worker").PortalSubmission = {
     id: sub.id,
@@ -233,7 +227,7 @@ async function processViaExternalBot(
       : [],
   };
 
-  logger.info({ submissionId: sub.id, gps: workerSub.gpsBreadcrumbsAvailable, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved GPS and attachments");
+  logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
   const result = await runBatchWorker(workerSub, dryRun);
@@ -313,13 +307,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
     const { runBatchWorker } = await import("../bot/batch-worker");
     const defaults = await getPortalDefaults();
 
-    const issueType = sub.issueType || (
-      sub.errorTypeName?.toLowerCase().includes("gps") ||
-      sub.errorTypeName?.toLowerCase().includes("deviation") ||
-      sub.errorTypeName?.toLowerCase().includes("breadcrumb")
-        ? "GPS Control Deviation"
-        : "Other Issue or Question"
-    );
+    const issueType = sub.issueType || "Other Issue or Question";
 
     const workerSub: import("../bot/batch-worker").PortalSubmission = {
       id: sub.id,
@@ -346,7 +334,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
         : [],
     };
 
-    logger.info({ submissionId: sub.id, gps: workerSub.gpsBreadcrumbsAvailable, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved GPS and attachments");
+    logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");
 
     const result = await runBatchWorker(workerSub, true);
 

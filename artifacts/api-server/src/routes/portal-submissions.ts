@@ -62,12 +62,7 @@ function extractInvoiceNumber(refNumber: string | null): string {
   return parts[0] || "";
 }
 
-function determineIssueType(errorTypeName: string | null): string {
-  if (!errorTypeName) return "Other Issue or Question";
-  const lower = errorTypeName.toLowerCase();
-  if (lower.includes("gps") || lower.includes("deviation") || lower.includes("breadcrumb")) {
-    return "GPS Control Deviation";
-  }
+function determineIssueType(_errorTypeName: string | null): string {
   return "Other Issue or Question";
 }
 
