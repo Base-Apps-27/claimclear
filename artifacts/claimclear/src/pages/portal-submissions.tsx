@@ -173,10 +173,15 @@ export default function PortalSubmissions() {
   const handleSandboxRun = async (id: number) => {
     setSandboxRunning(id);
     try {
-      await sandboxRun.mutateAsync({ id });
+      const result = await sandboxRun.mutateAsync({ id });
+      queryClient.setQueryData(
+        getListPortalSubmissionsQueryKey(statusFilter ? { status: statusFilter } : undefined),
+        (old: typeof submissions) => old?.map(s => s.id === id ? { ...s, ...result } : s)
+      );
       invalidate();
       queryClient.invalidateQueries({ queryKey: getListBotActivityQueryKey(id) });
     } catch (err) {
+      invalidate();
       alert(err instanceof Error ? err.message : "Sandbox run failed");
     }
     setSandboxRunning(null);
@@ -634,10 +639,16 @@ export default function PortalSubmissions() {
                     <Image className="h-4 w-4 text-purple-600" />
                     <span className="text-sm font-medium">Sandbox Screenshot</span>
                     <Badge className="bg-purple-500/20 text-purple-700 border-purple-300 text-[10px]" variant="outline">Dry Run</Badge>
+                    {selected.submittedAt && (
+                      <span className="text-[10px] text-muted-foreground ml-1">
+                        {formatDateTime(selected.submittedAt)}
+                      </span>
+                    )}
                   </div>
                   <div className="border rounded-md overflow-hidden bg-muted/30">
                     <img
-                      src={`/api/storage${selected.screenshotUrl}`}
+                      key={selected.screenshotUrl + (selected.updatedAt || "")}
+                      src={`/api/storage${selected.screenshotUrl}?t=${new Date(selected.updatedAt || selected.submittedAt || "").getTime() || Date.now()}`}
                       alt="Sandbox run screenshot of the filled portal form"
                       className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
                       onClick={() => window.open(`/api/storage${selected.screenshotUrl}`, "_blank")}
@@ -660,6 +671,16 @@ export default function PortalSubmissions() {
                       <div key={log.id} className="text-sm border-l-2 pl-3 py-1" style={{ borderColor: log.success ? 'var(--color-primary)' : 'var(--color-destructive)' }}>
                         <p className="font-medium break-words">{log.action}</p>
                         {log.message && <p className="text-muted-foreground text-xs break-words">{log.message}</p>}
+                        {log.screenshotPath && log.screenshotPath.startsWith("/objects/") && (
+                          <a
+                            href={`/api/storage${log.screenshotPath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-0.5"
+                          >
+                            <Image className="h-3 w-3" /> View screenshot
+                          </a>
+                        )}
                         <p className="text-muted-foreground/70 text-xs">{formatDateTime(log.createdAt)}</p>
                       </div>
                     ))}

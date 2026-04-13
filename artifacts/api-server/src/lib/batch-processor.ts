@@ -355,6 +355,8 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
     const [updated] = await db.update(portalSubmissionsTable).set({
       status: "dry_run",
       screenshotUrl,
+      submittedAt: new Date().toISOString(),
+      errorMessage: null,
     }).where(eq(portalSubmissionsTable.id, subId)).returning();
 
     await db.insert(botActivityLogTable).values({
@@ -363,7 +365,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       action: "sandbox_run_complete",
       success: true,
       message: `Sandbox dry run completed${screenshotUrl ? " — screenshot saved" : ""}`,
-      screenshotPath: result.screenshotPath || null,
+      screenshotPath: screenshotUrl || result.screenshotPath || null,
     });
 
     broadcastPresenceEvent({
