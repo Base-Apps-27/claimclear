@@ -190,6 +190,15 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
+  async downloadObjectToTemp(objectPath: string, index: number = 0): Promise<string> {
+    const file = await this.getObjectEntityFile(objectPath);
+    const ext = objectPath.split(".").pop() || "png";
+    const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
+    const [buffer] = await file.download();
+    fs.writeFileSync(tmpFile, buffer);
+    return tmpFile;
+  }
+
   async uploadLocalFile(localPath: string, contentType: string = "image/png"): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     const objectId = randomUUID();

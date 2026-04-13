@@ -123,6 +123,16 @@ export interface PortalSubmission {
 }
 
 async function downloadToTemp(url: string, index: number): Promise<string> {
+  if (url.startsWith("/objects/")) {
+    const { ObjectStorageService } = await import("../lib/objectStorage");
+    const storage = new ObjectStorageService();
+    return storage.downloadObjectToTemp(url, index);
+  }
+
+  if (fs.existsSync(url)) {
+    return url;
+  }
+
   const ext = path.extname(new URL(url).pathname) || ".png";
   const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
   const response = await fetch(url);

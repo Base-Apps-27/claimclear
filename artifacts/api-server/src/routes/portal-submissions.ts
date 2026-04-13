@@ -1,12 +1,39 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+async function collectEvidenceUrls(claimId: number, claim: typeof claimsTable.$inferSelect): Promise<string[]> {
+  const evidenceRows = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
+    .from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.claimId, claimId));
+
+  const urls: string[] = evidenceRows
+    .map(r => r.imageUrl)
+    .filter((u): u is string => typeof u === "string" && u.length > 0);
+
+  if (claim.evidenceFiles && Array.isArray(claim.evidenceFiles)) {
+    const legacyUrls = (claim.evidenceFiles as Array<Record<string, string> | string>)
+      .map((f) => (typeof f === "string" ? f : f.url))
+      .filter((u): u is string => typeof u === "string" && u.length > 0);
+    for (const u of legacyUrls) {
+      if (!urls.includes(u)) urls.push(u);
+    }
+  }
+
+  return urls;
+}
+
+function resolveGpsBreadcrumbs(issueType: string, settingsDefault: string): string {
+  if (["Yes", "No", "Unknown"].includes(settingsDefault)) return settingsDefault;
+  const isGps = issueType === "GPS Control Deviation";
+  return isGps ? "Yes" : "";
+}
 
 interface PortalSettings {
   providerName: string;
@@ -164,12 +191,10 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     generatedDescription = buildFallbackDescription(claim, reason);
   }
 
-  let attachmentUrls: string[] = [];
-  if (claim.evidenceFiles && Array.isArray(claim.evidenceFiles)) {
-    attachmentUrls = (claim.evidenceFiles as Array<Record<string, string> | string>)
-      .map((f) => (typeof f === "string" ? f : f.url))
-      .filter((u): u is string => typeof u === "string" && u.length > 0);
-  }
+  const attachmentUrls = await collectEvidenceUrls(claim.id, claim);
+  const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
+
+  logger.info({ claimId: claim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType }, "Portal draft: evidence and GPS resolved");
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
     claimId: claim.id,
@@ -180,7 +205,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     transportationProviderName: settings.providerName,
     phoneNumber: settings.contactPhone,
     invoiceNumber,
-    gpsBreadcrumbsAvailable: settings.defaultGpsBreadcrumbs,
+    gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
     attachmentUrls,
     confNumber: claim.confNumber || "",
@@ -201,7 +226,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   await db.insert(auditLogsTable).values({
     claimId: claim.id,
     action: "portal_draft_created",
-    details: `Portal submission draft generated for review`,
+    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files)`,
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });
@@ -341,25 +366,22 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     generatedDescription = buildFallbackDescription(claim, reason);
   }
 
-  let attachmentUrls: string[] = [];
-  if (claim.evidenceFiles && Array.isArray(claim.evidenceFiles)) {
-    attachmentUrls = (claim.evidenceFiles as Array<Record<string, string> | string>)
-      .map((f) => (typeof f === "string" ? f : f.url))
-      .filter((u): u is string => typeof u === "string" && u.length > 0);
-  }
+  const resolvedIssueType = issueType || determineIssueType(claim.errorTypeName);
+  const attachmentUrls = await collectEvidenceUrls(claim.id, claim);
+  const gpsBreadcrumbs = gpsBreadcrumbsAvailable || resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
     claimId: claim.id,
     status: "pending",
-    issueType: issueType || determineIssueType(claim.errorTypeName),
+    issueType: resolvedIssueType,
     subject: subject || `Dispute - Conf #${claim.confNumber || "N/A"} - ${claim.errorTypeName || "Claim Correction"}`,
     requesterEmail: requesterEmail || settings.contactEmail,
     transportationProviderName: transportationProviderName || settings.providerName,
     phoneNumber: phoneNumber || settings.contactPhone,
     invoiceNumber: invoiceNumber || extractInvoiceNumber(claim.refNumber),
-    gpsBreadcrumbsAvailable: gpsBreadcrumbsAvailable || settings.defaultGpsBreadcrumbs,
+    gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
-    attachmentUrls: attachmentUrls,
+    attachmentUrls,
     confNumber: claim.confNumber || "",
     serviceDate: claim.date || "",
     refNumber: claim.refNumber || "",

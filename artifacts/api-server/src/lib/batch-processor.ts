@@ -5,6 +5,12 @@ import { logger } from "./logger";
 import { broadcastPresenceEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
 
+function resolveGps(value: string, issueType: string): string {
+  if (["Yes", "No", "Unknown"].includes(value)) return value;
+  const isGps = issueType === "GPS Control Deviation";
+  return isGps ? "Yes" : "";
+}
+
 async function getPortalDefaults() {
   const rows = await db.select().from(appSettingsTable);
   const map: Record<string, string> = {};
@@ -218,7 +224,7 @@ async function processViaExternalBot(
     transportationProviderName: sub.transportationProviderName || defaults.providerName,
     phoneNumber: sub.phoneNumber || defaults.contactPhone,
     invoiceNumber: sub.invoiceNumber || "",
-    gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs,
+    gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
@@ -226,6 +232,8 @@ async function processViaExternalBot(
       ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
       : [],
   };
+
+  logger.info({ submissionId: sub.id, gps: workerSub.gpsBreadcrumbsAvailable, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved GPS and attachments");
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
   const result = await runBatchWorker(workerSub, dryRun);
@@ -329,7 +337,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       transportationProviderName: sub.transportationProviderName || defaults.providerName,
       phoneNumber: sub.phoneNumber || defaults.contactPhone,
       invoiceNumber: sub.invoiceNumber || "",
-      gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs,
+      gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
       descriptionHtml: sub.descriptionHtml || "",
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",
@@ -337,6 +345,8 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
         ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
         : [],
     };
+
+    logger.info({ submissionId: sub.id, gps: workerSub.gpsBreadcrumbsAvailable, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved GPS and attachments");
 
     const result = await runBatchWorker(workerSub, true);
 

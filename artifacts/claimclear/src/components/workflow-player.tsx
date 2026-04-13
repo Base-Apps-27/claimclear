@@ -104,6 +104,7 @@ export function WorkflowPlayer({
     transportationProviderName: string;
     phoneNumber: string;
     invoiceNumber: string;
+    attachmentCount: number;
   } | null>(null);
   const [draftEditing, setDraftEditing] = useState(false);
   const [editSubject, setEditSubject] = useState("");
@@ -146,6 +147,7 @@ export function WorkflowPlayer({
       data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
     });
     const draft = result as Record<string, unknown>;
+    const attachUrls = Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : [];
     setDraftSubmission({
       id: draft.id as number,
       subject: (draft.subject as string) || "",
@@ -156,6 +158,7 @@ export function WorkflowPlayer({
       transportationProviderName: (draft.transportationProviderName as string) || "",
       phoneNumber: (draft.phoneNumber as string) || "",
       invoiceNumber: (draft.invoiceNumber as string) || "",
+      attachmentCount: attachUrls.length,
     });
     setDraftEditing(false);
   };
@@ -198,6 +201,7 @@ export function WorkflowPlayer({
       transportationProviderName: editProvider,
       phoneNumber: editPhone,
       invoiceNumber: editInvoice,
+      attachmentCount: draftSubmission.attachmentCount,
     });
     setDraftEditing(false);
   };
@@ -616,6 +620,12 @@ export function WorkflowPlayer({
                   <span className="col-span-2">{fieldVal(draftSubmission.gpsBreadcrumbsAvailable)}</span>
                 </div>
               )}
+              <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                <span className="text-muted-foreground">Evidence Files</span>
+                <span className={`col-span-2 ${draftSubmission.attachmentCount > 0 ? "text-green-700 font-medium" : "text-red-500 font-medium"}`}>
+                  {draftSubmission.attachmentCount > 0 ? `${draftSubmission.attachmentCount} file(s) attached` : "No evidence files"}
+                </span>
+              </div>
             </div>
 
             <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs mt-4">Dispute Write-Up</div>

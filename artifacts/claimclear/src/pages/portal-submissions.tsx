@@ -536,6 +536,7 @@ export default function PortalSubmissions() {
                         {selected.issueType === "GPS Control Deviation" && (
                           <div className="min-w-0"><span className="text-muted-foreground">GPS Breadcrumbs:</span> {selected.gpsBreadcrumbsAvailable || "-"}</div>
                         )}
+                        <div className="min-w-0"><span className="text-muted-foreground">Evidence:</span> <span className={Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? "text-green-700 font-medium" : "text-amber-600"}>{Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? `${selected.attachmentUrls.length} file(s)` : "None"}</span></div>
                         <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
                         <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
                         {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
