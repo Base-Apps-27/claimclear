@@ -37,7 +37,7 @@ import {
   FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
   Settings, Trash2, GripVertical, Maximize, ZoomIn, ZoomOut, RotateCcw,
-  Upload, ExternalLink, Loader2,
+  Upload, ExternalLink, Loader2, ClipboardPaste,
 } from "lucide-react";
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0];
@@ -719,8 +719,72 @@ function InstructionImageUploader({
   onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+
+  const handleFile = useCallback(async (file: File) => {
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const res = await fetch("/api/storage/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: file.name,
+          size: file.size,
+          contentType: file.type,
+        }),
+      });
+      const { uploadURL, objectPath } = await res.json();
+      await fetch(uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      onUploaded(objectPath);
+    } catch {
+      setPreview(null);
+    } finally {
+      setUploading(false);
+    }
+  }, [onUploaded]);
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const ext = imageType.split("/")[1] || "png";
+          const file = new File([blob], `pasted-image.${ext}`, { type: imageType });
+          handleFile(file);
+          return;
+        }
+      }
+    } catch {}
+  }, [handleFile]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) handleFile(file);
+          return;
+        }
+      }
+    };
+    el.addEventListener("paste", handler);
+    return () => el.removeEventListener("paste", handler);
+  }, [handleFile]);
 
   const currentSrc = preview
     || (imagePath?.startsWith("/objects/") ? `/api/storage${imagePath}` : imagePath)
@@ -749,40 +813,15 @@ function InstructionImageUploader({
   }
 
   return (
-    <div>
+    <div ref={containerRef} className="flex gap-2" tabIndex={0}>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={async (e) => {
+        onChange={(e) => {
           const file = e.target.files?.[0];
-          if (!file) return;
-          setPreview(URL.createObjectURL(file));
-          setUploading(true);
-          try {
-            const res = await fetch("/api/storage/uploads/request-url", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({
-                name: file.name,
-                size: file.size,
-                contentType: file.type,
-              }),
-            });
-            const { uploadURL, objectPath } = await res.json();
-            await fetch(uploadURL, {
-              method: "PUT",
-              headers: { "Content-Type": file.type },
-              body: file,
-            });
-            onUploaded(objectPath);
-          } catch {
-            setPreview(null);
-          } finally {
-            setUploading(false);
-          }
+          if (file) handleFile(file);
         }}
       />
       <Button
@@ -793,7 +832,17 @@ function InstructionImageUploader({
         onClick={() => inputRef.current?.click()}
       >
         <Upload className="h-3 w-3" />
-        Upload Image
+        Upload
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="text-xs gap-1 h-7"
+        onClick={handlePasteImage}
+      >
+        <ClipboardPaste className="h-3 w-3" />
+        Paste
       </Button>
     </div>
   );
