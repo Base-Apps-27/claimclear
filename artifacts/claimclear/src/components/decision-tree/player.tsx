@@ -525,7 +525,7 @@ function EvidenceImageUploader({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.svg,.pdf"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
