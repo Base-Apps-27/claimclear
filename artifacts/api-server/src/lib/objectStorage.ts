@@ -190,7 +190,7 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
-  async downloadObjectToTemp(objectPath: string, index: number = 0): Promise<string> {
+  async downloadObjectToTemp(objectPath: string, index: number = 0, label?: string): Promise<string> {
     const file = await this.getObjectEntityFile(objectPath);
     const [metadata] = await file.getMetadata();
     const contentType = (metadata.contentType as string) || "";
@@ -217,13 +217,17 @@ export class ObjectStorageService {
       ext = dotIdx > 0 ? lastPart.substring(dotIdx + 1) : "png";
     }
 
+    const baseName = label
+      ? `${label}-evidence-${index + 1}`
+      : `evidence-${Date.now()}-${index}`;
+
     if (ext === "heic" || ext === "heif") {
       try {
         const sharp = (await import("sharp")).default;
         const [buffer] = await file.download();
         const converted = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
         ext = "jpg";
-        const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
+        const tmpFile = require("path").join(require("os").tmpdir(), `${baseName}.${ext}`);
         fs.writeFileSync(tmpFile, converted);
         return tmpFile;
       } catch {
@@ -231,7 +235,7 @@ export class ObjectStorageService {
       }
     }
 
-    const tmpFile = require("path").join(require("os").tmpdir(), `evidence-${Date.now()}-${index}.${ext}`);
+    const tmpFile = require("path").join(require("os").tmpdir(), `${baseName}.${ext}`);
     const [buffer] = await file.download();
     fs.writeFileSync(tmpFile, buffer);
     return tmpFile;

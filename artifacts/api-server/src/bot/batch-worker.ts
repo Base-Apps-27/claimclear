@@ -122,14 +122,14 @@ export interface PortalSubmission {
   attachmentUrls: string[];
 }
 
-async function downloadToTemp(url: string, index: number): Promise<string> {
-  logger.info({ url, index }, "downloadToTemp: starting download");
+async function downloadToTemp(url: string, index: number, label?: string): Promise<string> {
+  logger.info({ url, index, label }, "downloadToTemp: starting download");
 
   if (url.startsWith("/objects/")) {
     try {
       const { ObjectStorageService } = await import("../lib/objectStorage");
       const storage = new ObjectStorageService();
-      const result = await storage.downloadObjectToTemp(url, index);
+      const result = await storage.downloadObjectToTemp(url, index, label);
       logger.info({ url, tmpPath: result }, "downloadToTemp: downloaded from object storage");
       return result;
     } catch (objErr) {
@@ -142,7 +142,8 @@ async function downloadToTemp(url: string, index: number): Promise<string> {
         const lastPart = url.split("/").pop() || "";
         const dotIdx = lastPart.lastIndexOf(".");
         const ext = dotIdx > 0 ? "." + lastPart.substring(dotIdx + 1) : ".png";
-        const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
+        const baseName = label ? `${label}-evidence-${index + 1}` : `evidence-${Date.now()}-${index}`;
+        const tmpFile = path.join(os.tmpdir(), `${baseName}${ext}`);
         const response = await fetch(httpUrl);
         if (!response.ok || !response.body) {
           throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
@@ -554,7 +555,8 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         let downloaded = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i);
+            const fileLabel = `claim-${sub.confNumber}`;
+            const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i, fileLabel);
             downloadedFiles.push(tmpPath);
             logger.info({ submissionId: sub.id, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
             downloaded = true;
