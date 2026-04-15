@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, errorTypesTable } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
 
@@ -155,6 +155,16 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
 
+  const activeSubmissions = await db.select().from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.claimId, id),
+      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+    ));
+  if (activeSubmissions.length > 0) {
+    res.status(409).json({ error: "Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
+    return;
+  }
+
   const [claim] = await db.update(claimsTable).set({ status }).where(eq(claimsTable.id, id)).returning();
   await createAuditLog(id, "status_changed", `Status changed from ${old.status} to ${status}`, req, { from: old.status, to: status });
   await db.insert(notesTable).values({
@@ -173,6 +183,16 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
 
   const { outcome, approvedAmount, invoiceNumbers } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
+
+  const activeSubmissions = await db.select().from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.claimId, id),
+      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+    ));
+  if (activeSubmissions.length > 0) {
+    res.status(409).json({ error: "Cannot change outcome while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
+    return;
+  }
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = { outcome };
   if (approvedAmount !== undefined) {

@@ -90,11 +90,18 @@ router.post("/:id/complete", asyncHandler(async (req, res): Promise<void> => {
 
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
 
-  await db.update(claimsTable).set({
-    status: "Awaiting Response",
+  const [currentClaim] = await db.select().from(claimsTable).where(eq(claimsTable.id, sub.claimId));
+  const finalOutcomes = ["Approved", "Partially Approved", "Denied", "Non-Issue"];
+  const hasResolvedOutcome = currentClaim && finalOutcomes.includes(currentClaim.outcome);
+
+  const claimUpdate: Record<string, unknown> = {
     disputeEmailSent: true,
     disputeEmailSentAt: new Date().toISOString(),
-  }).where(eq(claimsTable.id, sub.claimId));
+  };
+  if (!hasResolvedOutcome) {
+    claimUpdate.status = "Awaiting Response";
+  }
+  await db.update(claimsTable).set(claimUpdate).where(eq(claimsTable.id, sub.claimId));
 
   await db.insert(notesTable).values({
     claimId: sub.claimId,

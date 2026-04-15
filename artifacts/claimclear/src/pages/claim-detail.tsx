@@ -205,6 +205,10 @@ export default function ClaimDetail() {
     (s: PortalSubmissionResponse) => s.claimId === claimId
   );
 
+  const hasActivePortalSubmission = claimSubmissions.some(
+    (s: PortalSubmissionResponse) => s.status === "pending" || s.status === "in_progress"
+  );
+
   interface ClaimEditData {
     confNumber: string;
     date: string;
@@ -595,8 +599,13 @@ export default function ClaimDetail() {
           <Card>
             <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
             <CardContent>
+              {hasActivePortalSubmission && (
+                <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
+                  ⏳ Portal submission in progress — status and outcome changes are locked until it completes.
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Select onValueChange={handleStatusChange}>
+                <Select onValueChange={handleStatusChange} disabled={hasActivePortalSubmission}>
                   <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
                   <SelectContent>
                     {["New", "Needs Review", "Needs Evidence", "Generating Email", "Ready to Review", "Awaiting Response", "Resolved", "Denied"].map(s => (
@@ -607,14 +616,14 @@ export default function ClaimDetail() {
 
                 <div className="flex gap-2">
                   {["Pending", "Approved", "Partially Approved", "Denied", "Non-Issue"].map(o => (
-                    <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)}>{o}</Button>
+                    <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)} disabled={hasActivePortalSubmission}>{o}</Button>
                   ))}
                 </div>
 
                 <Separator orientation="vertical" className="h-8 mx-2" />
 
                 <WrapTooltip content="Add this claim to the automated portal submission queue. The bot will fill out the MAS dispute form with claim details and evidence.">
-                  <Button variant="outline" size="sm" onClick={handleQueueForPortal}>
+                  <Button variant="outline" size="sm" onClick={handleQueueForPortal} disabled={hasActivePortalSubmission}>
                     <Send className="h-4 w-4 mr-1" />Queue for Portal
                   </Button>
                 </WrapTooltip>
