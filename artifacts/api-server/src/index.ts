@@ -68,3 +68,18 @@ cron.schedule("0 7 * * 1-5", async () => {
     logger.error({ err }, "Daily brief cron failed");
   }
 }, { timezone: "America/New_York" });
+
+cron.schedule("*/30 8-18 * * 1-5", async () => {
+  logger.info("Response tracker cron: checking email inbox for responses");
+  try {
+    const res = await fetch(`http://localhost:${port}/api/responses/check-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hoursBack: 1 }),
+    });
+    const data = await res.json();
+    logger.info({ result: data }, "Email response check completed");
+  } catch (err) {
+    logger.error({ err }, "Response tracker cron failed");
+  }
+}, { timezone: "America/New_York" });

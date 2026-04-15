@@ -100,3 +100,60 @@ export async function isOutlookConnected(): Promise<boolean> {
     return false;
   }
 }
+
+export interface InboxMessage {
+  id: string;
+  subject: string;
+  bodyPreview: string;
+  body: { contentType: string; content: string };
+  from: { emailAddress: { name: string; address: string } };
+  receivedDateTime: string;
+  isRead: boolean;
+  conversationId: string;
+}
+
+export interface SearchEmailOptions {
+  afterDate?: string;
+  searchQuery?: string;
+  folder?: string;
+  top?: number;
+}
+
+export async function searchInboxEmails(options: SearchEmailOptions = {}): Promise<InboxMessage[]> {
+  const client = await getOutlookClient();
+  const folder = options.folder || "inbox";
+  const top = options.top || 50;
+
+  let endpoint = `/me/mailFolders/${folder}/messages`;
+  const queryParams: string[] = [
+    `$top=${top}`,
+    "$orderby=receivedDateTime desc",
+    "$select=id,subject,bodyPreview,body,from,receivedDateTime,isRead,conversationId",
+  ];
+
+  if (options.afterDate) {
+    queryParams.push(`$filter=receivedDateTime ge ${options.afterDate}`);
+  }
+
+  if (options.searchQuery) {
+    queryParams.push(`$search="${options.searchQuery}"`);
+  }
+
+  endpoint += "?" + queryParams.join("&");
+
+  const result = await client.api(endpoint).get();
+  return result.value || [];
+}
+
+export async function getEmailById(messageId: string): Promise<InboxMessage | null> {
+  const client = await getOutlookClient();
+  try {
+    const msg = await client
+      .api(`/me/messages/${messageId}`)
+      .select("id,subject,bodyPreview,body,from,receivedDateTime,isRead,conversationId")
+      .get();
+    return msg;
+  } catch {
+    return null;
+  }
+}

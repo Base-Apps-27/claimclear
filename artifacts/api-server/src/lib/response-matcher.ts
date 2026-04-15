@@ -1,0 +1,305 @@
+import { db } from "@workspace/db";
+import { claimsTable, portalSubmissionsTable, portalResponsesTable, notesTable, auditLogsTable } from "@workspace/db";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import type { InboxMessage } from "./outlook";
+import { logger } from "./logger";
+
+interface MatchResult {
+  claimId: number;
+  submissionId: number | null;
+  matchedVia: string;
+  confidence: "high" | "medium" | "low";
+}
+
+function extractIdentifiers(text: string): { ticketIds: string[]; confNumbers: string[]; refNumbers: string[] } {
+  const ticketIds: string[] = [];
+  const confNumbers: string[] = [];
+  const refNumbers: string[] = [];
+
+  const ticketPatterns = [
+    /ticket[:\s#]*([A-Z0-9-]+)/gi,
+    /case[:\s#]*([A-Z0-9-]+)/gi,
+    /reference[:\s#]*([A-Z0-9-]+)/gi,
+    /ID[:\s#]*([A-Z0-9-]+)/g,
+  ];
+  for (const pattern of ticketPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      ticketIds.push(match[1].trim());
+    }
+  }
+
+  const confPattern = /(?:confirmation|conf)[:\s#]*([A-Z0-9-]+)/gi;
+  let match;
+  while ((match = confPattern.exec(text)) !== null) {
+    confNumbers.push(match[1].trim());
+  }
+
+  const refPattern = /(?:ref|reference)[:\s#]*([A-Z0-9-]+)/gi;
+  while ((match = refPattern.exec(text)) !== null) {
+    refNumbers.push(match[1].trim());
+  }
+
+  return { ticketIds, confNumbers, refNumbers };
+}
+
+function detectResponseType(subject: string, body: string): "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other" {
+  const text = `${subject} ${body}`.toLowerCase();
+
+  if (/\bapproved\b|\bapproval\b|\bgranted\b|\baccepted\b/.test(text)) {
+    if (/\bpartial\b|\bpartially\b/.test(text)) return "partial_approval";
+    return "approval";
+  }
+  if (/\bdenied\b|\bdenial\b|\brejected\b|\bdeclined\b/.test(text)) return "denial";
+  if (/\badditional information\b|\bmore info\b|\bplease provide\b|\brequesting\b|\bneeded\b/.test(text)) return "info_request";
+  if (/\breceived\b|\backnowledge\b|\bunder review\b|\bin process\b/.test(text)) return "acknowledgment";
+
+  return "other";
+}
+
+export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResult | null> {
+  const fullText = `${email.subject} ${email.bodyPreview} ${email.body?.content || ""}`;
+  const { ticketIds, confNumbers, refNumbers } = extractIdentifiers(fullText);
+
+  if (ticketIds.length > 0) {
+    const submissions = await db.select({
+      id: portalSubmissionsTable.id,
+      claimId: portalSubmissionsTable.claimId,
+      portalTicketId: portalSubmissionsTable.portalTicketId,
+    }).from(portalSubmissionsTable)
+      .where(
+        and(
+          eq(portalSubmissionsTable.status, "submitted"),
+          isNotNull(portalSubmissionsTable.portalTicketId)
+        )
+      );
+
+    for (const sub of submissions) {
+      if (sub.portalTicketId && ticketIds.some(t =>
+        t.toLowerCase() === sub.portalTicketId!.toLowerCase()
+      )) {
+        return {
+          claimId: sub.claimId,
+          submissionId: sub.id,
+          matchedVia: `portal_ticket_id:${sub.portalTicketId}`,
+          confidence: "high",
+        };
+      }
+    }
+  }
+
+  if (confNumbers.length > 0) {
+    const claims = await db.select({
+      id: claimsTable.id,
+      confNumber: claimsTable.confNumber,
+    }).from(claimsTable)
+      .where(
+        and(
+          inArray(claimsTable.status, ["Awaiting Response", "On Hold"]),
+          inArray(claimsTable.confNumber, confNumbers)
+        )
+      );
+
+    if (claims.length === 1) {
+      return {
+        claimId: claims[0].id,
+        submissionId: null,
+        matchedVia: `conf_number:${claims[0].confNumber}`,
+        confidence: "high",
+      };
+    }
+  }
+
+  if (refNumbers.length > 0) {
+    const claims = await db.select({
+      id: claimsTable.id,
+      refNumber: claimsTable.refNumber,
+    }).from(claimsTable)
+      .where(
+        and(
+          inArray(claimsTable.status, ["Awaiting Response", "On Hold"]),
+          inArray(claimsTable.refNumber, refNumbers)
+        )
+      );
+
+    if (claims.length === 1) {
+      return {
+        claimId: claims[0].id,
+        submissionId: null,
+        matchedVia: `ref_number:${claims[0].refNumber}`,
+        confidence: "medium",
+      };
+    }
+  }
+
+  const awaitingClaims = await db.select({
+    id: claimsTable.id,
+    confNumber: claimsTable.confNumber,
+    refNumber: claimsTable.refNumber,
+    payorEmail: claimsTable.payorEmail,
+  }).from(claimsTable)
+    .where(inArray(claimsTable.status, ["Awaiting Response", "On Hold"]));
+
+  const senderEmail = email.from?.emailAddress?.address?.toLowerCase() || "";
+  for (const claim of awaitingClaims) {
+    if (claim.payorEmail && senderEmail === claim.payorEmail.toLowerCase()) {
+      const bodyLower = fullText.toLowerCase();
+      if (
+        (claim.confNumber && bodyLower.includes(claim.confNumber.toLowerCase())) ||
+        (claim.refNumber && bodyLower.includes(claim.refNumber.toLowerCase()))
+      ) {
+        return {
+          claimId: claim.id,
+          submissionId: null,
+          matchedVia: `payor_email+identifier`,
+          confidence: "medium",
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function processEmailResponse(email: InboxMessage, match: MatchResult): Promise<number> {
+  const responseType = detectResponseType(email.subject, email.body?.content || email.bodyPreview);
+
+  const [response] = await db.insert(portalResponsesTable).values({
+    claimId: match.claimId,
+    submissionId: match.submissionId,
+    source: "email",
+    responseType,
+    subject: email.subject,
+    content: email.bodyPreview,
+    rawContent: email.body?.content || null,
+    senderEmail: email.from?.emailAddress?.address || null,
+    senderName: email.from?.emailAddress?.name || null,
+    matchedVia: match.matchedVia,
+    matchConfidence: match.confidence,
+    externalMessageId: email.id,
+    autoLinked: true,
+    processed: false,
+    receivedAt: new Date(email.receivedDateTime),
+    metadata: {
+      conversationId: email.conversationId,
+      isRead: email.isRead,
+    },
+  }).returning();
+
+  await db.insert(notesTable).values({
+    claimId: match.claimId,
+    type: "reply_parsed",
+    content: `Response received via email from ${email.from?.emailAddress?.name || email.from?.emailAddress?.address || "unknown"}: "${email.subject}"`,
+    author: "Response Tracker",
+    emailSubject: email.subject,
+  });
+
+  await db.insert(auditLogsTable).values({
+    claimId: match.claimId,
+    action: "response_received",
+    details: `${responseType} response detected from email (confidence: ${match.confidence})`,
+    metadata: {
+      responseId: response.id,
+      source: "email",
+      responseType,
+      matchedVia: match.matchedVia,
+      senderEmail: email.from?.emailAddress?.address,
+    },
+    userEmail: "system",
+    userName: "Response Tracker",
+  });
+
+  if (responseType === "approval") {
+    await db.update(claimsTable).set({
+      status: "Resolved",
+      outcome: "Approved",
+    }).where(eq(claimsTable.id, match.claimId));
+  } else if (responseType === "denial") {
+    await db.update(claimsTable).set({
+      status: "Denied",
+      outcome: "Denied",
+    }).where(eq(claimsTable.id, match.claimId));
+  } else if (responseType === "partial_approval") {
+    await db.update(claimsTable).set({
+      status: "Resolved",
+      outcome: "Partially Approved",
+    }).where(eq(claimsTable.id, match.claimId));
+  } else if (responseType === "info_request") {
+    await db.update(claimsTable).set({
+      status: "Needs Review",
+    }).where(eq(claimsTable.id, match.claimId));
+  }
+
+  logger.info({
+    responseId: response.id,
+    claimId: match.claimId,
+    responseType,
+    confidence: match.confidence,
+    matchedVia: match.matchedVia,
+  }, "Email response processed and linked to claim");
+
+  return response.id;
+}
+
+export async function processPortalResponse(data: {
+  claimId: number;
+  submissionId: number;
+  portalTicketId: string;
+  responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
+  content: string;
+  metadata?: Record<string, unknown>;
+}): Promise<number> {
+  const [response] = await db.insert(portalResponsesTable).values({
+    claimId: data.claimId,
+    submissionId: data.submissionId,
+    source: "portal",
+    responseType: data.responseType,
+    content: data.content,
+    portalTicketId: data.portalTicketId,
+    matchedVia: `portal_ticket_id:${data.portalTicketId}`,
+    matchConfidence: "high",
+    autoLinked: true,
+    processed: false,
+    metadata: data.metadata || null,
+  }).returning();
+
+  await db.insert(notesTable).values({
+    claimId: data.claimId,
+    type: "reply_parsed",
+    content: `Portal response received for ticket ${data.portalTicketId}: ${data.responseType}`,
+    author: "Response Tracker",
+  });
+
+  await db.insert(auditLogsTable).values({
+    claimId: data.claimId,
+    action: "response_received",
+    details: `${data.responseType} response from portal (ticket: ${data.portalTicketId})`,
+    metadata: {
+      responseId: response.id,
+      source: "portal",
+      responseType: data.responseType,
+      portalTicketId: data.portalTicketId,
+    },
+    userEmail: "system",
+    userName: "Response Tracker",
+  });
+
+  if (data.responseType === "approval") {
+    await db.update(claimsTable).set({ status: "Resolved", outcome: "Approved" }).where(eq(claimsTable.id, data.claimId));
+  } else if (data.responseType === "denial") {
+    await db.update(claimsTable).set({ status: "Denied", outcome: "Denied" }).where(eq(claimsTable.id, data.claimId));
+  } else if (data.responseType === "partial_approval") {
+    await db.update(claimsTable).set({ status: "Resolved", outcome: "Partially Approved" }).where(eq(claimsTable.id, data.claimId));
+  } else if (data.responseType === "info_request") {
+    await db.update(claimsTable).set({ status: "Needs Review" }).where(eq(claimsTable.id, data.claimId));
+  }
+
+  logger.info({
+    responseId: response.id,
+    claimId: data.claimId,
+    responseType: data.responseType,
+    portalTicketId: data.portalTicketId,
+  }, "Portal response processed and linked to claim");
+
+  return response.id;
+}

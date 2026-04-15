@@ -14,8 +14,9 @@ import {
   useListClaimEvidence, getListClaimEvidenceQueryKey,
   useDeleteClaimEvidence,
   useListErrorTypes, getListErrorTypesQueryKey, useCreateErrorType,
+  useListResponses, getListResponsesQueryKey, useProcessResponse,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -34,7 +35,7 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
-  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous
+  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox
 } from "lucide-react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import { RefNumber } from "@/components/ref-number";
@@ -208,6 +209,12 @@ export default function ClaimDetail() {
   const hasActivePortalSubmission = claimSubmissions.some(
     (s: PortalSubmissionResponse) => s.status === "pending" || s.status === "in_progress"
   );
+
+  const { data: responsesData } = useListResponses({ claimId }, {
+    query: { queryKey: getListResponsesQueryKey({ claimId }), enabled: !!claimId }
+  });
+  const claimResponses: PortalResponseItem[] = responsesData?.responses || [];
+  const processResponseMutation = useProcessResponse();
 
   interface ClaimEditData {
     confNumber: string;
@@ -794,6 +801,125 @@ export default function ClaimDetail() {
                 {claimSubmissions.map((sub: PortalSubmissionResponse) => (
                   <SubmissionCard key={sub.id} submission={sub} />
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {claimResponses.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Inbox className="h-5 w-5" />
+                  Responses Received
+                  <Badge variant="secondary">{claimResponses.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {claimResponses.map((resp: PortalResponseItem) => {
+                  const typeColors: Record<string, string> = {
+                    approval: "bg-green-50 border-green-200 text-green-800",
+                    denial: "bg-red-50 border-red-200 text-red-800",
+                    partial_approval: "bg-amber-50 border-amber-200 text-amber-800",
+                    info_request: "bg-blue-50 border-blue-200 text-blue-800",
+                    acknowledgment: "bg-slate-50 border-slate-200 text-slate-700",
+                    other: "bg-gray-50 border-gray-200 text-gray-700",
+                  };
+                  const typeLabels: Record<string, string> = {
+                    approval: "Approved",
+                    denial: "Denied",
+                    partial_approval: "Partially Approved",
+                    info_request: "Info Requested",
+                    acknowledgment: "Acknowledged",
+                    other: "Other",
+                  };
+                  const colorClass = typeColors[resp.responseType] || typeColors.other;
+                  return (
+                    <div key={resp.id} className={`border rounded-lg p-4 space-y-2 ${colorClass}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {resp.source === "email" ? (
+                            <Mail className="h-4 w-4" />
+                          ) : (
+                            <Bot className="h-4 w-4" />
+                          )}
+                          <span className="text-sm font-medium">
+                            {resp.source === "email" ? "Email" : "Portal"} Response
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {typeLabels[resp.responseType] || resp.responseType}
+                          </Badge>
+                          {!resp.processed && (
+                            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                              Needs Review
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs opacity-70">
+                          {resp.receivedAt ? formatDateTime(resp.receivedAt) : ""}
+                        </span>
+                      </div>
+
+                      {resp.subject && (
+                        <p className="text-sm font-medium">{resp.subject}</p>
+                      )}
+
+                      {resp.content && (
+                        <p className="text-sm opacity-80">{resp.content}</p>
+                      )}
+
+                      <div className="flex items-center gap-3 text-xs opacity-60">
+                        {resp.senderEmail && (
+                          <span>From: {resp.senderName || resp.senderEmail}</span>
+                        )}
+                        {resp.matchedVia && (
+                          <span>Matched: {resp.matchedVia}</span>
+                        )}
+                        {resp.matchConfidence && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {resp.matchConfidence} confidence
+                          </Badge>
+                        )}
+                      </div>
+
+                      {!resp.processed && (
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm" variant="outline"
+                            className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
+                            onClick={async () => {
+                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
+                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+                              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+                            }}
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                          </Button>
+                          <Button
+                            size="sm" variant="outline"
+                            className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                            onClick={async () => {
+                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
+                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+                              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+                            }}
+                          >
+                            <X className="h-3 w-3 mr-1" /> Deny
+                          </Button>
+                          <Button
+                            size="sm" variant="outline"
+                            className="text-xs h-7"
+                            onClick={async () => {
+                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as any } });
+                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+                            }}
+                          >
+                            <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           )}

@@ -2314,3 +2314,248 @@ export const DeleteClaimEvidenceParams = zod.object({
   claimId: zod.coerce.number(),
   evidenceId: zod.coerce.number(),
 });
+
+/**
+ * @summary List portal/email responses
+ */
+export const ListResponsesQueryParams = zod.object({
+  claimId: zod.coerce.number().optional(),
+  source: zod.enum(["email", "portal", "manual"]).optional(),
+  processed: zod.enum(["true", "false"]).optional(),
+  limit: zod.coerce.number().optional(),
+  offset: zod.coerce.number().optional(),
+});
+
+export const ListResponsesResponse = zod.object({
+  responses: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number().nullish(),
+        submissionId: zod.number().nullish(),
+        source: zod.enum(["email", "portal", "manual"]),
+        responseType: zod.enum([
+          "approval",
+          "denial",
+          "partial_approval",
+          "info_request",
+          "acknowledgment",
+          "other",
+        ]),
+        subject: zod.string().nullish(),
+        content: zod.string().nullish(),
+        rawContent: zod.string().nullish(),
+        senderEmail: zod.string().nullish(),
+        senderName: zod.string().nullish(),
+        matchedVia: zod.string().nullish(),
+        matchConfidence: zod.string().nullish(),
+        portalTicketId: zod.string().nullish(),
+        externalMessageId: zod.string().nullish(),
+        processed: zod.boolean(),
+        autoLinked: zod.boolean(),
+        metadata: zod.object({}).passthrough().nullish(),
+        receivedAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Get a single response
+ */
+export const GetResponseParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetResponseResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number().nullish(),
+  submissionId: zod.number().nullish(),
+  source: zod.enum(["email", "portal", "manual"]),
+  responseType: zod.enum([
+    "approval",
+    "denial",
+    "partial_approval",
+    "info_request",
+    "acknowledgment",
+    "other",
+  ]),
+  subject: zod.string().nullish(),
+  content: zod.string().nullish(),
+  rawContent: zod.string().nullish(),
+  senderEmail: zod.string().nullish(),
+  senderName: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  portalTicketId: zod.string().nullish(),
+  externalMessageId: zod.string().nullish(),
+  processed: zod.boolean(),
+  autoLinked: zod.boolean(),
+  metadata: zod.object({}).passthrough().nullish(),
+  receivedAt: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string().nullish(),
+});
+
+/**
+ * @summary Mark a response as processed and optionally update type
+ */
+export const ProcessResponseParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ProcessResponseBody = zod.object({
+  responseType: zod
+    .enum([
+      "approval",
+      "denial",
+      "partial_approval",
+      "info_request",
+      "acknowledgment",
+      "other",
+    ])
+    .optional(),
+  claimId: zod.number().optional(),
+});
+
+export const ProcessResponseResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number().nullish(),
+  submissionId: zod.number().nullish(),
+  source: zod.enum(["email", "portal", "manual"]),
+  responseType: zod.enum([
+    "approval",
+    "denial",
+    "partial_approval",
+    "info_request",
+    "acknowledgment",
+    "other",
+  ]),
+  subject: zod.string().nullish(),
+  content: zod.string().nullish(),
+  rawContent: zod.string().nullish(),
+  senderEmail: zod.string().nullish(),
+  senderName: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  portalTicketId: zod.string().nullish(),
+  externalMessageId: zod.string().nullish(),
+  processed: zod.boolean(),
+  autoLinked: zod.boolean(),
+  metadata: zod.object({}).passthrough().nullish(),
+  receivedAt: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string().nullish(),
+});
+
+/**
+ * @summary Manually link a response to a claim
+ */
+export const LinkResponseParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const LinkResponseBody = zod.object({
+  claimId: zod.number(),
+});
+
+export const LinkResponseResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number().nullish(),
+  submissionId: zod.number().nullish(),
+  source: zod.enum(["email", "portal", "manual"]),
+  responseType: zod.enum([
+    "approval",
+    "denial",
+    "partial_approval",
+    "info_request",
+    "acknowledgment",
+    "other",
+  ]),
+  subject: zod.string().nullish(),
+  content: zod.string().nullish(),
+  rawContent: zod.string().nullish(),
+  senderEmail: zod.string().nullish(),
+  senderName: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  portalTicketId: zod.string().nullish(),
+  externalMessageId: zod.string().nullish(),
+  processed: zod.boolean(),
+  autoLinked: zod.boolean(),
+  metadata: zod.object({}).passthrough().nullish(),
+  receivedAt: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string().nullish(),
+});
+
+/**
+ * @summary Trigger email inbox scan for responses
+ */
+export const checkEmailResponsesBodyHoursBackDefault = 4;
+
+export const CheckEmailResponsesBody = zod.object({
+  hoursBack: zod.number().default(checkEmailResponsesBodyHoursBackDefault),
+});
+
+export const CheckEmailResponsesResponse = zod.object({
+  checked: zod.number(),
+  matched: zod.number(),
+  unmatched: zod.number(),
+  skipped: zod.number(),
+  results: zod.array(
+    zod.object({
+      emailSubject: zod.string().optional(),
+      status: zod.string().optional(),
+      claimId: zod.number().optional(),
+      responseType: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Record a response from the portal
+ */
+export const RecordPortalResponseBody = zod.object({
+  submissionId: zod.number(),
+  responseType: zod.enum([
+    "approval",
+    "denial",
+    "partial_approval",
+    "info_request",
+    "acknowledgment",
+    "other",
+  ]),
+  content: zod.string().optional(),
+  metadata: zod.object({}).passthrough().optional(),
+});
+
+export const RecordPortalResponseResponse = zod.object({
+  responseId: zod.number().optional(),
+  claimId: zod.number().optional(),
+});
+
+/**
+ * @summary Get response tracking statistics
+ */
+export const GetResponseStatsResponse = zod.object({
+  total: zod.number(),
+  unprocessed: zod.number(),
+  unlinked: zod.number(),
+  bySource: zod.object({
+    email: zod.number().optional(),
+    portal: zod.number().optional(),
+    manual: zod.number().optional(),
+  }),
+  byType: zod.object({
+    approval: zod.number().optional(),
+    denial: zod.number().optional(),
+    partial_approval: zod.number().optional(),
+    info_request: zod.number().optional(),
+    acknowledgment: zod.number().optional(),
+    other: zod.number().optional(),
+  }),
+  outlookConnected: zod.boolean(),
+});

@@ -833,6 +833,91 @@ export interface ClaimEvidenceResponse {
   collectedAt: string;
 }
 
+export type PortalResponseItemSource =
+  (typeof PortalResponseItemSource)[keyof typeof PortalResponseItemSource];
+
+export const PortalResponseItemSource = {
+  email: "email",
+  portal: "portal",
+  manual: "manual",
+} as const;
+
+export type PortalResponseItemResponseType =
+  (typeof PortalResponseItemResponseType)[keyof typeof PortalResponseItemResponseType];
+
+export const PortalResponseItemResponseType = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+} as const;
+
+export type PortalResponseItemMetadata = { [key: string]: unknown } | null;
+
+export interface PortalResponseItem {
+  id: number;
+  claimId?: number | null;
+  submissionId?: number | null;
+  source: PortalResponseItemSource;
+  responseType: PortalResponseItemResponseType;
+  subject?: string | null;
+  content?: string | null;
+  rawContent?: string | null;
+  senderEmail?: string | null;
+  senderName?: string | null;
+  matchedVia?: string | null;
+  matchConfidence?: string | null;
+  portalTicketId?: string | null;
+  externalMessageId?: string | null;
+  processed: boolean;
+  autoLinked: boolean;
+  metadata?: PortalResponseItemMetadata;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export type EmailCheckResultResultsItem = {
+  emailSubject?: string;
+  status?: string;
+  claimId?: number;
+  responseType?: string;
+};
+
+export interface EmailCheckResult {
+  checked: number;
+  matched: number;
+  unmatched: number;
+  skipped: number;
+  results: EmailCheckResultResultsItem[];
+}
+
+export type ResponseStatsBySource = {
+  email?: number;
+  portal?: number;
+  manual?: number;
+};
+
+export type ResponseStatsByType = {
+  approval?: number;
+  denial?: number;
+  partial_approval?: number;
+  info_request?: number;
+  acknowledgment?: number;
+  other?: number;
+};
+
+export interface ResponseStats {
+  total: number;
+  unprocessed: number;
+  unlinked: number;
+  bySource: ResponseStatsBySource;
+  byType: ResponseStatsByType;
+  outlookConnected: boolean;
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -895,4 +980,84 @@ export type ListEvidenceTypes200 = {
 
 export type ListClaimEvidence200 = {
   evidence: ClaimEvidenceResponse[];
+};
+
+export type ListResponsesParams = {
+  claimId?: number;
+  source?: ListResponsesSource;
+  processed?: ListResponsesProcessed;
+  limit?: number;
+  offset?: number;
+};
+
+export type ListResponsesSource =
+  (typeof ListResponsesSource)[keyof typeof ListResponsesSource];
+
+export const ListResponsesSource = {
+  email: "email",
+  portal: "portal",
+  manual: "manual",
+} as const;
+
+export type ListResponsesProcessed =
+  (typeof ListResponsesProcessed)[keyof typeof ListResponsesProcessed];
+
+export const ListResponsesProcessed = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type ListResponses200 = {
+  responses?: PortalResponseItem[];
+};
+
+export type ProcessResponseBodyResponseType =
+  (typeof ProcessResponseBodyResponseType)[keyof typeof ProcessResponseBodyResponseType];
+
+export const ProcessResponseBodyResponseType = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+} as const;
+
+export type ProcessResponseBody = {
+  responseType?: ProcessResponseBodyResponseType;
+  claimId?: number;
+};
+
+export type LinkResponseBody = {
+  claimId: number;
+};
+
+export type CheckEmailResponsesBody = {
+  hoursBack?: number;
+};
+
+export type RecordPortalResponseBodyResponseType =
+  (typeof RecordPortalResponseBodyResponseType)[keyof typeof RecordPortalResponseBodyResponseType];
+
+export const RecordPortalResponseBodyResponseType = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+} as const;
+
+export type RecordPortalResponseBodyMetadata = { [key: string]: unknown };
+
+export type RecordPortalResponseBody = {
+  submissionId: number;
+  responseType: RecordPortalResponseBodyResponseType;
+  content?: string;
+  metadata?: RecordPortalResponseBodyMetadata;
+};
+
+export type RecordPortalResponse200 = {
+  responseId?: number;
+  claimId?: number;
 };

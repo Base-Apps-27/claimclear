@@ -47,6 +47,8 @@ tags:
     description: Evidence collected for claims
   - name: appSettings
     description: Application settings
+  - name: responses
+    description: Portal and email response tracking
 
 paths:
   /healthz:
@@ -1486,6 +1488,195 @@ paths:
         '200':
           description: Deleted
 
+  /responses:
+    get:
+      operationId: listResponses
+      tags: [responses]
+      summary: List portal/email responses
+      parameters:
+        - name: claimId
+          in: query
+          schema:
+            type: integer
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [email, portal, manual]
+        - name: processed
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of responses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  responses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PortalResponseItem'
+
+  /responses/{id}:
+    get:
+      operationId: getResponse
+      tags: [responses]
+      summary: Get a single response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Response detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalResponseItem'
+
+  /responses/{id}/process:
+    patch:
+      operationId: processResponse
+      tags: [responses]
+      summary: Mark a response as processed and optionally update type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                responseType:
+                  type: string
+                  enum: [approval, denial, partial_approval, info_request, acknowledgment, other]
+                claimId:
+                  type: integer
+      responses:
+        '200':
+          description: Processed response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalResponseItem'
+
+  /responses/{id}/link:
+    patch:
+      operationId: linkResponse
+      tags: [responses]
+      summary: Manually link a response to a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimId]
+              properties:
+                claimId:
+                  type: integer
+      responses:
+        '200':
+          description: Linked response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalResponseItem'
+
+  /responses/check-email:
+    post:
+      operationId: checkEmailResponses
+      tags: [responses]
+      summary: Trigger email inbox scan for responses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hoursBack:
+                  type: integer
+                  default: 4
+      responses:
+        '200':
+          description: Email check results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailCheckResult'
+
+  /responses/record-portal:
+    post:
+      operationId: recordPortalResponse
+      tags: [responses]
+      summary: Record a response from the portal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submissionId, responseType]
+              properties:
+                submissionId:
+                  type: integer
+                responseType:
+                  type: string
+                  enum: [approval, denial, partial_approval, info_request, acknowledgment, other]
+                content:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Recorded response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  responseId:
+                    type: integer
+                  claimId:
+                    type: integer
+
+  /responses/stats:
+    get:
+      operationId: getResponseStats
+      tags: [responses]
+      summary: Get response tracking statistics
+      responses:
+        '200':
+          description: Response statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseStats'
+
 components:
   schemas:
     HealthStatus:
@@ -2723,3 +2914,126 @@ components:
           nullable: true
         collectedAt:
           type: string
+
+    PortalResponseItem:
+      type: object
+      required: [id, source, responseType, processed, autoLinked, receivedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+          nullable: true
+        submissionId:
+          type: integer
+          nullable: true
+        source:
+          type: string
+          enum: [email, portal, manual]
+        responseType:
+          type: string
+          enum: [approval, denial, partial_approval, info_request, acknowledgment, other]
+        subject:
+          type: string
+          nullable: true
+        content:
+          type: string
+          nullable: true
+        rawContent:
+          type: string
+          nullable: true
+        senderEmail:
+          type: string
+          nullable: true
+        senderName:
+          type: string
+          nullable: true
+        matchedVia:
+          type: string
+          nullable: true
+        matchConfidence:
+          type: string
+          nullable: true
+        portalTicketId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+          nullable: true
+        processed:
+          type: boolean
+        autoLinked:
+          type: boolean
+        metadata:
+          type: object
+          nullable: true
+        receivedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+          nullable: true
+
+    EmailCheckResult:
+      type: object
+      required: [checked, matched, unmatched, skipped, results]
+      properties:
+        checked:
+          type: integer
+        matched:
+          type: integer
+        unmatched:
+          type: integer
+        skipped:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              emailSubject:
+                type: string
+              status:
+                type: string
+              claimId:
+                type: integer
+              responseType:
+                type: string
+
+    ResponseStats:
+      type: object
+      required: [total, unprocessed, unlinked, bySource, byType, outlookConnected]
+      properties:
+        total:
+          type: integer
+        unprocessed:
+          type: integer
+        unlinked:
+          type: integer
+        bySource:
+          type: object
+          properties:
+            email:
+              type: integer
+            portal:
+              type: integer
+            manual:
+              type: integer
+        byType:
+          type: object
+          properties:
+            approval:
+              type: integer
+            denial:
+              type: integer
+            partial_approval:
+              type: integer
+            info_request:
+              type: integer
+            acknowledgment:
+              type: integer
+            other:
+              type: integer
+        outlookConnected:
+          type: boolean
