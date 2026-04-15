@@ -34,6 +34,13 @@ interface ParseWarning {
   message: string;
 }
 
+interface SheetInfo {
+  name: string;
+  rowCount: number;
+  used: boolean;
+  reason?: string;
+}
+
 interface ClassifyGroup {
   errorDetails: string;
   count: number;
@@ -99,12 +106,61 @@ function parseCsv(text: string): string[][] {
 const MAX_FILE_SIZE_MB = 8;
 const MAX_ROWS = 5000;
 
-function parseExcel(data: ArrayBuffer): string[][] {
+const CLAIM_HEADER_PATTERNS = [
+  /conf/i, /date/i, /ref/i, /client/i, /car/i, /detail/i, /error/i, /amount/i, /claim/i,
+];
+
+function sheetHasClaimHeaders(headers: string[]): boolean {
+  let matchCount = 0;
+  for (const h of headers) {
+    const normalized = h.trim();
+    if (!normalized) continue;
+    if (CLAIM_HEADER_PATTERNS.some(p => p.test(normalized))) matchCount++;
+  }
+  return matchCount >= 2;
+}
+
+function parseExcel(data: ArrayBuffer): { records: string[][]; sheets: SheetInfo[] } {
   const workbook = XLSX.read(data, { type: "array", cellDates: true });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "", raw: false, dateNF: "mm/dd/yyyy" });
-  return jsonData.map(row => row.map(cell => String(cell ?? "")));
+  const allRecords: string[][] = [];
+  const sheets: SheetInfo[] = [];
+  let headerRow: string[] | null = null;
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "", raw: false, dateNF: "mm/dd/yyyy" });
+    const rows = jsonData.map(row => row.map(cell => String(cell ?? "")));
+
+    if (rows.length < 2) {
+      sheets.push({ name: sheetName, rowCount: 0, used: false, reason: "Empty or header-only" });
+      continue;
+    }
+
+    const candidateHeaders = rows[0];
+    if (!sheetHasClaimHeaders(candidateHeaders)) {
+      sheets.push({ name: sheetName, rowCount: rows.length - 1, used: false, reason: "No matching claim headers" });
+      continue;
+    }
+
+    if (!headerRow) {
+      headerRow = candidateHeaders;
+      allRecords.push(candidateHeaders);
+    }
+
+    const dataRows = rows.slice(1).filter(r => r.some(c => c.trim()));
+    sheets.push({ name: sheetName, rowCount: dataRows.length, used: true });
+    allRecords.push(...dataRows);
+  }
+
+  if (allRecords.length === 0 && workbook.SheetNames.length > 0) {
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "", raw: false, dateNF: "mm/dd/yyyy" });
+    const rows = jsonData.map(row => row.map(cell => String(cell ?? "")));
+    sheets[0] = { ...sheets[0], used: true, reason: undefined };
+    return { records: rows, sheets };
+  }
+
+  return { records: allRecords, sheets };
 }
 
 function mapRowsToData(records: string[][]): { rows: ParsedRow[]; warnings: ParseWarning[]; skippedEmpty: number } {
@@ -187,6 +243,7 @@ export default function Import() {
   const [dragOver, setDragOver] = useState(false);
   const [classifyGroups, setClassifyGroups] = useState<ClassifyGroup[]>([]);
   const [classifyLoading, setClassifyLoading] = useState(false);
+  const [sheetInfos, setSheetInfos] = useState<SheetInfo[]>([]);
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
 
@@ -197,6 +254,7 @@ export default function Import() {
     setResult(null);
     setErrorMessage("");
     setWarnings([]);
+    setSheetInfos([]);
 
     try {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
@@ -212,7 +270,9 @@ export default function Import() {
       if (isExcelFile(file.name)) {
         const buffer = await file.arrayBuffer();
         setStage("parsing");
-        records = parseExcel(buffer);
+        const result = parseExcel(buffer);
+        records = result.records;
+        setSheetInfos(result.sheets);
       } else {
         const text = await file.text();
         setStage("parsing");
@@ -389,6 +449,7 @@ export default function Import() {
     setFileSize(0);
     setErrorMessage("");
     setClassifyGroups([]);
+    setSheetInfos([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -515,6 +576,30 @@ export default function Import() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {sheetInfos.length > 1 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <FileSpreadsheet className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-medium text-blue-800">
+                    {sheetInfos.filter(s => s.used).length} of {sheetInfos.length} sheet{sheetInfos.length !== 1 ? "s" : ""} detected with claim data
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {sheetInfos.map((s, i) => (
+                    <WrapTooltip key={i} content={s.used ? `${s.rowCount} row${s.rowCount !== 1 ? "s" : ""} imported` : s.reason || "Skipped"}>
+                      <Badge
+                        variant={s.used ? "default" : "outline"}
+                        className={`text-xs ${s.used ? "bg-blue-600" : "text-muted-foreground"}`}
+                      >
+                        {s.name}{s.used ? ` (${s.rowCount})` : ""}
+                        {!s.used && <X className="h-3 w-3 ml-1 opacity-50" />}
+                      </Badge>
+                    </WrapTooltip>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {warnings.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
                 <div className="flex items-center gap-2 mb-1">
