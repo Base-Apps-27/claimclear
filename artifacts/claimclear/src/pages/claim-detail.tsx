@@ -411,6 +411,27 @@ export default function ClaimDetail() {
                       onChange={e => setEditData({ ...editData, errorDetails: e.target.value })}
                       className="mt-1"
                     />
+                  ) : claim.errorDetails && claim.errorDetails.includes(";") ? (
+                    <div className="mt-1">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                          Multiple errors detected
+                        </Badge>
+                      </div>
+                      <ul className="space-y-1 ml-1">
+                        {claim.errorDetails.split(";").map((part: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <span className="text-blue-400 mt-0.5 text-xs flex-shrink-0">{i + 1}.</span>
+                            <span>{part.trim()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {!claim.errorTypeName && (
+                        <p className="text-xs text-muted-foreground mt-2 italic">
+                          Review the errors above and assign the most relevant error type.
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <p className="text-sm mt-1">{claim.errorDetails || "-"}</p>
                   )}

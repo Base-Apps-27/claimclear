@@ -49,6 +49,7 @@ interface ClassifyGroup {
   errorTypeName: string | null;
   selectedErrorTypeId: string;
   selectedErrorTypeName: string;
+  isMultiError?: boolean;
 }
 
 function parseCsv(text: string): string[][] {
@@ -322,6 +323,8 @@ export default function Import() {
     if (file) processFile(file);
   }, [processFile]);
 
+  const hasMultipleErrors = (detail: string) => detail.includes(";");
+
   const handleStartClassify = async () => {
     const uniqueDetails = [...new Set(rows.map(r => r.errorDetails).filter(d => d && d.trim()))];
 
@@ -331,10 +334,16 @@ export default function Import() {
       return;
     }
 
+    const singleErrorDetails = uniqueDetails.filter(d => !hasMultipleErrors(d));
+    const multiErrorDetails = uniqueDetails.filter(d => hasMultipleErrors(d));
+
     setClassifyLoading(true);
     try {
-      const res = await lookupMappings.mutateAsync({ data: { errorDetails: uniqueDetails } });
-      const mappings = res.mappings;
+      let mappings: { originalText: string; matched: boolean; errorTypeId: number | null; errorTypeName: string | null }[] = [];
+      if (singleErrorDetails.length > 0) {
+        const res = await lookupMappings.mutateAsync({ data: { errorDetails: singleErrorDetails } });
+        mappings = res.mappings;
+      }
 
       const countMap = new Map<string, number>();
       for (const row of rows) {
@@ -342,7 +351,7 @@ export default function Import() {
         countMap.set(d, (countMap.get(d) || 0) + 1);
       }
 
-      const groups: ClassifyGroup[] = uniqueDetails.map(detail => {
+      const singleGroups: ClassifyGroup[] = singleErrorDetails.map(detail => {
         const mapping = mappings.find((m) => m.originalText === detail);
         return {
           errorDetails: detail,
@@ -352,8 +361,22 @@ export default function Import() {
           errorTypeName: mapping?.errorTypeName ?? null,
           selectedErrorTypeId: mapping?.errorTypeId ? String(mapping.errorTypeId) : "",
           selectedErrorTypeName: mapping?.errorTypeName ?? "",
+          isMultiError: false,
         };
       });
+
+      const multiGroups: ClassifyGroup[] = multiErrorDetails.map(detail => ({
+        errorDetails: detail,
+        count: countMap.get(detail) || 0,
+        matched: false,
+        errorTypeId: null,
+        errorTypeName: null,
+        selectedErrorTypeId: "",
+        selectedErrorTypeName: "",
+        isMultiError: true,
+      }));
+
+      const groups = [...singleGroups, ...multiGroups];
 
       groups.sort((a, b) => {
         if (a.matched && !b.matched) return -1;
@@ -458,7 +481,8 @@ export default function Import() {
   const isProcessing = stage === "reading" || stage === "parsing";
 
   const matchedCount = classifyGroups.filter(g => g.matched).length;
-  const unmatchedCount = classifyGroups.filter(g => !g.matched).length;
+  const unmatchedCount = classifyGroups.filter(g => !g.matched && !g.isMultiError).length;
+  const multiErrorCount = classifyGroups.filter(g => g.isMultiError).length;
   const assignedCount = classifyGroups.filter(g => g.selectedErrorTypeId).length;
 
   return (
@@ -734,6 +758,12 @@ export default function Import() {
                   <span className="text-sm text-amber-800">{unmatchedCount} unrecognized</span>
                 </div>
               )}
+              {multiErrorCount > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm text-blue-800">{multiErrorCount} multi-error (manual assignment)</span>
+                </div>
+              )}
             </div>
 
             <div className="max-h-[400px] overflow-auto border rounded-md divide-y">
@@ -743,33 +773,54 @@ export default function Import() {
                 </div>
               ) : (
                 classifyGroups.map((group, index) => (
-                  <div key={index} className={`p-3 ${group.matched ? "bg-green-50/50" : ""}`}>
+                  <div key={index} className={`p-3 ${group.matched ? "bg-green-50/50" : group.isMultiError ? "bg-blue-50/50" : ""}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          {group.matched ? (
+                          {group.isMultiError ? (
+                            <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">Multiple</Badge>
+                          ) : group.matched ? (
                             <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-300">Known</Badge>
                           ) : (
                             <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-300">New</Badge>
                           )}
                           <span className="text-xs text-muted-foreground">{group.count} claim{group.count !== 1 ? "s" : ""}</span>
                         </div>
-                        <p className="text-sm truncate" title={group.errorDetails}>{group.errorDetails}</p>
+                        {group.isMultiError ? (
+                          <div>
+                            <ul className="text-sm space-y-0.5 ml-1">
+                              {group.errorDetails.split(";").map((part, i) => (
+                                <li key={i} className="flex items-start gap-1.5">
+                                  <span className="text-blue-400 mt-0.5 text-xs">&#x2022;</span>
+                                  <span>{part.trim()}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <p className="text-sm truncate" title={group.errorDetails}>{group.errorDetails}</p>
+                        )}
                       </div>
                       <div className="w-[220px] flex-shrink-0">
-                        <Select
-                          value={group.selectedErrorTypeId}
-                          onValueChange={(val) => handleGroupErrorTypeChange(index, val)}
-                        >
-                          <SelectTrigger className="h-8 text-sm">
-                            <SelectValue placeholder="Select error type..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {errorTypes.map((et) => (
-                              <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {group.isMultiError ? (
+                          <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5 text-center">
+                            Skipped — user will assign on claim
+                          </div>
+                        ) : (
+                          <Select
+                            value={group.selectedErrorTypeId}
+                            onValueChange={(val) => handleGroupErrorTypeChange(index, val)}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Select error type..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {errorTypes.map((et) => (
+                                <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     </div>
                   </div>
