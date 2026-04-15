@@ -71,6 +71,7 @@ import type {
   SaveMappingsResponse,
   SendAnthropicMessageBody,
   SuccessResponse,
+  TriageClaimBody,
   UpdateAppSettingsBody,
   UpdateClaimBody,
   UpdateClaimEvidenceBody,
@@ -1270,6 +1271,93 @@ export const useUpdateClaimWorkflow = <
   TContext
 > => {
   return useMutation(getUpdateClaimWorkflowMutationOptions(options));
+};
+
+/**
+ * @summary Triage a "Needs Review" claim as non-issue or issue found
+ */
+export const getTriageClaimUrl = (id: number) => {
+  return `/api/claims/${id}/triage`;
+};
+
+export const triageClaim = async (
+  id: number,
+  triageClaimBody: TriageClaimBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getTriageClaimUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(triageClaimBody),
+  });
+};
+
+export const getTriageClaimMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triageClaim>>,
+    TError,
+    { id: number; data: BodyType<TriageClaimBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof triageClaim>>,
+  TError,
+  { id: number; data: BodyType<TriageClaimBody> },
+  TContext
+> => {
+  const mutationKey = ["triageClaim"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof triageClaim>>,
+    { id: number; data: BodyType<TriageClaimBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return triageClaim(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TriageClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof triageClaim>>
+>;
+export type TriageClaimMutationBody = BodyType<TriageClaimBody>;
+export type TriageClaimMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Triage a "Needs Review" claim as non-issue or issue found
+ */
+export const useTriageClaim = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triageClaim>>,
+    TError,
+    { id: number; data: BodyType<TriageClaimBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof triageClaim>>,
+  TError,
+  { id: number; data: BodyType<TriageClaimBody> },
+  TContext
+> => {
+  return useMutation(getTriageClaimMutationOptions(options));
 };
 
 /**

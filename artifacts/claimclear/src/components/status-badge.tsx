@@ -3,6 +3,7 @@ import { WrapTooltip } from "@/components/info-tooltip";
 
 const statusDescriptions: Record<string, string> = {
   "New": "Claim just entered the system. Next: Review the claim details and move to evidence gathering.",
+  "Needs Review": "Claim imported with no error details. Check the portal, then classify as non-issue or define the error type.",
   "Needs Evidence": "Evidence must be collected before this claim can proceed. Next: Gather GPS logs, driver statements, and supporting documents.",
   "Generating Email": "The system is generating a dispute email for this claim. Next: Wait for email generation to complete, then review.",
   "Ready to Review": "The dispute email or submission is ready for staff review. Next: Review the generated content and approve or edit before sending.",
@@ -14,6 +15,7 @@ const statusDescriptions: Record<string, string> = {
   "Pending": "Outcome has not yet been determined. The claim is still being processed.",
   "Approved": "The payor approved the dispute. Funds should be recovered.",
   "Partially Approved": "The payor approved part of the disputed amount. Review the approved amount vs. claimed.",
+  "Non-Issue": "Triaged as non-issue. No action needed — financial impact set to $0.",
 };
 
 type StatusBadgeProps = {
@@ -27,6 +29,9 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   switch (status) {
     case "New":
       colorClass = "bg-blue-100 text-blue-800 border-blue-200";
+      break;
+    case "Needs Review":
+      colorClass = "bg-orange-100 text-orange-800 border-orange-200";
       break;
     case "Needs Evidence":
       colorClass = "bg-amber-100 text-amber-800 border-amber-200";
@@ -57,6 +62,9 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       break;
     case "Partially Approved":
       colorClass = "bg-lime-100 text-lime-800 border-lime-200";
+      break;
+    case "Non-Issue":
+      colorClass = "bg-slate-100 text-slate-800 border-slate-200";
       break;
   }
 

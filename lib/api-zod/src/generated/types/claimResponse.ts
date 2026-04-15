@@ -33,6 +33,10 @@ export interface ClaimResponse {
   status: ClaimResponseStatus;
   outcome: ClaimResponseOutcome;
   /** @nullable */
+  triageNotes?: string | null;
+  /** @nullable */
+  triagedAt?: string | null;
+  /** @nullable */
   approvedAmount?: string | null;
   /** @nullable */
   invoiceNumbers?: string | null;

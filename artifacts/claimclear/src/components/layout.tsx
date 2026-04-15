@@ -30,12 +30,14 @@ import {
   LogOut,
   LogIn,
   Clock,
-  ShieldX
+  ShieldX,
+  Search
 } from "lucide-react";
 
 const navDescriptions: Record<string, string> = {
   "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring claims.",
   "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
+  "Review": "Claims imported with no details — check the portal and classify each as non-issue or define the error type.",
   "All Claims": "Browse, search, and filter the complete claims database.",
   "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
@@ -51,6 +53,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Queue", href: "/queue", icon: ListTodo },
+    { label: "Review", href: "/review", icon: Search },
     { label: "All Claims", href: "/claims", icon: Files },
     { label: "Import", href: "/import", icon: Upload },
     { label: "Error Types", href: "/error-types", icon: AlertCircle },

@@ -599,14 +599,14 @@ export default function ClaimDetail() {
                 <Select onValueChange={handleStatusChange}>
                   <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
                   <SelectContent>
-                    {["New", "Needs Evidence", "Generating Email", "Ready to Review", "Awaiting Response", "Resolved", "Denied"].map(s => (
+                    {["New", "Needs Review", "Needs Evidence", "Generating Email", "Ready to Review", "Awaiting Response", "Resolved", "Denied"].map(s => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
 
                 <div className="flex gap-2">
-                  {["Pending", "Approved", "Partially Approved", "Denied"].map(o => (
+                  {["Pending", "Approved", "Partially Approved", "Denied", "Non-Issue"].map(o => (
                     <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)}>{o}</Button>
                   ))}
                 </div>

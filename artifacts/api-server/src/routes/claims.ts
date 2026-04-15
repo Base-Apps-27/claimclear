@@ -265,6 +265,64 @@ router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void
   res.json(claim);
 }));
 
+router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { action, errorTypeId, errorTypeName, triageNotes } = req.body;
+  if (!action || !["non_issue", "issue_found"].includes(action)) {
+    res.status(400).json({ error: "action must be 'non_issue' or 'issue_found'" });
+    return;
+  }
+
+  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (action === "non_issue") {
+    const [claim] = await db.update(claimsTable).set({
+      status: "Resolved",
+      outcome: "Non-Issue",
+      claimAmount: "0",
+      approvedAmount: "0",
+      triageNotes: triageNotes || null,
+      triagedAt: new Date().toISOString(),
+    }).where(eq(claimsTable.id, id)).returning();
+
+    await createAuditLog(id, "triage_non_issue", `Claim triaged as non-issue. Financial impact set to $0.${triageNotes ? ` Notes: ${triageNotes}` : ""}`, req);
+    await db.insert(notesTable).values({
+      claimId: id,
+      type: "status_change",
+      content: `Triaged as non-issue — no action required. Financial impact reduced to $0.${triageNotes ? `\n${triageNotes}` : ""}`,
+      author: req.user?.displayName || req.user?.email || "System",
+    });
+    emitClaimEvent(id, "claim_triaged", req);
+    res.json(claim);
+  } else {
+    if (!errorTypeId || !errorTypeName) {
+      res.status(400).json({ error: "errorTypeId and errorTypeName are required for issue_found" });
+      return;
+    }
+
+    const [claim] = await db.update(claimsTable).set({
+      status: "New",
+      errorTypeId: String(errorTypeId),
+      errorTypeName,
+      triageNotes: triageNotes || null,
+      triagedAt: new Date().toISOString(),
+    }).where(eq(claimsTable.id, id)).returning();
+
+    await createAuditLog(id, "triage_issue_found", `Issue identified during triage: ${errorTypeName}.${triageNotes ? ` Notes: ${triageNotes}` : ""}`, req, { errorTypeId, errorTypeName });
+    await db.insert(notesTable).values({
+      claimId: id,
+      type: "status_change",
+      content: `Issue identified during triage — assigned error type "${errorTypeName}" and moved to normal workflow.${triageNotes ? `\n${triageNotes}` : ""}`,
+      author: req.user?.displayName || req.user?.email || "System",
+    });
+    emitClaimEvent(id, "claim_triaged", req);
+    res.json(claim);
+  }
+}));
+
 router.post("/claims/bulk-assign-error-type", asyncHandler(async (req, res): Promise<void> => {
   const { claimIds, errorTypeId } = req.body;
   if (!Array.isArray(claimIds) || claimIds.length === 0) {

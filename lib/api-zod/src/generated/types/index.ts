@@ -96,6 +96,8 @@ export * from "./sOPAnalysisResultDecisionTree";
 export * from "./sOPAnalysisResultDisputeReasonsLibrary";
 export * from "./sOPAnalysisResultEvidenceRequirements";
 export * from "./successResponse";
+export * from "./triageClaimBody";
+export * from "./triageClaimBodyAction";
 export * from "./updateAppSettingsBody";
 export * from "./updateClaimBody";
 export * from "./updateClaimBodyEvidenceChecklist";

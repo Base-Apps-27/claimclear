@@ -15,6 +15,7 @@ import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
 import Summary from "@/pages/summary";
+import Review from "@/pages/review";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
@@ -42,6 +43,7 @@ function Router() {
         <Route path="/" component={() => <Redirect to="/dashboard" />} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={Queue} />
+        <Route path="/review" component={Review} />
         <Route path="/claims" component={ClaimsList} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/claims/:id" component={ClaimDetail} />

@@ -15,7 +15,7 @@ paths = [ "/" ]
 localPort = 5173
 
 [services.development]
-run = "node serve-dev.mjs"
+run = "pnpm run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/claimclear", "run", "build" ]

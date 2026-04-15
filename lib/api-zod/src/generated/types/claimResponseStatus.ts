@@ -11,6 +11,7 @@ export type ClaimResponseStatus =
 
 export const ClaimResponseStatus = {
   New: "New",
+  Needs_Review: "Needs Review",
   Needs_Evidence: "Needs Evidence",
   Portal_Queued: "Portal Queued",
   Generating_Email: "Generating Email",

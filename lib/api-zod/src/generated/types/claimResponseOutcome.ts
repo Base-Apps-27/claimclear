@@ -14,4 +14,5 @@ export const ClaimResponseOutcome = {
   Approved: "Approved",
   Denied: "Denied",
   Partially_Approved: "Partially Approved",
+  "Non-Issue": "Non-Issue",
 } as const;

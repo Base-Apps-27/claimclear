@@ -3,12 +3,12 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const claimStatusEnum = pgEnum("claim_status", [
-  "New", "Needs Evidence", "Portal Queued", "Generating Email",
+  "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"
 ]);
 
 export const claimOutcomeEnum = pgEnum("claim_outcome", [
-  "Pending", "Approved", "Denied", "Partially Approved"
+  "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"
 ]);
 
 export const claimsTable = pgTable("claims", {
@@ -40,6 +40,8 @@ export const claimsTable = pgTable("claims", {
   holdReason: text("hold_reason"),
   holdPendingFrom: text("hold_pending_from"),
   holdPlacedAt: text("hold_placed_at"),
+  triageNotes: text("triage_notes"),
+  triagedAt: text("triaged_at"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

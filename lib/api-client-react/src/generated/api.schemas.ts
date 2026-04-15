@@ -25,6 +25,7 @@ export type ClaimResponseStatus =
 
 export const ClaimResponseStatus = {
   New: "New",
+  Needs_Review: "Needs Review",
   Needs_Evidence: "Needs Evidence",
   Portal_Queued: "Portal Queued",
   Generating_Email: "Generating Email",
@@ -43,6 +44,7 @@ export const ClaimResponseOutcome = {
   Approved: "Approved",
   Denied: "Denied",
   Partially_Approved: "Partially Approved",
+  "Non-Issue": "Non-Issue",
 } as const;
 
 /**
@@ -81,6 +83,10 @@ export interface ClaimResponse {
   claimAmount?: string | null;
   status: ClaimResponseStatus;
   outcome: ClaimResponseOutcome;
+  /** @nullable */
+  triageNotes?: string | null;
+  /** @nullable */
+  triagedAt?: string | null;
   /** @nullable */
   approvedAmount?: string | null;
   /** @nullable */
@@ -186,6 +192,21 @@ export type UpdateWorkflowBodyWorkflowProgress = { [key: string]: unknown };
 
 export interface UpdateWorkflowBody {
   workflowProgress: UpdateWorkflowBodyWorkflowProgress;
+}
+
+export type TriageClaimBodyAction =
+  (typeof TriageClaimBodyAction)[keyof typeof TriageClaimBodyAction];
+
+export const TriageClaimBodyAction = {
+  non_issue: "non_issue",
+  issue_found: "issue_found",
+} as const;
+
+export interface TriageClaimBody {
+  action: TriageClaimBodyAction;
+  errorTypeId?: string;
+  errorTypeName?: string;
+  triageNotes?: string;
 }
 
 export interface GenerateEmailBody {

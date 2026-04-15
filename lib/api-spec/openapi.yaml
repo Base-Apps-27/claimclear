@@ -356,6 +356,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
 
+  /claims/{id}/triage:
+    post:
+      operationId: triageClaim
+      tags: [claims]
+      summary: Triage a "Needs Review" claim as non-issue or issue found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriageClaimBody"
+      responses:
+        "200":
+          description: Claim triaged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
   /error-types/analyze-sop:
     post:
       operationId: analyzeSOPText
@@ -1517,10 +1542,14 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+          enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         outcome:
           type: string
-          enum: ["Pending", "Approved", "Denied", "Partially Approved"]
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"]
+        triageNotes:
+          type: ["string", "null"]
+        triagedAt:
+          type: ["string", "null"]
         approvedAmount:
           type: ["string", "null"]
         invoiceNumbers:
@@ -1682,6 +1711,21 @@ components:
           type: object
       required:
         - workflowProgress
+
+    TriageClaimBody:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: ["non_issue", "issue_found"]
+        errorTypeId:
+          type: string
+        errorTypeName:
+          type: string
+        triageNotes:
+          type: string
+      required:
+        - action
 
     GenerateEmailBody:
       type: object

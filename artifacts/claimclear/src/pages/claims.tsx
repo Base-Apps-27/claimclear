@@ -21,11 +21,11 @@ import {
 import { Label } from "@/components/ui/label";
 
 const STATUSES = [
-  "New", "Needs Evidence", "Portal Queued", "Generating Email",
+  "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
 ] as const;
 
-const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved"] as const;
+const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
 
 export default function ClaimsList() {
   useClaimsListEvents();
