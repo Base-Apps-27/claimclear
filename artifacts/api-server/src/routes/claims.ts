@@ -328,19 +328,5 @@ router.post("/claims/bulk-assign-error-type", asyncHandler(async (req, res): Pro
   res.json({ updated: claims.length });
 }));
 
-router.post("/claims/admin/purge-all", asyncHandler(async (req, res): Promise<void> => {
-  if (req.user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
-  const allClaims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber }).from(claimsTable);
-  if (allClaims.length === 0) {
-    res.json({ deleted: 0, message: "No claims to delete" });
-    return;
-  }
-  const ids = allClaims.map(c => c.id);
-  await db.delete(claimsTable).where(inArray(claimsTable.id, ids));
-  res.json({ deleted: allClaims.length, message: `Purged ${allClaims.length} claims and all related data` });
-}));
 
 export default router;
