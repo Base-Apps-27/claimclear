@@ -1,29 +1,77 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
+import { transitionGroupStatus } from "../lib/group-transitions";
 
 const router: IRouter = Router();
 
-async function collectEvidenceUrls(claimId: number, claim: typeof claimsTable.$inferSelect): Promise<string[]> {
-  const evidenceRows = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
-    .from(claimEvidenceTable)
-    .where(eq(claimEvidenceTable.claimId, claimId));
+interface GroupContext {
+  group: typeof invoiceGroupsTable.$inferSelect;
+  rides: (typeof claimsTable.$inferSelect)[];
+  primaryClaim: typeof claimsTable.$inferSelect;
+}
 
-  const urls: string[] = evidenceRows
-    .map(r => r.imageUrl)
-    .filter((u): u is string => typeof u === "string" && u.length > 0);
+async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext | null> {
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
+  if (!group) return null;
+  const rides = await db.select().from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, groupId))
+    .orderBy(claimsTable.id);
+  if (rides.length === 0) return null;
+  return { group, rides, primaryClaim: rides[0] };
+}
 
-  if (claim.evidenceFiles && Array.isArray(claim.evidenceFiles)) {
-    const legacyUrls = (claim.evidenceFiles as Array<Record<string, string> | string>)
-      .map((f) => (typeof f === "string" ? f : f.url))
-      .filter((u): u is string => typeof u === "string" && u.length > 0);
-    for (const u of legacyUrls) {
-      if (!urls.includes(u)) urls.push(u);
+async function loadGroupContextByClaimId(claimId: number): Promise<GroupContext | { primaryClaim: typeof claimsTable.$inferSelect; group: null; rides: (typeof claimsTable.$inferSelect)[] } | null> {
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  if (!claim) return null;
+  if (claim.invoiceGroupId) {
+    const ctx = await loadGroupContextByGroupId(claim.invoiceGroupId);
+    if (ctx) return ctx;
+  }
+  return { primaryClaim: claim, group: null, rides: [claim] };
+}
+
+async function collectGroupEvidenceUrls(ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; rides: (typeof claimsTable.$inferSelect)[] }): Promise<string[]> {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: unknown) => {
+    if (typeof u === "string" && u.length > 0 && !seen.has(u)) {
+      seen.add(u);
+      urls.push(u);
+    }
+  };
+
+  if (ctx.group) {
+    const groupEvidence = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
+      .from(claimEvidenceTable)
+      .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+    for (const r of groupEvidence) add(r.imageUrl);
+
+    if (ctx.group.evidenceFiles && Array.isArray(ctx.group.evidenceFiles)) {
+      for (const f of ctx.group.evidenceFiles as Array<Record<string, string> | string>) {
+        add(typeof f === "string" ? f : f.url);
+      }
+    }
+  }
+
+  const rideIds = ctx.rides.map(r => r.id);
+  if (rideIds.length > 0) {
+    const rideEvidence = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
+      .from(claimEvidenceTable)
+      .where(inArray(claimEvidenceTable.claimId, rideIds));
+    for (const r of rideEvidence) add(r.imageUrl);
+  }
+
+  for (const ride of ctx.rides) {
+    if (ride.evidenceFiles && Array.isArray(ride.evidenceFiles)) {
+      for (const f of ride.evidenceFiles as Array<Record<string, string> | string>) {
+        add(typeof f === "string" ? f : f.url);
+      }
     }
   }
 
@@ -57,45 +105,131 @@ async function getPortalSettings(): Promise<PortalSettings> {
   };
 }
 
-function extractInvoiceNumber(refNumber: string | null): string {
-  if (!refNumber) return "";
-  const parts = refNumber.trim().split(/\s+/);
-  return parts[0] || "";
-}
-
 function determineIssueType(_errorTypeName: string | null): string {
   return "Other Issue or Question";
 }
 
+function joinNonEmpty(items: (string | null | undefined)[], sep = ", "): string {
+  return items.filter((v): v is string => typeof v === "string" && v.length > 0).join(sep);
+}
+
+function sumAmounts(rides: (typeof claimsTable.$inferSelect)[]): string {
+  let total = 0;
+  for (const r of rides) {
+    const v = parseFloat(String(r.claimAmount || "0"));
+    if (!isNaN(v)) total += v;
+  }
+  return total.toFixed(2);
+}
+
+interface SubmissionSnapshot {
+  invoiceNumber: string;
+  confNumber: string;
+  serviceDate: string;
+  refNumber: string;
+  clientNumber: string;
+  carNumber: string;
+  claimAmount: string | null;
+  errorTypeName: string;
+  errorDetails: string;
+  evidenceNotes: string;
+  evidenceFiles: unknown;
+  workflowHistory: unknown;
+  subjectFallback: string;
+}
+
+function buildSnapshot(ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] }): SubmissionSnapshot {
+  const { group, rides, primaryClaim } = ctx;
+  const allConfs = joinNonEmpty(rides.map(r => r.confNumber));
+  const allDates = joinNonEmpty(Array.from(new Set(rides.map(r => r.date || ""))));
+  const allCars = joinNonEmpty(Array.from(new Set(rides.map(r => r.carNumber || ""))));
+
+  if (group) {
+    const totalAmount = group.totalAmount ?? sumAmounts(rides);
+    const subject = `Dispute - Invoice #${group.invoiceNumber} - ${group.errorTypeName || "Claim Correction"} (${rides.length} ride${rides.length === 1 ? "" : "s"})`;
+    return {
+      invoiceNumber: group.invoiceNumber,
+      confNumber: allConfs,
+      serviceDate: allDates,
+      refNumber: group.invoiceNumber,
+      clientNumber: group.clientNumber || primaryClaim.clientNumber || "",
+      carNumber: allCars,
+      claimAmount: totalAmount ? String(totalAmount) : null,
+      errorTypeName: group.errorTypeName || "",
+      errorDetails: group.errorDetails || "",
+      evidenceNotes: group.evidenceNotes || "",
+      evidenceFiles: group.evidenceFiles || null,
+      workflowHistory: group.workflowProgress || null,
+      subjectFallback: subject,
+    };
+  }
+  return {
+    invoiceNumber: primaryClaim.invoiceNumbers || "",
+    confNumber: primaryClaim.confNumber || "",
+    serviceDate: primaryClaim.date || "",
+    refNumber: primaryClaim.refNumber || "",
+    clientNumber: primaryClaim.clientNumber || "",
+    carNumber: primaryClaim.carNumber || "",
+    claimAmount: primaryClaim.claimAmount || null,
+    errorTypeName: primaryClaim.errorTypeName || "",
+    errorDetails: primaryClaim.errorDetails || "",
+    evidenceNotes: primaryClaim.evidenceNotes || "",
+    evidenceFiles: primaryClaim.evidenceFiles || null,
+    workflowHistory: primaryClaim.workflowProgress || null,
+    subjectFallback: `Dispute - Conf #${primaryClaim.confNumber || "N/A"} - ${primaryClaim.errorTypeName || "Claim Correction"}`,
+  };
+}
+
 async function generatePortalDescription(
-  claim: typeof claimsTable.$inferSelect,
+  ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] },
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
   settings: PortalSettings,
 ): Promise<string> {
+  const { group, rides } = ctx;
   const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || settings.defaultDisputeInstructions;
+  const snap = buildSnapshot(ctx);
+
+  const ridesBlock = rides.map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"} | Amount: $${r.claimAmount || "0.00"}`).join("\n");
+
+  const groupHeader = group
+    ? `This dispute is filed at the invoice level and covers ${rides.length} ride${rides.length === 1 ? "" : "s"} on a single invoice.
+
+Invoice details:
+- Invoice number: ${group.invoiceNumber}
+- Client number: ${group.clientNumber || "N/A"}
+- Total invoice amount: $${snap.claimAmount || "0.00"}
+- Error type: ${group.errorTypeName || "N/A"}
+- Group-level error details: ${group.errorDetails || "N/A"}
+
+Affected rides on this invoice:
+${ridesBlock}`
+    : `Claim details:
+- Confirmation number: ${rides[0].confNumber}
+- Service date: ${rides[0].date || "N/A"}
+- Reference number: ${rides[0].refNumber || "N/A"}
+- Client number: ${rides[0].clientNumber || "N/A"}
+- Car/vehicle number: ${rides[0].carNumber || "N/A"}
+- Claim amount: $${rides[0].claimAmount || "0.00"}
+- Error type: ${rides[0].errorTypeName || "N/A"}
+- Error details: ${rides[0].errorDetails || "N/A"}`;
+
+  const evidenceSummary = group?.evidenceNotes || rides.map(r => r.evidenceNotes).filter(Boolean).join("; ");
 
   const prompt = `Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.
 
-Claim details:
-- Confirmation number: ${claim.confNumber}
-- Service date: ${claim.date || "N/A"}
-- Reference number: ${claim.refNumber || "N/A"}
-- Client number: ${claim.clientNumber || "N/A"}
-- Car/vehicle number: ${claim.carNumber || "N/A"}
-- Claim amount: $${claim.claimAmount || "0.00"}
-- Error type: ${claim.errorTypeName || "N/A"}
-- Error details: ${claim.errorDetails || "N/A"}
+${groupHeader}
 
 Reason for dispute (from workflow decision): ${disputeReason}
 
-${claim.evidenceNotes ? `Evidence gathered: ${claim.evidenceNotes}` : ""}
+${evidenceSummary ? `Evidence gathered: ${evidenceSummary}` : ""}
 ${errorType?.guidance ? `SOP context: ${errorType.guidance}` : ""}
 
 ${instructions ? `IMPORTANT — Follow these guidelines for tone and content:\n${instructions}` : ""}
 
 Write a clear, factual portal submission note that:
 - States the reason for the dispute/correction request
+- ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
 - References specific evidence
 - Is professional but sounds natural and human — vary phrasing
 - Is concise (2-4 paragraphs maximum)
@@ -116,26 +250,100 @@ Return ONLY the note text, no JSON wrapping.`;
 }
 
 function buildFallbackDescription(
-  claim: typeof claimsTable.$inferSelect,
+  ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] },
   disputeReason: string,
 ): string {
-  return `Dispute for Confirmation Number: ${claim.confNumber || "N/A"}
-Service Date: ${claim.date || "N/A"}
-Reference Number: ${claim.refNumber || "N/A"}
-Client Number: ${claim.clientNumber || "N/A"}
-Car Number: ${claim.carNumber || "N/A"}
-Claim Amount: $${claim.claimAmount || "0.00"}
-Error Type: ${claim.errorTypeName || "N/A"}
-Error Details: ${claim.errorDetails || "N/A"}
+  const { group, rides } = ctx;
+  const snap = buildSnapshot(ctx);
+  if (group) {
+    const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"} — $${r.claimAmount || "0.00"}`).join("\n");
+    return `Dispute for Invoice Number: ${group.invoiceNumber}
+Client Number: ${group.clientNumber || "N/A"}
+Total Amount: $${snap.claimAmount || "0.00"}
+Error Type: ${group.errorTypeName || "N/A"}
+Error Details: ${group.errorDetails || "N/A"}
+
+Affected rides (${rides.length}):
+${ridesBlock}
 
 Dispute Reason: ${disputeReason || "N/A"}
 
-Evidence Notes: ${claim.evidenceNotes || "N/A"}`;
+Evidence Notes: ${group.evidenceNotes || "N/A"}`;
+  }
+  const r = rides[0];
+  return `Dispute for Confirmation Number: ${r.confNumber || "N/A"}
+Service Date: ${r.date || "N/A"}
+Reference Number: ${r.refNumber || "N/A"}
+Client Number: ${r.clientNumber || "N/A"}
+Car Number: ${r.carNumber || "N/A"}
+Claim Amount: $${r.claimAmount || "0.00"}
+Error Type: ${r.errorTypeName || "N/A"}
+Error Details: ${r.errorDetails || "N/A"}
+
+Dispute Reason: ${disputeReason || "N/A"}
+
+Evidence Notes: ${r.evidenceNotes || "N/A"}`;
+}
+
+async function loadErrorTypeForContext(ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; primaryClaim: typeof claimsTable.$inferSelect }): Promise<typeof errorTypesTable.$inferSelect | null> {
+  const errorTypeId = ctx.group?.errorTypeId || ctx.primaryClaim.errorTypeId;
+  if (!errorTypeId) return null;
+  const id = parseInt(errorTypeId, 10);
+  if (isNaN(id)) return null;
+  const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, id));
+  return et || null;
+}
+
+async function transitionContext(opts: {
+  ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; primaryClaim: typeof claimsTable.$inferSelect };
+  newStatus: "Portal Queued" | "Awaiting Response" | "Needs Evidence";
+  source: string;
+  reason: string;
+  actor: { userEmail: string | null; userName: string | null };
+}): Promise<void> {
+  const { ctx, newStatus, source, reason, actor } = opts;
+  if (ctx.group) {
+    await transitionGroupStatus({
+      groupId: ctx.group.id,
+      newStatus,
+      source,
+      reason,
+      actor,
+      systemOverride: true,
+    });
+  } else {
+    await transitionClaimStatus({
+      claimId: ctx.primaryClaim.id,
+      newStatus,
+      source,
+      reason,
+      actor,
+      systemOverride: true,
+    });
+  }
 }
 
 function parseId(raw: string | string[]): number {
   const s = Array.isArray(raw) ? raw[0] : raw;
   return parseInt(s, 10);
+}
+
+async function resolveContext(body: { invoiceGroupId?: number; claimId?: number }): Promise<GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] } | null> {
+  if (body.invoiceGroupId) {
+    return loadGroupContextByGroupId(body.invoiceGroupId);
+  }
+  if (body.claimId) {
+    return loadGroupContextByClaimId(body.claimId);
+  }
+  return null;
+}
+
+async function loadContextForSubmission(sub: typeof portalSubmissionsTable.$inferSelect) {
+  if (sub.invoiceGroupId) {
+    const ctx = await loadGroupContextByGroupId(sub.invoiceGroupId);
+    if (ctx) return ctx;
+  }
+  return loadGroupContextByClaimId(sub.claimId);
 }
 
 router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
@@ -150,79 +358,80 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
 }));
 
 router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
-  const { claimId, disputeReason } = req.body;
-  if (!claimId) { res.status(400).json({ error: "claimId is required" }); return; }
+  const { invoiceGroupId, claimId, disputeReason } = req.body;
+  if (!invoiceGroupId && !claimId) {
+    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+    return;
+  }
 
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+  const ctx = await resolveContext({ invoiceGroupId, claimId });
+  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
 
+  const groupIdForCancel = ctx.group?.id ?? null;
   const existingDrafts = await db.select().from(portalSubmissionsTable)
-    .where(and(eq(portalSubmissionsTable.claimId, claimId), eq(portalSubmissionsTable.status, "draft")));
+    .where(and(
+      groupIdForCancel
+        ? eq(portalSubmissionsTable.invoiceGroupId, groupIdForCancel)
+        : eq(portalSubmissionsTable.claimId, ctx.primaryClaim.id),
+      eq(portalSubmissionsTable.status, "draft"),
+    ));
   for (const draft of existingDrafts) {
     await db.update(portalSubmissionsTable).set({ status: "cancelled" })
       .where(eq(portalSubmissionsTable.id, draft.id));
   }
 
   const settings = await getPortalSettings();
-
-  let errorType: typeof errorTypesTable.$inferSelect | null = null;
-  if (claim.errorTypeId) {
-    const etId = parseInt(claim.errorTypeId, 10);
-    if (!isNaN(etId)) {
-      const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, etId));
-      errorType = et || null;
-    }
-  }
-
+  const errorType = await loadErrorTypeForContext(ctx);
   const reason = disputeReason || "";
-  const issueType = determineIssueType(claim.errorTypeName);
-  const invoiceNumber = extractInvoiceNumber(claim.refNumber);
-  const subject = `Dispute - Conf #${claim.confNumber || "N/A"} - ${claim.errorTypeName || "Claim Correction"}`;
+  const issueType = determineIssueType(ctx.group?.errorTypeName || ctx.primaryClaim.errorTypeName);
+  const snap = buildSnapshot(ctx);
 
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(claim, errorType, reason, settings);
+    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings);
   } catch (err) {
     logger.warn({ err }, "AI portal description generation failed, using fallback");
-    generatedDescription = buildFallbackDescription(claim, reason);
+    generatedDescription = buildFallbackDescription(ctx, reason);
   }
 
-  const attachmentUrls = await collectEvidenceUrls(claim.id, claim);
+  const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
 
-  logger.info({ claimId: claim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType }, "Portal draft: evidence and GPS resolved");
+  logger.info({ groupId: ctx.group?.id, claimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length }, "Portal draft: evidence and GPS resolved");
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
-    claimId: claim.id,
+    claimId: ctx.primaryClaim.id,
+    invoiceGroupId: ctx.group?.id ?? null,
     status: "draft",
     issueType,
-    subject,
+    subject: snap.subjectFallback,
     requesterEmail: settings.contactEmail,
     transportationProviderName: settings.providerName,
     phoneNumber: settings.contactPhone,
-    invoiceNumber,
+    invoiceNumber: snap.invoiceNumber,
     gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
     attachmentUrls,
-    confNumber: claim.confNumber || "",
-    serviceDate: claim.date || "",
-    refNumber: claim.refNumber || "",
-    clientNumber: claim.clientNumber || "",
-    carNumber: claim.carNumber || "",
-    claimAmount: claim.claimAmount || null,
-    errorTypeName: claim.errorTypeName || "",
-    errorDetails: claim.errorDetails || "",
+    confNumber: snap.confNumber,
+    serviceDate: snap.serviceDate,
+    refNumber: snap.refNumber,
+    clientNumber: snap.clientNumber,
+    carNumber: snap.carNumber,
+    claimAmount: snap.claimAmount,
+    errorTypeName: snap.errorTypeName,
+    errorDetails: snap.errorDetails,
     disputeReason: reason,
-    evidenceNotes: claim.evidenceNotes || "",
-    evidenceFiles: claim.evidenceFiles || null,
-    workflowHistory: claim.workflowProgress || null,
+    evidenceNotes: snap.evidenceNotes,
+    evidenceFiles: snap.evidenceFiles as never,
+    workflowHistory: snap.workflowHistory as never,
     attempts: 0,
   }).returning();
 
   await db.insert(auditLogsTable).values({
-    claimId: claim.id,
+    claimId: ctx.primaryClaim.id,
+    invoiceGroupId: ctx.group?.id ?? null,
     action: "portal_draft_created",
-    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files)`,
+    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})`,
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });
@@ -271,26 +480,18 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     return;
   }
 
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, existing.claimId));
-  if (!claim) { res.status(404).json({ error: "Associated claim not found" }); return; }
+  const ctx = await loadContextForSubmission(existing);
+  if (!ctx) { res.status(404).json({ error: "Associated claim or group not found" }); return; }
 
   const settings = await getPortalSettings();
-
-  let errorType: typeof errorTypesTable.$inferSelect | null = null;
-  if (claim.errorTypeId) {
-    const etId = parseInt(claim.errorTypeId, 10);
-    if (!isNaN(etId)) {
-      const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, etId));
-      errorType = et || null;
-    }
-  }
+  const errorType = await loadErrorTypeForContext(ctx);
 
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(claim, errorType, existing.disputeReason || "", settings);
+    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings);
   } catch (err) {
     logger.warn({ err }, "AI portal description regeneration failed, using fallback");
-    generatedDescription = buildFallbackDescription(claim, existing.disputeReason || "");
+    generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "");
   }
 
   const [sub] = await db.update(portalSubmissionsTable).set({
@@ -314,91 +515,88 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   const [sub] = await db.update(portalSubmissionsTable).set({ status: "pending" })
     .where(eq(portalSubmissionsTable.id, id)).returning();
 
-  await transitionClaimStatus({
-    claimId: existing.claimId,
-    newStatus: "Portal Queued",
-    source: "portal_submission_confirm",
-    reason: `Portal submission #${id} confirmed and queued for processing`,
-    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
-    systemOverride: true,
-  });
+  const ctx = await loadContextForSubmission(existing);
+  if (ctx) {
+    await transitionContext({
+      ctx,
+      newStatus: "Portal Queued",
+      source: "portal_submission_confirm",
+      reason: `Portal submission #${id} confirmed and queued for processing`,
+      actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    });
+  }
 
   res.json(sub);
 }));
 
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
-  const { claimId, issueType, subject, requesterEmail, transportationProviderName,
+  const { invoiceGroupId, claimId, issueType, subject, requesterEmail, transportationProviderName,
     phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason } = req.body;
 
-  if (!claimId) { res.status(400).json({ error: "claimId is required" }); return; }
-
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  const settings = await getPortalSettings();
-
-  let errorType: typeof errorTypesTable.$inferSelect | null = null;
-  if (claim.errorTypeId) {
-    const etId = parseInt(claim.errorTypeId, 10);
-    if (!isNaN(etId)) {
-      const [et] = await db.select().from(errorTypesTable).where(eq(errorTypesTable.id, etId));
-      errorType = et || null;
-    }
+  if (!invoiceGroupId && !claimId) {
+    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+    return;
   }
 
+  const ctx = await resolveContext({ invoiceGroupId, claimId });
+  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+
+  const settings = await getPortalSettings();
+  const errorType = await loadErrorTypeForContext(ctx);
   const reason = disputeReason || "";
+  const snap = buildSnapshot(ctx);
 
   let generatedDescription = descriptionHtml || "";
   if (!generatedDescription && reason) {
     try {
-      generatedDescription = await generatePortalDescription(claim, errorType, reason, settings);
+      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings);
     } catch (err) {
       logger.warn({ err }, "AI portal description generation failed, using fallback");
-      generatedDescription = buildFallbackDescription(claim, reason);
+      generatedDescription = buildFallbackDescription(ctx, reason);
     }
   }
   if (!generatedDescription) {
-    generatedDescription = buildFallbackDescription(claim, reason);
+    generatedDescription = buildFallbackDescription(ctx, reason);
   }
 
-  const resolvedIssueType = issueType || determineIssueType(claim.errorTypeName);
-  const attachmentUrls = await collectEvidenceUrls(claim.id, claim);
+  const resolvedIssueType = issueType || determineIssueType(snap.errorTypeName);
+  const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = gpsBreadcrumbsAvailable || resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
-    claimId: claim.id,
+    claimId: ctx.primaryClaim.id,
+    invoiceGroupId: ctx.group?.id ?? null,
     status: "pending",
     issueType: resolvedIssueType,
-    subject: subject || `Dispute - Conf #${claim.confNumber || "N/A"} - ${claim.errorTypeName || "Claim Correction"}`,
+    subject: subject || snap.subjectFallback,
     requesterEmail: requesterEmail || settings.contactEmail,
     transportationProviderName: transportationProviderName || settings.providerName,
     phoneNumber: phoneNumber || settings.contactPhone,
-    invoiceNumber: invoiceNumber || extractInvoiceNumber(claim.refNumber),
+    invoiceNumber: invoiceNumber || snap.invoiceNumber,
     gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
     attachmentUrls,
-    confNumber: claim.confNumber || "",
-    serviceDate: claim.date || "",
-    refNumber: claim.refNumber || "",
-    clientNumber: claim.clientNumber || "",
-    carNumber: claim.carNumber || "",
-    claimAmount: claim.claimAmount || null,
-    errorTypeName: claim.errorTypeName || "",
-    errorDetails: claim.errorDetails || "",
+    confNumber: snap.confNumber,
+    serviceDate: snap.serviceDate,
+    refNumber: snap.refNumber,
+    clientNumber: snap.clientNumber,
+    carNumber: snap.carNumber,
+    claimAmount: snap.claimAmount,
+    errorTypeName: snap.errorTypeName,
+    errorDetails: snap.errorDetails,
     disputeReason: reason,
-    evidenceNotes: claim.evidenceNotes || "",
-    evidenceFiles: claim.evidenceFiles || null,
-    workflowHistory: claim.workflowProgress || null,
+    evidenceNotes: snap.evidenceNotes,
+    evidenceFiles: snap.evidenceFiles as never,
+    workflowHistory: snap.workflowHistory as never,
     attempts: 0,
   }).returning();
 
-  await transitionClaimStatus({
-    claimId: claim.id,
+  await transitionContext({
+    ctx,
     newStatus: "Portal Queued",
     source: "portal_submission_create",
     reason: `Portal submission created and queued${reason ? ` — reason: ${reason}` : ""}`,
     actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
-    systemOverride: true,
   });
 
   res.status(201).json(submission);
@@ -432,14 +630,16 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
     errorMessage: null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
-  await transitionClaimStatus({
-    claimId: existing.claimId,
-    newStatus: "Portal Queued",
-    source: "portal_submission_retry",
-    reason: `Portal submission #${id} retried from "${existing.status}" status`,
-    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
-    systemOverride: true,
-  });
+  const ctx = await loadContextForSubmission(existing);
+  if (ctx) {
+    await transitionContext({
+      ctx,
+      newStatus: "Portal Queued",
+      source: "portal_submission_retry",
+      reason: `Portal submission #${id} retried from "${existing.status}" status`,
+      actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    });
+  }
 
   res.json(sub);
 }));
@@ -462,24 +662,32 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   if (existing.status === "pending") {
-    const otherActive = await db.select().from(portalSubmissionsTable)
-      .where(and(
-        eq(portalSubmissionsTable.claimId, existing.claimId),
-        inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
-      ));
+    const otherActiveWhere = existing.invoiceGroupId
+      ? and(
+          eq(portalSubmissionsTable.invoiceGroupId, existing.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
+        )
+      : and(
+          eq(portalSubmissionsTable.claimId, existing.claimId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
+        );
+    const otherActive = await db.select().from(portalSubmissionsTable).where(otherActiveWhere);
     if (otherActive.length === 0) {
-      await transitionClaimStatus({
-        claimId: existing.claimId,
-        newStatus: "Needs Evidence",
-        source: "portal_submission_cancel",
-        reason: `Portal submission #${id} cancelled, no other active submissions — reverting claim status`,
-        actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
-        systemOverride: true,
-      });
+      const ctx = await loadContextForSubmission(existing);
+      if (ctx) {
+        await transitionContext({
+          ctx,
+          newStatus: "Needs Evidence",
+          source: "portal_submission_cancel",
+          reason: `Portal submission #${id} cancelled, no other active submissions — reverting status`,
+          actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+        });
+      }
     }
   } else {
     await db.insert(auditLogsTable).values({
       claimId: existing.claimId,
+      invoiceGroupId: existing.invoiceGroupId ?? null,
       action: "portal_submission_cancelled",
       details: `Portal submission #${id} cancelled from "${existing.status}" status`,
       metadata: { submissionId: id, previousStatus: existing.status, source: "portal_submission_cancel" },

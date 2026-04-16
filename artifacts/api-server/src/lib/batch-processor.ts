@@ -5,6 +5,8 @@ import { logger } from "./logger";
 import { broadcastPresenceEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
 import { transitionClaimStatus } from "./claim-transitions";
+import { transitionGroupStatus } from "./group-transitions";
+import { invoiceGroupsTable } from "@workspace/db";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -252,18 +254,34 @@ async function processViaExternalBot(
       submittedAt: new Date().toISOString(),
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
-    await transitionClaimStatus({
-      claimId: sub.claimId,
-      newStatus: "Awaiting Response",
-      source: "batch_processor",
-      reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
-      actor: { userEmail: null, userName: "Batch Processor" },
-      systemOverride: true,
-      extraFields: {
-        disputeEmailSent: true,
-        disputeEmailSentAt: new Date().toISOString(),
-      },
-    });
+    const submittedAtIso = new Date().toISOString();
+    if (sub.invoiceGroupId) {
+      await transitionGroupStatus({
+        groupId: sub.invoiceGroupId,
+        newStatus: "Awaiting Response",
+        source: "batch_processor",
+        reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
+        actor: { userEmail: null, userName: "Batch Processor" },
+        systemOverride: true,
+        extraFields: {
+          disputeEmailSent: true,
+          disputeEmailSentAt: submittedAtIso,
+        },
+      });
+    } else {
+      await transitionClaimStatus({
+        claimId: sub.claimId,
+        newStatus: "Awaiting Response",
+        source: "batch_processor",
+        reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
+        actor: { userEmail: null, userName: "Batch Processor" },
+        systemOverride: true,
+        extraFields: {
+          disputeEmailSent: true,
+          disputeEmailSentAt: submittedAtIso,
+        },
+      });
+    }
 
     await db.insert(botActivityLogTable).values({
       submissionId: sub.id,

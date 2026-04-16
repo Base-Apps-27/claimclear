@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, notesTable, botActivityLogTable, botInstancesTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, botActivityLogTable, botInstancesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
+import { transitionGroupStatus } from "../lib/group-transitions";
 
 const router: IRouter = Router();
 
@@ -91,28 +92,53 @@ router.post("/:id/complete", asyncHandler(async (req, res): Promise<void> => {
 
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
 
-  const [currentClaim] = await db.select().from(claimsTable).where(eq(claimsTable.id, sub.claimId));
   const finalOutcomes = ["Approved", "Partially Approved", "Denied", "Non-Issue"];
-  const hasResolvedOutcome = currentClaim && finalOutcomes.includes(currentClaim.outcome);
+  const submittedAtIso = new Date().toISOString();
 
-  if (!hasResolvedOutcome) {
-    await transitionClaimStatus({
-      claimId: sub.claimId,
-      newStatus: "Awaiting Response",
-      source: "portal_bot_complete",
-      reason: `Portal ticket submitted successfully${portalTicketId ? ` - Ticket ID: ${portalTicketId}` : ""}`,
-      actor: { userEmail: null, userName: "Portal Bot" },
-      systemOverride: true,
-      extraFields: {
+  if (sub.invoiceGroupId) {
+    const [currentGroup] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, sub.invoiceGroupId));
+    const groupResolved = currentGroup && finalOutcomes.includes(currentGroup.outcome);
+    if (currentGroup && !groupResolved) {
+      await transitionGroupStatus({
+        groupId: sub.invoiceGroupId,
+        newStatus: "Awaiting Response",
+        source: "portal_bot_complete",
+        reason: `Portal ticket submitted successfully${portalTicketId ? ` - Ticket ID: ${portalTicketId}` : ""}`,
+        actor: { userEmail: null, userName: "Portal Bot" },
+        systemOverride: true,
+        extraFields: {
+          disputeEmailSent: true,
+          disputeEmailSentAt: submittedAtIso,
+        },
+      });
+    } else if (currentGroup) {
+      await db.update(invoiceGroupsTable).set({
         disputeEmailSent: true,
-        disputeEmailSentAt: new Date().toISOString(),
-      },
-    });
+        disputeEmailSentAt: submittedAtIso,
+      }).where(eq(invoiceGroupsTable.id, sub.invoiceGroupId));
+    }
   } else {
-    await db.update(claimsTable).set({
-      disputeEmailSent: true,
-      disputeEmailSentAt: new Date().toISOString(),
-    }).where(eq(claimsTable.id, sub.claimId));
+    const [currentClaim] = await db.select().from(claimsTable).where(eq(claimsTable.id, sub.claimId));
+    const hasResolvedOutcome = currentClaim && finalOutcomes.includes(currentClaim.outcome);
+    if (!hasResolvedOutcome) {
+      await transitionClaimStatus({
+        claimId: sub.claimId,
+        newStatus: "Awaiting Response",
+        source: "portal_bot_complete",
+        reason: `Portal ticket submitted successfully${portalTicketId ? ` - Ticket ID: ${portalTicketId}` : ""}`,
+        actor: { userEmail: null, userName: "Portal Bot" },
+        systemOverride: true,
+        extraFields: {
+          disputeEmailSent: true,
+          disputeEmailSentAt: submittedAtIso,
+        },
+      });
+    } else {
+      await db.update(claimsTable).set({
+        disputeEmailSent: true,
+        disputeEmailSentAt: submittedAtIso,
+      }).where(eq(claimsTable.id, sub.claimId));
+    }
   }
 
   if (botInstanceId) {
