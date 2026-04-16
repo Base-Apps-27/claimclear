@@ -3,6 +3,7 @@ import { claimsTable, portalSubmissionsTable, portalResponsesTable, notesTable, 
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import type { InboxMessage } from "./outlook";
 import { logger } from "./logger";
+import { transitionClaimStatusAndOutcome, transitionClaimStatus } from "./claim-transitions";
 
 interface MatchResult {
   claimId: number;
@@ -209,25 +210,33 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     userName: "Response Tracker",
   });
 
-  if (responseType === "approval") {
-    await db.update(claimsTable).set({
-      status: "Resolved",
-      outcome: "Approved",
-    }).where(eq(claimsTable.id, match.claimId));
-  } else if (responseType === "denial") {
-    await db.update(claimsTable).set({
-      status: "Denied",
-      outcome: "Denied",
-    }).where(eq(claimsTable.id, match.claimId));
-  } else if (responseType === "partial_approval") {
-    await db.update(claimsTable).set({
-      status: "Resolved",
-      outcome: "Partially Approved",
-    }).where(eq(claimsTable.id, match.claimId));
-  } else if (responseType === "info_request") {
-    await db.update(claimsTable).set({
-      status: "Needs Review",
-    }).where(eq(claimsTable.id, match.claimId));
+  const statusMap: Record<string, { status: string; outcome?: string }> = {
+    approval: { status: "Resolved", outcome: "Approved" },
+    denial: { status: "Denied", outcome: "Denied" },
+    partial_approval: { status: "Resolved", outcome: "Partially Approved" },
+    info_request: { status: "Needs Review" },
+  };
+  const mapping = statusMap[responseType];
+  if (mapping) {
+    if (mapping.outcome) {
+      await transitionClaimStatusAndOutcome({
+        claimId: match.claimId,
+        newStatus: mapping.status,
+        newOutcome: mapping.outcome,
+        source: "email_response_matcher",
+        reason: `Email response auto-matched as ${responseType} (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+      });
+    } else {
+      await transitionClaimStatus({
+        claimId: match.claimId,
+        newStatus: mapping.status,
+        source: "email_response_matcher",
+        reason: `Email response auto-matched as ${responseType} (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+        systemOverride: true,
+      });
+    }
   }
 
   logger.info({
@@ -284,14 +293,33 @@ export async function processPortalResponse(data: {
     userName: "Response Tracker",
   });
 
-  if (data.responseType === "approval") {
-    await db.update(claimsTable).set({ status: "Resolved", outcome: "Approved" }).where(eq(claimsTable.id, data.claimId));
-  } else if (data.responseType === "denial") {
-    await db.update(claimsTable).set({ status: "Denied", outcome: "Denied" }).where(eq(claimsTable.id, data.claimId));
-  } else if (data.responseType === "partial_approval") {
-    await db.update(claimsTable).set({ status: "Resolved", outcome: "Partially Approved" }).where(eq(claimsTable.id, data.claimId));
-  } else if (data.responseType === "info_request") {
-    await db.update(claimsTable).set({ status: "Needs Review" }).where(eq(claimsTable.id, data.claimId));
+  const portalStatusMap: Record<string, { status: string; outcome?: string }> = {
+    approval: { status: "Resolved", outcome: "Approved" },
+    denial: { status: "Denied", outcome: "Denied" },
+    partial_approval: { status: "Resolved", outcome: "Partially Approved" },
+    info_request: { status: "Needs Review" },
+  };
+  const portalMapping = portalStatusMap[data.responseType];
+  if (portalMapping) {
+    if (portalMapping.outcome) {
+      await transitionClaimStatusAndOutcome({
+        claimId: data.claimId,
+        newStatus: portalMapping.status,
+        newOutcome: portalMapping.outcome,
+        source: "portal_response_matcher",
+        reason: `Portal response for ticket ${data.portalTicketId}: ${data.responseType}`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+      });
+    } else {
+      await transitionClaimStatus({
+        claimId: data.claimId,
+        newStatus: portalMapping.status,
+        source: "portal_response_matcher",
+        reason: `Portal response for ticket ${data.portalTicketId}: ${data.responseType}`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+        systemOverride: true,
+      });
+    }
   }
 
   logger.info({

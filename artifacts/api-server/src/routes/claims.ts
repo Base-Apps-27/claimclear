@@ -4,6 +4,14 @@ import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
+import {
+  transitionClaimStatus,
+  transitionClaimOutcome,
+  transitionClaimStatusAndOutcome,
+  VALID_MANUAL_STATUS_TRANSITIONS,
+  VALID_OUTCOME_BY_STATUS,
+  SYSTEM_CONTROLLED_STATUSES,
+} from "../lib/claim-transitions";
 
 const router: IRouter = Router();
 
@@ -33,6 +41,13 @@ function emitClaimEvent(claimId: number, type: string, req: Request) {
     userEmail: req.user?.email ?? null,
     timestamp: new Date().toISOString(),
   });
+}
+
+function actorFromReq(req: Request) {
+  return {
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  };
 }
 
 router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
@@ -145,21 +160,6 @@ router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   res.sendStatus(204);
 }));
 
-const VALID_MANUAL_STATUS_TRANSITIONS: Record<string, string[]> = {
-  "New": ["Needs Review", "Needs Evidence", "On Hold", "Resolved", "Denied"],
-  "Needs Review": ["New", "Needs Evidence", "On Hold", "Resolved", "Denied"],
-  "Needs Evidence": ["New", "Needs Review", "On Hold", "Resolved", "Denied"],
-  "Portal Queued": [],
-  "Generating Email": [],
-  "Ready to Review": [],
-  "Awaiting Response": ["Needs Review", "Resolved", "Denied"],
-  "On Hold": ["Needs Evidence", "New"],
-  "Resolved": ["Needs Review", "New"],
-  "Denied": ["Needs Review", "New"],
-};
-
-const SYSTEM_CONTROLLED_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
-
 router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -200,58 +200,23 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
   const { status, _systemOverride } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
 
-  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  const activeSubmissions = await db.select().from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.claimId, id),
-      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
-    ));
-  if (activeSubmissions.length > 0 && !_systemOverride) {
-    res.status(409).json({ error: "Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
-    return;
+  try {
+    const result = await transitionClaimStatus({
+      claimId: id,
+      newStatus: status,
+      source: "manual",
+      reason: `Manual status change by user`,
+      actor: actorFromReq(req),
+      systemOverride: _systemOverride,
+    });
+    res.json(result.claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to change status";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    if (msg.includes("in progress")) { res.status(409).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
   }
-
-  if (!_systemOverride) {
-    if (SYSTEM_CONTROLLED_STATUSES.includes(status)) {
-      res.status(400).json({ error: `"${status}" is a system-controlled status and cannot be set manually.` });
-      return;
-    }
-
-    const allowed = VALID_MANUAL_STATUS_TRANSITIONS[old.status] || [];
-    if (!allowed.includes(status)) {
-      res.status(400).json({
-        error: `Cannot transition from "${old.status}" to "${status}". Valid transitions: ${allowed.length > 0 ? allowed.join(", ") : "none (status is system-controlled)"}`,
-      });
-      return;
-    }
-  }
-
-  const [claim] = await db.update(claimsTable).set({ status }).where(eq(claimsTable.id, id)).returning();
-  await createAuditLog(id, "status_changed", `Status changed from ${old.status} to ${status}`, req, { from: old.status, to: status });
-  await db.insert(notesTable).values({
-    claimId: id,
-    type: "status_change",
-    content: `Status changed from ${old.status} to ${status}`,
-    author: req.user?.displayName || req.user?.email || "System",
-  });
-  emitClaimEvent(id, "status_changed", req);
-  res.json(claim);
 }));
-
-const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
-  "New": ["Pending"],
-  "Needs Review": ["Pending"],
-  "Needs Evidence": ["Pending"],
-  "Portal Queued": [],
-  "Generating Email": [],
-  "Ready to Review": [],
-  "Awaiting Response": ["Approved", "Partially Approved", "Denied"],
-  "On Hold": [],
-  "Resolved": ["Approved", "Partially Approved", "Denied"],
-  "Denied": ["Denied", "Approved", "Partially Approved"],
-};
 
 router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
@@ -260,46 +225,24 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   const { outcome, approvedAmount, invoiceNumbers, _systemOverride } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
-  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  const activeSubmissions = await db.select().from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.claimId, id),
-      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
-    ));
-  if (activeSubmissions.length > 0 && !_systemOverride) {
-    res.status(409).json({ error: "Cannot change outcome while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
-    return;
+  try {
+    const result = await transitionClaimOutcome({
+      claimId: id,
+      newOutcome: outcome,
+      source: "manual",
+      reason: `Manual outcome change by user`,
+      actor: actorFromReq(req),
+      systemOverride: _systemOverride,
+      approvedAmount,
+      invoiceNumbers,
+    });
+    res.json(result.claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to change outcome";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    if (msg.includes("in progress")) { res.status(409).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
   }
-
-  if (!_systemOverride) {
-    const allowed = VALID_OUTCOME_BY_STATUS[old.status] || [];
-    if (!allowed.includes(outcome)) {
-      res.status(400).json({
-        error: `Cannot set outcome to "${outcome}" when claim is in "${old.status}" status. ${allowed.length > 0 ? `Valid outcomes: ${allowed.join(", ")}` : "Outcome changes are not allowed in this status."}`,
-      });
-      return;
-    }
-  }
-
-  const updateData: Partial<typeof claimsTable.$inferInsert> = { outcome };
-  if (approvedAmount !== undefined) {
-    const cleaned = typeof approvedAmount === "string" ? approvedAmount.trim() : approvedAmount;
-    updateData.approvedAmount = cleaned === "" ? null : String(cleaned);
-  }
-  if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
-
-  const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, id)).returning();
-  await createAuditLog(id, "outcome_changed", `Outcome changed to ${outcome}`, req, { from: old.outcome, to: outcome, approvedAmount });
-  await db.insert(notesTable).values({
-    claimId: id,
-    type: "outcome_recorded",
-    content: `Outcome changed from ${old.outcome} to ${outcome}${approvedAmount ? ` (approved: $${approvedAmount})` : ""}`,
-    author: req.user?.displayName || req.user?.email || "System",
-  });
-  emitClaimEvent(id, "outcome_changed", req);
-  res.json(claim);
 }));
 
 router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
@@ -326,36 +269,52 @@ router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => 
   const { holdReason, holdPendingFrom } = req.body;
   if (!holdReason) { res.status(400).json({ error: "holdReason is required" }); return; }
 
-  const [claim] = await db.update(claimsTable).set({
-    status: "On Hold",
-    holdReason,
-    holdPendingFrom: holdPendingFrom || null,
-    holdPlacedAt: new Date().toISOString(),
-  }).where(eq(claimsTable.id, id)).returning();
-
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  await createAuditLog(id, "hold_placed", `Claim placed on hold: ${holdReason}`, req, { holdReason, holdPendingFrom });
-  emitClaimEvent(id, "hold_placed", req);
-  res.json(claim);
+  try {
+    const result = await transitionClaimStatus({
+      claimId: id,
+      newStatus: "On Hold",
+      source: "manual",
+      reason: `Hold placed: ${holdReason}`,
+      actor: actorFromReq(req),
+      systemOverride: true,
+      extraFields: {
+        holdReason,
+        holdPendingFrom: holdPendingFrom || null,
+        holdPlacedAt: new Date().toISOString(),
+      },
+    });
+    res.json(result.claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to place hold";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
 }));
 
 router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [claim] = await db.update(claimsTable).set({
-    status: "Needs Evidence",
-    holdReason: null,
-    holdPendingFrom: null,
-    holdPlacedAt: null,
-  }).where(eq(claimsTable.id, id)).returning();
-
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  await createAuditLog(id, "hold_removed", "Hold removed from claim", req);
-  emitClaimEvent(id, "hold_removed", req);
-  res.json(claim);
+  try {
+    const result = await transitionClaimStatus({
+      claimId: id,
+      newStatus: "Needs Evidence",
+      source: "manual",
+      reason: "Hold removed from claim",
+      actor: actorFromReq(req),
+      systemOverride: true,
+      extraFields: {
+        holdReason: null,
+        holdPendingFrom: null,
+        holdPlacedAt: null,
+      },
+    });
+    res.json(result.claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to remove hold";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
 }));
 
 router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
@@ -381,51 +340,49 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
     return;
   }
 
-  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
+  try {
+    if (action === "non_issue") {
+      const result = await transitionClaimStatusAndOutcome({
+        claimId: id,
+        newStatus: "Resolved",
+        newOutcome: "Non-Issue",
+        source: "triage",
+        reason: `Triaged as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
+        actor: actorFromReq(req),
+        extraFields: {
+          claimAmount: "0",
+          approvedAmount: "0",
+          triageNotes: triageNotes || null,
+          triagedAt: new Date().toISOString(),
+        },
+      });
+      res.json(result.claim);
+    } else {
+      if (!errorTypeId || !errorTypeName) {
+        res.status(400).json({ error: "errorTypeId and errorTypeName are required for issue_found" });
+        return;
+      }
 
-  if (action === "non_issue") {
-    const [claim] = await db.update(claimsTable).set({
-      status: "Resolved",
-      outcome: "Non-Issue",
-      claimAmount: "0",
-      approvedAmount: "0",
-      triageNotes: triageNotes || null,
-      triagedAt: new Date().toISOString(),
-    }).where(eq(claimsTable.id, id)).returning();
-
-    await createAuditLog(id, "triage_non_issue", `Claim triaged as non-issue. Financial impact set to $0.${triageNotes ? ` Notes: ${triageNotes}` : ""}`, req);
-    await db.insert(notesTable).values({
-      claimId: id,
-      type: "status_change",
-      content: `Triaged as non-issue — no action required. Financial impact reduced to $0.${triageNotes ? `\n${triageNotes}` : ""}`,
-      author: req.user?.displayName || req.user?.email || "System",
-    });
-    emitClaimEvent(id, "claim_triaged", req);
-    res.json(claim);
-  } else {
-    if (!errorTypeId || !errorTypeName) {
-      res.status(400).json({ error: "errorTypeId and errorTypeName are required for issue_found" });
-      return;
+      const result = await transitionClaimStatus({
+        claimId: id,
+        newStatus: "New",
+        source: "triage",
+        reason: `Issue identified during triage: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
+        actor: actorFromReq(req),
+        systemOverride: true,
+        extraFields: {
+          errorTypeId: String(errorTypeId),
+          errorTypeName,
+          triageNotes: triageNotes || null,
+          triagedAt: new Date().toISOString(),
+        },
+      });
+      res.json(result.claim);
     }
-
-    const [claim] = await db.update(claimsTable).set({
-      status: "New",
-      errorTypeId: String(errorTypeId),
-      errorTypeName,
-      triageNotes: triageNotes || null,
-      triagedAt: new Date().toISOString(),
-    }).where(eq(claimsTable.id, id)).returning();
-
-    await createAuditLog(id, "triage_issue_found", `Issue identified during triage: ${errorTypeName}.${triageNotes ? ` Notes: ${triageNotes}` : ""}`, req, { errorTypeId, errorTypeName });
-    await db.insert(notesTable).values({
-      claimId: id,
-      type: "status_change",
-      content: `Issue identified during triage — assigned error type "${errorTypeName}" and moved to normal workflow.${triageNotes ? `\n${triageNotes}` : ""}`,
-      author: req.user?.displayName || req.user?.email || "System",
-    });
-    emitClaimEvent(id, "claim_triaged", req);
-    res.json(claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to triage";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
   }
 }));
 

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, notesTable, botActivityLogTable, botInstancesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent } from "../lib/sse";
+import { transitionClaimStatus } from "../lib/claim-transitions";
 
 const router: IRouter = Router();
 
@@ -94,21 +95,25 @@ router.post("/:id/complete", asyncHandler(async (req, res): Promise<void> => {
   const finalOutcomes = ["Approved", "Partially Approved", "Denied", "Non-Issue"];
   const hasResolvedOutcome = currentClaim && finalOutcomes.includes(currentClaim.outcome);
 
-  const claimUpdate: Record<string, unknown> = {
-    disputeEmailSent: true,
-    disputeEmailSentAt: new Date().toISOString(),
-  };
   if (!hasResolvedOutcome) {
-    claimUpdate.status = "Awaiting Response";
+    await transitionClaimStatus({
+      claimId: sub.claimId,
+      newStatus: "Awaiting Response",
+      source: "portal_bot_complete",
+      reason: `Portal ticket submitted successfully${portalTicketId ? ` - Ticket ID: ${portalTicketId}` : ""}`,
+      actor: { userEmail: null, userName: "Portal Bot" },
+      systemOverride: true,
+      extraFields: {
+        disputeEmailSent: true,
+        disputeEmailSentAt: new Date().toISOString(),
+      },
+    });
+  } else {
+    await db.update(claimsTable).set({
+      disputeEmailSent: true,
+      disputeEmailSentAt: new Date().toISOString(),
+    }).where(eq(claimsTable.id, sub.claimId));
   }
-  await db.update(claimsTable).set(claimUpdate).where(eq(claimsTable.id, sub.claimId));
-
-  await db.insert(notesTable).values({
-    claimId: sub.claimId,
-    type: "email_sent",
-    content: `Portal ticket submitted successfully${portalTicketId ? ` - Ticket ID: ${portalTicketId}` : ""}`,
-    author: "Portal Bot",
-  });
 
   if (botInstanceId) {
     await db.update(botInstancesTable).set({

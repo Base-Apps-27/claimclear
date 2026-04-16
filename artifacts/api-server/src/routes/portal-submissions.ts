@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
+import { transitionClaimStatus } from "../lib/claim-transitions";
 
 const router: IRouter = Router();
 
@@ -313,14 +314,13 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   const [sub] = await db.update(portalSubmissionsTable).set({ status: "pending" })
     .where(eq(portalSubmissionsTable.id, id)).returning();
 
-  await db.update(claimsTable).set({ status: "Portal Queued" }).where(eq(claimsTable.id, existing.claimId));
-
-  await db.insert(auditLogsTable).values({
+  await transitionClaimStatus({
     claimId: existing.claimId,
-    action: "portal_submission_confirmed",
-    details: `Portal submission confirmed and queued for processing`,
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
+    newStatus: "Portal Queued",
+    source: "portal_submission_confirm",
+    reason: `Portal submission #${id} confirmed and queued for processing`,
+    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    systemOverride: true,
   });
 
   res.json(sub);
@@ -392,14 +392,13 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     attempts: 0,
   }).returning();
 
-  await db.update(claimsTable).set({ status: "Portal Queued" }).where(eq(claimsTable.id, claim.id));
-
-  await db.insert(auditLogsTable).values({
+  await transitionClaimStatus({
     claimId: claim.id,
-    action: "portal_submission_created",
-    details: `Portal submission queued${reason ? ` — reason: ${reason}` : ""}`,
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
+    newStatus: "Portal Queued",
+    source: "portal_submission_create",
+    reason: `Portal submission created and queued${reason ? ` — reason: ${reason}` : ""}`,
+    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    systemOverride: true,
   });
 
   res.status(201).json(submission);
@@ -433,14 +432,13 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
     errorMessage: null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
-  await db.update(claimsTable).set({ status: "Portal Queued" }).where(eq(claimsTable.id, existing.claimId));
-
-  await db.insert(auditLogsTable).values({
+  await transitionClaimStatus({
     claimId: existing.claimId,
-    action: "portal_submission_retried",
-    details: `Portal submission retried from "${existing.status}" status`,
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
+    newStatus: "Portal Queued",
+    source: "portal_submission_retry",
+    reason: `Portal submission #${id} retried from "${existing.status}" status`,
+    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    systemOverride: true,
   });
 
   res.json(sub);
@@ -470,17 +468,25 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
         inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
       ));
     if (otherActive.length === 0) {
-      await db.update(claimsTable).set({ status: "Needs Evidence" }).where(eq(claimsTable.id, existing.claimId));
+      await transitionClaimStatus({
+        claimId: existing.claimId,
+        newStatus: "Needs Evidence",
+        source: "portal_submission_cancel",
+        reason: `Portal submission #${id} cancelled, no other active submissions — reverting claim status`,
+        actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+        systemOverride: true,
+      });
     }
+  } else {
+    await db.insert(auditLogsTable).values({
+      claimId: existing.claimId,
+      action: "portal_submission_cancelled",
+      details: `Portal submission #${id} cancelled from "${existing.status}" status`,
+      metadata: { submissionId: id, previousStatus: existing.status, source: "portal_submission_cancel" },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
   }
-
-  await db.insert(auditLogsTable).values({
-    claimId: existing.claimId,
-    action: "portal_submission_cancelled",
-    details: `Portal submission cancelled from "${existing.status}" status`,
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
-  });
 
   res.json(sub);
 }));

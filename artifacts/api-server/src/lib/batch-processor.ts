@@ -4,6 +4,7 @@ import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, a
 import { logger } from "./logger";
 import { broadcastPresenceEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
+import { transitionClaimStatus } from "./claim-transitions";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -251,17 +252,17 @@ async function processViaExternalBot(
       submittedAt: new Date().toISOString(),
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
-    await db.update(claimsTable).set({
-      status: "Awaiting Response",
-      disputeEmailSent: true,
-      disputeEmailSentAt: new Date().toISOString(),
-    }).where(eq(claimsTable.id, sub.claimId));
-
-    await db.insert(notesTable).values({
+    await transitionClaimStatus({
       claimId: sub.claimId,
-      type: "email_sent",
-      content: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
-      author: "Batch Processor",
+      newStatus: "Awaiting Response",
+      source: "batch_processor",
+      reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
+      actor: { userEmail: null, userName: "Batch Processor" },
+      systemOverride: true,
+      extraFields: {
+        disputeEmailSent: true,
+        disputeEmailSentAt: new Date().toISOString(),
+      },
     });
 
     await db.insert(botActivityLogTable).values({

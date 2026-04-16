@@ -64,28 +64,16 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 
     const mapping = statusMap[responseType];
     if (mapping) {
-      await db.update(claimsTable).set({
-        status: mapping.status as any,
-        outcome: mapping.outcome as any,
-      }).where(eq(claimsTable.id, response.claimId));
-
-      broadcastClaimEvent({
-        type: "claim_updated",
+      const { transitionClaimStatusAndOutcome } = await import("../lib/claim-transitions");
+      await transitionClaimStatusAndOutcome({
         claimId: response.claimId,
-        userName: req.user?.displayName ?? "Response Tracker",
-        userEmail: req.user?.email ?? null,
-        timestamp: new Date().toISOString(),
+        newStatus: mapping.status,
+        newOutcome: mapping.outcome,
+        source: "response_tracker",
+        reason: `Response #${response.id} processed as ${responseType}`,
+        actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
       });
     }
-
-    await db.insert(auditLogsTable).values({
-      claimId: response.claimId,
-      action: "response_processed",
-      details: `Response #${response.id} processed as ${responseType}`,
-      metadata: { responseId: response.id, responseType },
-      userEmail: req.user?.email ?? null,
-      userName: req.user?.displayName ?? null,
-    });
   }
 
   res.json(response);
