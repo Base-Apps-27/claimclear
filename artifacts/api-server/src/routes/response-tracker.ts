@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalResponsesTable, portalSubmissionsTable, claimsTable, notesTable, auditLogsTable } from "@workspace/db";
+import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected } from "../lib/outlook";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse } from "../lib/response-matcher";
-import { broadcastClaimEvent } from "../lib/sse";
+import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -19,6 +19,8 @@ router.get("/responses", asyncHandler(async (req, res): Promise<void> => {
 
   const conditions = [];
   if (claimId) conditions.push(eq(portalResponsesTable.claimId, parseInt(String(claimId), 10)));
+  const { invoiceGroupId } = req.query;
+  if (invoiceGroupId) conditions.push(eq(portalResponsesTable.invoiceGroupId, parseInt(String(invoiceGroupId), 10)));
   if (source) conditions.push(eq(portalResponsesTable.source, source as any));
   if (processed === "true") conditions.push(eq(portalResponsesTable.processed, true));
   if (processed === "false") conditions.push(eq(portalResponsesTable.processed, false));
@@ -45,16 +47,17 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { responseType, claimId } = req.body;
+  const { responseType, claimId, invoiceGroupId } = req.body;
 
   const updates: Record<string, unknown> = { processed: true };
   if (responseType) updates.responseType = responseType;
   if (claimId) updates.claimId = claimId;
+  if (invoiceGroupId) updates.invoiceGroupId = invoiceGroupId;
 
   const [response] = await db.update(portalResponsesTable).set(updates).where(eq(portalResponsesTable.id, id)).returning();
   if (!response) { res.status(404).json({ error: "Response not found" }); return; }
 
-  if (response.claimId && responseType) {
+  if (responseType) {
     const statusMap: Record<string, { status: string; outcome: string }> = {
       approval: { status: "Resolved", outcome: "Approved" },
       denial: { status: "Denied", outcome: "Denied" },
@@ -64,15 +67,27 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 
     const mapping = statusMap[responseType];
     if (mapping) {
-      const { transitionClaimStatus } = await import("../lib/claim-transitions");
-      await transitionClaimStatus({
-        claimId: response.claimId,
-        newStatus: "Needs Review",
-        source: "response_tracker",
-        reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
-        actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
-        systemOverride: true,
-      });
+      if (response.invoiceGroupId) {
+        const { transitionGroupStatus } = await import("../lib/group-transitions");
+        await transitionGroupStatus({
+          groupId: response.invoiceGroupId,
+          newStatus: "Needs Review",
+          source: "response_tracker",
+          reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
+          actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
+          systemOverride: true,
+        });
+      } else if (response.claimId) {
+        const { transitionClaimStatus } = await import("../lib/claim-transitions");
+        await transitionClaimStatus({
+          claimId: response.claimId,
+          newStatus: "Needs Review",
+          source: "response_tracker",
+          reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
+          actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
+          systemOverride: true,
+        });
+      }
     }
   }
 
@@ -83,14 +98,45 @@ router.patch("/responses/:id/link", asyncHandler(async (req, res): Promise<void>
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { claimId } = req.body;
-  if (!claimId) { res.status(400).json({ error: "claimId required" }); return; }
+  const { claimId, invoiceGroupId } = req.body;
+  if (!claimId && !invoiceGroupId) {
+    res.status(400).json({ error: "claimId or invoiceGroupId required" });
+    return;
+  }
+
+  if (invoiceGroupId) {
+    const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, invoiceGroupId));
+    if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+    const [response] = await db.update(portalResponsesTable).set({
+      invoiceGroupId,
+      claimId: null,
+      autoLinked: false,
+      matchedVia: "manual",
+      matchConfidence: "high",
+    }).where(eq(portalResponsesTable.id, id)).returning();
+
+    if (!response) { res.status(404).json({ error: "Response not found" }); return; }
+
+    await db.insert(notesTable).values({
+      claimId: null,
+      invoiceGroupId,
+      type: "reply_parsed",
+      content: `Response manually linked: "${response.subject || "No subject"}"`,
+      author: req.user?.displayName ?? "User",
+      emailSubject: response.subject,
+    });
+
+    res.json(response);
+    return;
+  }
 
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
   const [response] = await db.update(portalResponsesTable).set({
     claimId,
+    invoiceGroupId: null,
     autoLinked: false,
     matchedVia: "manual",
     matchConfidence: "high",
@@ -145,21 +191,31 @@ router.post("/responses/check-email", asyncHandler(async (req, res): Promise<voi
 
     const match = await matchEmailToClaim(email);
     if (match) {
-      const responseId = await processEmailResponse(email, match);
+      await processEmailResponse(email, match);
       matched++;
       results.push({
         emailSubject: email.subject,
         status: "matched",
-        claimId: match.claimId,
+        claimId: match.claimId ?? undefined,
       });
 
-      broadcastClaimEvent({
-        type: "response_received",
-        claimId: match.claimId,
-        userName: "Response Tracker",
-        userEmail: null,
-        timestamp: new Date().toISOString(),
-      });
+      if (match.invoiceGroupId) {
+        broadcastGroupEvent({
+          type: "response_received",
+          invoiceGroupId: match.invoiceGroupId,
+          userName: "Response Tracker",
+          userEmail: null,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (match.claimId) {
+        broadcastClaimEvent({
+          type: "response_received",
+          claimId: match.claimId,
+          userName: "Response Tracker",
+          userEmail: null,
+          timestamp: new Date().toISOString(),
+        });
+      }
     } else {
       unmatched++;
     }
@@ -189,6 +245,7 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
 
   const responseId = await processPortalResponse({
     claimId: submission.claimId,
+    invoiceGroupId: submission.invoiceGroupId,
     submissionId: submission.id,
     portalTicketId: submission.portalTicketId || "",
     responseType,
@@ -196,15 +253,25 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
     metadata: req.body.metadata || null,
   });
 
-  broadcastClaimEvent({
-    type: "response_received",
-    claimId: submission.claimId,
-    userName: "Response Tracker",
-    userEmail: null,
-    timestamp: new Date().toISOString(),
-  });
+  if (submission.invoiceGroupId) {
+    broadcastGroupEvent({
+      type: "response_received",
+      invoiceGroupId: submission.invoiceGroupId,
+      userName: "Response Tracker",
+      userEmail: null,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    broadcastClaimEvent({
+      type: "response_received",
+      claimId: submission.claimId,
+      userName: "Response Tracker",
+      userEmail: null,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
-  res.json({ responseId, claimId: submission.claimId });
+  res.json({ responseId, claimId: submission.claimId, invoiceGroupId: submission.invoiceGroupId });
 }));
 
 router.get("/responses/stats", asyncHandler(async (_req, res): Promise<void> => {
