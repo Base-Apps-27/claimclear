@@ -5,11 +5,16 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
 
 export type ListInvoiceGroupsParams = {
   status?: string;
   outcome?: string;
   search?: string;
+  /**
+   * Filter by presence of an error description on the group
+   */
+  errorDetails?: ListInvoiceGroupsErrorDetails;
   limit?: number;
   offset?: number;
 };

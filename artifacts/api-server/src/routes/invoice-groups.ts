@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, and, count, inArray, isNull, isNotNull, ne, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -38,7 +38,7 @@ function emitGroupEvent(invoiceGroupId: number, type: string, req: Request) {
 }
 
 router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
-  const { status, outcome, search, limit: limitStr, offset: offsetStr } = req.query;
+  const { status, outcome, search, errorDetails: errorDetailsFilter, limit: limitStr, offset: offsetStr } = req.query;
   const limitVal = parseInt(String(limitStr || "50"), 10);
   const offsetVal = parseInt(String(offsetStr || "0"), 10);
 
@@ -64,6 +64,16 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       ilike(invoiceGroupsTable.errorTypeName, searchPattern),
     );
     if (searchOr) conditions.push(searchOr);
+  }
+  if (errorDetailsFilter === "empty") {
+    const emptyOr = or(
+      isNull(invoiceGroupsTable.errorDetails),
+      eq(invoiceGroupsTable.errorDetails, ""),
+    );
+    if (emptyOr) conditions.push(emptyOr);
+  } else if (errorDetailsFilter === "present") {
+    conditions.push(isNotNull(invoiceGroupsTable.errorDetails));
+    conditions.push(ne(invoiceGroupsTable.errorDetails, ""));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;

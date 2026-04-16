@@ -55,6 +55,10 @@ export const ListInvoiceGroupsQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   outcome: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
+  errorDetails: zod
+    .enum(["empty", "present"])
+    .optional()
+    .describe("Filter by presence of an error description on the group"),
   limit: zod.coerce.number().default(listInvoiceGroupsQueryLimitDefault),
   offset: zod.coerce.number().default(listInvoiceGroupsQueryOffsetDefault),
 });

@@ -88,6 +88,7 @@ export * from "./listClaimsParams";
 export * from "./listClaimsStatus";
 export * from "./listEvidenceTypes200";
 export * from "./listInvoiceGroupEvidence200";
+export * from "./listInvoiceGroupsErrorDetails";
 export * from "./listInvoiceGroupsParams";
 export * from "./listPortalSubmissionsParams";
 export * from "./listResponses200";

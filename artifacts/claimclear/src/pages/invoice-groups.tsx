@@ -38,14 +38,16 @@ export default function InvoiceGroupsList() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
   const [filterErrorTypeId, setFilterErrorTypeId] = useState("");
+  const [filterErrorDetails, setFilterErrorDetails] = useState<"" | "empty" | "present">("");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const activeFilterCount = [filterStatus, filterOutcome, filterErrorTypeId].filter(Boolean).length;
+  const activeFilterCount = [filterStatus, filterOutcome, filterErrorTypeId, filterErrorDetails].filter(Boolean).length;
 
   const { data, isLoading } = useListInvoiceGroups({
     search: search || undefined,
     status: filterStatus || undefined,
     outcome: filterOutcome || undefined,
+    errorDetails: filterErrorDetails || undefined,
     limit: 50,
   }, {
     query: {
@@ -53,6 +55,7 @@ export default function InvoiceGroupsList() {
         search: search || undefined,
         status: filterStatus || undefined,
         outcome: filterOutcome || undefined,
+        errorDetails: filterErrorDetails || undefined,
         limit: 50,
       })
     }
@@ -121,6 +124,7 @@ export default function InvoiceGroupsList() {
     setFilterStatus("");
     setFilterOutcome("");
     setFilterErrorTypeId("");
+    setFilterErrorDetails("");
   };
 
   return (
@@ -264,6 +268,19 @@ export default function InvoiceGroupsList() {
                       {OUTCOMES.map(o => (
                         <SelectItem key={o} value={o}>{o}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Error Description</Label>
+                  <Select value={filterErrorDetails || "__all__"} onValueChange={v => setFilterErrorDetails(v === "__all__" ? "" : (v as "empty" | "present"))}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All groups" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All groups</SelectItem>
+                      <SelectItem value="empty">No description (no ride has one)</SelectItem>
+                      <SelectItem value="present">Has description</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

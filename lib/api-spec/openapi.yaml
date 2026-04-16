@@ -122,6 +122,12 @@ paths:
           in: query
           schema:
             type: string
+        - name: errorDetails
+          in: query
+          description: Filter by presence of an error description on the group
+          schema:
+            type: string
+            enum: [empty, present]
         - name: limit
           in: query
           schema:

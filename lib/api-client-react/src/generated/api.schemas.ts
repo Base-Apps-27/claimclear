@@ -1106,9 +1106,21 @@ export type ListInvoiceGroupsParams = {
   status?: string;
   outcome?: string;
   search?: string;
+  /**
+   * Filter by presence of an error description on the group
+   */
+  errorDetails?: ListInvoiceGroupsErrorDetails;
   limit?: number;
   offset?: number;
 };
+
+export type ListInvoiceGroupsErrorDetails =
+  (typeof ListInvoiceGroupsErrorDetails)[keyof typeof ListInvoiceGroupsErrorDetails];
+
+export const ListInvoiceGroupsErrorDetails = {
+  empty: "empty",
+  present: "present",
+} as const;
 
 export type UpdateInvoiceGroupStatusBody = {
   status: string;
