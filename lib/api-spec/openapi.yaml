@@ -216,6 +216,42 @@ paths:
         "204":
           description: Deleted
 
+  /claims/valid-transitions/{id}:
+    get:
+      operationId: getClaimValidTransitions
+      tags: [claims]
+      summary: Get valid status and outcome transitions for a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Valid transitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currentStatus:
+                    type: string
+                  currentOutcome:
+                    type: string
+                  validStatuses:
+                    type: array
+                    items:
+                      type: string
+                  validOutcomes:
+                    type: array
+                    items:
+                      type: string
+                  hasActiveSubmission:
+                    type: boolean
+                  canQueueForPortal:
+                    type: boolean
+
   /claims/{id}/status:
     patch:
       operationId: updateClaimStatus

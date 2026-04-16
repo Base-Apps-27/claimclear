@@ -145,11 +145,59 @@ router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   res.sendStatus(204);
 }));
 
+const VALID_MANUAL_STATUS_TRANSITIONS: Record<string, string[]> = {
+  "New": ["Needs Review", "Needs Evidence", "On Hold", "Resolved", "Denied"],
+  "Needs Review": ["New", "Needs Evidence", "On Hold", "Resolved", "Denied"],
+  "Needs Evidence": ["New", "Needs Review", "On Hold", "Resolved", "Denied"],
+  "Portal Queued": [],
+  "Generating Email": [],
+  "Ready to Review": [],
+  "Awaiting Response": ["Needs Review", "Resolved", "Denied"],
+  "On Hold": ["Needs Evidence", "New"],
+  "Resolved": ["Needs Review", "New"],
+  "Denied": ["Needs Review", "New"],
+};
+
+const SYSTEM_CONTROLLED_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
+
+router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const activeSubmissions = await db.select().from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.claimId, id),
+      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+    ));
+
+  const validStatuses = activeSubmissions.length > 0 ? [] : (VALID_MANUAL_STATUS_TRANSITIONS[claim.status] || []);
+
+  const validOutcomes: string[] = [];
+  if (activeSubmissions.length === 0) {
+    const allowed = VALID_OUTCOME_BY_STATUS[claim.status] || [];
+    for (const o of allowed) {
+      if (!validOutcomes.includes(o)) validOutcomes.push(o);
+    }
+  }
+
+  res.json({
+    currentStatus: claim.status,
+    currentOutcome: claim.outcome,
+    validStatuses,
+    validOutcomes,
+    hasActiveSubmission: activeSubmissions.length > 0,
+    canQueueForPortal: !activeSubmissions.length && ["Needs Evidence", "Needs Review", "New"].includes(claim.status),
+  });
+}));
+
 router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { status } = req.body;
+  const { status, _systemOverride } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
@@ -160,9 +208,24 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
       eq(portalSubmissionsTable.claimId, id),
       inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
     ));
-  if (activeSubmissions.length > 0) {
+  if (activeSubmissions.length > 0 && !_systemOverride) {
     res.status(409).json({ error: "Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
     return;
+  }
+
+  if (!_systemOverride) {
+    if (SYSTEM_CONTROLLED_STATUSES.includes(status)) {
+      res.status(400).json({ error: `"${status}" is a system-controlled status and cannot be set manually.` });
+      return;
+    }
+
+    const allowed = VALID_MANUAL_STATUS_TRANSITIONS[old.status] || [];
+    if (!allowed.includes(status)) {
+      res.status(400).json({
+        error: `Cannot transition from "${old.status}" to "${status}". Valid transitions: ${allowed.length > 0 ? allowed.join(", ") : "none (status is system-controlled)"}`,
+      });
+      return;
+    }
   }
 
   const [claim] = await db.update(claimsTable).set({ status }).where(eq(claimsTable.id, id)).returning();
@@ -177,21 +240,47 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
   res.json(claim);
 }));
 
+const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
+  "New": ["Pending"],
+  "Needs Review": ["Pending"],
+  "Needs Evidence": ["Pending"],
+  "Portal Queued": [],
+  "Generating Email": [],
+  "Ready to Review": [],
+  "Awaiting Response": ["Approved", "Partially Approved", "Denied"],
+  "On Hold": [],
+  "Resolved": ["Approved", "Partially Approved", "Denied"],
+  "Denied": ["Denied", "Approved", "Partially Approved"],
+};
+
 router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { outcome, approvedAmount, invoiceNumbers } = req.body;
+  const { outcome, approvedAmount, invoiceNumbers, _systemOverride } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
+
+  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
 
   const activeSubmissions = await db.select().from(portalSubmissionsTable)
     .where(and(
       eq(portalSubmissionsTable.claimId, id),
       inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
     ));
-  if (activeSubmissions.length > 0) {
+  if (activeSubmissions.length > 0 && !_systemOverride) {
     res.status(409).json({ error: "Cannot change outcome while a portal submission is in progress. Wait for the submission to complete or cancel it first." });
     return;
+  }
+
+  if (!_systemOverride) {
+    const allowed = VALID_OUTCOME_BY_STATUS[old.status] || [];
+    if (!allowed.includes(outcome)) {
+      res.status(400).json({
+        error: `Cannot set outcome to "${outcome}" when claim is in "${old.status}" status. ${allowed.length > 0 ? `Valid outcomes: ${allowed.join(", ")}` : "Outcome changes are not allowed in this status."}`,
+      });
+      return;
+    }
   }
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = { outcome };
@@ -200,9 +289,6 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
     updateData.approvedAmount = cleaned === "" ? null : String(cleaned);
   }
   if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
-
-  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!old) { res.status(404).json({ error: "Claim not found" }); return; }
 
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, id)).returning();
   await createAuditLog(id, "outcome_changed", `Outcome changed to ${outcome}`, req, { from: old.outcome, to: outcome, approvedAmount });

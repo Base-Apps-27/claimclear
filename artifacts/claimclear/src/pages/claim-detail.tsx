@@ -15,6 +15,7 @@ import {
   useDeleteClaimEvidence,
   useListErrorTypes, getListErrorTypesQueryKey, useCreateErrorType,
   useListResponses, getListResponsesQueryKey, useProcessResponse,
+  useGetClaimValidTransitions, getGetClaimValidTransitionsQueryKey,
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
@@ -210,6 +211,10 @@ export default function ClaimDetail() {
     (s: PortalSubmissionResponse) => s.status === "pending" || s.status === "in_progress"
   );
 
+  const { data: validTransitions } = useGetClaimValidTransitions(claimId, {
+    query: { queryKey: getGetClaimValidTransitionsQueryKey(claimId), enabled: !!claimId },
+  });
+
   const { data: responsesData } = useListResponses({ claimId }, {
     query: { queryKey: getListResponsesQueryKey({ claimId }), enabled: !!claimId }
   });
@@ -260,6 +265,7 @@ export default function ClaimDetail() {
     queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
     queryClient.invalidateQueries({ queryKey: getListClaimNotesQueryKey(claimId) });
     queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+    queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
   };
 
   const handleAssignErrorType = async (errorType: ErrorTypeResponse) => {
@@ -315,9 +321,6 @@ export default function ClaimDetail() {
   const handleOutcomeChange = async (outcome: string) => {
     const approvedAmount = outcome === "Approved" ? claim.claimAmount || "0" : outcome === "Partially Approved" ? "" : undefined;
     await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount } });
-    if (outcome === "Approved" || outcome === "Denied") {
-      await updateStatus.mutateAsync({ id: claimId, data: { status: outcome === "Approved" ? "Resolved" : "Denied" } });
-    }
     invalidate();
   };
 
@@ -608,29 +611,40 @@ export default function ClaimDetail() {
             <CardContent>
               {hasActivePortalSubmission && (
                 <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
-                  ⏳ Portal submission in progress — status and outcome changes are locked until it completes.
+                  Portal submission in progress — status and outcome changes are locked until it completes or is cancelled.
                 </div>
               )}
               <div className="flex flex-wrap gap-2">
-                <Select onValueChange={handleStatusChange} disabled={hasActivePortalSubmission}>
-                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
-                  <SelectContent>
-                    {["New", "Needs Review", "Needs Evidence", "Generating Email", "Ready to Review", "Awaiting Response", "Resolved", "Denied"].map(s => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {(validTransitions?.validStatuses?.length ?? 0) > 0 ? (
+                  <Select onValueChange={handleStatusChange}>
+                    <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
+                    <SelectContent>
+                      {(validTransitions?.validStatuses || []).map((s: string) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <WrapTooltip content={hasActivePortalSubmission ? "Status changes are locked while a portal submission is active." : "No status transitions available from the current state."}>
+                    <Select disabled>
+                      <SelectTrigger className="w-[180px] cursor-not-allowed"><SelectValue placeholder="Change Status" /></SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </WrapTooltip>
+                )}
 
-                <div className="flex gap-2">
-                  {["Pending", "Approved", "Partially Approved", "Denied", "Non-Issue"].map(o => (
-                    <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)} disabled={hasActivePortalSubmission}>{o}</Button>
-                  ))}
-                </div>
+                {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (
+                  <div className="flex gap-2">
+                    {(validTransitions?.validOutcomes || []).map((o: string) => (
+                      <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)}>{o}</Button>
+                    ))}
+                  </div>
+                )}
 
                 <Separator orientation="vertical" className="h-8 mx-2" />
 
-                <WrapTooltip content="Add this claim to the automated portal submission queue. The bot will fill out the MAS dispute form with claim details and evidence.">
-                  <Button variant="outline" size="sm" onClick={handleQueueForPortal} disabled={hasActivePortalSubmission}>
+                <WrapTooltip content={validTransitions?.canQueueForPortal ? "Add this claim to the automated portal submission queue. The bot will fill out the MAS dispute form with claim details and evidence." : "Claims can only be queued for portal when in New, Needs Review, or Needs Evidence status and have no active submissions."}>
+                  <Button variant="outline" size="sm" onClick={handleQueueForPortal} disabled={!validTransitions?.canQueueForPortal}>
                     <Send className="h-4 w-4 mr-1" />Queue for Portal
                   </Button>
                 </WrapTooltip>

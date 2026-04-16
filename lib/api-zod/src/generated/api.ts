@@ -289,6 +289,22 @@ export const DeleteClaimParams = zod.object({
 });
 
 /**
+ * @summary Get valid status and outcome transitions for a claim
+ */
+export const GetClaimValidTransitionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClaimValidTransitionsResponse = zod.object({
+  currentStatus: zod.string().optional(),
+  currentOutcome: zod.string().optional(),
+  validStatuses: zod.array(zod.string()).optional(),
+  validOutcomes: zod.array(zod.string()).optional(),
+  hasActiveSubmission: zod.boolean().optional(),
+  canQueueForPortal: zod.boolean().optional(),
+});
+
+/**
  * @summary Update claim status
  */
 export const UpdateClaimStatusParams = zod.object({

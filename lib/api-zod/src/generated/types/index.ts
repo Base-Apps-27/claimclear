@@ -60,6 +60,7 @@ export * from "./expiringClaim";
 export * from "./failSubmissionBody";
 export * from "./generateEmailBody";
 export * from "./getAuthSession200";
+export * from "./getClaimValidTransitions200";
 export * from "./getCurrentAuthUser200";
 export * from "./getCurrentAuthUserResponse";
 export * from "./healthStatus";

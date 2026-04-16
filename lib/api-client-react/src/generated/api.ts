@@ -50,6 +50,7 @@ import type {
   FailSubmissionBody,
   GenerateEmailBody,
   GetAuthSession200,
+  GetClaimValidTransitions200,
   GetCurrentAuthUser200,
   HealthStatus,
   ImportClaimsBody,
@@ -763,6 +764,98 @@ export const useDeleteClaim = <
 > => {
   return useMutation(getDeleteClaimMutationOptions(options));
 };
+
+/**
+ * @summary Get valid status and outcome transitions for a claim
+ */
+export const getGetClaimValidTransitionsUrl = (id: number) => {
+  return `/api/claims/valid-transitions/${id}`;
+};
+
+export const getClaimValidTransitions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GetClaimValidTransitions200> => {
+  return customFetch<GetClaimValidTransitions200>(
+    getGetClaimValidTransitionsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetClaimValidTransitionsQueryKey = (id: number) => {
+  return [`/api/claims/valid-transitions/${id}`] as const;
+};
+
+export const getGetClaimValidTransitionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClaimValidTransitions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClaimValidTransitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetClaimValidTransitionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClaimValidTransitions>>
+  > = ({ signal }) =>
+    getClaimValidTransitions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClaimValidTransitions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClaimValidTransitionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClaimValidTransitions>>
+>;
+export type GetClaimValidTransitionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get valid status and outcome transitions for a claim
+ */
+
+export function useGetClaimValidTransitions<
+  TData = Awaited<ReturnType<typeof getClaimValidTransitions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClaimValidTransitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClaimValidTransitionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Update claim status

@@ -959,6 +959,15 @@ export const ListClaimsOutcome = {
   Partially_Approved: "Partially Approved",
 } as const;
 
+export type GetClaimValidTransitions200 = {
+  currentStatus?: string;
+  currentOutcome?: string;
+  validStatuses?: string[];
+  validOutcomes?: string[];
+  hasActiveSubmission?: boolean;
+  canQueueForPortal?: boolean;
+};
+
 export type ListPortalSubmissionsParams = {
   status?: string;
 };

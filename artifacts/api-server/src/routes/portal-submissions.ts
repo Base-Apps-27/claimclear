@@ -419,12 +419,30 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const retryableStatuses = ["failed", "dry_run"];
+  if (!retryableStatuses.includes(existing.status)) {
+    res.status(400).json({ error: `Cannot retry a submission in "${existing.status}" status. Only failed or dry run submissions can be retried.` });
+    return;
+  }
+
   const [sub] = await db.update(portalSubmissionsTable).set({
     status: "pending",
     errorMessage: null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
-  if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
+  await db.update(claimsTable).set({ status: "Portal Queued" }).where(eq(claimsTable.id, existing.claimId));
+
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    action: "portal_submission_retried",
+    details: `Portal submission retried from "${existing.status}" status`,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
   res.json(sub);
 }));
 
@@ -432,11 +450,38 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const cancellableStatuses = ["draft", "pending", "failed", "dry_run"];
+  if (!cancellableStatuses.includes(existing.status)) {
+    res.status(400).json({ error: `Cannot cancel a submission in "${existing.status}" status. ${existing.status === "in_progress" ? "Wait for it to finish processing." : "Already submitted."}` });
+    return;
+  }
+
   const [sub] = await db.update(portalSubmissionsTable).set({
     status: "cancelled",
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
-  if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
+  if (existing.status === "pending") {
+    const otherActive = await db.select().from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.claimId, existing.claimId),
+        inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
+      ));
+    if (otherActive.length === 0) {
+      await db.update(claimsTable).set({ status: "Needs Evidence" }).where(eq(claimsTable.id, existing.claimId));
+    }
+  }
+
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    action: "portal_submission_cancelled",
+    details: `Portal submission cancelled from "${existing.status}" status`,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
   res.json(sub);
 }));
 
