@@ -3,18 +3,9 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 
 const router: IRouter = Router();
-
-function parseInvoiceNumber(refNumber: string | undefined): string | null {
-  if (!refNumber) return null;
-  const trimmed = refNumber.trim();
-  const parts = trimmed.split(/\s+/);
-  if (parts.length >= 1 && /^\d+$/.test(parts[0])) {
-    return parts[0];
-  }
-  return null;
-}
 
 router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   const { rows, duplicateAction } = req.body;

@@ -2133,6 +2133,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResponseStats'
 
+  /admin/backfill-invoice-groups:
+    post:
+      operationId: backfillInvoiceGroups
+      tags: [admin]
+      summary: One-time backfill of invoice_group_id for claims imported before group migration
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dryRun:
+                  type: boolean
+                  description: If true, report what would change without writing to the database
+      responses:
+        '200':
+          description: Backfill result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackfillInvoiceGroupsResponse'
+
 components:
   schemas:
     HealthStatus:
@@ -3632,6 +3655,36 @@ components:
                 type: integer
               responseType:
                 type: string
+
+    BackfillInvoiceGroupsResponse:
+      type: object
+      required: [dryRun, orphanClaimsFound, claimsLinked, groupsCreated, groupsUpdated, unparseableCount, unparseable]
+      properties:
+        dryRun:
+          type: boolean
+        orphanClaimsFound:
+          type: integer
+        claimsLinked:
+          type: integer
+        groupsCreated:
+          type: integer
+        groupsUpdated:
+          type: integer
+        unparseableCount:
+          type: integer
+        unparseable:
+          type: array
+          items:
+            type: object
+            required: [id, confNumber]
+            properties:
+              id:
+                type: integer
+              confNumber:
+                type: string
+              refNumber:
+                type: string
+                nullable: true
 
     ResponseStats:
       type: object

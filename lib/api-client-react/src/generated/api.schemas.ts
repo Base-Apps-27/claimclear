@@ -1054,6 +1054,22 @@ export interface EmailCheckResult {
   results: EmailCheckResultResultsItem[];
 }
 
+export type BackfillInvoiceGroupsResponseUnparseableItem = {
+  id: number;
+  confNumber: string;
+  refNumber?: string | null;
+};
+
+export interface BackfillInvoiceGroupsResponse {
+  dryRun: boolean;
+  orphanClaimsFound: number;
+  claimsLinked: number;
+  groupsCreated: number;
+  groupsUpdated: number;
+  unparseableCount: number;
+  unparseable: BackfillInvoiceGroupsResponseUnparseableItem[];
+}
+
 export type ResponseStatsBySource = {
   email?: number;
   portal?: number;
@@ -1283,4 +1299,9 @@ export type RecordPortalResponseBody = {
 export type RecordPortalResponse200 = {
   responseId?: number;
   claimId?: number;
+};
+
+export type BackfillInvoiceGroupsBody = {
+  /** If true, report what would change without writing to the database */
+  dryRun?: boolean;
 };

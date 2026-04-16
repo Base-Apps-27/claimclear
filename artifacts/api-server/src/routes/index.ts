@@ -27,6 +27,7 @@ import appSettingsRouter from "./app-settings";
 import batchJobsRouter from "./batch-jobs";
 import responseTrackerRouter from "./response-tracker";
 import invoiceGroupsRouter from "./invoice-groups";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,7 @@ router.use(appSettingsRouter);
 router.use(batchJobsRouter);
 router.use(responseTrackerRouter);
 router.use(invoiceGroupsRouter);
+router.use(adminRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

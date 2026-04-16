@@ -25,6 +25,8 @@ import type {
   AnthropicMessage,
   AppSettingsResponse,
   AuditLogResponse,
+  BackfillInvoiceGroupsBody,
+  BackfillInvoiceGroupsResponse,
   BotActivityLogResponse,
   BotInstanceResponse,
   BulkAssignErrorTypeBody,
@@ -8330,3 +8332,93 @@ export function useGetResponseStats<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary One-time backfill of invoice_group_id for claims imported before group migration
+ */
+export const getBackfillInvoiceGroupsUrl = () => {
+  return `/api/admin/backfill-invoice-groups`;
+};
+
+export const backfillInvoiceGroups = async (
+  backfillInvoiceGroupsBody?: BackfillInvoiceGroupsBody,
+  options?: RequestInit,
+): Promise<BackfillInvoiceGroupsResponse> => {
+  return customFetch<BackfillInvoiceGroupsResponse>(
+    getBackfillInvoiceGroupsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(backfillInvoiceGroupsBody),
+    },
+  );
+};
+
+export const getBackfillInvoiceGroupsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof backfillInvoiceGroups>>,
+    TError,
+    { data: BodyType<BackfillInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof backfillInvoiceGroups>>,
+  TError,
+  { data: BodyType<BackfillInvoiceGroupsBody> },
+  TContext
+> => {
+  const mutationKey = ["backfillInvoiceGroups"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof backfillInvoiceGroups>>,
+    { data: BodyType<BackfillInvoiceGroupsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return backfillInvoiceGroups(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BackfillInvoiceGroupsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof backfillInvoiceGroups>>
+>;
+export type BackfillInvoiceGroupsMutationBody =
+  BodyType<BackfillInvoiceGroupsBody>;
+export type BackfillInvoiceGroupsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary One-time backfill of invoice_group_id for claims imported before group migration
+ */
+export const useBackfillInvoiceGroups = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof backfillInvoiceGroups>>,
+    TError,
+    { data: BodyType<BackfillInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof backfillInvoiceGroups>>,
+  TError,
+  { data: BodyType<BackfillInvoiceGroupsBody> },
+  TContext
+> => {
+  return useMutation(getBackfillInvoiceGroupsMutationOptions(options));
+};

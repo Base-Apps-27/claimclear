@@ -3468,3 +3468,31 @@ export const GetResponseStatsResponse = zod.object({
   }),
   outlookConnected: zod.boolean(),
 });
+
+/**
+ * @summary One-time backfill of invoice_group_id for claims imported before group migration
+ */
+export const BackfillInvoiceGroupsBody = zod.object({
+  dryRun: zod
+    .boolean()
+    .optional()
+    .describe(
+      "If true, report what would change without writing to the database",
+    ),
+});
+
+export const BackfillInvoiceGroupsResponse = zod.object({
+  dryRun: zod.boolean(),
+  orphanClaimsFound: zod.number(),
+  claimsLinked: zod.number(),
+  groupsCreated: zod.number(),
+  groupsUpdated: zod.number(),
+  unparseableCount: zod.number(),
+  unparseable: zod.array(
+    zod.object({
+      id: zod.number(),
+      confNumber: zod.string(),
+      refNumber: zod.string().nullish(),
+    }),
+  ),
+});
