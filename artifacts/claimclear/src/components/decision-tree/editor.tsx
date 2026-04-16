@@ -142,7 +142,7 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
           <Badge variant="outline" className="gap-1 text-xs"><Layers className="h-3 w-3" />{stats.depth} levels</Badge>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" onClick={centerTree} className="gap-1" title="Center tree">
+          <Button variant="outline" size="sm" onClick={() => centerTree()} className="gap-1" title="Center tree">
             <Maximize className="h-3 w-3" />Center
           </Button>
           {onTest && (

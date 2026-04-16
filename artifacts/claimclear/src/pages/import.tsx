@@ -342,7 +342,7 @@ export default function Import() {
       let mappings: { originalText: string; matched: boolean; errorTypeId: number | null; errorTypeName: string | null }[] = [];
       if (singleErrorDetails.length > 0) {
         const res = await lookupMappings.mutateAsync({ data: { errorDetails: singleErrorDetails } });
-        mappings = res.mappings;
+        mappings = res.mappings as typeof mappings;
       }
 
       const countMap = new Map<string, number>();

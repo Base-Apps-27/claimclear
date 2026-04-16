@@ -34,7 +34,7 @@ router.get("/responses", asyncHandler(async (req, res): Promise<void> => {
 }));
 
 router.get("/responses/:id", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const [response] = await db.select().from(portalResponsesTable).where(eq(portalResponsesTable.id, id));
@@ -44,7 +44,7 @@ router.get("/responses/:id", asyncHandler(async (req, res): Promise<void> => {
 }));
 
 router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const { responseType, claimId, invoiceGroupId } = req.body;
@@ -95,7 +95,7 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 }));
 
 router.patch("/responses/:id/link", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const { claimId, invoiceGroupId } = req.body;

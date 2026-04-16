@@ -223,6 +223,8 @@ export class ObjectStorageService {
 
     if (ext === "heic" || ext === "heif") {
       try {
+        // sharp is an optional native dependency; if not installed we fall back to keeping the original ext
+        // @ts-expect-error - optional dependency, type declarations may not be present
         const sharp = (await import("sharp")).default;
         const [buffer] = await file.download();
         const converted = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
@@ -327,6 +329,6 @@ async function signObjectURL({
     );
   }
 
-  const { signed_url: signedURL } = await response.json();
+  const { signed_url: signedURL } = (await response.json()) as { signed_url: string };
   return signedURL;
 }

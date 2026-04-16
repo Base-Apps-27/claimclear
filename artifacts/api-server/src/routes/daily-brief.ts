@@ -24,6 +24,7 @@ function generateBriefHtml(
   openClaims: number,
   expiring: ExpiringClaim[],
   expired: ExpiringClaim[],
+  claimAmountAtRisk: number,
   totalAtRisk: number,
   submittedCount: number,
   failedCount: number,
@@ -133,7 +134,7 @@ router.post("/", asyncHandler(async (_req, res): Promise<void> => {
   const submitted = subCounts["submitted"] || 0;
   const failed = subCounts["failed"] || 0;
 
-  const html = generateBriefHtml(openCount, expiring, expired, totalAtRisk, submitted, failed);
+  const html = generateBriefHtml(openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed);
 
   let emailSent = false;
   let emailMethod = "none";

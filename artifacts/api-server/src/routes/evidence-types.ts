@@ -38,7 +38,7 @@ router.post("/evidence-types", async (req: Request, res: Response) => {
 });
 
 router.put("/evidence-types/:id", async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid evidence type ID" });
     return;
@@ -69,7 +69,7 @@ router.put("/evidence-types/:id", async (req: Request, res: Response) => {
 });
 
 router.delete("/evidence-types/:id", async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid evidence type ID" });
     return;

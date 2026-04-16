@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useListClaims, useListErrorTypes, useBulkAssignErrorType, getListClaimsQueryKey } from "@workspace/api-client-react";
-import type { ClaimResponse, ErrorTypeResponse } from "@workspace/api-client-react";
+import type { ClaimResponse, ErrorTypeResponse, ListClaimsStatus, ListClaimsOutcome } from "@workspace/api-client-react";
 import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,20 +43,14 @@ export default function ClaimsList() {
 
   const activeFilterCount = [filterStatus, filterOutcome, filterErrorTypeId].filter(Boolean).length;
 
-  const { data, isLoading } = useListClaims({
+  const listParams = {
     search: search || undefined,
-    status: filterStatus || undefined,
-    outcome: filterOutcome || undefined,
+    status: (filterStatus || undefined) as ListClaimsStatus | undefined,
+    outcome: (filterOutcome || undefined) as ListClaimsOutcome | undefined,
     limit: 50,
-  }, {
-    query: {
-      queryKey: getListClaimsQueryKey({
-        search: search || undefined,
-        status: filterStatus || undefined,
-        outcome: filterOutcome || undefined,
-        limit: 50,
-      })
-    }
+  };
+  const { data, isLoading } = useListClaims(listParams, {
+    query: { queryKey: getListClaimsQueryKey(listParams) },
   });
 
   const { data: errorTypesData } = useListErrorTypes();

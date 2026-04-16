@@ -5,7 +5,7 @@ import { eq, and } from "drizzle-orm";
 const router = Router();
 
 router.get("/claims/:claimId/evidence", async (req: Request, res: Response) => {
-  const claimId = parseInt(req.params.claimId, 10);
+  const claimId = parseInt(String(req.params.claimId), 10);
   if (isNaN(claimId)) {
     res.status(400).json({ error: "Invalid claim ID" });
     return;
@@ -22,7 +22,7 @@ router.get("/claims/:claimId/evidence", async (req: Request, res: Response) => {
 });
 
 router.post("/claims/:claimId/evidence", async (req: Request, res: Response) => {
-  const claimId = parseInt(req.params.claimId, 10);
+  const claimId = parseInt(String(req.params.claimId), 10);
   if (isNaN(claimId)) {
     res.status(400).json({ error: "Invalid claim ID" });
     return;
@@ -51,8 +51,8 @@ router.post("/claims/:claimId/evidence", async (req: Request, res: Response) => 
 });
 
 router.delete("/claims/:claimId/evidence/:evidenceId", async (req: Request, res: Response) => {
-  const claimId = parseInt(req.params.claimId, 10);
-  const evidenceId = parseInt(req.params.evidenceId, 10);
+  const claimId = parseInt(String(req.params.claimId), 10);
+  const evidenceId = parseInt(String(req.params.evidenceId), 10);
   if (isNaN(claimId) || isNaN(evidenceId)) {
     res.status(400).json({ error: "Invalid claim or evidence ID" });
     return;

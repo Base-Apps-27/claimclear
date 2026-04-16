@@ -28,7 +28,7 @@ export default function InvoiceGroupDetail() {
   const queryClient = useQueryClient();
 
   const { data: group, isLoading, error } = useGetInvoiceGroup(id, {
-    query: { enabled: id > 0 },
+    query: { enabled: id > 0, queryKey: getGetInvoiceGroupQueryKey(id) },
   });
 
   const updateStatus = useUpdateInvoiceGroupStatus();

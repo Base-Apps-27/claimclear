@@ -16,8 +16,8 @@ export interface SessionData {
   access_token: string;
   refresh_token?: string;
   expires_at?: number;
-  createdAt: number;
-  lastActivity: number;
+  createdAt?: number;
+  lastActivity?: number;
 }
 
 let oidcConfig: client.Configuration | null = null;

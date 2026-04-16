@@ -33,7 +33,7 @@ router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): 
 }));
 
 router.get("/portal-submissions/batch-status/:batchId", asyncHandler(async (req, res): Promise<void> => {
-  const job = getBatchJob(req.params.batchId);
+  const job = getBatchJob(String(req.params.batchId));
   if (!job) {
     res.status(404).json({ error: "Batch job not found" });
     return;

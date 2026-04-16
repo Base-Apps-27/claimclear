@@ -146,7 +146,7 @@ export function WorkflowPlayer({
     const result = await generatePreview.mutateAsync({
       data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
     });
-    const draft = result as Record<string, unknown>;
+    const draft = result as unknown as Record<string, unknown>;
     const attachUrls = Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : [];
     setDraftSubmission({
       id: draft.id as number,

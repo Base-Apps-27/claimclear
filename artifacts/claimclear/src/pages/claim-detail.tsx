@@ -711,7 +711,7 @@ export default function ClaimDetail() {
                     <div className="space-y-3">
                       <Label className="text-xs text-muted-foreground">Collected Evidence ({evidenceItems.length} items)</Label>
                       <div className="grid gap-3">
-                        {evidenceItems.map((ev: Record<string, unknown>) => (
+                        {evidenceItems.map((ev) => (
                           <div key={ev.id as number} className="border rounded-lg p-3 space-y-2 bg-muted/30">
                             <div className="flex items-start justify-between">
                               <div>

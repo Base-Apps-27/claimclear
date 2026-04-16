@@ -110,19 +110,19 @@ export default function Summary() {
         </Card>
       </div>
 
-      {summary.expiringClaims.length > 0 && (
+      {summary.expiringGroups.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
-              30-Day Expiration Risk ({summary.expiringClaims.length})
-              <InfoTooltip content="Claims approaching their dispute filing deadline. If not acted on within the window, the right to dispute may be lost permanently." />
+              30-Day Expiration Risk ({summary.expiringGroups.length})
+              <InfoTooltip content="Invoice groups approaching their dispute filing deadline. If not acted on within the window, the right to dispute may be lost permanently." />
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-2">
-              Total exposure at risk: {formatCurrency(String(summary.expiringClaims.reduce((s, c) => s + (parseFloat(c.claimAmount || "0") || 0), 0) * 1.7))}
-              <span className="text-xs ml-1">(claims + ~70% vendor prepay, approx.)</span>
+              Total exposure at risk: {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * 1.7))}
+              <span className="text-xs ml-1">(invoice totals + ~70% vendor prepay, approx.)</span>
             </p>
           </CardContent>
         </Card>

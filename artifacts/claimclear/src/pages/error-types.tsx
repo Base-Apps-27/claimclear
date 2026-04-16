@@ -366,7 +366,7 @@ export default function ErrorTypes() {
       name: et.name || "",
       category: et.category || "",
       description: et.description || "",
-      disputeInstructions: (et as Record<string, unknown>).disputeInstructions as string || "",
+      disputeInstructions: et.disputeInstructions || "",
       decisionTree: convertedTree,
     });
     setEditingId(et.id);
@@ -443,7 +443,7 @@ export default function ErrorTypes() {
                   ) : (
                     <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />No Workflow</Badge>
                   )}
-                  {(et as Record<string, unknown>).disputeInstructions ? (
+                  {et.disputeInstructions ? (
                     <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />Custom Dispute Instructions</Badge>
                   ) : defaultDisputeInstructions ? (
                     <Badge variant="outline" className="text-muted-foreground"><FileText className="h-3 w-3 mr-1" />Using Default Instructions</Badge>
