@@ -46,14 +46,14 @@ export default function Dashboard() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1.5">
               Needs Evidence
-              <InfoTooltip content="Number of claims that require evidence gathering before a dispute can be filed. These need GPS logs, driver statements, or other supporting documents." />
+              <InfoTooltip content="Number of invoice groups that require evidence gathering before a dispute can be filed. These need GPS logs, driver statements, or other supporting documents." />
             </CardTitle>
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-amber-600">{pipeline.needsEvidence ?? 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Claims requiring manual review
+              Invoice groups requiring manual review
             </p>
           </CardContent>
         </Card>
@@ -62,7 +62,7 @@ export default function Dashboard() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1.5">
               Awaiting Response
-              <InfoTooltip content="Claims that have been submitted to the payor portal and are waiting for the payor to respond. Check back periodically for updates." />
+              <InfoTooltip content="Invoice groups that have been submitted to the payor portal and are waiting for the payor to respond. Check back periodically for updates." />
             </CardTitle>
             <Clock className="h-4 w-4 text-violet-500" />
           </CardHeader>
@@ -101,7 +101,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{formatCurrency(amounts.totalApproved)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {formatCurrency(amounts.totalClaimed)} claimed across {stats.total ?? 0} claims
+              {formatCurrency(amounts.totalClaimed)} claimed across {stats.total ?? 0} invoice groups
             </p>
           </CardContent>
         </Card>
@@ -169,29 +169,29 @@ export default function Dashboard() {
             <CardTitle className="text-red-700 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
               Expiring Soon
-              <InfoTooltip content="Claims whose dispute filing window closes within 14 days. These must be acted on urgently or the opportunity to dispute will be lost." iconClassName="text-red-400" />
+              <InfoTooltip content="Invoice groups whose dispute filing window closes within 10 days. These must be acted on urgently or the opportunity to dispute will be lost." iconClassName="text-red-400" />
             </CardTitle>
-            <CardDescription>Dispute window closing in {'<'} 14 days</CardDescription>
+            <CardDescription>Dispute window closing in {'<'} 10 days</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {summary.expiringClaims.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No claims expiring soon.</p>
+              {summary.expiringGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No invoice groups expiring soon.</p>
               ) : (
-                summary.expiringClaims.map(claim => (
-                  <div key={claim.id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
+                summary.expiringGroups.map(group => (
+                  <div key={group.id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
                     <div>
                       <div className="font-medium flex items-center gap-2">
-                        <Link href={`/claims/${claim.id}`} className="hover:underline hover:text-primary">
-                          {claim.confNumber}
+                        <Link href={`/invoice-groups/${group.id}`} className="hover:underline hover:text-primary">
+                          {group.invoiceNumber}
                         </Link>
-                        <span className="text-xs text-red-600 font-semibold">{claim.daysLeft} days left</span>
+                        <span className="text-xs text-red-600 font-semibold">{group.daysLeft} days left</span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        {formatDate(claim.date)} • {formatCurrency(claim.claimAmount)}
+                        {formatDate(group.earliestDate)} • {group.rideCount} ride{group.rideCount === 1 ? '' : 's'} • {formatCurrency(group.totalAmount)}
                       </div>
                     </div>
-                    <StatusBadge status={claim.status} className="text-[10px] px-1.5 py-0" />
+                    <StatusBadge status={group.status} className="text-[10px] px-1.5 py-0" />
                   </div>
                 ))
               )}
@@ -199,18 +199,18 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Claims */}
+        {/* Recent Invoice Groups */}
         <Card className="col-span-1 lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-1.5">
                 Recent Activity
-                <InfoTooltip content="The most recently created or updated claims in the system. Use this to quickly see what's new and jump to any claim." />
+                <InfoTooltip content="The most recently updated invoice groups in the system. Use this to quickly see what's changed and jump to any group." />
               </CardTitle>
-              <CardDescription>Latest claims added to the system</CardDescription>
+              <CardDescription>Recently updated invoice groups</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/claims">View All <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link href="/invoice-groups">View All <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -218,31 +218,33 @@ export default function Dashboard() {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b">
                   <tr>
-                    <th className="px-4 py-3 font-medium rounded-tl-md">Conf #</th>
-                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium rounded-tl-md">Invoice #</th>
+                    <th className="px-4 py-3 font-medium">Updated</th>
                     <th className="px-4 py-3 font-medium">Error Type</th>
+                    <th className="px-4 py-3 font-medium">Rides</th>
                     <th className="px-4 py-3 font-medium">Amount</th>
                     <th className="px-4 py-3 font-medium rounded-tr-md">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.recentClaims.map(claim => (
-                    <tr key={claim.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                  {summary.recentGroups.map(group => (
+                    <tr key={group.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3 font-medium text-primary">
-                        <Link href={`/claims/${claim.id}`}>{claim.confNumber}</Link>
+                        <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(claim.date)}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate">{claim.errorTypeName || 'Unknown'}</td>
-                      <td className="px-4 py-3">{formatCurrency(claim.claimAmount)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{formatDate(group.updatedAt)}</td>
+                      <td className="px-4 py-3 max-w-[200px] truncate">{group.errorTypeName || 'Unknown'}</td>
+                      <td className="px-4 py-3">{group.rideCount}</td>
+                      <td className="px-4 py-3">{formatCurrency(group.totalAmount)}</td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={claim.status} />
+                        <StatusBadge status={group.status} />
                       </td>
                     </tr>
                   ))}
-                  {summary.recentClaims.length === 0 && (
+                  {summary.recentGroups.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                        No recent claims found.
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        No recent invoice groups found.
                       </td>
                     </tr>
                   )}

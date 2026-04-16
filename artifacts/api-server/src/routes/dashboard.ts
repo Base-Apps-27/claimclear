@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, gt, and, or, count, sum } from "drizzle-orm";
+import { eq, sql, gt, and, or, count, sum, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, botInstancesTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, botInstancesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
 
@@ -12,9 +12,9 @@ const VENDOR_PREPAY_RATE = 0.70;
 
 router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
   const statusCountsRaw = await db
-    .select({ status: claimsTable.status, count: count() })
-    .from(claimsTable)
-    .groupBy(claimsTable.status);
+    .select({ status: invoiceGroupsTable.status, count: count() })
+    .from(invoiceGroupsTable)
+    .groupBy(invoiceGroupsTable.status);
 
   const statusCounts = Object.fromEntries(statusCountsRaw.map(r => [r.status, r.count]));
 
@@ -29,38 +29,49 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   const [amountsResult] = await db
     .select({
-      totalClaimed: sum(claimsTable.claimAmount),
-      totalApproved: sum(claimsTable.approvedAmount),
+      totalClaimed: sum(invoiceGroupsTable.totalAmount),
+      totalApproved: sum(invoiceGroupsTable.approvedAmount),
     })
-    .from(claimsTable);
+    .from(invoiceGroupsTable);
 
   const totalClaimed = parseFloat(amountsResult.totalClaimed || "0");
   const totalApproved = parseFloat(amountsResult.totalApproved || "0");
   const totalExposure = totalClaimed * (1 + VENDOR_PREPAY_RATE);
 
-  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
+  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
-  const openClaimsWithDates = await db
+  const openGroupsWithDates = await db
     .select({
-      id: claimsTable.id,
-      confNumber: claimsTable.confNumber,
-      date: claimsTable.date,
-      claimAmount: claimsTable.claimAmount,
-      status: claimsTable.status,
+      id: invoiceGroupsTable.id,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
+      totalAmount: invoiceGroupsTable.totalAmount,
+      status: invoiceGroupsTable.status,
+      rideCount: invoiceGroupsTable.rideCount,
+      earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
     })
-    .from(claimsTable)
-    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
+    .from(invoiceGroupsTable)
+    .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
+    .groupBy(invoiceGroupsTable.id);
 
-  const expiringClaims = openClaimsWithDates
-    .map(c => {
-      const dl = daysRemaining(c.date);
-      return { id: c.id, confNumber: c.confNumber, date: c.date!, claimAmount: c.claimAmount, status: c.status, daysLeft: dl! };
+  const expiringGroups = openGroupsWithDates
+    .map(g => {
+      const dl = daysRemaining(g.earliestDate);
+      return {
+        id: g.id,
+        invoiceNumber: g.invoiceNumber,
+        earliestDate: g.earliestDate!,
+        totalAmount: g.totalAmount,
+        status: g.status,
+        rideCount: g.rideCount,
+        daysLeft: dl!,
+      };
     })
-    .filter(c => c.daysLeft !== null && c.daysLeft <= 10)
+    .filter(g => g.daysLeft !== null && g.daysLeft <= 10)
     .sort((a, b) => a.daysLeft - b.daysLeft);
 
-  const recentClaims = await db.select().from(claimsTable)
-    .orderBy(sql`${claimsTable.createdAt} DESC`)
+  const recentGroups = await db.select().from(invoiceGroupsTable)
+    .orderBy(desc(invoiceGroupsTable.updatedAt))
     .limit(10);
 
   const submissionCountsRaw = await db
@@ -83,8 +94,8 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
     stats: { total, new: newCount, resolved, denied, onHold },
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
-    expiringClaims,
-    recentClaims,
+    expiringGroups,
+    recentGroups,
     portalStats: { pending, submitted, failed, successRate },
     botInstances,
   });

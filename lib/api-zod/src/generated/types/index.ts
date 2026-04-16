@@ -58,7 +58,7 @@ export * from "./errorTypeResponseEvidenceRequirements";
 export * from "./evidenceTypeBody";
 export * from "./evidenceTypeResponse";
 export * from "./exchangeMobileAuthorizationCodeBody";
-export * from "./expiringClaim";
+export * from "./expiringInvoiceGroup";
 export * from "./failSubmissionBody";
 export * from "./generateEmailBody";
 export * from "./getAuthSession200";

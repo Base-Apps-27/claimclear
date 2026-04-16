@@ -6,19 +6,19 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BotInstanceResponse } from "./botInstanceResponse";
-import type { ClaimResponse } from "./claimResponse";
 import type { DashboardSummaryAmounts } from "./dashboardSummaryAmounts";
 import type { DashboardSummaryPipeline } from "./dashboardSummaryPipeline";
 import type { DashboardSummaryPortalStats } from "./dashboardSummaryPortalStats";
 import type { DashboardSummaryStats } from "./dashboardSummaryStats";
-import type { ExpiringClaim } from "./expiringClaim";
+import type { ExpiringInvoiceGroup } from "./expiringInvoiceGroup";
+import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
 
 export interface DashboardSummary {
   pipeline: DashboardSummaryPipeline;
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
-  expiringClaims: ExpiringClaim[];
-  recentClaims: ClaimResponse[];
+  expiringGroups: ExpiringInvoiceGroup[];
+  recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   botInstances?: BotInstanceResponse[];
 }

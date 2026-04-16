@@ -831,13 +831,14 @@ export type DashboardSummaryPortalStats = {
   successRate: string;
 };
 
-export interface ExpiringClaim {
+export interface ExpiringInvoiceGroup {
   id: number;
-  confNumber: string;
-  date: string;
+  invoiceNumber: string;
+  earliestDate: string;
   /** @nullable */
-  claimAmount?: string | null;
+  totalAmount?: string | null;
   status: string;
+  rideCount: number;
   daysLeft: number;
 }
 
@@ -845,8 +846,8 @@ export interface DashboardSummary {
   pipeline: DashboardSummaryPipeline;
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
-  expiringClaims: ExpiringClaim[];
-  recentClaims: ClaimResponse[];
+  expiringGroups: ExpiringInvoiceGroup[];
+  recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   botInstances?: BotInstanceResponse[];
 }

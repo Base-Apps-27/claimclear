@@ -6,12 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ExpiringClaim {
+export interface ExpiringInvoiceGroup {
   id: number;
-  confNumber: string;
-  date: string;
+  invoiceNumber: string;
+  earliestDate: string;
   /** @nullable */
-  claimAmount?: string | null;
+  totalAmount?: string | null;
   status: string;
+  rideCount: number;
   daysLeft: number;
 }

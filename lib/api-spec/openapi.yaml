@@ -3100,14 +3100,14 @@ components:
             - totalApproved
             - totalExposure
             - vendorPrepayRate
-        expiringClaims:
+        expiringGroups:
           type: array
           items:
-            $ref: "#/components/schemas/ExpiringClaim"
-        recentClaims:
+            $ref: "#/components/schemas/ExpiringInvoiceGroup"
+        recentGroups:
           type: array
           items:
-            $ref: "#/components/schemas/ClaimResponse"
+            $ref: "#/components/schemas/InvoiceGroupResponse"
         portalStats:
           type: object
           properties:
@@ -3132,30 +3132,33 @@ components:
         - pipeline
         - stats
         - amounts
-        - expiringClaims
-        - recentClaims
+        - expiringGroups
+        - recentGroups
         - portalStats
 
-    ExpiringClaim:
+    ExpiringInvoiceGroup:
       type: object
       properties:
         id:
           type: integer
-        confNumber:
+        invoiceNumber:
           type: string
-        date:
+        earliestDate:
           type: string
-        claimAmount:
+        totalAmount:
           type: ["string", "null"]
         status:
           type: string
+        rideCount:
+          type: integer
         daysLeft:
           type: integer
       required:
         - id
-        - confNumber
-        - date
+        - invoiceNumber
+        - earliestDate
         - status
+        - rideCount
         - daysLeft
 
     DailyBriefResponse:
