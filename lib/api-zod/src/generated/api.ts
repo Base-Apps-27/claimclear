@@ -46,6 +46,703 @@ export const GetAuthSessionResponse = zod.object({
 });
 
 /**
+ * @summary List invoice groups with filtering
+ */
+export const listInvoiceGroupsQueryLimitDefault = 50;
+export const listInvoiceGroupsQueryOffsetDefault = 0;
+
+export const ListInvoiceGroupsQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  outcome: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
+  limit: zod.coerce.number().default(listInvoiceGroupsQueryLimitDefault),
+  offset: zod.coerce.number().default(listInvoiceGroupsQueryOffsetDefault),
+});
+
+export const ListInvoiceGroupsResponse = zod.object({
+  groups: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceNumber: zod.string(),
+      clientNumber: zod.string().nullish(),
+      errorDetails: zod.string().nullish(),
+      errorTypeId: zod.string().nullish(),
+      errorTypeName: zod.string().nullish(),
+      status: zod.enum([
+        "New",
+        "Needs Review",
+        "Needs Evidence",
+        "Portal Queued",
+        "Generating Email",
+        "Ready to Review",
+        "Awaiting Response",
+        "On Hold",
+        "Resolved",
+        "Denied",
+      ]),
+      outcome: zod.enum([
+        "Pending",
+        "Approved",
+        "Denied",
+        "Partially Approved",
+        "Non-Issue",
+      ]),
+      approvedAmount: zod.string().nullish(),
+      rideCount: zod.number(),
+      totalAmount: zod.string().nullish(),
+      workflowProgress: zod.object({}).passthrough().nullish(),
+      holdReason: zod.string().nullish(),
+      holdPendingFrom: zod.string().nullish(),
+      holdPlacedAt: zod.string().nullish(),
+      triageNotes: zod.string().nullish(),
+      triagedAt: zod.string().nullish(),
+      disputeEmailSent: zod.boolean(),
+      disputeEmailSentAt: zod.string().nullish(),
+      generatedEmailSubject: zod.string().nullish(),
+      generatedEmailBody: zod.string().nullish(),
+      generatedEmailAt: zod.string().nullish(),
+      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceNotes: zod.string().nullish(),
+      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      payorEmail: zod.string().nullish(),
+      importBatch: zod.string().nullish(),
+      createdAt: zod.string().optional(),
+      updatedAt: zod.string().optional(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get invoice group with rides
+ */
+export const GetInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetInvoiceGroupResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string(),
+    clientNumber: zod.string().nullish(),
+    errorDetails: zod.string().nullish(),
+    errorTypeId: zod.string().nullish(),
+    errorTypeName: zod.string().nullish(),
+    status: zod.enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ]),
+    outcome: zod.enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+    ]),
+    approvedAmount: zod.string().nullish(),
+    rideCount: zod.number(),
+    totalAmount: zod.string().nullish(),
+    workflowProgress: zod.object({}).passthrough().nullish(),
+    holdReason: zod.string().nullish(),
+    holdPendingFrom: zod.string().nullish(),
+    holdPlacedAt: zod.string().nullish(),
+    triageNotes: zod.string().nullish(),
+    triagedAt: zod.string().nullish(),
+    disputeEmailSent: zod.boolean(),
+    disputeEmailSentAt: zod.string().nullish(),
+    generatedEmailSubject: zod.string().nullish(),
+    generatedEmailBody: zod.string().nullish(),
+    generatedEmailAt: zod.string().nullish(),
+    evidenceFiles: zod.object({}).passthrough().nullish(),
+    evidenceNotes: zod.string().nullish(),
+    evidenceChecklist: zod.object({}).passthrough().nullish(),
+    payorEmail: zod.string().nullish(),
+    importBatch: zod.string().nullish(),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+  })
+  .and(
+    zod.object({
+      rides: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            invoiceGroupId: zod.number().nullish(),
+            confNumber: zod.string(),
+            date: zod.string().nullish(),
+            refNumber: zod.string().nullish(),
+            clientNumber: zod.string().nullish(),
+            carNumber: zod.string().nullish(),
+            errorDetails: zod.string().nullish(),
+            errorTypeId: zod.string().nullish(),
+            errorTypeName: zod.string().nullish(),
+            claimAmount: zod.string().nullish(),
+            status: zod.enum([
+              "New",
+              "Needs Review",
+              "Needs Evidence",
+              "Portal Queued",
+              "Generating Email",
+              "Ready to Review",
+              "Awaiting Response",
+              "On Hold",
+              "Resolved",
+              "Denied",
+            ]),
+            outcome: zod.enum([
+              "Pending",
+              "Approved",
+              "Denied",
+              "Partially Approved",
+              "Non-Issue",
+            ]),
+            triageNotes: zod.string().nullish(),
+            triagedAt: zod.string().nullish(),
+            approvedAmount: zod.string().nullish(),
+            invoiceNumbers: zod.string().nullish(),
+            payorEmail: zod.string().nullish(),
+            disputeEmailSent: zod.boolean(),
+            disputeEmailSentAt: zod.string().nullish(),
+            importBatch: zod.string().nullish(),
+            evidenceFiles: zod.object({}).passthrough().nullish(),
+            evidenceNotes: zod.string().nullish(),
+            evidenceChecklist: zod.object({}).passthrough().nullish(),
+            generatedEmailSubject: zod.string().nullish(),
+            generatedEmailBody: zod.string().nullish(),
+            generatedEmailAt: zod.string().nullish(),
+            workflowProgress: zod.object({}).passthrough().nullish(),
+            holdReason: zod.string().nullish(),
+            holdPendingFrom: zod.string().nullish(),
+            holdPlacedAt: zod.string().nullish(),
+            createdAt: zod.string().optional(),
+            updatedAt: zod.string().optional(),
+          }),
+        )
+        .optional(),
+      submissions: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            status: zod.enum([
+              "draft",
+              "pending",
+              "in_progress",
+              "submitted",
+              "failed",
+              "cancelled",
+              "dry_run",
+            ]),
+            issueType: zod.string().nullish(),
+            subject: zod.string().nullish(),
+            requesterEmail: zod.string().nullish(),
+            transportationProviderName: zod.string().nullish(),
+            phoneNumber: zod.string().nullish(),
+            invoiceNumber: zod.string().nullish(),
+            gpsBreadcrumbsAvailable: zod.string().nullish(),
+            descriptionHtml: zod.string().nullish(),
+            attachmentUrls: zod.object({}).passthrough().nullish(),
+            confNumber: zod.string().nullish(),
+            serviceDate: zod.string().nullish(),
+            refNumber: zod.string().nullish(),
+            clientNumber: zod.string().nullish(),
+            carNumber: zod.string().nullish(),
+            claimAmount: zod.string().nullish(),
+            errorTypeName: zod.string().nullish(),
+            errorDetails: zod.string().nullish(),
+            disputeReason: zod.string().nullish(),
+            evidenceNotes: zod.string().nullish(),
+            evidenceFiles: zod.object({}).passthrough().nullish(),
+            workflowHistory: zod.object({}).passthrough().nullish(),
+            portalTicketId: zod.string().nullish(),
+            screenshotUrl: zod.string().nullish(),
+            errorMessage: zod.string().nullish(),
+            submittedAt: zod.string().nullish(),
+            attempts: zod.number(),
+            createdAt: zod.string().optional(),
+            updatedAt: zod.string().optional(),
+          }),
+        )
+        .optional(),
+      notes: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            type: zod.enum([
+              "manual",
+              "email",
+              "email_sent",
+              "reply_parsed",
+              "status_change",
+              "outcome_recorded",
+              "system",
+              "bot",
+            ]),
+            content: zod.string(),
+            author: zod.string().nullish(),
+            emailSubject: zod.string().nullish(),
+            extractedInvoiceNumbers: zod.string().nullish(),
+            createdAt: zod.string().optional(),
+          }),
+        )
+        .optional(),
+      auditLogs: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            action: zod.string(),
+            details: zod.string(),
+            metadata: zod.object({}).passthrough().nullish(),
+            userEmail: zod.string().nullish(),
+            userName: zod.string().nullish(),
+            timestamp: zod.string().optional(),
+          }),
+        )
+        .optional(),
+      responses: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number().nullish(),
+            submissionId: zod.number().nullish(),
+            source: zod.enum(["email", "portal", "manual"]),
+            responseType: zod.enum([
+              "approval",
+              "denial",
+              "partial_approval",
+              "info_request",
+              "acknowledgment",
+              "other",
+            ]),
+            subject: zod.string().nullish(),
+            content: zod.string().nullish(),
+            rawContent: zod.string().nullish(),
+            senderEmail: zod.string().nullish(),
+            senderName: zod.string().nullish(),
+            matchedVia: zod.string().nullish(),
+            matchConfidence: zod.string().nullish(),
+            portalTicketId: zod.string().nullish(),
+            externalMessageId: zod.string().nullish(),
+            processed: zod.boolean(),
+            autoLinked: zod.boolean(),
+            metadata: zod.object({}).passthrough().nullish(),
+            receivedAt: zod.string(),
+            createdAt: zod.string(),
+            updatedAt: zod.string().nullish(),
+          }),
+        )
+        .optional(),
+    }),
+  );
+
+/**
+ * @summary Update an invoice group
+ */
+export const UpdateInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceGroupBody = zod.object({
+  errorDetails: zod.string().optional(),
+  errorTypeId: zod.string().optional(),
+  errorTypeName: zod.string().optional(),
+  payorEmail: zod.string().optional(),
+  evidenceNotes: zod.string().optional(),
+  evidenceFiles: zod.object({}).passthrough().optional(),
+  evidenceChecklist: zod.object({}).passthrough().optional(),
+});
+
+export const UpdateInvoiceGroupResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Delete an invoice group and its rides
+ */
+export const DeleteInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Update invoice group status
+ */
+export const UpdateInvoiceGroupStatusParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceGroupStatusBody = zod.object({
+  status: zod.string(),
+  reason: zod.string().optional(),
+});
+
+export const UpdateInvoiceGroupStatusResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update invoice group outcome
+ */
+export const UpdateInvoiceGroupOutcomeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceGroupOutcomeBody = zod.object({
+  outcome: zod.string(),
+  approvedAmount: zod.string().optional(),
+});
+
+export const UpdateInvoiceGroupOutcomeResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Triage an invoice group
+ */
+export const TriageInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const TriageInvoiceGroupBody = zod.object({
+  triageOutcome: zod.enum(["non_issue", "issue_found"]),
+  errorTypeId: zod.string().optional(),
+  errorTypeName: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+export const TriageInvoiceGroupResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Place invoice group on hold
+ */
+export const HoldInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const HoldInvoiceGroupBody = zod.object({
+  reason: zod.string().optional(),
+});
+
+export const HoldInvoiceGroupResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Remove hold from invoice group
+ */
+export const RemoveInvoiceGroupHoldParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RemoveInvoiceGroupHoldResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Bulk assign error type to invoice groups
+ */
+export const BulkAssignInvoiceGroupErrorTypeBody = zod.object({
+  groupIds: zod.array(zod.number()),
+  errorTypeId: zod.string(),
+  errorTypeName: zod.string().optional(),
+});
+
+export const BulkAssignInvoiceGroupErrorTypeResponse = zod.object({
+  success: zod.boolean().optional(),
+  updated: zod.number().optional(),
+});
+
+/**
+ * @summary Get valid transitions for an invoice group
+ */
+export const GetInvoiceGroupValidTransitionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetInvoiceGroupValidTransitionsResponse = zod.unknown();
+
+/**
  * @summary List claims with filtering
  */
 export const listClaimsQueryLimitDefault = 50;
@@ -77,6 +774,7 @@ export const ListClaimsResponse = zod.object({
   claims: zod.array(
     zod.object({
       id: zod.number(),
+      invoiceGroupId: zod.number().nullish(),
       confNumber: zod.string(),
       date: zod.string().nullish(),
       refNumber: zod.string().nullish(),
@@ -155,6 +853,7 @@ export const GetClaimParams = zod.object({
 
 export const GetClaimResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -231,6 +930,7 @@ export const UpdateClaimBody = zod.object({
 
 export const UpdateClaimResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -319,6 +1019,7 @@ export const UpdateClaimStatusBody = zod.object({
 
 export const UpdateClaimStatusResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -384,6 +1085,7 @@ export const UpdateClaimOutcomeBody = zod.object({
 
 export const UpdateClaimOutcomeResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -449,6 +1151,7 @@ export const UpdateClaimEvidenceBody = zod.object({
 
 export const UpdateClaimEvidenceResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -513,6 +1216,7 @@ export const PlaceClaimOnHoldBody = zod.object({
 
 export const PlaceClaimOnHoldResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -572,6 +1276,7 @@ export const RemoveClaimHoldParams = zod.object({
 
 export const RemoveClaimHoldResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -635,6 +1340,7 @@ export const UpdateClaimWorkflowBody = zod.object({
 
 export const UpdateClaimWorkflowResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -701,6 +1407,7 @@ export const TriageClaimBody = zod.object({
 
 export const TriageClaimResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -770,6 +1477,7 @@ export const PostResponseActionBody = zod.object({
 
 export const PostResponseActionResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -852,6 +1560,7 @@ export const GenerateClaimEmailBody = zod.object({
 
 export const GenerateClaimEmailResponse = zod.object({
   id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
   date: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -1132,6 +1841,8 @@ export const ImportClaimsResponse = zod.object({
   duplicates: zod.array(zod.string()).optional(),
   total: zod.number(),
   batchId: zod.string(),
+  groupsCreated: zod.number().optional(),
+  invoiceGroupCount: zod.number().optional(),
 });
 
 /**
@@ -2104,6 +2815,7 @@ export const GetDashboardSummaryResponse = zod.object({
   recentClaims: zod.array(
     zod.object({
       id: zod.number(),
+      invoiceGroupId: zod.number().nullish(),
       confNumber: zod.string(),
       date: zod.string().nullish(),
       refNumber: zod.string().nullish(),

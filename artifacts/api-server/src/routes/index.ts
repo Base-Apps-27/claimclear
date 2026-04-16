@@ -26,6 +26,7 @@ import claimEvidenceRouter from "./claim-evidence";
 import appSettingsRouter from "./app-settings";
 import batchJobsRouter from "./batch-jobs";
 import responseTrackerRouter from "./response-tracker";
+import invoiceGroupsRouter from "./invoice-groups";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,7 @@ router.use(sopAnalyzerRouter);
 router.use(appSettingsRouter);
 router.use(batchJobsRouter);
 router.use(responseTrackerRouter);
+router.use(invoiceGroupsRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

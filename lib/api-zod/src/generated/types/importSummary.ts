@@ -14,4 +14,6 @@ export interface ImportSummary {
   duplicates?: string[];
   total: number;
   batchId: string;
+  groupsCreated?: number;
+  invoiceGroupCount?: number;
 }

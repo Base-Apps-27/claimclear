@@ -2,6 +2,7 @@ import { pgTable, text, serial, integer, timestamp, pgEnum, index } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
+import { invoiceGroupsTable } from "./invoice-groups";
 
 export const noteTypeEnum = pgEnum("note_type", [
   "manual", "email", "email_sent", "reply_parsed",
@@ -10,7 +11,8 @@ export const noteTypeEnum = pgEnum("note_type", [
 
 export const notesTable = pgTable("notes", {
   id: serial("id").primaryKey(),
-  claimId: integer("claim_id").notNull().references(() => claimsTable.id, { onDelete: "cascade" }),
+  claimId: integer("claim_id").references(() => claimsTable.id, { onDelete: "cascade" }),
+  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "set null" }),
   type: noteTypeEnum().notNull().default("manual"),
   content: text("content").notNull(),
   author: text("author"),

@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
 import { portalSubmissionsTable } from "./portal-submissions";
+import { invoiceGroupsTable } from "./invoice-groups";
 
 export const responseSourceEnum = pgEnum("response_source", [
   "email", "portal", "manual"
@@ -15,6 +16,7 @@ export const responseTypeEnum = pgEnum("response_type", [
 export const portalResponsesTable = pgTable("portal_responses", {
   id: serial("id").primaryKey(),
   claimId: integer("claim_id").references(() => claimsTable.id, { onDelete: "set null" }),
+  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "set null" }),
   submissionId: integer("submission_id").references(() => portalSubmissionsTable.id, { onDelete: "set null" }),
   source: responseSourceEnum().notNull(),
   responseType: responseTypeEnum().notNull().default("other"),

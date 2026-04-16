@@ -16,6 +16,8 @@ import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
 import Summary from "@/pages/summary";
 import Review from "@/pages/review";
+import InvoiceGroupsList from "@/pages/invoice-groups";
+import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
@@ -44,6 +46,8 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={Queue} />
         <Route path="/review" component={Review} />
+        <Route path="/invoice-groups" component={InvoiceGroupsList} />
+        <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />
         <Route path="/claims" component={ClaimsList} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/claims/:id" component={ClaimDetail} />

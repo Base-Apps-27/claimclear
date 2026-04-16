@@ -64,6 +64,8 @@ export type ClaimResponseWorkflowProgress = { [key: string]: unknown } | null;
 
 export interface ClaimResponse {
   id: number;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   confNumber: string;
   /** @nullable */
   date?: string | null;
@@ -120,6 +122,322 @@ export interface ClaimResponse {
   holdPlacedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type InvoiceGroupResponseStatus =
+  (typeof InvoiceGroupResponseStatus)[keyof typeof InvoiceGroupResponseStatus];
+
+export const InvoiceGroupResponseStatus = {
+  New: "New",
+  Needs_Review: "Needs Review",
+  Needs_Evidence: "Needs Evidence",
+  Portal_Queued: "Portal Queued",
+  Generating_Email: "Generating Email",
+  Ready_to_Review: "Ready to Review",
+  Awaiting_Response: "Awaiting Response",
+  On_Hold: "On Hold",
+  Resolved: "Resolved",
+  Denied: "Denied",
+} as const;
+
+export type InvoiceGroupResponseOutcome =
+  (typeof InvoiceGroupResponseOutcome)[keyof typeof InvoiceGroupResponseOutcome];
+
+export const InvoiceGroupResponseOutcome = {
+  Pending: "Pending",
+  Approved: "Approved",
+  Denied: "Denied",
+  Partially_Approved: "Partially Approved",
+  "Non-Issue": "Non-Issue",
+} as const;
+
+/**
+ * @nullable
+ */
+export type InvoiceGroupResponseWorkflowProgress = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * @nullable
+ */
+export type InvoiceGroupResponseEvidenceFiles = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * @nullable
+ */
+export type InvoiceGroupResponseEvidenceChecklist = {
+  [key: string]: unknown;
+} | null;
+
+export interface InvoiceGroupResponse {
+  id: number;
+  invoiceNumber: string;
+  /** @nullable */
+  clientNumber?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  /** @nullable */
+  errorTypeId?: string | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+  status: InvoiceGroupResponseStatus;
+  outcome: InvoiceGroupResponseOutcome;
+  /** @nullable */
+  approvedAmount?: string | null;
+  rideCount: number;
+  /** @nullable */
+  totalAmount?: string | null;
+  /** @nullable */
+  workflowProgress?: InvoiceGroupResponseWorkflowProgress;
+  /** @nullable */
+  holdReason?: string | null;
+  /** @nullable */
+  holdPendingFrom?: string | null;
+  /** @nullable */
+  holdPlacedAt?: string | null;
+  /** @nullable */
+  triageNotes?: string | null;
+  /** @nullable */
+  triagedAt?: string | null;
+  disputeEmailSent: boolean;
+  /** @nullable */
+  disputeEmailSentAt?: string | null;
+  /** @nullable */
+  generatedEmailSubject?: string | null;
+  /** @nullable */
+  generatedEmailBody?: string | null;
+  /** @nullable */
+  generatedEmailAt?: string | null;
+  /** @nullable */
+  evidenceFiles?: InvoiceGroupResponseEvidenceFiles;
+  /** @nullable */
+  evidenceNotes?: string | null;
+  /** @nullable */
+  evidenceChecklist?: InvoiceGroupResponseEvidenceChecklist;
+  /** @nullable */
+  payorEmail?: string | null;
+  /** @nullable */
+  importBatch?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type PortalSubmissionResponseStatus =
+  (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
+
+export const PortalSubmissionResponseStatus = {
+  draft: "draft",
+  pending: "pending",
+  in_progress: "in_progress",
+  submitted: "submitted",
+  failed: "failed",
+  cancelled: "cancelled",
+  dry_run: "dry_run",
+} as const;
+
+/**
+ * @nullable
+ */
+export type PortalSubmissionResponseAttachmentUrls = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * @nullable
+ */
+export type PortalSubmissionResponseEvidenceFiles = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * @nullable
+ */
+export type PortalSubmissionResponseWorkflowHistory = {
+  [key: string]: unknown;
+} | null;
+
+export interface PortalSubmissionResponse {
+  id: number;
+  claimId: number;
+  status: PortalSubmissionResponseStatus;
+  /** @nullable */
+  issueType?: string | null;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  requesterEmail?: string | null;
+  /** @nullable */
+  transportationProviderName?: string | null;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  invoiceNumber?: string | null;
+  /** @nullable */
+  gpsBreadcrumbsAvailable?: string | null;
+  /** @nullable */
+  descriptionHtml?: string | null;
+  /** @nullable */
+  attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
+  /** @nullable */
+  confNumber?: string | null;
+  /** @nullable */
+  serviceDate?: string | null;
+  /** @nullable */
+  refNumber?: string | null;
+  /** @nullable */
+  clientNumber?: string | null;
+  /** @nullable */
+  carNumber?: string | null;
+  /** @nullable */
+  claimAmount?: string | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  /** @nullable */
+  disputeReason?: string | null;
+  /** @nullable */
+  evidenceNotes?: string | null;
+  /** @nullable */
+  evidenceFiles?: PortalSubmissionResponseEvidenceFiles;
+  /** @nullable */
+  workflowHistory?: PortalSubmissionResponseWorkflowHistory;
+  /** @nullable */
+  portalTicketId?: string | null;
+  /** @nullable */
+  screenshotUrl?: string | null;
+  /** @nullable */
+  errorMessage?: string | null;
+  /** @nullable */
+  submittedAt?: string | null;
+  attempts: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type NoteResponseType =
+  (typeof NoteResponseType)[keyof typeof NoteResponseType];
+
+export const NoteResponseType = {
+  manual: "manual",
+  email: "email",
+  email_sent: "email_sent",
+  reply_parsed: "reply_parsed",
+  status_change: "status_change",
+  outcome_recorded: "outcome_recorded",
+  system: "system",
+  bot: "bot",
+} as const;
+
+export interface NoteResponse {
+  id: number;
+  claimId: number;
+  type: NoteResponseType;
+  content: string;
+  /** @nullable */
+  author?: string | null;
+  /** @nullable */
+  emailSubject?: string | null;
+  /** @nullable */
+  extractedInvoiceNumbers?: string | null;
+  createdAt?: string;
+}
+
+/**
+ * @nullable
+ */
+export type AuditLogResponseMetadata = { [key: string]: unknown } | null;
+
+export interface AuditLogResponse {
+  id: number;
+  claimId: number;
+  action: string;
+  details: string;
+  /** @nullable */
+  metadata?: AuditLogResponseMetadata;
+  /** @nullable */
+  userEmail?: string | null;
+  /** @nullable */
+  userName?: string | null;
+  timestamp?: string;
+}
+
+export type PortalResponseItemSource =
+  (typeof PortalResponseItemSource)[keyof typeof PortalResponseItemSource];
+
+export const PortalResponseItemSource = {
+  email: "email",
+  portal: "portal",
+  manual: "manual",
+} as const;
+
+export type PortalResponseItemResponseType =
+  (typeof PortalResponseItemResponseType)[keyof typeof PortalResponseItemResponseType];
+
+export const PortalResponseItemResponseType = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+} as const;
+
+export type PortalResponseItemMetadata = { [key: string]: unknown } | null;
+
+export interface PortalResponseItem {
+  id: number;
+  claimId?: number | null;
+  submissionId?: number | null;
+  source: PortalResponseItemSource;
+  responseType: PortalResponseItemResponseType;
+  subject?: string | null;
+  content?: string | null;
+  rawContent?: string | null;
+  senderEmail?: string | null;
+  senderName?: string | null;
+  matchedVia?: string | null;
+  matchConfidence?: string | null;
+  portalTicketId?: string | null;
+  externalMessageId?: string | null;
+  processed: boolean;
+  autoLinked: boolean;
+  metadata?: PortalResponseItemMetadata;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
+  rides?: ClaimResponse[];
+  submissions?: PortalSubmissionResponse[];
+  notes?: NoteResponse[];
+  auditLogs?: AuditLogResponse[];
+  responses?: PortalResponseItem[];
+};
+
+export interface InvoiceGroupsListResponse {
+  groups: InvoiceGroupResponse[];
+  total: number;
+}
+
+export type UpdateInvoiceGroupBodyEvidenceFiles = { [key: string]: unknown };
+
+export type UpdateInvoiceGroupBodyEvidenceChecklist = {
+  [key: string]: unknown;
+};
+
+export interface UpdateInvoiceGroupBody {
+  errorDetails?: string;
+  errorTypeId?: string;
+  errorTypeName?: string;
+  payorEmail?: string;
+  evidenceNotes?: string;
+  evidenceFiles?: UpdateInvoiceGroupBodyEvidenceFiles;
+  evidenceChecklist?: UpdateInvoiceGroupBodyEvidenceChecklist;
 }
 
 export interface ClaimsListResponse {
@@ -228,56 +546,9 @@ export interface GenerateEmailBody {
   disputeReason: string;
 }
 
-export type NoteResponseType =
-  (typeof NoteResponseType)[keyof typeof NoteResponseType];
-
-export const NoteResponseType = {
-  manual: "manual",
-  email: "email",
-  email_sent: "email_sent",
-  reply_parsed: "reply_parsed",
-  status_change: "status_change",
-  outcome_recorded: "outcome_recorded",
-  system: "system",
-  bot: "bot",
-} as const;
-
-export interface NoteResponse {
-  id: number;
-  claimId: number;
-  type: NoteResponseType;
-  content: string;
-  /** @nullable */
-  author?: string | null;
-  /** @nullable */
-  emailSubject?: string | null;
-  /** @nullable */
-  extractedInvoiceNumbers?: string | null;
-  createdAt?: string;
-}
-
 export interface CreateNoteBody {
   content: string;
   type?: string;
-}
-
-/**
- * @nullable
- */
-export type AuditLogResponseMetadata = { [key: string]: unknown } | null;
-
-export interface AuditLogResponse {
-  id: number;
-  claimId: number;
-  action: string;
-  details: string;
-  /** @nullable */
-  metadata?: AuditLogResponseMetadata;
-  /** @nullable */
-  userEmail?: string | null;
-  /** @nullable */
-  userName?: string | null;
-  timestamp?: string;
 }
 
 /**
@@ -421,99 +692,8 @@ export interface ImportSummary {
   duplicates?: string[];
   total: number;
   batchId: string;
-}
-
-export type PortalSubmissionResponseStatus =
-  (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
-
-export const PortalSubmissionResponseStatus = {
-  draft: "draft",
-  pending: "pending",
-  in_progress: "in_progress",
-  submitted: "submitted",
-  failed: "failed",
-  cancelled: "cancelled",
-  dry_run: "dry_run",
-} as const;
-
-/**
- * @nullable
- */
-export type PortalSubmissionResponseAttachmentUrls = {
-  [key: string]: unknown;
-} | null;
-
-/**
- * @nullable
- */
-export type PortalSubmissionResponseEvidenceFiles = {
-  [key: string]: unknown;
-} | null;
-
-/**
- * @nullable
- */
-export type PortalSubmissionResponseWorkflowHistory = {
-  [key: string]: unknown;
-} | null;
-
-export interface PortalSubmissionResponse {
-  id: number;
-  claimId: number;
-  status: PortalSubmissionResponseStatus;
-  /** @nullable */
-  issueType?: string | null;
-  /** @nullable */
-  subject?: string | null;
-  /** @nullable */
-  requesterEmail?: string | null;
-  /** @nullable */
-  transportationProviderName?: string | null;
-  /** @nullable */
-  phoneNumber?: string | null;
-  /** @nullable */
-  invoiceNumber?: string | null;
-  /** @nullable */
-  gpsBreadcrumbsAvailable?: string | null;
-  /** @nullable */
-  descriptionHtml?: string | null;
-  /** @nullable */
-  attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
-  /** @nullable */
-  confNumber?: string | null;
-  /** @nullable */
-  serviceDate?: string | null;
-  /** @nullable */
-  refNumber?: string | null;
-  /** @nullable */
-  clientNumber?: string | null;
-  /** @nullable */
-  carNumber?: string | null;
-  /** @nullable */
-  claimAmount?: string | null;
-  /** @nullable */
-  errorTypeName?: string | null;
-  /** @nullable */
-  errorDetails?: string | null;
-  /** @nullable */
-  disputeReason?: string | null;
-  /** @nullable */
-  evidenceNotes?: string | null;
-  /** @nullable */
-  evidenceFiles?: PortalSubmissionResponseEvidenceFiles;
-  /** @nullable */
-  workflowHistory?: PortalSubmissionResponseWorkflowHistory;
-  /** @nullable */
-  portalTicketId?: string | null;
-  /** @nullable */
-  screenshotUrl?: string | null;
-  /** @nullable */
-  errorMessage?: string | null;
-  /** @nullable */
-  submittedAt?: string | null;
-  attempts: number;
-  createdAt?: string;
-  updatedAt?: string;
+  groupsCreated?: number;
+  invoiceGroupCount?: number;
 }
 
 export interface CreatePortalSubmissionBody {
@@ -848,52 +1028,6 @@ export interface ClaimEvidenceResponse {
   collectedAt: string;
 }
 
-export type PortalResponseItemSource =
-  (typeof PortalResponseItemSource)[keyof typeof PortalResponseItemSource];
-
-export const PortalResponseItemSource = {
-  email: "email",
-  portal: "portal",
-  manual: "manual",
-} as const;
-
-export type PortalResponseItemResponseType =
-  (typeof PortalResponseItemResponseType)[keyof typeof PortalResponseItemResponseType];
-
-export const PortalResponseItemResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
-} as const;
-
-export type PortalResponseItemMetadata = { [key: string]: unknown } | null;
-
-export interface PortalResponseItem {
-  id: number;
-  claimId?: number | null;
-  submissionId?: number | null;
-  source: PortalResponseItemSource;
-  responseType: PortalResponseItemResponseType;
-  subject?: string | null;
-  content?: string | null;
-  rawContent?: string | null;
-  senderEmail?: string | null;
-  senderName?: string | null;
-  matchedVia?: string | null;
-  matchConfidence?: string | null;
-  portalTicketId?: string | null;
-  externalMessageId?: string | null;
-  processed: boolean;
-  autoLinked: boolean;
-  metadata?: PortalResponseItemMetadata;
-  receivedAt: string;
-  createdAt: string;
-  updatedAt?: string | null;
-}
-
 export type EmailCheckResultResultsItem = {
   emailSubject?: string;
   status?: string;
@@ -939,6 +1073,54 @@ export type GetCurrentAuthUser200 = {
 
 export type GetAuthSession200 = {
   user: AuthUser;
+};
+
+export type ListInvoiceGroupsParams = {
+  status?: string;
+  outcome?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type UpdateInvoiceGroupStatusBody = {
+  status: string;
+  reason?: string;
+};
+
+export type UpdateInvoiceGroupOutcomeBody = {
+  outcome: string;
+  approvedAmount?: string;
+};
+
+export type TriageInvoiceGroupBodyTriageOutcome =
+  (typeof TriageInvoiceGroupBodyTriageOutcome)[keyof typeof TriageInvoiceGroupBodyTriageOutcome];
+
+export const TriageInvoiceGroupBodyTriageOutcome = {
+  non_issue: "non_issue",
+  issue_found: "issue_found",
+} as const;
+
+export type TriageInvoiceGroupBody = {
+  triageOutcome: TriageInvoiceGroupBodyTriageOutcome;
+  errorTypeId?: string;
+  errorTypeName?: string;
+  notes?: string;
+};
+
+export type HoldInvoiceGroupBody = {
+  reason?: string;
+};
+
+export type BulkAssignInvoiceGroupErrorTypeBody = {
+  groupIds: number[];
+  errorTypeId: string;
+  errorTypeName?: string;
+};
+
+export type BulkAssignInvoiceGroupErrorType200 = {
+  success?: boolean;
+  updated?: number;
 };
 
 export type ListClaimsParams = {

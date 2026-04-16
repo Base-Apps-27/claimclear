@@ -2,10 +2,12 @@ import { pgTable, text, serial, integer, timestamp, jsonb, index } from "drizzle
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
+import { invoiceGroupsTable } from "./invoice-groups";
 
 export const auditLogsTable = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   claimId: integer("claim_id").references(() => claimsTable.id, { onDelete: "set null" }),
+  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   details: text("details").notNull(),
   metadata: jsonb("metadata"),

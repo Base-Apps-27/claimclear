@@ -1,6 +1,7 @@
-import { pgTable, text, serial, timestamp, numeric, boolean, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { invoiceGroupsTable } from "./invoice-groups";
 
 export const claimStatusEnum = pgEnum("claim_status", [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -13,6 +14,7 @@ export const claimOutcomeEnum = pgEnum("claim_outcome", [
 
 export const claimsTable = pgTable("claims", {
   id: serial("id").primaryKey(),
+  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
   confNumber: text("conf_number").notNull(),
   date: text("date"),
   refNumber: text("ref_number"),
@@ -46,6 +48,7 @@ export const claimsTable = pgTable("claims", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
   index("claims_conf_number_idx").on(table.confNumber),
+  index("claims_invoice_group_id_idx").on(table.invoiceGroupId),
   index("claims_status_idx").on(table.status),
   index("claims_date_idx").on(table.date),
   index("claims_created_at_idx").on(table.createdAt),

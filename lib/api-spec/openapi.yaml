@@ -104,6 +104,300 @@ paths:
         "401":
           description: Not authenticated
 
+  /invoice-groups:
+    get:
+      operationId: listInvoiceGroups
+      tags: [invoice-groups]
+      summary: List invoice groups with filtering
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Invoice groups list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupsListResponse"
+
+  /invoice-groups/{id}:
+    get:
+      operationId: getInvoiceGroup
+      tags: [invoice-groups]
+      summary: Get invoice group with rides
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Invoice group details with rides
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupDetailResponse"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateInvoiceGroup
+      tags: [invoice-groups]
+      summary: Update an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInvoiceGroupBody"
+      responses:
+        "200":
+          description: Updated invoice group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+    delete:
+      operationId: deleteInvoiceGroup
+      tags: [invoice-groups]
+      summary: Delete an invoice group and its rides
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /invoice-groups/{id}/status:
+    patch:
+      operationId: updateInvoiceGroupStatus
+      tags: [invoice-groups]
+      summary: Update invoice group status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                reason:
+                  type: string
+              required:
+                - status
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/{id}/outcome:
+    patch:
+      operationId: updateInvoiceGroupOutcome
+      tags: [invoice-groups]
+      summary: Update invoice group outcome
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outcome:
+                  type: string
+                approvedAmount:
+                  type: string
+              required:
+                - outcome
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/{id}/triage:
+    post:
+      operationId: triageInvoiceGroup
+      tags: [invoice-groups]
+      summary: Triage an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                triageOutcome:
+                  type: string
+                  enum: ["non_issue", "issue_found"]
+                errorTypeId:
+                  type: string
+                errorTypeName:
+                  type: string
+                notes:
+                  type: string
+              required:
+                - triageOutcome
+      responses:
+        "200":
+          description: Triaged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/{id}/hold:
+    post:
+      operationId: holdInvoiceGroup
+      tags: [invoice-groups]
+      summary: Place invoice group on hold
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Held
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+    delete:
+      operationId: removeInvoiceGroupHold
+      tags: [invoice-groups]
+      summary: Remove hold from invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hold removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/bulk-assign-error-type:
+    post:
+      operationId: bulkAssignInvoiceGroupErrorType
+      tags: [invoice-groups]
+      summary: Bulk assign error type to invoice groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupIds:
+                  type: array
+                  items:
+                    type: integer
+                errorTypeId:
+                  type: string
+                errorTypeName:
+                  type: string
+              required:
+                - groupIds
+                - errorTypeId
+      responses:
+        "200":
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  updated:
+                    type: integer
+
+  /invoice-groups/{id}/valid-transitions:
+    get:
+      operationId: getInvoiceGroupValidTransitions
+      tags: [invoice-groups]
+      summary: Get valid transitions for an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Valid transitions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidTransitionsResponse"
+
   /claims:
     get:
       operationId: listClaims
@@ -1781,6 +2075,8 @@ components:
       properties:
         id:
           type: integer
+        invoiceGroupId:
+          type: ["integer", "null"]
         confNumber:
           type: string
         date:
@@ -1851,6 +2147,134 @@ components:
         - status
         - outcome
         - disputeEmailSent
+
+    InvoiceGroupResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceNumber:
+          type: string
+        clientNumber:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        errorTypeId:
+          type: ["string", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+        outcome:
+          type: string
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"]
+        approvedAmount:
+          type: ["string", "null"]
+        rideCount:
+          type: integer
+        totalAmount:
+          type: ["string", "null"]
+        workflowProgress:
+          type: ["object", "null"]
+        holdReason:
+          type: ["string", "null"]
+        holdPendingFrom:
+          type: ["string", "null"]
+        holdPlacedAt:
+          type: ["string", "null"]
+        triageNotes:
+          type: ["string", "null"]
+        triagedAt:
+          type: ["string", "null"]
+        disputeEmailSent:
+          type: boolean
+        disputeEmailSentAt:
+          type: ["string", "null"]
+        generatedEmailSubject:
+          type: ["string", "null"]
+        generatedEmailBody:
+          type: ["string", "null"]
+        generatedEmailAt:
+          type: ["string", "null"]
+        evidenceFiles:
+          type: ["object", "null"]
+        evidenceNotes:
+          type: ["string", "null"]
+        evidenceChecklist:
+          type: ["object", "null"]
+        payorEmail:
+          type: ["string", "null"]
+        importBatch:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - invoiceNumber
+        - status
+        - outcome
+        - rideCount
+        - disputeEmailSent
+
+    InvoiceGroupDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/InvoiceGroupResponse"
+        - type: object
+          properties:
+            rides:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClaimResponse"
+            submissions:
+              type: array
+              items:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+            notes:
+              type: array
+              items:
+                $ref: "#/components/schemas/NoteResponse"
+            auditLogs:
+              type: array
+              items:
+                $ref: "#/components/schemas/AuditLogResponse"
+            responses:
+              type: array
+              items:
+                $ref: "#/components/schemas/PortalResponseItem"
+
+    InvoiceGroupsListResponse:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceGroupResponse"
+        total:
+          type: integer
+      required:
+        - groups
+        - total
+
+    UpdateInvoiceGroupBody:
+      type: object
+      properties:
+        errorDetails:
+          type: string
+        errorTypeId:
+          type: string
+        errorTypeName:
+          type: string
+        payorEmail:
+          type: string
+        evidenceNotes:
+          type: string
+        evidenceFiles:
+          type: object
+        evidenceChecklist:
+          type: object
 
     ClaimsListResponse:
       type: object
@@ -2233,6 +2657,10 @@ components:
           type: integer
         batchId:
           type: string
+        groupsCreated:
+          type: integer
+        invoiceGroupCount:
+          type: integer
       required:
         - success
         - created

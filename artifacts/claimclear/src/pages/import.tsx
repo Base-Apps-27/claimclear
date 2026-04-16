@@ -901,8 +901,15 @@ export default function Import() {
             </div>
 
             {result.created > 0 && (
-              <div className="bg-green-50 border border-green-200 rounded-md p-3 text-sm text-green-800">
-                {result.created} new claim{result.created !== 1 ? "s" : ""} added to your tracker. They will appear in the Claims list with status "New".
+              <div className="bg-green-50 border border-green-200 rounded-md p-3 text-sm text-green-800 space-y-1">
+                <p>{result.created} new ride{result.created !== 1 ? "s" : ""} added to your tracker.</p>
+                {(result as any).invoiceGroupCount > 0 && (
+                  <p className="font-medium">
+                    Organized into {(result as any).invoiceGroupCount} invoice group{(result as any).invoiceGroupCount !== 1 ? "s" : ""}
+                    {(result as any).groupsCreated > 0 && ` (${(result as any).groupsCreated} new)`}.
+                  </p>
+                )}
+                <p className="text-xs text-green-600">View them in the Invoice Groups page.</p>
               </div>
             )}
 

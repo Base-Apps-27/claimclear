@@ -1,4 +1,5 @@
 export * from "./auth";
+export * from "./invoice-groups";
 export * from "./claims";
 export * from "./error-types";
 export * from "./notes";

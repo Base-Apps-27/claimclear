@@ -28,6 +28,8 @@ import type {
   BotActivityLogResponse,
   BotInstanceResponse,
   BulkAssignErrorTypeBody,
+  BulkAssignInvoiceGroupErrorType200,
+  BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
@@ -53,12 +55,17 @@ import type {
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
   HealthStatus,
+  HoldInvoiceGroupBody,
   ImportClaimsBody,
   ImportSummary,
+  InvoiceGroupDetailResponse,
+  InvoiceGroupResponse,
+  InvoiceGroupsListResponse,
   LinkResponseBody,
   ListClaimEvidence200,
   ListClaimsParams,
   ListEvidenceTypes200,
+  ListInvoiceGroupsParams,
   ListPortalSubmissionsParams,
   ListResponses200,
   ListResponsesParams,
@@ -84,16 +91,21 @@ import type {
   SendAnthropicMessageBody,
   SuccessResponse,
   TriageClaimBody,
+  TriageInvoiceGroupBody,
   UpdateAppSettingsBody,
   UpdateClaimBody,
   UpdateClaimEvidenceBody,
   UpdateClaimOutcomeBody,
   UpdateClaimStatusBody,
   UpdateErrorTypeBody,
+  UpdateInvoiceGroupBody,
+  UpdateInvoiceGroupOutcomeBody,
+  UpdateInvoiceGroupStatusBody,
   UpdatePortalSubmissionDraftBody,
   UpdateWorkflowBody,
   UploadUrlRequest,
   UploadUrlResponse,
+  ValidTransitionsResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -322,6 +334,988 @@ export function useGetAuthSession<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAuthSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List invoice groups with filtering
+ */
+export const getListInvoiceGroupsUrl = (params?: ListInvoiceGroupsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invoice-groups?${stringifiedParams}`
+    : `/api/invoice-groups`;
+};
+
+export const listInvoiceGroups = async (
+  params?: ListInvoiceGroupsParams,
+  options?: RequestInit,
+): Promise<InvoiceGroupsListResponse> => {
+  return customFetch<InvoiceGroupsListResponse>(
+    getListInvoiceGroupsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListInvoiceGroupsQueryKey = (
+  params?: ListInvoiceGroupsParams,
+) => {
+  return [`/api/invoice-groups`, ...(params ? [params] : [])] as const;
+};
+
+export const getListInvoiceGroupsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceGroups>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListInvoiceGroupsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroups>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceGroupsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceGroups>>
+  > = ({ signal }) => listInvoiceGroups(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceGroups>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceGroupsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceGroups>>
+>;
+export type ListInvoiceGroupsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List invoice groups with filtering
+ */
+
+export function useListInvoiceGroups<
+  TData = Awaited<ReturnType<typeof listInvoiceGroups>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListInvoiceGroupsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroups>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceGroupsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get invoice group with rides
+ */
+export const getGetInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}`;
+};
+
+export const getInvoiceGroup = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupDetailResponse> => {
+  return customFetch<InvoiceGroupDetailResponse>(getGetInvoiceGroupUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInvoiceGroupQueryKey = (id: number) => {
+  return [`/api/invoice-groups/${id}`] as const;
+};
+
+export const getGetInvoiceGroupQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInvoiceGroup>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroup>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetInvoiceGroupQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getInvoiceGroup>>> = ({
+    signal,
+  }) => getInvoiceGroup(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInvoiceGroup>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInvoiceGroupQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInvoiceGroup>>
+>;
+export type GetInvoiceGroupQueryError = ErrorType<void>;
+
+/**
+ * @summary Get invoice group with rides
+ */
+
+export function useGetInvoiceGroup<
+  TData = Awaited<ReturnType<typeof getInvoiceGroup>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroup>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInvoiceGroupQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update an invoice group
+ */
+export const getUpdateInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}`;
+};
+
+export const updateInvoiceGroup = async (
+  id: number,
+  updateInvoiceGroupBody: UpdateInvoiceGroupBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getUpdateInvoiceGroupUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateInvoiceGroupBody),
+  });
+};
+
+export const getUpdateInvoiceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInvoiceGroup>>,
+    { id: number; data: BodyType<UpdateInvoiceGroupBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInvoiceGroup(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInvoiceGroup>>
+>;
+export type UpdateInvoiceGroupMutationBody = BodyType<UpdateInvoiceGroupBody>;
+export type UpdateInvoiceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update an invoice group
+ */
+export const useUpdateInvoiceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInvoiceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Delete an invoice group and its rides
+ */
+export const getDeleteInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}`;
+};
+
+export const deleteInvoiceGroup = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteInvoiceGroupUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteInvoiceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteInvoiceGroup>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteInvoiceGroup(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteInvoiceGroup>>
+>;
+
+export type DeleteInvoiceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete an invoice group and its rides
+ */
+export const useDeleteInvoiceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteInvoiceGroup>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteInvoiceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Update invoice group status
+ */
+export const getUpdateInvoiceGroupStatusUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/status`;
+};
+
+export const updateInvoiceGroupStatus = async (
+  id: number,
+  updateInvoiceGroupStatusBody: UpdateInvoiceGroupStatusBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getUpdateInvoiceGroupStatusUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateInvoiceGroupStatusBody),
+  });
+};
+
+export const getUpdateInvoiceGroupStatusMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupStatus>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupStatusBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInvoiceGroupStatus>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupStatusBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInvoiceGroupStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInvoiceGroupStatus>>,
+    { id: number; data: BodyType<UpdateInvoiceGroupStatusBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInvoiceGroupStatus(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInvoiceGroupStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInvoiceGroupStatus>>
+>;
+export type UpdateInvoiceGroupStatusMutationBody =
+  BodyType<UpdateInvoiceGroupStatusBody>;
+export type UpdateInvoiceGroupStatusMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update invoice group status
+ */
+export const useUpdateInvoiceGroupStatus = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupStatus>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupStatusBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInvoiceGroupStatus>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupStatusBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInvoiceGroupStatusMutationOptions(options));
+};
+
+/**
+ * @summary Update invoice group outcome
+ */
+export const getUpdateInvoiceGroupOutcomeUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/outcome`;
+};
+
+export const updateInvoiceGroupOutcome = async (
+  id: number,
+  updateInvoiceGroupOutcomeBody: UpdateInvoiceGroupOutcomeBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getUpdateInvoiceGroupOutcomeUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateInvoiceGroupOutcomeBody),
+    },
+  );
+};
+
+export const getUpdateInvoiceGroupOutcomeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupOutcomeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupOutcomeBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInvoiceGroupOutcome"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>,
+    { id: number; data: BodyType<UpdateInvoiceGroupOutcomeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInvoiceGroupOutcome(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInvoiceGroupOutcomeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>
+>;
+export type UpdateInvoiceGroupOutcomeMutationBody =
+  BodyType<UpdateInvoiceGroupOutcomeBody>;
+export type UpdateInvoiceGroupOutcomeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update invoice group outcome
+ */
+export const useUpdateInvoiceGroupOutcome = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>,
+    TError,
+    { id: number; data: BodyType<UpdateInvoiceGroupOutcomeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInvoiceGroupOutcome>>,
+  TError,
+  { id: number; data: BodyType<UpdateInvoiceGroupOutcomeBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInvoiceGroupOutcomeMutationOptions(options));
+};
+
+/**
+ * @summary Triage an invoice group
+ */
+export const getTriageInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/triage`;
+};
+
+export const triageInvoiceGroup = async (
+  id: number,
+  triageInvoiceGroupBody: TriageInvoiceGroupBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getTriageInvoiceGroupUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(triageInvoiceGroupBody),
+  });
+};
+
+export const getTriageInvoiceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triageInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<TriageInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof triageInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<TriageInvoiceGroupBody> },
+  TContext
+> => {
+  const mutationKey = ["triageInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof triageInvoiceGroup>>,
+    { id: number; data: BodyType<TriageInvoiceGroupBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return triageInvoiceGroup(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TriageInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof triageInvoiceGroup>>
+>;
+export type TriageInvoiceGroupMutationBody = BodyType<TriageInvoiceGroupBody>;
+export type TriageInvoiceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Triage an invoice group
+ */
+export const useTriageInvoiceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triageInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<TriageInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof triageInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<TriageInvoiceGroupBody> },
+  TContext
+> => {
+  return useMutation(getTriageInvoiceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Place invoice group on hold
+ */
+export const getHoldInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/hold`;
+};
+
+export const holdInvoiceGroup = async (
+  id: number,
+  holdInvoiceGroupBody: HoldInvoiceGroupBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getHoldInvoiceGroupUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(holdInvoiceGroupBody),
+  });
+};
+
+export const getHoldInvoiceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof holdInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<HoldInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof holdInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<HoldInvoiceGroupBody> },
+  TContext
+> => {
+  const mutationKey = ["holdInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof holdInvoiceGroup>>,
+    { id: number; data: BodyType<HoldInvoiceGroupBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return holdInvoiceGroup(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type HoldInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof holdInvoiceGroup>>
+>;
+export type HoldInvoiceGroupMutationBody = BodyType<HoldInvoiceGroupBody>;
+export type HoldInvoiceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Place invoice group on hold
+ */
+export const useHoldInvoiceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof holdInvoiceGroup>>,
+    TError,
+    { id: number; data: BodyType<HoldInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof holdInvoiceGroup>>,
+  TError,
+  { id: number; data: BodyType<HoldInvoiceGroupBody> },
+  TContext
+> => {
+  return useMutation(getHoldInvoiceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Remove hold from invoice group
+ */
+export const getRemoveInvoiceGroupHoldUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/hold`;
+};
+
+export const removeInvoiceGroupHold = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getRemoveInvoiceGroupHoldUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveInvoiceGroupHoldMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeInvoiceGroupHold>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeInvoiceGroupHold>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["removeInvoiceGroupHold"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeInvoiceGroupHold>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return removeInvoiceGroupHold(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveInvoiceGroupHoldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeInvoiceGroupHold>>
+>;
+
+export type RemoveInvoiceGroupHoldMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove hold from invoice group
+ */
+export const useRemoveInvoiceGroupHold = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeInvoiceGroupHold>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeInvoiceGroupHold>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRemoveInvoiceGroupHoldMutationOptions(options));
+};
+
+/**
+ * @summary Bulk assign error type to invoice groups
+ */
+export const getBulkAssignInvoiceGroupErrorTypeUrl = () => {
+  return `/api/invoice-groups/bulk-assign-error-type`;
+};
+
+export const bulkAssignInvoiceGroupErrorType = async (
+  bulkAssignInvoiceGroupErrorTypeBody: BulkAssignInvoiceGroupErrorTypeBody,
+  options?: RequestInit,
+): Promise<BulkAssignInvoiceGroupErrorType200> => {
+  return customFetch<BulkAssignInvoiceGroupErrorType200>(
+    getBulkAssignInvoiceGroupErrorTypeUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkAssignInvoiceGroupErrorTypeBody),
+    },
+  );
+};
+
+export const getBulkAssignInvoiceGroupErrorTypeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>,
+    TError,
+    { data: BodyType<BulkAssignInvoiceGroupErrorTypeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>,
+  TError,
+  { data: BodyType<BulkAssignInvoiceGroupErrorTypeBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkAssignInvoiceGroupErrorType"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>,
+    { data: BodyType<BulkAssignInvoiceGroupErrorTypeBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkAssignInvoiceGroupErrorType(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkAssignInvoiceGroupErrorTypeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>
+>;
+export type BulkAssignInvoiceGroupErrorTypeMutationBody =
+  BodyType<BulkAssignInvoiceGroupErrorTypeBody>;
+export type BulkAssignInvoiceGroupErrorTypeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk assign error type to invoice groups
+ */
+export const useBulkAssignInvoiceGroupErrorType = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>,
+    TError,
+    { data: BodyType<BulkAssignInvoiceGroupErrorTypeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkAssignInvoiceGroupErrorType>>,
+  TError,
+  { data: BodyType<BulkAssignInvoiceGroupErrorTypeBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkAssignInvoiceGroupErrorTypeMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Get valid transitions for an invoice group
+ */
+export const getGetInvoiceGroupValidTransitionsUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/valid-transitions`;
+};
+
+export const getInvoiceGroupValidTransitions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ValidTransitionsResponse> => {
+  return customFetch<ValidTransitionsResponse>(
+    getGetInvoiceGroupValidTransitionsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetInvoiceGroupValidTransitionsQueryKey = (id: number) => {
+  return [`/api/invoice-groups/${id}/valid-transitions`] as const;
+};
+
+export const getGetInvoiceGroupValidTransitionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetInvoiceGroupValidTransitionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>
+  > = ({ signal }) =>
+    getInvoiceGroupValidTransitions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInvoiceGroupValidTransitionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>
+>;
+export type GetInvoiceGroupValidTransitionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get valid transitions for an invoice group
+ */
+
+export function useGetInvoiceGroupValidTransitions<
+  TData = Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupValidTransitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInvoiceGroupValidTransitionsQueryOptions(
+    id,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

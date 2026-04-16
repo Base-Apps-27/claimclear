@@ -13,6 +13,8 @@ import type { ClaimResponseWorkflowProgress } from "./claimResponseWorkflowProgr
 
 export interface ClaimResponse {
   id: number;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   confNumber: string;
   /** @nullable */
   date?: string | null;

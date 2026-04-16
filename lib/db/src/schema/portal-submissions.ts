@@ -2,6 +2,7 @@ import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum, inde
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
+import { invoiceGroupsTable } from "./invoice-groups";
 
 export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
   "draft", "pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"
@@ -10,6 +11,7 @@ export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
 export const portalSubmissionsTable = pgTable("portal_submissions", {
   id: serial("id").primaryKey(),
   claimId: integer("claim_id").notNull().references(() => claimsTable.id, { onDelete: "cascade" }),
+  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "set null" }),
   status: portalSubmissionStatusEnum().notNull().default("pending"),
   issueType: text("issue_type"),
   subject: text("subject"),
