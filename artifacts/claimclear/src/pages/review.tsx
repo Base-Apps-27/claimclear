@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useListClaims, getListClaimsQueryKey, useListErrorTypes, useTriageClaim } from "@workspace/api-client-react";
-import type { ClaimResponse, ErrorTypeResponse } from "@workspace/api-client-react";
+import { useListInvoiceGroups, getListInvoiceGroupsQueryKey, useListErrorTypes, useTriageInvoiceGroup } from "@workspace/api-client-react";
+import type { InvoiceGroupResponse, ErrorTypeResponse } from "@workspace/api-client-react";
 import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { Link } from "wouter";
-import { Search, CheckCircle2, XCircle, AlertTriangle, ChevronRight, Eye, Tag, Loader2, Plus } from "lucide-react";
+import { Search, CheckCircle2, XCircle, AlertTriangle, ChevronRight, Eye, Tag, Loader2, Plus, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { useCreateErrorType, getListErrorTypesQueryKey } from "@workspace/api-client-react";
@@ -22,7 +21,7 @@ export default function Review() {
   useClaimsListEvents();
   const queryClient = useQueryClient();
 
-  const [selectedClaimId, setSelectedClaimId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [triageAction, setTriageAction] = useState<"non_issue" | "issue_found" | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedErrorTypeId, setSelectedErrorTypeId] = useState("");
@@ -31,25 +30,25 @@ export default function Review() {
   const [search, setSearch] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const { data, isLoading } = useListClaims(
+  const { data, isLoading } = useListInvoiceGroups(
     { status: "Needs Review", limit: 100 },
-    { query: { queryKey: getListClaimsQueryKey({ status: "Needs Review", limit: 100 }) } }
+    { query: { queryKey: getListInvoiceGroupsQueryKey({ status: "Needs Review", limit: 100 }) } }
   );
   const { data: errorTypesData } = useListErrorTypes();
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
-  const triageClaim = useTriageClaim();
+  const triageGroup = useTriageInvoiceGroup();
   const createErrorType = useCreateErrorType();
 
-  const claims: ClaimResponse[] = data?.claims ?? [];
-  const filteredClaims = search
-    ? claims.filter(c =>
-        c.confNumber.toLowerCase().includes(search.toLowerCase()) ||
-        (c.clientNumber || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.carNumber || "").toLowerCase().includes(search.toLowerCase())
+  const groups: InvoiceGroupResponse[] = data?.groups ?? [];
+  const filteredGroups = search
+    ? groups.filter(g =>
+        g.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
+        (g.clientNumber || "").toLowerCase().includes(search.toLowerCase()) ||
+        (g.errorTypeName || "").toLowerCase().includes(search.toLowerCase())
       )
-    : claims;
+    : groups;
 
-  const selectedClaim = selectedClaimId ? claims.find(c => c.id === selectedClaimId) || null : null;
+  const selectedGroup = selectedGroupId ? groups.find(g => g.id === selectedGroupId) || null : null;
 
   const resetForm = () => {
     setTriageAction(null);
@@ -59,41 +58,41 @@ export default function Review() {
     setNewErrorType({ name: "", category: "", description: "" });
   };
 
-  const handleSelectClaim = (claim: ClaimResponse) => {
-    setSelectedClaimId(claim.id);
+  const handleSelectGroup = (group: InvoiceGroupResponse) => {
+    setSelectedGroupId(group.id);
     resetForm();
   };
 
   const handleNonIssue = async () => {
-    if (!selectedClaimId) return;
-    await triageClaim.mutateAsync({
-      id: selectedClaimId,
-      data: { action: "non_issue", triageNotes: notes || undefined },
+    if (!selectedGroupId) return;
+    await triageGroup.mutateAsync({
+      id: selectedGroupId,
+      data: { triageOutcome: "non_issue", notes: notes || undefined },
     });
-    setSuccessMessage(`Claim marked as non-issue — financial impact set to $0`);
-    setSelectedClaimId(null);
+    setSuccessMessage(`Invoice group marked as non-issue — all rides resolved with $0 impact`);
+    setSelectedGroupId(null);
     resetForm();
-    queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
     setTimeout(() => setSuccessMessage(""), 4000);
   };
 
   const handleIssueFound = async () => {
-    if (!selectedClaimId || !selectedErrorTypeId) return;
+    if (!selectedGroupId || !selectedErrorTypeId) return;
     const et = errorTypes.find(t => String(t.id) === selectedErrorTypeId);
     if (!et) return;
-    await triageClaim.mutateAsync({
-      id: selectedClaimId,
+    await triageGroup.mutateAsync({
+      id: selectedGroupId,
       data: {
-        action: "issue_found",
+        triageOutcome: "issue_found",
         errorTypeId: String(et.id),
         errorTypeName: et.name,
-        triageNotes: notes || undefined,
+        notes: notes || undefined,
       },
     });
-    setSuccessMessage(`Issue identified — claim moved to normal workflow with error type "${et.name}"`);
-    setSelectedClaimId(null);
+    setSuccessMessage(`Issue identified — invoice group moved to workflow with error type "${et.name}"`);
+    setSelectedGroupId(null);
     resetForm();
-    queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
     setTimeout(() => setSuccessMessage(""), 4000);
   };
 
@@ -111,7 +110,7 @@ export default function Review() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Review Queue</h1>
         <p className="text-muted-foreground mt-1">
-          Claims imported with no details — review each one on the portal and classify it.
+          Invoice groups needing review — check each on the portal and classify it.
         </p>
       </div>
 
@@ -126,14 +125,14 @@ export default function Review() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <Badge variant="secondary" className="text-sm">
-              {claims.length} claim{claims.length !== 1 ? "s" : ""} pending review
+              {groups.length} group{groups.length !== 1 ? "s" : ""} pending review
             </Badge>
           </div>
 
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by Conf #, Client, Car #..."
+              placeholder="Search by invoice #, client, error type..."
               className="pl-9 pr-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -152,40 +151,45 @@ export default function Review() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">Loading...</CardContent>
             </Card>
-          ) : filteredClaims.length === 0 ? (
+          ) : filteredGroups.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
-                {claims.length === 0
-                  ? "No claims need review right now."
-                  : "No matching claims found."}
+                {groups.length === 0
+                  ? "No invoice groups need review right now."
+                  : "No matching groups found."}
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-2">
-              {filteredClaims.map((claim) => (
+              {filteredGroups.map((group) => (
                 <Card
-                  key={claim.id}
+                  key={group.id}
                   className={`cursor-pointer transition-colors ${
-                    selectedClaimId === claim.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
+                    selectedGroupId === group.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
                   }`}
-                  onClick={() => handleSelectClaim(claim)}
+                  onClick={() => handleSelectGroup(group)}
                 >
                   <CardContent className="py-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div>
-                          <span className="font-mono font-semibold">{claim.confNumber}</span>
-                          <span className="text-muted-foreground ml-3 text-sm">{formatDate(claim.date)}</span>
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-mono font-semibold">Invoice #{group.invoiceNumber}</span>
+                          </div>
+                          <span className="text-muted-foreground text-xs ml-6">
+                            {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}
+                          </span>
                         </div>
                         <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                          No Details
+                          Needs Review
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm">
-                        {claim.clientNumber && (
-                          <span className="text-muted-foreground">Client: {claim.clientNumber}</span>
+                        {group.clientNumber && (
+                          <span className="text-muted-foreground">Client: {group.clientNumber}</span>
                         )}
-                        <span className="font-medium">{formatCurrency(claim.claimAmount)}</span>
+                        <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </div>
@@ -197,13 +201,13 @@ export default function Review() {
         </div>
 
         <div>
-          {selectedClaim ? (
+          {selectedGroup ? (
             <div className="sticky top-4 space-y-4">
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">Review Claim</CardTitle>
-                    <Link href={`/claims/${selectedClaim.id}`}>
+                    <CardTitle className="text-lg">Review Invoice Group</CardTitle>
+                    <Link href={`/invoice-groups/${selectedGroup.id}`}>
                       <Button variant="ghost" size="sm">
                         Full Details <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
@@ -213,40 +217,45 @@ export default function Review() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Conf #</Label>
-                      <p className="font-mono font-semibold">{selectedClaim.confNumber}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Service Date</Label>
-                      <p>{formatDate(selectedClaim.date) || "-"}</p>
+                      <Label className="text-xs text-muted-foreground">Invoice #</Label>
+                      <p className="font-mono font-semibold">{selectedGroup.invoiceNumber}</p>
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Client #</Label>
-                      <p>{selectedClaim.clientNumber || "-"}</p>
+                      <p>{selectedGroup.clientNumber || "-"}</p>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Car #</Label>
-                      <p>{selectedClaim.carNumber || "-"}</p>
+                      <Label className="text-xs text-muted-foreground">Ride Count</Label>
+                      <p className="font-semibold">{selectedGroup.rideCount}</p>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Amount</Label>
-                      <p className="font-semibold">{formatCurrency(selectedClaim.claimAmount)}</p>
+                      <Label className="text-xs text-muted-foreground">Total Amount</Label>
+                      <p className="font-semibold">{formatCurrency(selectedGroup.totalAmount)}</p>
                     </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Ref #</Label>
-                      <p className="font-mono text-xs">{selectedClaim.refNumber || "-"}</p>
-                    </div>
+                    {selectedGroup.errorTypeName && (
+                      <div className="col-span-2">
+                        <Label className="text-xs text-muted-foreground">Error Type</Label>
+                        <p>{selectedGroup.errorTypeName}</p>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
-                    <div className="flex items-center gap-2 text-amber-800 text-sm font-medium">
-                      <AlertTriangle className="h-4 w-4" />
-                      No error details on file
+                  {selectedGroup.errorDetails ? (
+                    <div className="bg-muted/50 rounded-md p-3">
+                      <Label className="text-xs text-muted-foreground">Error Details</Label>
+                      <p className="text-sm mt-1">{selectedGroup.errorDetails}</p>
                     </div>
-                    <p className="text-xs text-amber-600 mt-1">
-                      Check the portal for this claim and determine if there is an actual issue or if this is a non-issue.
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                      <div className="flex items-center gap-2 text-amber-800 text-sm font-medium">
+                        <AlertTriangle className="h-4 w-4" />
+                        No error details on file
+                      </div>
+                      <p className="text-xs text-amber-600 mt-1">
+                        Check the portal for this invoice group and determine if there is an actual issue or if this is a non-issue.
+                      </p>
+                    </div>
+                  )}
 
                   <Separator />
 
@@ -273,7 +282,7 @@ export default function Review() {
                           <XCircle className="h-6 w-6 text-green-600" />
                           <span className="font-medium text-green-700">Non-Issue</span>
                           <span className="text-[11px] text-muted-foreground text-center leading-tight">
-                            No action needed. Resolve and zero out.
+                            No action needed. Resolve group and all rides.
                           </span>
                         </Button>
                         <Button
@@ -303,14 +312,14 @@ export default function Review() {
                         </Button>
                       </div>
                       <p className="text-xs text-green-700">
-                        This will resolve the claim and set the financial impact to $0.
+                        This will resolve the invoice group and all {selectedGroup.rideCount} ride{selectedGroup.rideCount !== 1 ? "s" : ""}, setting financial impact to $0.
                       </p>
                       <Button
                         onClick={handleNonIssue}
-                        disabled={triageClaim.isPending}
+                        disabled={triageGroup.isPending}
                         className="w-full bg-green-600 hover:bg-green-700"
                       >
-                        {triageClaim.isPending ? (
+                        {triageGroup.isPending ? (
                           <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
                         ) : (
                           <><CheckCircle2 className="h-4 w-4 mr-2" />Confirm Non-Issue</>
@@ -364,10 +373,10 @@ export default function Review() {
 
                           <Button
                             onClick={handleIssueFound}
-                            disabled={!selectedErrorTypeId || triageClaim.isPending}
+                            disabled={!selectedErrorTypeId || triageGroup.isPending}
                             className="w-full bg-red-600 hover:bg-red-700"
                           >
-                            {triageClaim.isPending ? (
+                            {triageGroup.isPending ? (
                               <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
                             ) : (
                               <><Tag className="h-4 w-4 mr-2" />Assign & Move to Workflow</>
@@ -418,9 +427,9 @@ export default function Review() {
             <Card>
               <CardContent className="py-16 text-center text-muted-foreground">
                 <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="font-medium">Select a claim to review</p>
+                <p className="font-medium">Select an invoice group to review</p>
                 <p className="text-sm mt-1">
-                  Click on a claim from the list to check it on the portal and classify it
+                  Click on a group from the list to check it on the portal and classify it
                 </p>
               </CardContent>
             </Card>

@@ -116,11 +116,33 @@ export function broadcastClaimEvent(event: ClaimEvent): void {
   }
 }
 
+export interface GroupEvent {
+  type: string;
+  invoiceGroupId: number;
+  userName: string | null;
+  userEmail: string | null;
+  timestamp: string;
+}
+
+function sendGroupEvent(client: SSEClient, event: GroupEvent): void {
+  try {
+    client.res.write(`event: group_update\ndata: ${JSON.stringify(event)}\n\n`);
+  } catch {
+    // client disconnected
+  }
+}
+
 export function broadcastPresenceEvent(event: PresenceEvent): void {
   const clients = claimClients.get(event.claimId);
   if (clients) {
     for (const client of clients) {
       sendPresenceEvent(client, event);
     }
+  }
+}
+
+export function broadcastGroupEvent(event: GroupEvent): void {
+  for (const client of globalClients) {
+    sendGroupEvent(client, event);
   }
 }

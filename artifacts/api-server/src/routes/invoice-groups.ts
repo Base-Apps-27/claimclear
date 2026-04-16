@@ -3,14 +3,15 @@ import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm"
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { broadcastClaimEvent } from "../lib/sse";
+import { broadcastGroupEvent } from "../lib/sse";
 import {
-  transitionClaimStatus,
-  transitionClaimOutcome,
-  VALID_MANUAL_STATUS_TRANSITIONS,
-  VALID_OUTCOME_BY_STATUS,
-  SYSTEM_CONTROLLED_STATUSES,
-} from "../lib/claim-transitions";
+  transitionGroupStatus,
+  transitionGroupOutcome,
+  transitionGroupStatusAndOutcome,
+  VALID_GROUP_STATUS_TRANSITIONS,
+  VALID_GROUP_OUTCOME_BY_STATUS,
+  SYSTEM_CONTROLLED_GROUP_STATUSES,
+} from "../lib/group-transitions";
 
 const router: IRouter = Router();
 
@@ -123,9 +124,9 @@ router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void>
     ...actor,
   });
 
-  broadcastClaimEvent({
+  broadcastGroupEvent({
     type: "group_edited",
-    claimId: id,
+    invoiceGroupId: id,
     userName: actor.userName,
     userEmail: actor.userEmail,
     timestamp: new Date().toISOString(),
@@ -141,48 +142,21 @@ router.patch("/invoice-groups/:id/status", asyncHandler(async (req, res): Promis
   const { status, reason } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
 
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
-
-  const currentStatus = group.status;
-  const validTargets = VALID_MANUAL_STATUS_TRANSITIONS[currentStatus] || [];
-  if (!validTargets.includes(status) && !SYSTEM_CONTROLLED_STATUSES.includes(currentStatus)) {
-    res.status(400).json({ error: `Cannot transition from ${currentStatus} to ${status}` });
-    return;
+  try {
+    const result = await transitionGroupStatus({
+      groupId: id,
+      newStatus: status,
+      source: "manual",
+      reason: reason || "Manual status change",
+      actor: actorFromReq(req),
+      extraFields: status === "On Hold" ? { holdReason: reason || null } : undefined,
+    });
+    res.json(result.group);
+  } catch (err: any) {
+    const msg = err.message || "Failed to update status";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
   }
-
-  const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = { status };
-  if (status === "On Hold") {
-    updateData.holdReason = reason || null;
-    updateData.holdPendingFrom = currentStatus;
-    updateData.holdPlacedAt = new Date().toISOString();
-  }
-  if (currentStatus === "On Hold" && status !== "On Hold") {
-    updateData.holdReason = null;
-    updateData.holdPendingFrom = null;
-    updateData.holdPlacedAt = null;
-  }
-
-  const [updated] = await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, id)).returning();
-
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_status_changed",
-    details: `Invoice group ${group.invoiceNumber} status changed from ${currentStatus} to ${status}`,
-    metadata: { from: currentStatus, to: status, reason: reason || null },
-    ...actor,
-  });
-
-  await db.insert(notesTable).values({
-    claimId: null,
-    invoiceGroupId: id,
-    type: "status_change",
-    content: `Status changed from ${currentStatus} to ${status}${reason ? `: ${reason}` : ""}`,
-    author: actor.userName || actor.userEmail || "System",
-  });
-
-  res.json(updated);
 }));
 
 router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
@@ -192,33 +166,41 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
   const { outcome, approvedAmount } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
-
-  const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = { outcome };
-  if (approvedAmount !== undefined) updateData.approvedAmount = String(approvedAmount);
-
-  let newStatus = group.status;
+  let newStatus: string | undefined;
   if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue") {
     newStatus = "Resolved";
-    updateData.status = newStatus;
   } else if (outcome === "Denied") {
     newStatus = "Denied";
-    updateData.status = newStatus;
   }
 
-  const [updated] = await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, id)).returning();
-
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_outcome_changed",
-    details: `Invoice group ${group.invoiceNumber} outcome set to ${outcome}`,
-    metadata: { outcome, approvedAmount, previousOutcome: group.outcome },
-    ...actor,
-  });
-
-  res.json(updated);
+  try {
+    if (newStatus) {
+      const result = await transitionGroupStatusAndOutcome({
+        groupId: id,
+        newStatus: newStatus as typeof invoiceGroupsTable.status.enumValues[number],
+        newOutcome: outcome,
+        source: "manual",
+        reason: `Outcome set to ${outcome}`,
+        actor: actorFromReq(req),
+        extraFields: approvedAmount !== undefined ? { approvedAmount: String(approvedAmount) } : undefined,
+      });
+      res.json(result.group);
+    } else {
+      const result = await transitionGroupOutcome({
+        groupId: id,
+        newOutcome: outcome,
+        source: "manual",
+        reason: `Outcome set to ${outcome}`,
+        actor: actorFromReq(req),
+        approvedAmount: approvedAmount !== undefined ? String(approvedAmount) : undefined,
+      });
+      res.json(result.group);
+    }
+  } catch (err: any) {
+    const msg = err.message || "Failed to update outcome";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
 }));
 
 router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise<void> => {
@@ -226,50 +208,59 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const { triageOutcome, errorTypeId, errorTypeName, notes: triageNotes } = req.body;
-  if (!triageOutcome) { res.status(400).json({ error: "triageOutcome is required" }); return; }
-
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  if (!triageOutcome || !["non_issue", "issue_found"].includes(triageOutcome)) {
+    res.status(400).json({ error: "triageOutcome must be 'non_issue' or 'issue_found'" });
+    return;
+  }
 
   const actor = actorFromReq(req);
 
-  if (triageOutcome === "non_issue") {
-    await db.update(invoiceGroupsTable).set({
-      status: "Resolved",
-      outcome: "Non-Issue",
-      triageNotes: triageNotes || null,
-      triagedAt: new Date().toISOString(),
-      totalAmount: "0",
-    }).where(eq(invoiceGroupsTable.id, id));
+  try {
+    if (triageOutcome === "non_issue") {
+      const result = await transitionGroupStatusAndOutcome({
+        groupId: id,
+        newStatus: "Resolved",
+        newOutcome: "Non-Issue",
+        source: "triage",
+        reason: `Triaged as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
+        actor,
+        extraFields: {
+          triageNotes: triageNotes || null,
+          triagedAt: new Date().toISOString(),
+          totalAmount: "0",
+        },
+        childFields: {
+          claimAmount: "0",
+          approvedAmount: "0",
+        },
+      });
+      res.json(result.group);
+    } else {
+      if (!errorTypeId || !errorTypeName) {
+        res.status(400).json({ error: "errorTypeId and errorTypeName are required for issue_found" });
+        return;
+      }
 
-    await db.update(claimsTable).set({
-      status: "Resolved",
-      outcome: "Non-Issue",
-      claimAmount: "0",
-    }).where(eq(claimsTable.invoiceGroupId, id));
-  } else {
-    const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = {
-      status: "New",
-      triageNotes: triageNotes || null,
-      triagedAt: new Date().toISOString(),
-    };
-    if (errorTypeId) {
-      updateData.errorTypeId = errorTypeId;
-      updateData.errorTypeName = errorTypeName || null;
+      const result = await transitionGroupStatus({
+        groupId: id,
+        newStatus: "New",
+        source: "triage",
+        reason: `Issue identified during triage: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
+        actor,
+        extraFields: {
+          errorTypeId: String(errorTypeId),
+          errorTypeName,
+          triageNotes: triageNotes || null,
+          triagedAt: new Date().toISOString(),
+        },
+      });
+      res.json(result.group);
     }
-    await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, id));
+  } catch (err: any) {
+    const msg = err.message || "Failed to triage";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
   }
-
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_triaged",
-    details: `Invoice group ${group.invoiceNumber} triaged: ${triageOutcome}`,
-    metadata: { triageOutcome, errorTypeId, triageNotes },
-    ...actor,
-  });
-
-  const [updated] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  res.json(updated);
 }));
 
 router.post("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<void> => {
@@ -277,26 +268,22 @@ router.post("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<v
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const { reason } = req.body;
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  const [updated] = await db.update(invoiceGroupsTable).set({
-    status: "On Hold",
-    holdReason: reason || null,
-    holdPendingFrom: group.status,
-    holdPlacedAt: new Date().toISOString(),
-  }).where(eq(invoiceGroupsTable.id, id)).returning();
-
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_hold_placed",
-    details: `Invoice group ${group.invoiceNumber} placed on hold: ${reason || "No reason given"}`,
-    metadata: { reason, previousStatus: group.status },
-    ...actor,
-  });
-
-  res.json(updated);
+  try {
+    const result = await transitionGroupStatus({
+      groupId: id,
+      newStatus: "On Hold",
+      source: "manual",
+      reason: reason || "No reason given",
+      actor: actorFromReq(req),
+      extraFields: { holdReason: reason || null },
+    });
+    res.json(result.group);
+  } catch (err: any) {
+    const msg = err.message || "Failed to place on hold";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
 }));
 
 router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<void> => {
@@ -307,23 +294,22 @@ router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
   const resumeStatus = group.holdPendingFrom || "Needs Evidence";
-  const [updated] = await db.update(invoiceGroupsTable).set({
-    status: resumeStatus as typeof group.status,
-    holdReason: null,
-    holdPendingFrom: null,
-    holdPlacedAt: null,
-  }).where(eq(invoiceGroupsTable.id, id)).returning();
 
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_hold_removed",
-    details: `Invoice group ${group.invoiceNumber} hold removed, resumed to ${resumeStatus}`,
-    metadata: { resumeStatus },
-    ...actor,
-  });
-
-  res.json(updated);
+  try {
+    const result = await transitionGroupStatus({
+      groupId: id,
+      newStatus: resumeStatus,
+      source: "manual",
+      reason: "Hold removed",
+      actor: actorFromReq(req),
+      systemOverride: true,
+    });
+    res.json(result.group);
+  } catch (err: any) {
+    const msg = err.message || "Failed to remove hold";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
 }));
 
 router.post("/invoice-groups/bulk-assign-error-type", asyncHandler(async (req, res): Promise<void> => {
@@ -369,8 +355,8 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
 
   const hasActiveSubmission = activeSubmissions.length > 0;
 
-  const validStatuses = hasActiveSubmission ? [] : (VALID_MANUAL_STATUS_TRANSITIONS[group.status] || []);
-  const validOutcomes = VALID_OUTCOME_BY_STATUS[group.status] || [];
+  const validStatuses = hasActiveSubmission ? [] : (VALID_GROUP_STATUS_TRANSITIONS[group.status] || []);
+  const validOutcomes = VALID_GROUP_OUTCOME_BY_STATUS[group.status] || [];
 
   const canQueueForPortal = !hasActiveSubmission &&
     group.status === "Needs Evidence" &&

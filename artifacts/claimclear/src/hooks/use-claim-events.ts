@@ -141,6 +141,15 @@ export function useClaimsListEvents() {
         });
       });
 
+      es.addEventListener("group_update", () => {
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) && key[0] === "/api/invoice-groups";
+          },
+        });
+      });
+
       es.onopen = () => {
         retryCount.current = 0;
       };
