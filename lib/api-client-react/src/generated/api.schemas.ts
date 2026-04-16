@@ -124,6 +124,16 @@ export interface ClaimResponse {
   updatedAt?: string;
 }
 
+export interface ValidTransitionsResponse {
+  validStatuses: string[];
+  validOutcomes: string[];
+  canQueueForPortal: boolean;
+  hasActiveSubmission: boolean;
+  postResponseActions: string[];
+  /** @nullable */
+  latestResponseType?: string | null;
+}
+
 export type InvoiceGroupResponseStatus =
   (typeof InvoiceGroupResponseStatus)[keyof typeof InvoiceGroupResponseStatus];
 
@@ -1121,6 +1131,10 @@ export type BulkAssignInvoiceGroupErrorTypeBody = {
 export type BulkAssignInvoiceGroupErrorType200 = {
   success?: boolean;
   updated?: number;
+};
+
+export type ListInvoiceGroupEvidence200 = {
+  evidence: ClaimEvidenceResponse[];
 };
 
 export type ListClaimsParams = {

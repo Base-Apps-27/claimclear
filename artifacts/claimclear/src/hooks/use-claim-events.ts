@@ -5,6 +5,9 @@ import {
   getListClaimNotesQueryKey,
   getListClaimAuditLogsQueryKey,
   getGetPresenceQueryKey,
+  getGetInvoiceGroupQueryKey,
+  getListInvoiceGroupEvidenceQueryKey,
+  getGetInvoiceGroupValidTransitionsQueryKey,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { toast } from "@/hooks/use-toast";
@@ -116,6 +119,119 @@ export function useClaimEvents(claimId: number | undefined) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [claimId, handleEvent, handlePresenceEvent]);
+}
+
+interface GroupEvent {
+  type: string;
+  invoiceGroupId: number;
+  userName: string | null;
+  userEmail: string | null;
+  timestamp: string;
+}
+
+const GROUP_EVENT_LABELS: Record<string, string> = {
+  group_status_changed: "changed the status",
+  group_outcome_changed: "changed the outcome",
+  group_edited: "updated the invoice group",
+  group_evidence_added: "added evidence",
+  group_evidence_removed: "removed evidence",
+  group_hold_placed: "placed the group on hold",
+  group_hold_removed: "removed the hold",
+  group_workflow_updated: "updated the workflow",
+  group_triaged: "triaged the group",
+};
+
+export function useInvoiceGroupEvents(groupId: number | undefined) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const retryCount = useRef(0);
+
+  const handleEvent = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const data: GroupEvent = JSON.parse(event.data);
+        queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(data.invoiceGroupId) });
+        queryClient.invalidateQueries({ queryKey: getListInvoiceGroupEvidenceQueryKey(data.invoiceGroupId) });
+        queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(data.invoiceGroupId) });
+
+        if (data.userEmail && user?.email && data.userEmail !== user.email) {
+          const who = data.userName || data.userEmail;
+          const action = GROUP_EVENT_LABELS[data.type] || "made a change";
+          toast({
+            title: "Invoice group updated",
+            description: `${who} ${action}`,
+            duration: 4000,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [queryClient, user?.email],
+  );
+
+  useEffect(() => {
+    if (!groupId) return;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+      es = new EventSource(`${base}/api/invoice-groups/${groupId}/events`, {
+        withCredentials: true,
+      });
+      es.addEventListener("group_update", handleEvent);
+      es.onopen = () => { retryCount.current = 0; };
+      es.onerror = () => {
+        es?.close();
+        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
+        retryCount.current += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+    }
+    connect();
+    return () => {
+      es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [groupId, handleEvent]);
+}
+
+export function useInvoiceGroupsListEvents() {
+  const queryClient = useQueryClient();
+  const retryCount = useRef(0);
+
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+      es = new EventSource(`${base}/api/invoice-groups/events`, {
+        withCredentials: true,
+      });
+      es.addEventListener("group_update", () => {
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/invoice-groups");
+          },
+        });
+      });
+      es.onopen = () => { retryCount.current = 0; };
+      es.onerror = () => {
+        es?.close();
+        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
+        retryCount.current += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+    }
+    connect();
+    return () => {
+      es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [queryClient]);
 }
 
 export function useClaimsListEvents() {

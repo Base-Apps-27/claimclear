@@ -398,6 +398,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/ValidTransitionsResponse"
 
+  /invoice-groups/{id}/workflow:
+    patch:
+      operationId: updateInvoiceGroupWorkflow
+      tags: [invoice-groups]
+      summary: Update workflow progress for an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowBody"
+      responses:
+        "200":
+          description: Workflow updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/{id}/evidence:
+    get:
+      operationId: listInvoiceGroupEvidence
+      tags: [invoice-groups]
+      summary: List evidence collected for an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Evidence list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evidence:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClaimEvidenceResponse"
+                required:
+                  - evidence
+    post:
+      operationId: addInvoiceGroupEvidence
+      tags: [invoice-groups]
+      summary: Add evidence to an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddClaimEvidenceBody"
+      responses:
+        "201":
+          description: Evidence added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimEvidenceResponse"
+
+  /invoice-groups/{id}/evidence/{evidenceId}:
+    delete:
+      operationId: deleteInvoiceGroupEvidence
+      tags: [invoice-groups]
+      summary: Delete evidence from an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: evidenceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
   /claims:
     get:
       operationId: listClaims
@@ -2147,6 +2241,34 @@ components:
         - status
         - outcome
         - disputeEmailSent
+
+    ValidTransitionsResponse:
+      type: object
+      properties:
+        validStatuses:
+          type: array
+          items:
+            type: string
+        validOutcomes:
+          type: array
+          items:
+            type: string
+        canQueueForPortal:
+          type: boolean
+        hasActiveSubmission:
+          type: boolean
+        postResponseActions:
+          type: array
+          items:
+            type: string
+        latestResponseType:
+          type: ["string", "null"]
+      required:
+        - validStatuses
+        - validOutcomes
+        - canQueueForPortal
+        - hasActiveSubmission
+        - postResponseActions
 
     InvoiceGroupResponse:
       type: object

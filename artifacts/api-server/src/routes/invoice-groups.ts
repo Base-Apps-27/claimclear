@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastGroupEvent } from "../lib/sse";
 import {
@@ -25,6 +25,16 @@ function actorFromReq(req: Request) {
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   };
+}
+
+function emitGroupEvent(invoiceGroupId: number, type: string, req: Request) {
+  broadcastGroupEvent({
+    type,
+    invoiceGroupId,
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
@@ -124,13 +134,7 @@ router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void>
     ...actor,
   });
 
-  broadcastGroupEvent({
-    type: "group_edited",
-    invoiceGroupId: id,
-    userName: actor.userName,
-    userEmail: actor.userEmail,
-    timestamp: new Date().toISOString(),
-  });
+  emitGroupEvent(id, "group_edited", req);
 
   res.json(group);
 }));
@@ -388,6 +392,77 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     postResponseActions,
     latestResponseType,
   });
+}));
+
+router.patch("/invoice-groups/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { workflowProgress } = req.body;
+  const [group] = await db.update(invoiceGroupsTable)
+    .set({ workflowProgress })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  const actor = actorFromReq(req);
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: id,
+    action: "group_workflow_step",
+    details: `Workflow progress updated for invoice group ${group.invoiceNumber}`,
+    ...actor,
+  });
+
+  emitGroupEvent(id, "group_workflow_updated", req);
+  res.json(group);
+}));
+
+router.get("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const evidence = await db.select().from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.invoiceGroupId, id))
+    .orderBy(claimEvidenceTable.collectedAt);
+  res.json({ evidence });
+}));
+
+router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { evidenceTypeId, evidenceTypeName, treeNodeId, imageUrl, notes } = req.body;
+  if (!evidenceTypeName) {
+    res.status(400).json({ error: "evidenceTypeName is required" });
+    return;
+  }
+
+  const user = req.user;
+  const [created] = await db.insert(claimEvidenceTable).values({
+    claimId: null,
+    invoiceGroupId: id,
+    evidenceTypeId: evidenceTypeId || null,
+    evidenceTypeName,
+    treeNodeId: treeNodeId || null,
+    imageUrl: imageUrl || null,
+    notes: notes || null,
+    collectedBy: user?.displayName || user?.email || null,
+  }).returning();
+
+  emitGroupEvent(id, "group_evidence_added", req);
+  res.status(201).json(created);
+}));
+
+router.delete("/invoice-groups/:id/evidence/:evidenceId", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const evidenceId = parseInt(String(req.params.evidenceId), 10);
+  if (isNaN(id) || isNaN(evidenceId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  await db.delete(claimEvidenceTable)
+    .where(and(eq(claimEvidenceTable.id, evidenceId), eq(claimEvidenceTable.invoiceGroupId, id)));
+
+  emitGroupEvent(id, "group_evidence_removed", req);
+  res.json({ success: true });
 }));
 
 router.delete("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {

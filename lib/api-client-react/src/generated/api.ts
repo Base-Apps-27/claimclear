@@ -65,6 +65,7 @@ import type {
   ListClaimEvidence200,
   ListClaimsParams,
   ListEvidenceTypes200,
+  ListInvoiceGroupEvidence200,
   ListInvoiceGroupsParams,
   ListPortalSubmissionsParams,
   ListResponses200,
@@ -1323,6 +1324,365 @@ export function useGetInvoiceGroupValidTransitions<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Update workflow progress for an invoice group
+ */
+export const getUpdateInvoiceGroupWorkflowUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/workflow`;
+};
+
+export const updateInvoiceGroupWorkflow = async (
+  id: number,
+  updateWorkflowBody: UpdateWorkflowBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getUpdateInvoiceGroupWorkflowUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateWorkflowBody),
+    },
+  );
+};
+
+export const getUpdateInvoiceGroupWorkflowMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>,
+    TError,
+    { id: number; data: BodyType<UpdateWorkflowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>,
+  TError,
+  { id: number; data: BodyType<UpdateWorkflowBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInvoiceGroupWorkflow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>,
+    { id: number; data: BodyType<UpdateWorkflowBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInvoiceGroupWorkflow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInvoiceGroupWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>
+>;
+export type UpdateInvoiceGroupWorkflowMutationBody =
+  BodyType<UpdateWorkflowBody>;
+export type UpdateInvoiceGroupWorkflowMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update workflow progress for an invoice group
+ */
+export const useUpdateInvoiceGroupWorkflow = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>,
+    TError,
+    { id: number; data: BodyType<UpdateWorkflowBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInvoiceGroupWorkflow>>,
+  TError,
+  { id: number; data: BodyType<UpdateWorkflowBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInvoiceGroupWorkflowMutationOptions(options));
+};
+
+/**
+ * @summary List evidence collected for an invoice group
+ */
+export const getListInvoiceGroupEvidenceUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/evidence`;
+};
+
+export const listInvoiceGroupEvidence = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ListInvoiceGroupEvidence200> => {
+  return customFetch<ListInvoiceGroupEvidence200>(
+    getListInvoiceGroupEvidenceUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListInvoiceGroupEvidenceQueryKey = (id: number) => {
+  return [`/api/invoice-groups/${id}/evidence`] as const;
+};
+
+export const getListInvoiceGroupEvidenceQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceGroupEvidence>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroupEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceGroupEvidenceQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceGroupEvidence>>
+  > = ({ signal }) =>
+    listInvoiceGroupEvidence(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceGroupEvidence>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceGroupEvidenceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceGroupEvidence>>
+>;
+export type ListInvoiceGroupEvidenceQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List evidence collected for an invoice group
+ */
+
+export function useListInvoiceGroupEvidence<
+  TData = Awaited<ReturnType<typeof listInvoiceGroupEvidence>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroupEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceGroupEvidenceQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add evidence to an invoice group
+ */
+export const getAddInvoiceGroupEvidenceUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/evidence`;
+};
+
+export const addInvoiceGroupEvidence = async (
+  id: number,
+  addClaimEvidenceBody: AddClaimEvidenceBody,
+  options?: RequestInit,
+): Promise<ClaimEvidenceResponse> => {
+  return customFetch<ClaimEvidenceResponse>(getAddInvoiceGroupEvidenceUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(addClaimEvidenceBody),
+  });
+};
+
+export const getAddInvoiceGroupEvidenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addInvoiceGroupEvidence>>,
+    TError,
+    { id: number; data: BodyType<AddClaimEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addInvoiceGroupEvidence>>,
+  TError,
+  { id: number; data: BodyType<AddClaimEvidenceBody> },
+  TContext
+> => {
+  const mutationKey = ["addInvoiceGroupEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addInvoiceGroupEvidence>>,
+    { id: number; data: BodyType<AddClaimEvidenceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return addInvoiceGroupEvidence(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddInvoiceGroupEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addInvoiceGroupEvidence>>
+>;
+export type AddInvoiceGroupEvidenceMutationBody =
+  BodyType<AddClaimEvidenceBody>;
+export type AddInvoiceGroupEvidenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add evidence to an invoice group
+ */
+export const useAddInvoiceGroupEvidence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addInvoiceGroupEvidence>>,
+    TError,
+    { id: number; data: BodyType<AddClaimEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addInvoiceGroupEvidence>>,
+  TError,
+  { id: number; data: BodyType<AddClaimEvidenceBody> },
+  TContext
+> => {
+  return useMutation(getAddInvoiceGroupEvidenceMutationOptions(options));
+};
+
+/**
+ * @summary Delete evidence from an invoice group
+ */
+export const getDeleteInvoiceGroupEvidenceUrl = (
+  id: number,
+  evidenceId: number,
+) => {
+  return `/api/invoice-groups/${id}/evidence/${evidenceId}`;
+};
+
+export const deleteInvoiceGroupEvidence = async (
+  id: number,
+  evidenceId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteInvoiceGroupEvidenceUrl(id, evidenceId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteInvoiceGroupEvidenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
+    TError,
+    { id: number; evidenceId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
+  TError,
+  { id: number; evidenceId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteInvoiceGroupEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
+    { id: number; evidenceId: number }
+  > = (props) => {
+    const { id, evidenceId } = props ?? {};
+
+    return deleteInvoiceGroupEvidence(id, evidenceId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteInvoiceGroupEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>
+>;
+
+export type DeleteInvoiceGroupEvidenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete evidence from an invoice group
+ */
+export const useDeleteInvoiceGroupEvidence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
+    TError,
+    { id: number; evidenceId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
+  TError,
+  { id: number; evidenceId: number },
+  TContext
+> => {
+  return useMutation(getDeleteInvoiceGroupEvidenceMutationOptions(options));
+};
 
 /**
  * @summary List claims with filtering

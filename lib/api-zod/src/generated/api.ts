@@ -740,7 +740,120 @@ export const GetInvoiceGroupValidTransitionsParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetInvoiceGroupValidTransitionsResponse = zod.unknown();
+export const GetInvoiceGroupValidTransitionsResponse = zod.object({
+  validStatuses: zod.array(zod.string()),
+  validOutcomes: zod.array(zod.string()),
+  canQueueForPortal: zod.boolean(),
+  hasActiveSubmission: zod.boolean(),
+  postResponseActions: zod.array(zod.string()),
+  latestResponseType: zod.string().nullish(),
+});
+
+/**
+ * @summary Update workflow progress for an invoice group
+ */
+export const UpdateInvoiceGroupWorkflowParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceGroupWorkflowBody = zod.object({
+  workflowProgress: zod.object({}).passthrough(),
+});
+
+export const UpdateInvoiceGroupWorkflowResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary List evidence collected for an invoice group
+ */
+export const ListInvoiceGroupEvidenceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceGroupEvidenceResponse = zod.object({
+  evidence: zod.array(
+    zod.object({
+      id: zod.number(),
+      claimId: zod.number(),
+      evidenceTypeId: zod.number().nullish(),
+      evidenceTypeName: zod.string(),
+      treeNodeId: zod.string().nullish(),
+      imageUrl: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      collectedBy: zod.string().nullish(),
+      collectedAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Add evidence to an invoice group
+ */
+export const AddInvoiceGroupEvidenceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AddInvoiceGroupEvidenceBody = zod.object({
+  evidenceTypeId: zod.number().optional(),
+  evidenceTypeName: zod.string(),
+  treeNodeId: zod.string().optional(),
+  imageUrl: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Delete evidence from an invoice group
+ */
+export const DeleteInvoiceGroupEvidenceParams = zod.object({
+  id: zod.coerce.number(),
+  evidenceId: zod.coerce.number(),
+});
 
 /**
  * @summary List claims with filtering

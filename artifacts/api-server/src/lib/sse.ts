@@ -8,6 +8,14 @@ export interface ClaimEvent {
   timestamp: string;
 }
 
+export interface GroupEvent {
+  type: string;
+  invoiceGroupId: number;
+  userName: string | null;
+  userEmail: string | null;
+  timestamp: string;
+}
+
 export interface PresenceEvent {
   type: "viewer_joined" | "viewer_left" | "bot_started" | "bot_completed";
   claimId: number;
@@ -24,6 +32,8 @@ type SSEClient = {
 
 const claimClients = new Map<number, Set<SSEClient>>();
 const globalClients = new Set<SSEClient>();
+const groupClients = new Map<number, Set<SSEClient>>();
+const globalGroupClients = new Set<SSEClient>();
 
 function initSSE(res: Response): void {
   res.writeHead(200, {
@@ -116,12 +126,41 @@ export function broadcastClaimEvent(event: ClaimEvent): void {
   }
 }
 
-export interface GroupEvent {
-  type: string;
-  invoiceGroupId: number;
-  userName: string | null;
-  userEmail: string | null;
-  timestamp: string;
+export function addGroupClient(groupId: number, res: Response, userEmail: string | null): () => void {
+  initSSE(res);
+  const client: SSEClient = { res, userEmail };
+  if (!groupClients.has(groupId)) groupClients.set(groupId, new Set());
+  groupClients.get(groupId)!.add(client);
+
+  const keepAlive = setInterval(() => {
+    try { res.write(":ping\n\n"); } catch { cleanup(); }
+  }, 25000);
+
+  const cleanup = () => {
+    clearInterval(keepAlive);
+    const set = groupClients.get(groupId);
+    if (set) {
+      set.delete(client);
+      if (set.size === 0) groupClients.delete(groupId);
+    }
+  };
+  return cleanup;
+}
+
+export function addGlobalGroupClient(res: Response, userEmail: string | null): () => void {
+  initSSE(res);
+  const client: SSEClient = { res, userEmail };
+  globalGroupClients.add(client);
+
+  const keepAlive = setInterval(() => {
+    try { res.write(":ping\n\n"); } catch { cleanup(); }
+  }, 25000);
+
+  const cleanup = () => {
+    clearInterval(keepAlive);
+    globalGroupClients.delete(client);
+  };
+  return cleanup;
 }
 
 function sendGroupEvent(client: SSEClient, event: GroupEvent): void {
@@ -132,17 +171,19 @@ function sendGroupEvent(client: SSEClient, event: GroupEvent): void {
   }
 }
 
+export function broadcastGroupEvent(event: GroupEvent): void {
+  const clients = groupClients.get(event.invoiceGroupId);
+  if (clients) {
+    for (const client of clients) sendGroupEvent(client, event);
+  }
+  for (const client of globalGroupClients) sendGroupEvent(client, event);
+}
+
 export function broadcastPresenceEvent(event: PresenceEvent): void {
   const clients = claimClients.get(event.claimId);
   if (clients) {
     for (const client of clients) {
       sendPresenceEvent(client, event);
     }
-  }
-}
-
-export function broadcastGroupEvent(event: GroupEvent): void {
-  for (const client of globalClients) {
-    sendGroupEvent(client, event);
   }
 }
