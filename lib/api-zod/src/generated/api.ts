@@ -302,6 +302,8 @@ export const GetClaimValidTransitionsResponse = zod.object({
   validOutcomes: zod.array(zod.string()).optional(),
   hasActiveSubmission: zod.boolean().optional(),
   canQueueForPortal: zod.boolean().optional(),
+  postResponseActions: zod.array(zod.string()).optional(),
+  latestResponseType: zod.string().nullish(),
 });
 
 /**
@@ -698,6 +700,75 @@ export const TriageClaimBody = zod.object({
 });
 
 export const TriageClaimResponse = zod.object({
+  id: zod.number(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+  ]),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Execute a post-response action after receiving a payor response
+ */
+export const PostResponseActionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PostResponseActionBody = zod.object({
+  action: zod.enum([
+    "resolve_reattest",
+    "resolve_new_invoice",
+    "accept_loss",
+    "re_dispute",
+  ]),
+  notes: zod.string().optional(),
+});
+
+export const PostResponseActionResponse = zod.object({
   id: zod.number(),
   confNumber: zod.string(),
   date: zod.string().nullish(),

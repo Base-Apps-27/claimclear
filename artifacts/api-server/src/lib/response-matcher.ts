@@ -3,7 +3,7 @@ import { claimsTable, portalSubmissionsTable, portalResponsesTable, notesTable, 
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import type { InboxMessage } from "./outlook";
 import { logger } from "./logger";
-import { transitionClaimStatusAndOutcome, transitionClaimStatus } from "./claim-transitions";
+import { transitionClaimStatus } from "./claim-transitions";
 
 interface MatchResult {
   claimId: number;
@@ -210,34 +210,14 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     userName: "Response Tracker",
   });
 
-  const statusMap: Record<string, { status: string; outcome?: string }> = {
-    approval: { status: "Resolved", outcome: "Approved" },
-    denial: { status: "Denied", outcome: "Denied" },
-    partial_approval: { status: "Resolved", outcome: "Partially Approved" },
-    info_request: { status: "Needs Review" },
-  };
-  const mapping = statusMap[responseType];
-  if (mapping) {
-    if (mapping.outcome) {
-      await transitionClaimStatusAndOutcome({
-        claimId: match.claimId,
-        newStatus: mapping.status,
-        newOutcome: mapping.outcome,
-        source: "email_response_matcher",
-        reason: `Email response auto-matched as ${responseType} (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
-        actor: { userEmail: "system", userName: "Response Tracker" },
-      });
-    } else {
-      await transitionClaimStatus({
-        claimId: match.claimId,
-        newStatus: mapping.status,
-        source: "email_response_matcher",
-        reason: `Email response auto-matched as ${responseType} (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
-        actor: { userEmail: "system", userName: "Response Tracker" },
-        systemOverride: true,
-      });
-    }
-  }
+  await transitionClaimStatus({
+    claimId: match.claimId,
+    newStatus: "Needs Review",
+    source: "email_response_matcher",
+    reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
+    actor: { userEmail: "system", userName: "Response Tracker" },
+    systemOverride: true,
+  });
 
   logger.info({
     responseId: response.id,
@@ -293,34 +273,14 @@ export async function processPortalResponse(data: {
     userName: "Response Tracker",
   });
 
-  const portalStatusMap: Record<string, { status: string; outcome?: string }> = {
-    approval: { status: "Resolved", outcome: "Approved" },
-    denial: { status: "Denied", outcome: "Denied" },
-    partial_approval: { status: "Resolved", outcome: "Partially Approved" },
-    info_request: { status: "Needs Review" },
-  };
-  const portalMapping = portalStatusMap[data.responseType];
-  if (portalMapping) {
-    if (portalMapping.outcome) {
-      await transitionClaimStatusAndOutcome({
-        claimId: data.claimId,
-        newStatus: portalMapping.status,
-        newOutcome: portalMapping.outcome,
-        source: "portal_response_matcher",
-        reason: `Portal response for ticket ${data.portalTicketId}: ${data.responseType}`,
-        actor: { userEmail: "system", userName: "Response Tracker" },
-      });
-    } else {
-      await transitionClaimStatus({
-        claimId: data.claimId,
-        newStatus: portalMapping.status,
-        source: "portal_response_matcher",
-        reason: `Portal response for ticket ${data.portalTicketId}: ${data.responseType}`,
-        actor: { userEmail: "system", userName: "Response Tracker" },
-        systemOverride: true,
-      });
-    }
-  }
+  await transitionClaimStatus({
+    claimId: data.claimId,
+    newStatus: "Needs Review",
+    source: "portal_response_matcher",
+    reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
+    actor: { userEmail: "system", userName: "Response Tracker" },
+    systemOverride: true,
+  });
 
   logger.info({
     responseId: response.id,

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
 import {
@@ -183,6 +183,33 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     }
   }
 
+  const responses = await db.select({
+    id: portalResponsesTable.id,
+    responseType: portalResponsesTable.responseType,
+    processed: portalResponsesTable.processed,
+  }).from(portalResponsesTable)
+    .where(eq(portalResponsesTable.claimId, id))
+    .orderBy(desc(portalResponsesTable.createdAt));
+
+  const hasResponses = responses.length > 0;
+  const latestResponseType = hasResponses ? responses[0].responseType : null;
+
+  const positiveTypes = ["approval", "partial_approval"];
+  const negativeTypes = ["denial"];
+  const isPositive = latestResponseType ? positiveTypes.includes(latestResponseType) : false;
+  const isNegative = latestResponseType ? negativeTypes.includes(latestResponseType) : false;
+
+  let postResponseActions: string[] = [];
+  if (hasResponses && claim.status === "Needs Review") {
+    if (isPositive) {
+      postResponseActions = ["resolve_reattest", "resolve_new_invoice"];
+    } else if (isNegative) {
+      postResponseActions = ["accept_loss", "re_dispute"];
+    } else {
+      postResponseActions = ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"];
+    }
+  }
+
   res.json({
     currentStatus: claim.status,
     currentOutcome: claim.outcome,
@@ -190,6 +217,8 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     validOutcomes,
     hasActiveSubmission: activeSubmissions.length > 0,
     canQueueForPortal: !activeSubmissions.length && ["Needs Evidence", "Needs Review", "New"].includes(claim.status),
+    postResponseActions,
+    latestResponseType,
   });
 }));
 
@@ -381,6 +410,88 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
     }
   } catch (err: any) {
     const msg = err.message || "Failed to triage";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
+}));
+
+const POST_RESPONSE_ACTIONS = ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"] as const;
+type PostResponseAction = typeof POST_RESPONSE_ACTIONS[number];
+
+const POST_RESPONSE_ACTION_LABELS: Record<PostResponseAction, string> = {
+  resolve_reattest: "Resolve — Reattest",
+  resolve_new_invoice: "Resolve — New Invoice #",
+  accept_loss: "Accept as Loss",
+  re_dispute: "Re-dispute with Additional Points",
+};
+
+router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { action, notes } = req.body;
+  if (!action || !POST_RESPONSE_ACTIONS.includes(action)) {
+    res.status(400).json({ error: `action must be one of: ${POST_RESPONSE_ACTIONS.join(", ")}` });
+    return;
+  }
+
+  const typedAction = action as PostResponseAction;
+  const actionLabel = POST_RESPONSE_ACTION_LABELS[typedAction];
+
+  try {
+    let result;
+    switch (typedAction) {
+      case "resolve_reattest":
+        result = await transitionClaimStatusAndOutcome({
+          claimId: id,
+          newStatus: "Resolved",
+          newOutcome: "Approved",
+          source: "post_response_action",
+          reason: `${actionLabel}${notes ? ` — ${notes}` : ""} (to be completed outside platform)`,
+          actor: actorFromReq(req),
+        });
+        break;
+
+      case "resolve_new_invoice":
+        result = await transitionClaimStatusAndOutcome({
+          claimId: id,
+          newStatus: "Resolved",
+          newOutcome: "Approved",
+          source: "post_response_action",
+          reason: `${actionLabel}${notes ? ` — ${notes}` : ""} (to be completed outside platform)`,
+          actor: actorFromReq(req),
+        });
+        break;
+
+      case "accept_loss":
+        result = await transitionClaimStatusAndOutcome({
+          claimId: id,
+          newStatus: "Denied",
+          newOutcome: "Denied",
+          source: "post_response_action",
+          reason: `${actionLabel}${notes ? ` — ${notes}` : ""}`,
+          actor: actorFromReq(req),
+        });
+        break;
+
+      case "re_dispute":
+        result = await transitionClaimStatus({
+          claimId: id,
+          newStatus: "Needs Evidence",
+          source: "post_response_action",
+          reason: `${actionLabel} — claim returned to evidence gathering for re-submission${notes ? `. ${notes}` : ""}`,
+          actor: actorFromReq(req),
+          systemOverride: true,
+          extraFields: {
+            workflowProgress: null,
+          },
+        });
+        break;
+    }
+
+    res.json(result!.claim);
+  } catch (err: any) {
+    const msg = err.message || "Failed to process post-response action";
     if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
     res.status(400).json({ error: msg });
   }

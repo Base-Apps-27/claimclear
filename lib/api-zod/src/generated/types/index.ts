@@ -94,6 +94,8 @@ export * from "./portalSubmissionResponseAttachmentUrls";
 export * from "./portalSubmissionResponseEvidenceFiles";
 export * from "./portalSubmissionResponseStatus";
 export * from "./portalSubmissionResponseWorkflowHistory";
+export * from "./postResponseActionBody";
+export * from "./postResponseActionBodyAction";
 export * from "./presenceHeartbeatBody";
 export * from "./presenceLeaveBody";
 export * from "./presenceResponse";

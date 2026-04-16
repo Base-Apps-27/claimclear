@@ -13,4 +13,6 @@ export type GetClaimValidTransitions200 = {
   validOutcomes?: string[];
   hasActiveSubmission?: boolean;
   canQueueForPortal?: boolean;
+  postResponseActions?: string[];
+  latestResponseType?: string | null;
 };

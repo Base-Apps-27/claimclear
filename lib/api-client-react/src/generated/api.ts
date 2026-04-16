@@ -69,6 +69,7 @@ import type {
   PollSubmissionsBody,
   PortalResponseItem,
   PortalSubmissionResponse,
+  PostResponseActionBody,
   PresenceHeartbeatBody,
   PresenceLeaveBody,
   PresenceResponse,
@@ -1461,6 +1462,93 @@ export const useTriageClaim = <
   TContext
 > => {
   return useMutation(getTriageClaimMutationOptions(options));
+};
+
+/**
+ * @summary Execute a post-response action after receiving a payor response
+ */
+export const getPostResponseActionUrl = (id: number) => {
+  return `/api/claims/${id}/post-response-action`;
+};
+
+export const postResponseAction = async (
+  id: number,
+  postResponseActionBody: PostResponseActionBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getPostResponseActionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(postResponseActionBody),
+  });
+};
+
+export const getPostResponseActionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof postResponseAction>>,
+    TError,
+    { id: number; data: BodyType<PostResponseActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof postResponseAction>>,
+  TError,
+  { id: number; data: BodyType<PostResponseActionBody> },
+  TContext
+> => {
+  const mutationKey = ["postResponseAction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof postResponseAction>>,
+    { id: number; data: BodyType<PostResponseActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return postResponseAction(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PostResponseActionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof postResponseAction>>
+>;
+export type PostResponseActionMutationBody = BodyType<PostResponseActionBody>;
+export type PostResponseActionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Execute a post-response action after receiving a payor response
+ */
+export const usePostResponseAction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof postResponseAction>>,
+    TError,
+    { id: number; data: BodyType<PostResponseActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof postResponseAction>>,
+  TError,
+  { id: number; data: BodyType<PostResponseActionBody> },
+  TContext
+> => {
+  return useMutation(getPostResponseActionMutationOptions(options));
 };
 
 /**

@@ -209,6 +209,21 @@ export interface TriageClaimBody {
   triageNotes?: string;
 }
 
+export type PostResponseActionBodyAction =
+  (typeof PostResponseActionBodyAction)[keyof typeof PostResponseActionBodyAction];
+
+export const PostResponseActionBodyAction = {
+  resolve_reattest: "resolve_reattest",
+  resolve_new_invoice: "resolve_new_invoice",
+  accept_loss: "accept_loss",
+  re_dispute: "re_dispute",
+} as const;
+
+export interface PostResponseActionBody {
+  action: PostResponseActionBodyAction;
+  notes?: string;
+}
+
 export interface GenerateEmailBody {
   disputeReason: string;
 }
@@ -966,6 +981,8 @@ export type GetClaimValidTransitions200 = {
   validOutcomes?: string[];
   hasActiveSubmission?: boolean;
   canQueueForPortal?: boolean;
+  postResponseActions?: string[];
+  latestResponseType?: string | null;
 };
 
 export type ListPortalSubmissionsParams = {

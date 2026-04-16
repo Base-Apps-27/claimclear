@@ -64,14 +64,14 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 
     const mapping = statusMap[responseType];
     if (mapping) {
-      const { transitionClaimStatusAndOutcome } = await import("../lib/claim-transitions");
-      await transitionClaimStatusAndOutcome({
+      const { transitionClaimStatus } = await import("../lib/claim-transitions");
+      await transitionClaimStatus({
         claimId: response.claimId,
-        newStatus: mapping.status,
-        newOutcome: mapping.outcome,
+        newStatus: "Needs Review",
         source: "response_tracker",
-        reason: `Response #${response.id} processed as ${responseType}`,
+        reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
         actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
+        systemOverride: true,
       });
     }
   }

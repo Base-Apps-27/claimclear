@@ -251,6 +251,13 @@ paths:
                     type: boolean
                   canQueueForPortal:
                     type: boolean
+                  postResponseActions:
+                    type: array
+                    items:
+                      type: string
+                  latestResponseType:
+                    type: string
+                    nullable: true
 
   /claims/{id}/status:
     patch:
@@ -414,6 +421,31 @@ paths:
       responses:
         "200":
           description: Claim triaged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/post-response-action:
+    post:
+      operationId: postResponseAction
+      tags: [claims]
+      summary: Execute a post-response action after receiving a payor response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostResponseActionBody"
+      responses:
+        "200":
+          description: Action executed
           content:
             application/json:
               schema:
@@ -1950,6 +1982,17 @@ components:
         errorTypeName:
           type: string
         triageNotes:
+          type: string
+      required:
+        - action
+
+    PostResponseActionBody:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"]
+        notes:
           type: string
       required:
         - action
