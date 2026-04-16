@@ -3,7 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { notesTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { broadcastClaimEvent } from "../lib/sse";
+import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 
 const router: IRouter = Router();
 
@@ -77,19 +77,31 @@ router.delete("/notes/:id", asyncHandler(async (req, res): Promise<void> => {
   const author = req.user?.displayName || userEmail || "Unknown";
   await db.insert(auditLogsTable).values({
     claimId: note.claimId,
+    invoiceGroupId: note.invoiceGroupId,
     action: "note_deleted",
     details: `Note deleted by ${author}`,
     userEmail: req.user?.email || null,
     userName: author,
   });
 
-  broadcastClaimEvent({
-    type: "note_deleted",
-    claimId: note.claimId,
-    userName: req.user?.displayName ?? null,
-    userEmail: req.user?.email ?? null,
-    timestamp: new Date().toISOString(),
-  });
+  if (note.claimId != null) {
+    broadcastClaimEvent({
+      type: "note_deleted",
+      claimId: note.claimId,
+      userName: req.user?.displayName ?? null,
+      userEmail: req.user?.email ?? null,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  if (note.invoiceGroupId != null) {
+    broadcastGroupEvent({
+      type: "note_deleted",
+      invoiceGroupId: note.invoiceGroupId,
+      userName: req.user?.displayName ?? null,
+      userEmail: req.user?.email ?? null,
+      timestamp: new Date().toISOString(),
+    });
+  }
   res.sendStatus(204);
 }));
 

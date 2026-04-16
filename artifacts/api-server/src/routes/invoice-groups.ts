@@ -297,7 +297,7 @@ router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise
   const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  const resumeStatus = group.holdPendingFrom || "Needs Evidence";
+  const resumeStatus = (group.holdPendingFrom || "Needs Evidence") as typeof group.status;
 
   try {
     const result = await transitionGroupStatus({
