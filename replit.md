@@ -1,7 +1,7 @@
 # ClaimClear Project
 
 ## Overview
-ClaimClear is a full NEMT (Non-Emergency Medical Transportation) rejected claims dispute tracker platform. It is designed to import rejected claims, guide staff through decision-tree workflows for dispute resolution, and automate the submission of disputes to the MAS Transportation Provider Support Portal using Playwright bots. The project aims to streamline the claims dispute process, reduce financial losses, and improve operational efficiency for NEMT providers.
+ClaimClear is a full NEMT (Non-Emergency Medical Transportation) rejected claims dispute tracker platform. Its primary purpose is to streamline the claims dispute process, reduce financial losses, and improve operational efficiency for NEMT providers by importing rejected claims, guiding staff through decision-tree workflows for dispute resolution, and automating dispute submissions to the MAS Transportation Provider Support Portal.
 
 ## User Preferences
 I want to emphasize iterative development and prefer detailed explanations when new features are introduced or significant changes are made. I appreciate clear, concise communication and enjoy seeing functional programming paradigms where they enhance code readability and maintainability. Please ask before making any major architectural changes or introducing new external dependencies.
@@ -11,61 +11,40 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 
 **Technology Stack:**
 - **Monorepo:** pnpm workspaces
-- **Backend:** Node.js 24, Express 5, PostgreSQL, Drizzle ORM, Zod for validation
+- **Backend:** Node.js 24, Express 5, PostgreSQL, Drizzle ORM, Zod
 - **Frontend:** React, Vite, Tailwind CSS, shadcn/ui
 - **Authentication:** Replit Auth (OpenID Connect with PKCE)
 - **AI:** Anthropic Claude (via Replit AI Integrations proxy)
 - **Bot Automation:** Playwright
-- **API Codegen:** Orval (from OpenAPI spec)
+- **API Codegen:** Orval
 - **Build Tool:** esbuild
 
 **Core Architectural Decisions:**
-- **Error Handling:** All async route handlers are wrapped to catch unhandled rejections and forward them to a global Express error handler, which logs errors and returns generic JSON responses to prevent information leakage.
-- **Authentication:** Session-based authentication with both absolute and idle timeouts. Session validity is managed via the database, not OIDC token expiry. Specific middleware exists for general authentication, admin roles, and bot token verification.
-- **Frontend Serving:** The React + Vite frontend is built as static files and served by the Express API server. In development, the API server serves the production build from `artifacts/claimclear/dist/public/`. In production, the same approach is used. This unified serving approach ensures both API and frontend are on the same port (8080), avoiding port detection issues.
-- **Database Design:** A PostgreSQL database managed by Drizzle ORM stores 16 entities including users, sessions, invoice_groups, claims, notes, audit logs, error types, portal submissions, portal responses, bot instances, presence logs, evidence types, claim evidence, and AI conversations.
-- **Invoice Groups (Ride Grouping):** Rides are organized by invoice number (parsed from the first number in the Ref # field, e.g., "1863585400 403724499" → invoice "1863585400"). The `invoice_groups` table is the primary unit of work for disputes — one portal dispute is filed per invoice group. Each invoice group has its own status, outcome, error type, workflow progress, and evidence. Individual rides (`claims` table) are children linked via `invoice_group_id`. During import, rides are automatically grouped by invoice number. Error details are aggregated at the group level. Related tables (`portal_submissions`, `portal_responses`, `notes`, `audit_logs`, `claim_evidence`) have an `invoice_group_id` column for group-level tracking. Routes: `artifacts/api-server/src/routes/invoice-groups.ts`. Schema: `lib/db/src/schema/invoice-groups.ts`.
-- **Response Tracking:** The `portal_responses` table tracks incoming responses from both email inbox monitoring and portal polling. Responses are auto-matched to claims via ticket IDs, confirmation numbers, reference numbers, or payor email addresses. Each response has a source (email/portal/manual), response type (approval/denial/partial_approval/info_request/acknowledgment/other), and confidence level. When a response is detected, the claim moves to "Needs Review" — it does NOT auto-resolve or auto-deny. Staff must choose a post-response action to determine the next step. Staff can also review, override, or manually link unmatched responses. Routes: `artifacts/api-server/src/routes/response-tracker.ts`. Matcher logic: `artifacts/api-server/src/lib/response-matcher.ts`.
-- **Claim Workflow & Statuses:** Claims progress through statuses like New, Needs Review, Needs Evidence, Portal Queued, Awaiting Response, On Hold, Resolved, or Denied. The "Needs Review" status is auto-assigned to claims imported with no error details — these require manual portal review and triage. The triage flow has two outcomes: "Non-Issue" (resolved, $0 financial impact) or "Issue Found" (assign error type and move to normal workflow). The "Non-Issue" outcome is a dedicated outcome type that zeroes out the claim amount.
-- **Centralized Claim Transitions (`claim-transitions.ts`):** ALL status and outcome changes — regardless of source (user, bot, response tracker, batch processor, triage) — go through `transitionClaimStatus()`, `transitionClaimOutcome()`, or `transitionClaimStatusAndOutcome()` in `artifacts/api-server/src/lib/claim-transitions.ts`. Every call requires a `source` (e.g., "manual", "portal_bot_complete", "email_response_matcher") and `reason` string. The function always creates an audit log entry, a timeline note, and emits an SSE event. Manual transitions are validated against the state machine; system transitions use `systemOverride: true` to bypass validation but still get fully logged. No code should directly `db.update(claimsTable).set({ status: ... })` — all paths go through this centralized module. The `GET /api/claims/valid-transitions/:id` endpoint returns valid statuses, outcomes, portal-queue eligibility, and post-response actions for the frontend. Portal submission retry is restricted to `failed`/`dry_run` submissions, and cancel is blocked for `in_progress`/`submitted` submissions.
-- **Centralized Group Transitions (`group-transitions.ts`):** Mirrors `claim-transitions.ts` for invoice groups. `transitionGroupStatus()` and `transitionGroupStatusAndOutcome()` handle group-level status/outcome changes with audit logs, notes, and SSE broadcasts via `broadcastGroupEvent()`. When a group moves to a terminal status (Resolved/Denied), child rides are automatically synced to match via `syncChildRides()`. The invoice-groups routes (status, outcome, triage, hold/unhold) all use these centralized functions. File: `artifacts/api-server/src/lib/group-transitions.ts`.
-- **Post-Response Workflow:** When a payor responds (via email or portal), the claim moves to "Needs Review" instead of auto-resolving/denying. Staff must choose a post-response action: **Positive responses** → "Resolve — Reattest" or "Resolve — New Invoice #" (both resolve the claim; the actual re-attestation or resubmission happens outside ClaimClear). **Negative responses** → "Accept as Loss" (marks as denied) or "Re-dispute" (resets to "Needs Evidence" with workflow progress cleared, so staff can gather additional evidence and resubmit through the portal). The valid-transitions endpoint returns `postResponseActions` and `latestResponseType` so the UI only shows relevant options. The post-response action panel appears on the claim detail page as a prominent blue card when actions are available. Endpoint: `POST /api/claims/:id/post-response-action`.
-- **Decision Trees (Single Workflow System):** The decision tree IS the workflow system — it handles SOP logic, evidence collection (inline at each node), branching, and dispute reasons (via outcome labels). There is no separate evidence requirements editor, dispute reasons library, or SOP text — all of this lives in the tree. If a claim's error type has no tree, the queue blocks processing and tells the user a workflow must be assigned. The queue uses a 3-step flow: Review → Follow Workflow → Act.
-- **Hold & Resume:** When a workflow reaches a "hold" outcome (or the user manually holds), the full decision tree state (steps taken, current node, evidence collected) is saved to `workflowProgress.treeState`. When the hold is removed, the claim returns to "Needs Evidence" (Action Required queue) and the TreePlayer restores from the saved snapshot — the user resumes at the exact decision point where they paused. The TreePlayer uses `forwardRef`/`useImperativeHandle` to expose `getState()` and accepts an `initialState` prop for restoration.
-- **Error Type Model:** Simplified to: name, category, description, decision tree (core), and dispute instructions (AI writing guidelines). Legacy fields (guidance, recommendedActions, emailTemplate, disputeReasonsLibrary, evidenceRequirements) remain in the DB schema for backward compatibility but are not surfaced in the editor UI.
-- **Evidence Management:** Supports object storage (GCS-backed presigned URLs), a reusable evidence types library, and claim-specific evidence collection linked to decision tree nodes.
-- **Real-time Updates (SSE):** Server-Sent Events are used to push claim changes and presence updates to connected clients in real-time, enabling features like collision detection and instant UI updates.
-- **Collision Detection:** Advisory-only presence system using heartbeats and SSE to notify users of others viewing or bots processing the same claim. Bot presence map auto-purges stale entries older than 10 minutes.
-- **API Security:** Routes are protected with specific authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) based on their function.
-- **Database Indexes:** All major tables have indexes on frequently queried columns (claims: status, confNumber, date, createdAt; portal_submissions: claimId, status; audit_logs: claimId; notes: claimId; claim_evidence: claimId; bot_activity_log: submissionId).
-- **Cron Jobs:** Midnight EST batch job processes pending portal submissions. Weekday 7 AM EST daily brief sends summary email via Outlook/SMTP. Every 30 minutes during business hours (8 AM - 6 PM EST, weekdays) the response tracker scans the Outlook inbox for payor responses and auto-links them to claims.
-- **Bot Architecture:** Two bot execution paths share a single browser worker (`batch-worker.ts`): (1) **Batch path** — the primary path used by the midnight cron and manual batch triggers via `batch-processor.ts`, runs in-process; (2) **Standalone bot** (`portal-bot.ts`) — an external polling process (via `pnpm run bot:run`) that claims work via API and delegates browser work to the same `runBatchWorker()` function. Both paths handle login, form filling, GPS conditional fields, mandatory evidence upload with retries, and session persistence. On successful submission, the claim status advances to "Awaiting Response", a note is created, and `disputeEmailSent` is set.
-- **Evidence → Attachments Pipeline:** Evidence images collected during the decision tree workflow are stored in the `claim_evidence` table (with `image_url` pointing to `/objects/uploads/uuid.ext` in GCS object storage). When portal submissions are created, the `collectEvidenceUrls()` helper queries `claim_evidence` for the claim's image URLs and merges with any legacy `claims.evidence_files` JSON data. The bot's `downloadToTemp()` function handles three URL types: (1) `/objects/` paths — downloaded directly from GCS via `ObjectStorageService.downloadObjectToTemp()`, (2) local file paths — used as-is, (3) full HTTP URLs — fetched via `fetch()`.
-- **GPS Breadcrumbs Resolution:** The `resolveGpsBreadcrumbs()` helper defaults to "Yes" for GPS Control Deviation issues when no valid value is configured in app settings. Valid values are "Yes", "No", "Unknown".
-- **MAS Portal (Freshdesk):** The portal at `tpissues.medanswering.com` is a Freshdesk instance. The bot navigates directly to `/support/tickets/new?ticket_form=<slug>` to skip the issue-type dropdown (which causes a full page reload). All form fields use Freshdesk-specific IDs with account suffix `_4128361` (e.g., `#helpdesk_ticket_custom_field_cf_tp_name_4128361`). **Important:** Logging in removes reCAPTCHA, so authenticated sessions can submit tickets without CAPTCHA blocking. The bot persists session state to `state.json` to reuse login across runs. Issue types map to URL slugs: GPS Control Deviation → `gps_control_deviation`, Custom Payment Request → `custom_payment_request`, etc. The description field uses a rich text editor (Froala/CKEditor); bot tries textarea fill, then Froala `.fr-element`, then contenteditable fallback.
-- **UI/UX:** The application adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
-- **TypeScript Monorepo:** Utilizes TypeScript composite projects and `pnpm workspaces` for robust type-checking and dependency management across packages.
-
-**Project Structure:**
-- `artifacts/api-server/` — Express API server, also serves the built frontend static files
-- `artifacts/claimclear/` — React + Vite frontend (built to `dist/public/`, served by API server)
-- `artifacts/mockup-sandbox/` — Design/component preview sandbox (port 8081)
-- `lib/` — Shared libraries: `db` (Drizzle ORM), `api-spec` (OpenAPI), `api-zod` (Generated Zod schemas), `api-client-react` (Generated React Query hooks), `integrations-anthropic-ai` (Anthropic AI SDK client)
-- `scripts/` — Utility scripts
-
-**Port Configuration:**
-- Port 8080: API Server (Express) — serves both `/api/*` routes AND static frontend at `/`
-- Port 8081: Mockup Sandbox (Vite) — design preview at `/__mockup`
-- Port 5173: ClaimClear Vite dev server (development only, not used in production)
-
-**Production Build:**
-- The production build first builds the ClaimClear frontend (`pnpm --filter @workspace/claimclear run build`), then builds the API server (`pnpm --filter @workspace/api-server run build`)
-- The API server's `app.ts` serves static files from `artifacts/claimclear/dist/public/` and falls back to `index.html` for SPA routing
+- **Error Handling:** Centralized error handling for async Express routes to log errors and prevent information leakage.
+- **Authentication:** Session-based authentication with timeouts, managed via the database, supporting general users, admins, and bot tokens.
+- **Frontend Serving:** React + Vite frontend served as static files by the Express API server from a single port (8080) for both development and production.
+- **Database Design:** PostgreSQL database with Drizzle ORM, managing 16 entities including users, claims, invoice groups, and audit logs.
+- **Invoice Groups:** Claims are grouped by invoice number, forming the primary unit for dispute resolution, with group-level statuses, outcomes, and evidence tracking.
+- **Response Tracking:** `portal_responses` table tracks incoming responses (email/portal/manual), auto-matching them to claims. Staff review is required before claims are resolved or denied.
+- **Claim Workflow & Statuses:** Claims progress through predefined statuses (e.g., New, Needs Review, Resolved, Denied) with a dedicated "Non-Issue" outcome for claims requiring triage.
+- **Centralized Transitions:** All status and outcome changes for claims and invoice groups are processed through dedicated centralized functions (`claim-transitions.ts`, `group-transitions.ts`) to ensure audit logging, timeline notes, and real-time SSE events.
+- **Post-Response Workflow:** After a payor response, claims enter a "Needs Review" state, requiring staff to choose actions like "Resolve," "Accept as Loss," or "Re-dispute."
+- **Decision Trees:** Integrated workflow system for SOP logic, evidence collection, branching, and dispute reasons, with "hold" outcomes preserving tree state for later resumption.
+- **Error Type Model:** Simplified model focusing on name, category, description, decision tree, and AI dispute instructions.
+- **Evidence Management:** Supports object storage for evidence files, linked to decision tree nodes and collected for portal submissions.
+- **Real-time Updates:** Server-Sent Events (SSE) provide real-time updates and collision detection for claims and presence.
+- **API Security:** Role-based authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) protects API routes.
+- **Database Indexes:** Key tables are indexed for optimal query performance.
+- **Cron Jobs:** Scheduled jobs for processing portal submissions, sending daily briefs, and scanning for payor responses.
+- **Bot Architecture:** A shared browser worker handles bot execution for both batch processing and standalone polling, managing login, form filling, evidence upload, and session persistence.
+- **MAS Portal Integration:** Playwright bot interacts with the Freshdesk-based MAS portal, using specific form field IDs and leveraging authenticated sessions to bypass CAPTCHA.
+- **UI/UX:** Adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
+- **TypeScript Monorepo:** Uses TypeScript composite projects and pnpm workspaces for type safety and dependency management.
 
 ## External Dependencies
-- **PostgreSQL:** Primary database.
-- **Anthropic Claude:** AI capabilities for SOP analysis, dispute note generation (portal submissions), and email generation, accessed via Replit AI Integrations proxy. Portal dispute notes are generated at queue time (not in the bot process) using the error type's `disputeInstructions` field for tone/content guidelines and the decision tree's `outcomeLabel` as the specific dispute reason.
-- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal. Chromium is a production dependency installed during the build step. The `ensureBrowsersInstalled()` fallback attempts multiple CLI paths if the binary is missing at runtime.
-- **Google Cloud Storage (GCS):** Used for object storage of evidence files.
-- **Microsoft Outlook (Graph API):** Primary email sending via Replit connector (Office 365). Used for daily brief emails and response tracking (reading inbox for payor responses). Falls back to SMTP for sending if Outlook is unavailable. Utility: `artifacts/api-server/src/lib/outlook.ts` exports `sendEmail()`, `isOutlookConnected()`, `searchInboxEmails()`, and `getEmailById()`.
-- **Replit Auth:** OpenID Connect with PKCE for user authentication.
+- **PostgreSQL:** Primary relational database.
+- **Anthropic Claude:** AI for SOP analysis, dispute note generation, and email generation, accessed via Replit AI Integrations proxy.
+- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
+- **Google Cloud Storage (GCS):** Object storage for evidence files.
+- **Microsoft Outlook (Graph API):** For sending daily brief emails and tracking payor responses, with SMTP as a fallback.
+- **Replit Auth:** OpenID Connect for user authentication.

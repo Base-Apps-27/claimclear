@@ -287,4 +287,87 @@ Respond with ONLY the JSON object, no other text.`;
   res.json({ decisionTree });
 }));
 
+interface SimplifyItem {
+  id: string;
+  field: string;
+  text: string;
+  shortLabel?: boolean;
+}
+
+router.post("/error-types/simplify-text", asyncHandler(async (req, res): Promise<void> => {
+  const items = req.body?.items as SimplifyItem[] | undefined;
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: "items array is required" });
+    return;
+  }
+
+  const cleanItems = items
+    .filter(it => it && typeof it.id === "string" && typeof it.text === "string" && it.text.trim().length > 0)
+    .map(it => ({
+      id: it.id,
+      field: typeof it.field === "string" ? it.field : "",
+      text: it.text,
+      shortLabel: !!it.shortLabel,
+    }));
+
+  if (cleanItems.length === 0) {
+    res.json({ suggestions: [] });
+    return;
+  }
+
+  const prompt = `You are rewriting text for a software workflow used by NEMT (Non-Emergency Medical Transportation) claims staff. Many readers are ESL (English as a Second Language) speakers.
+
+Rewrite each text item below to a 6th-grade U.S. reading level. Rules:
+- Use short, simple sentences (aim for 12-18 words).
+- Use common, everyday words. Replace jargon when you can, but PRESERVE these domain terms exactly: "GPS", "MAS", "NEMT", "portal", "attestation", "dispatch", "invoice", "breadcrumb", "drop-off", "pickup", "dispute", "claim", "leg".
+- PRESERVE proper nouns, email addresses, URLs, button names, menu paths, and any text in quotes.
+- Use active voice. Keep instructions in command form ("Open the portal", not "The portal should be opened").
+- Keep the same meaning. Do NOT add new facts. Do NOT remove required steps or evidence references.
+- For items marked "shortLabel": true, return at most 6 words and no trailing punctuation. These are button or option labels.
+- If the text is already clear and at a 6th-grade level, return it unchanged.
+- Never invent content for empty input. (We've already filtered those out.)
+
+Respond with ONLY a JSON object in this exact shape, no prose, no code fences:
+{
+  "suggestions": [
+    { "id": "<original id>", "text": "<rewritten text>" }
+  ]
+}
+
+Items to rewrite:
+${JSON.stringify(cleanItems.map(it => ({ id: it.id, field: it.field, shortLabel: it.shortLabel, text: it.text })), null, 2)}`;
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = message.content.find((b: any) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    res.status(500).json({ error: "No text response from AI" });
+    return;
+  }
+
+  let jsonStr = (textBlock as any).text.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  let parsed: { suggestions?: { id: string; text: string }[] };
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    res.status(500).json({ error: "AI returned invalid JSON" });
+    return;
+  }
+
+  const suggestions = Array.isArray(parsed.suggestions)
+    ? parsed.suggestions
+        .filter(s => s && typeof s.id === "string" && typeof s.text === "string")
+        .map(s => ({ id: s.id, text: s.text.trim() }))
+    : [];
+
+  res.json({ suggestions });
+}));
+
 export default router;

@@ -17,12 +17,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
-  X, Sparkles, Loader2,
+  X, Sparkles, Loader2, Type,
   MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle
 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
 import {
-  TreeEditor, TreePreview, TreePlayer,
+  TreeEditor, TreePreview, TreePlayer, PlainTextEditor,
   type DecisionTree, type LegacyTreeNode,
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
@@ -461,8 +461,9 @@ export default function ErrorTypes() {
             <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="workflow">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="workflow" className="gap-1"><TreeDeciduous className="h-3 w-3" />Workflow Tree</TabsTrigger>
+              <TabsTrigger value="plain-text" className="gap-1" disabled={!form.decisionTree}><Type className="h-3 w-3" />Plain Text</TabsTrigger>
               <TabsTrigger value="basics">Details</TabsTrigger>
               <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Builder</TabsTrigger>
             </TabsList>
@@ -605,6 +606,28 @@ export default function ErrorTypes() {
                 onChange={(tree) => setForm({ ...form, decisionTree: tree })}
                 onTest={(tree) => setTestTree(tree)}
               />
+            </TabsContent>
+
+            <TabsContent value="plain-text" className="mt-4">
+              {form.decisionTree ? (
+                <PlainTextEditor
+                  tree={form.decisionTree}
+                  onSave={async (updated) => {
+                    setForm(prev => ({ ...prev, decisionTree: updated }));
+                    if (editingId) {
+                      await updateErrorType.mutateAsync({
+                        id: editingId,
+                        data: {
+                          decisionTree: JSON.parse(JSON.stringify(updated)) as unknown as Record<string, unknown>,
+                        },
+                      });
+                      invalidate();
+                    }
+                  }}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">Build a workflow tree first, then come here to bulk-edit the wording.</p>
+              )}
             </TabsContent>
           </Tabs>
 
