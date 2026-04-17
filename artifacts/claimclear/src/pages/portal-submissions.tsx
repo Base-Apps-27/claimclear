@@ -20,6 +20,7 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
+import { EvidenceFileList } from "@/components/evidence-file-list";
 
 const statusColors: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
@@ -536,7 +537,16 @@ export default function PortalSubmissions() {
                         {selected.issueType === "GPS Control Deviation" && (
                           <div className="min-w-0"><span className="text-muted-foreground">GPS Breadcrumbs:</span> {selected.gpsBreadcrumbsAvailable || "-"}</div>
                         )}
-                        <div className="min-w-0"><span className="text-muted-foreground">Evidence:</span> <span className={Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? "text-green-700 font-medium" : "text-amber-600"}>{Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? `${selected.attachmentUrls.length} file(s)` : "None"}</span></div>
+                        <div className="col-span-2 min-w-0">
+                          <span className="text-muted-foreground">Evidence:</span>{" "}
+                          {Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? (
+                            <div className="mt-1">
+                              <EvidenceFileList urls={selected.attachmentUrls} />
+                            </div>
+                          ) : (
+                            <span className="text-amber-600">None</span>
+                          )}
+                        </div>
                         <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
                         <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
                         {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
