@@ -10,6 +10,7 @@ import {
   useGeneratePortalSubmissionPreview,
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
+  useRegeneratePortalSubmissionText,
   getListInvoiceGroupsQueryKey,
   getGetInvoiceGroupQueryKey,
   useGetErrorType,
@@ -28,9 +29,10 @@ import { formatCurrency } from "@/lib/format";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
-  PauseCircle, ArrowRight, Eye, TreeDeciduous, Hash, FileText,
+  PauseCircle, ArrowRight, Eye, TreeDeciduous, Hash, FileText, Sparkles,
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
+import { toast } from "@/hooks/use-toast";
 import {
   TreePlayer,
   type TreePlayerHandle, type TreePlayerState,
@@ -60,6 +62,7 @@ export function WorkflowPlayerGroup({
   const generatePreview = useGeneratePortalSubmissionPreview();
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
+  const regenerateText = useRegeneratePortalSubmissionText();
   const [portalSubmitted, setPortalSubmitted] = useState(false);
 
   const isOnHold = group.status === "On Hold";
@@ -198,6 +201,22 @@ export function WorkflowPlayerGroup({
       attachmentUrls: draftSubmission.attachmentUrls,
     });
     setDraftEditing(false);
+  };
+
+  const handleRegenerateText = async () => {
+    if (!draftSubmission) return;
+    try {
+      const result = await regenerateText.mutateAsync({ id: draftSubmission.id });
+      const updated = result as unknown as { descriptionHtml?: string };
+      setDraftSubmission({
+        ...draftSubmission,
+        descriptionHtml: updated.descriptionHtml || "",
+      });
+      toast({ title: "Dispute write-up regenerated" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Please try again.";
+      toast({ title: "Could not regenerate write-up", description: message, variant: "destructive" });
+    }
   };
 
   const handleConfirmSubmit = async () => {
@@ -585,9 +604,30 @@ export function WorkflowPlayerGroup({
                     </div>
                   </div>
 
-                  <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs mt-4">Dispute Write-Up</div>
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">Dispute Write-Up</div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs gap-1"
+                      onClick={handleRegenerateText}
+                      disabled={regenerateText.isPending}
+                    >
+                      {regenerateText.isPending ? (
+                        <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>
+                      ) : (
+                        <><Sparkles className="h-3 w-3" />Regenerate Text</>
+                      )}
+                    </Button>
+                  </div>
                   <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border max-h-64 overflow-y-auto">
-                    {draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>}
+                    {regenerateText.isPending ? (
+                      <span className="text-muted-foreground italic flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />Generating a fresh write-up…
+                      </span>
+                    ) : (
+                      draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>
+                    )}
                   </div>
 
                   {portalSubmitted ? (
