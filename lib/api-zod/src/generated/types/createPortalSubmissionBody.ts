@@ -7,7 +7,8 @@
  */
 
 export interface CreatePortalSubmissionBody {
-  claimId: number;
+  claimId?: number;
+  invoiceGroupId?: number;
   issueType?: string;
   subject?: string;
   requesterEmail?: string;

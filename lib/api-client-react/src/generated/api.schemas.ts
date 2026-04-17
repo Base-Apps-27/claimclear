@@ -272,6 +272,8 @@ export type PortalSubmissionResponseWorkflowHistory = {
 export interface PortalSubmissionResponse {
   id: number;
   claimId: number;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   status: PortalSubmissionResponseStatus;
   /** @nullable */
   issueType?: string | null;
@@ -707,7 +709,8 @@ export interface ImportSummary {
 }
 
 export interface CreatePortalSubmissionBody {
-  claimId: number;
+  claimId?: number;
+  invoiceGroupId?: number;
   issueType?: string;
   subject?: string;
   requesterEmail?: string;

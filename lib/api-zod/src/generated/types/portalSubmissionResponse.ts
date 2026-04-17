@@ -13,6 +13,8 @@ import type { PortalSubmissionResponseWorkflowHistory } from "./portalSubmission
 export interface PortalSubmissionResponse {
   id: number;
   claimId: number;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   status: PortalSubmissionResponseStatus;
   /** @nullable */
   issueType?: string | null;

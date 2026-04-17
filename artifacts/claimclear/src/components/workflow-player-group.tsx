@@ -7,6 +7,9 @@ import {
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
   useAddInvoiceGroupEvidence,
+  useGeneratePortalSubmissionPreview,
+  useUpdatePortalSubmissionDraft,
+  useConfirmPortalSubmission,
   getListInvoiceGroupsQueryKey,
   getGetInvoiceGroupQueryKey,
   useGetErrorType,
@@ -14,14 +17,16 @@ import {
 import type { InvoiceGroupResponse } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
 import {
-  ChevronRight, CheckCircle, AlertTriangle, Send, Loader2,
+  ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
   PauseCircle, ArrowRight, Eye, TreeDeciduous, Hash, FileText,
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
@@ -51,6 +56,10 @@ export function WorkflowPlayerGroup({
   const placeHold = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
   const addEvidence = useAddInvoiceGroupEvidence();
+  const generatePreview = useGeneratePortalSubmissionPreview();
+  const updateDraft = useUpdatePortalSubmissionDraft();
+  const confirmSubmission = useConfirmPortalSubmission();
+  const [portalSubmitted, setPortalSubmitted] = useState(false);
 
   const isOnHold = group.status === "On Hold";
   const PORTAL_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"];
@@ -83,7 +92,27 @@ export function WorkflowPlayerGroup({
   const [treeOutcomeLabel, setTreeOutcomeLabel] = useState("");
   const [showConcludeDialog, setShowConcludeDialog] = useState(false);
   const [concludeNotes, setConcludeNotes] = useState("");
-  const [queueing, setQueueing] = useState(false);
+  const [draftSubmission, setDraftSubmission] = useState<{
+    id: number;
+    subject: string;
+    descriptionHtml: string;
+    issueType: string;
+    gpsBreadcrumbsAvailable: string;
+    requesterEmail: string;
+    transportationProviderName: string;
+    phoneNumber: string;
+    invoiceNumber: string;
+    attachmentCount: number;
+  } | null>(null);
+  const [draftEditing, setDraftEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editIssueType, setEditIssueType] = useState("");
+  const [editGps, setEditGps] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editProvider, setEditProvider] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editInvoice, setEditInvoice] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
@@ -106,18 +135,79 @@ export function WorkflowPlayerGroup({
     invalidate();
   };
 
-  const handleQueueForPortal = async () => {
-    setQueueing(true);
-    try {
-      await updateStatus.mutateAsync({
-        id: group.id,
-        data: { status: "Portal Queued", reason: treeOutcomeLabel || undefined },
-      });
-      invalidate();
+  const handleGeneratePreview = async () => {
+    const result = await generatePreview.mutateAsync({
+      data: { invoiceGroupId: group.id, disputeReason: treeOutcomeLabel || undefined },
+    });
+    const draft = result as unknown as Record<string, unknown>;
+    const attachUrls = Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : [];
+    setDraftSubmission({
+      id: draft.id as number,
+      subject: (draft.subject as string) || "",
+      descriptionHtml: (draft.descriptionHtml as string) || "",
+      issueType: (draft.issueType as string) || "",
+      gpsBreadcrumbsAvailable: (draft.gpsBreadcrumbsAvailable as string) || "",
+      requesterEmail: (draft.requesterEmail as string) || "",
+      transportationProviderName: (draft.transportationProviderName as string) || "",
+      phoneNumber: (draft.phoneNumber as string) || "",
+      invoiceNumber: (draft.invoiceNumber as string) || "",
+      attachmentCount: attachUrls.length,
+    });
+    setDraftEditing(false);
+  };
+
+  const handleEditDraft = () => {
+    if (!draftSubmission) return;
+    setEditSubject(draftSubmission.subject);
+    setEditDescription(draftSubmission.descriptionHtml);
+    setEditIssueType(draftSubmission.issueType);
+    setEditGps(draftSubmission.gpsBreadcrumbsAvailable);
+    setEditEmail(draftSubmission.requesterEmail);
+    setEditProvider(draftSubmission.transportationProviderName);
+    setEditPhone(draftSubmission.phoneNumber);
+    setEditInvoice(draftSubmission.invoiceNumber);
+    setDraftEditing(true);
+  };
+
+  const handleSaveDraft = async () => {
+    if (!draftSubmission) return;
+    await updateDraft.mutateAsync({
+      id: draftSubmission.id,
+      data: {
+        subject: editSubject,
+        descriptionHtml: editDescription,
+        issueType: editIssueType,
+        gpsBreadcrumbsAvailable: editGps,
+        requesterEmail: editEmail,
+        transportationProviderName: editProvider,
+        phoneNumber: editPhone,
+        invoiceNumber: editInvoice,
+      },
+    });
+    setDraftSubmission({
+      ...draftSubmission,
+      subject: editSubject,
+      descriptionHtml: editDescription,
+      issueType: editIssueType,
+      gpsBreadcrumbsAvailable: editGps,
+      requesterEmail: editEmail,
+      transportationProviderName: editProvider,
+      phoneNumber: editPhone,
+      invoiceNumber: editInvoice,
+      attachmentCount: draftSubmission.attachmentCount,
+    });
+    setDraftEditing(false);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!draftSubmission) return;
+    await confirmSubmission.mutateAsync({ id: draftSubmission.id });
+    setPortalSubmitted(true);
+    invalidate();
+    setTimeout(() => {
+      setDraftSubmission(null);
       onComplete();
-    } finally {
-      setQueueing(false);
-    }
+    }, 2000);
   };
 
   const handlePlaceHold = async () => {
@@ -391,14 +481,15 @@ export function WorkflowPlayerGroup({
             </Card>
           )}
 
-          {currentStep === "submit" && !isAlreadyQueued && (
+          {currentStep === "submit" && !isAlreadyQueued && !draftSubmission && (
             <Card>
-              <CardHeader><CardTitle className="text-base">Queue for Portal Submission</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Submit to MAS Portal</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm">
-                  <p className="font-medium">Ready to Queue</p>
+                  <p className="font-medium">Ready for Portal Submission</p>
                   <p className="mt-1 text-xs">
-                    Queueing this invoice group will transition it to "Portal Queued" status for the bot to pick up.
+                    Generate a preview of the dispute submission for this invoice group. You'll be able to review and edit
+                    the subject, dispute text, and portal fields — covering all {group.rideCount} ride{group.rideCount === 1 ? "" : "s"} on the invoice — before it's queued for the bot.
                   </p>
                 </div>
                 <div className="text-sm space-y-1">
@@ -411,12 +502,196 @@ export function WorkflowPlayerGroup({
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
-                  <Button size="sm" onClick={handleQueueForPortal} disabled={queueing}>
-                    {queueing ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Queueing...</>
+                  <Button size="sm" onClick={handleGeneratePreview} disabled={generatePreview.isPending}>
+                    {generatePreview.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
                     ) : (
-                      <><Send className="h-4 w-4 mr-1" />Queue for Portal</>
+                      <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
                     )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {currentStep === "submit" && !isAlreadyQueued && draftSubmission && !draftEditing && (() => {
+            const missingFields: string[] = [];
+            if (!draftSubmission.issueType) missingFields.push("Issue Type");
+            if (!draftSubmission.subject) missingFields.push("Subject");
+            if (!draftSubmission.requesterEmail) missingFields.push("Email");
+            if (!draftSubmission.transportationProviderName) missingFields.push("Provider");
+            if (!draftSubmission.phoneNumber) missingFields.push("Phone");
+            if (!draftSubmission.descriptionHtml) missingFields.push("Dispute Text");
+            const hasMissing = missingFields.length > 0;
+            const fieldVal = (val: string | undefined) =>
+              val ? <span>{val}</span> : <span className="text-red-500 font-medium">Not set</span>;
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    Review Submission
+                    <Badge variant="outline" className="text-amber-600 border-amber-300">Draft</Badge>
+                    <Badge variant="outline" className="text-blue-600 border-blue-300">Group · {group.rideCount} ride{group.rideCount === 1 ? "" : "s"}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {hasMissing && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-md text-sm flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-medium">Missing required fields</p>
+                        <p className="text-xs mt-0.5">The following fields are empty: {missingFields.join(", ")}. Click Edit to fill them in before queuing.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">Portal Form Fields</div>
+                  <div className="border rounded-md divide-y text-sm">
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Issue Type</span>
+                      <span className="col-span-2">{fieldVal(draftSubmission.issueType)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Subject</span>
+                      <span className="col-span-2 font-medium break-words">{fieldVal(draftSubmission.subject)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="col-span-2">{fieldVal(draftSubmission.requesterEmail)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Provider Name</span>
+                      <span className="col-span-2">{fieldVal(draftSubmission.transportationProviderName)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Phone</span>
+                      <span className="col-span-2">{fieldVal(draftSubmission.phoneNumber)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Invoice #</span>
+                      <span className="col-span-2 font-mono">{draftSubmission.invoiceNumber || "—"}</span>
+                    </div>
+                    {draftSubmission.issueType === "GPS Control Deviation" && (
+                      <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                        <span className="text-muted-foreground">GPS Breadcrumbs</span>
+                        <span className="col-span-2">{fieldVal(draftSubmission.gpsBreadcrumbsAvailable)}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-2 px-3 py-2">
+                      <span className="text-muted-foreground">Evidence Files</span>
+                      <span className={`col-span-2 ${draftSubmission.attachmentCount > 0 ? "text-green-700 font-medium" : "text-red-500 font-medium"}`}>
+                        {draftSubmission.attachmentCount > 0 ? `${draftSubmission.attachmentCount} file(s) attached` : "No evidence files"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs mt-4">Dispute Write-Up</div>
+                  <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border max-h-64 overflow-y-auto">
+                    {draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>}
+                  </div>
+
+                  {portalSubmitted ? (
+                    <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-center gap-2 animate-in fade-in duration-300">
+                      <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                      <span className="font-medium">Invoice group queued for portal submission successfully.</span>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setDraftSubmission(null)}>Back</Button>
+                      <Button size="sm" variant="outline" onClick={handleEditDraft}>
+                        <Edit3 className="h-4 w-4 mr-1" />Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleConfirmSubmit}
+                        disabled={confirmSubmission.isPending || hasMissing}
+                      >
+                        <Send className="h-4 w-4 mr-1" />
+                        {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {currentStep === "submit" && !isAlreadyQueued && draftSubmission && draftEditing && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  Edit Submission
+                  <Badge variant="outline" className="text-blue-600 border-blue-300">Editing</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Issue Type</Label>
+                    <Select value={editIssueType} onValueChange={setEditIssueType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GPS Control Deviation">GPS Control Deviation</SelectItem>
+                        <SelectItem value="Custom Payment Request">Custom Payment Request</SelectItem>
+                        <SelectItem value="MAS Trips App Issue">MAS Trips App Issue</SelectItem>
+                        <SelectItem value="Vehicle, Driver, or TPP">Vehicle, Driver, or TPP</SelectItem>
+                        <SelectItem value="Zip Code Block">Zip Code Block</SelectItem>
+                        <SelectItem value="Other Issue or Question">Other Issue or Question</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Subject</Label>
+                    <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} />
+                  </div>
+                  <Separator />
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Contact &amp; Account Info</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email</Label>
+                      <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="e.g. accounting@company.com" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Phone</Label>
+                      <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="e.g. 7185852222" />
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs">Provider Name</Label>
+                      <Input value={editProvider} onChange={e => setEditProvider(e.target.value)} placeholder="e.g. Agape Luxury Corp" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Invoice #</Label>
+                      <Input value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Optional" />
+                    </div>
+                    {editIssueType === "GPS Control Deviation" && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">GPS Breadcrumbs Available</Label>
+                        <Select value={editGps || "none"} onValueChange={v => setEditGps(v === "none" ? "" : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not set</SelectItem>
+                            <SelectItem value="Yes">Yes</SelectItem>
+                            <SelectItem value="No">No</SelectItem>
+                            <SelectItem value="Unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  <Separator />
+                  <div className="space-y-1">
+                    <Label className="text-xs">Dispute Text</Label>
+                    <Textarea
+                      value={editDescription}
+                      onChange={e => setEditDescription(e.target.value)}
+                      rows={10}
+                      className="text-sm font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setDraftEditing(false)}>Cancel</Button>
+                  <Button size="sm" onClick={handleSaveDraft} disabled={updateDraft.isPending}>
+                    {updateDraft.isPending ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
               </CardContent>

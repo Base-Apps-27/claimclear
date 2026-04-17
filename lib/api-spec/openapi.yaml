@@ -2827,6 +2827,8 @@ components:
           type: integer
         claimId:
           type: integer
+        invoiceGroupId:
+          type: ["integer", "null"]
         status:
           type: string
           enum: ["draft", "pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"]
@@ -2897,6 +2899,8 @@ components:
       properties:
         claimId:
           type: integer
+        invoiceGroupId:
+          type: integer
         issueType:
           type: string
         subject:
@@ -2915,8 +2919,6 @@ components:
           type: string
         disputeReason:
           type: string
-      required:
-        - claimId
 
     PollSubmissionsBody:
       type: object

@@ -236,6 +236,7 @@ export const GetInvoiceGroupResponse = zod
           zod.object({
             id: zod.number(),
             claimId: zod.number(),
+            invoiceGroupId: zod.number().nullish(),
             status: zod.enum([
               "draft",
               "pending",
@@ -2020,6 +2021,7 @@ export const ListPortalSubmissionsQueryParams = zod.object({
 export const ListPortalSubmissionsResponseItem = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2066,7 +2068,8 @@ export const ListPortalSubmissionsResponse = zod.array(
  * @summary Create portal submission from claim
  */
 export const CreatePortalSubmissionBody = zod.object({
-  claimId: zod.number(),
+  claimId: zod.number().optional(),
+  invoiceGroupId: zod.number().optional(),
   issueType: zod.string().optional(),
   subject: zod.string().optional(),
   requesterEmail: zod.string().optional(),
@@ -2088,6 +2091,7 @@ export const GetPortalSubmissionParams = zod.object({
 export const GetPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2137,6 +2141,7 @@ export const RetryPortalSubmissionParams = zod.object({
 export const RetryPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2186,6 +2191,7 @@ export const CancelPortalSubmissionParams = zod.object({
 export const CancelPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2229,7 +2235,8 @@ export const CancelPortalSubmissionResponse = zod.object({
  * @summary Generate a draft portal submission for review before queuing
  */
 export const GeneratePortalSubmissionPreviewBody = zod.object({
-  claimId: zod.number(),
+  claimId: zod.number().optional(),
+  invoiceGroupId: zod.number().optional(),
   issueType: zod.string().optional(),
   subject: zod.string().optional(),
   requesterEmail: zod.string().optional(),
@@ -2244,6 +2251,7 @@ export const GeneratePortalSubmissionPreviewBody = zod.object({
 export const GeneratePortalSubmissionPreviewResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2304,6 +2312,7 @@ export const UpdatePortalSubmissionDraftBody = zod.object({
 export const UpdatePortalSubmissionDraftResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2353,6 +2362,7 @@ export const RegeneratePortalSubmissionTextParams = zod.object({
 export const RegeneratePortalSubmissionTextResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2402,6 +2412,7 @@ export const ConfirmPortalSubmissionParams = zod.object({
 export const ConfirmPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2451,6 +2462,7 @@ export const SandboxRunPortalSubmissionParams = zod.object({
 export const SandboxRunPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2500,6 +2512,7 @@ export const PollPortalSubmissionsBody = zod.object({
 export const PollPortalSubmissionsResponseItem = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2556,6 +2569,7 @@ export const ClaimPortalSubmissionBody = zod.object({
 export const ClaimPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2610,6 +2624,7 @@ export const CompletePortalSubmissionBody = zod.object({
 export const CompletePortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2664,6 +2679,7 @@ export const CompleteDryRunPortalSubmissionBody = zod.object({
 export const CompleteDryRunPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
@@ -2718,6 +2734,7 @@ export const FailPortalSubmissionBody = zod.object({
 export const FailPortalSubmissionResponse = zod.object({
   id: zod.number(),
   claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
   status: zod.enum([
     "draft",
     "pending",
