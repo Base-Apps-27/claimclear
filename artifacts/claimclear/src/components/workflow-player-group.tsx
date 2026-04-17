@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/format";
+import { EvidenceFileList } from "@/components/evidence-file-list";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
   PauseCircle, ArrowRight, Eye, TreeDeciduous, Hash, FileText,
@@ -102,7 +103,7 @@ export function WorkflowPlayerGroup({
     transportationProviderName: string;
     phoneNumber: string;
     invoiceNumber: string;
-    attachmentCount: number;
+    attachmentUrls: string[];
   } | null>(null);
   const [draftEditing, setDraftEditing] = useState(false);
   const [editSubject, setEditSubject] = useState("");
@@ -140,7 +141,7 @@ export function WorkflowPlayerGroup({
       data: { invoiceGroupId: group.id, disputeReason: treeOutcomeLabel || undefined },
     });
     const draft = result as unknown as Record<string, unknown>;
-    const attachUrls = Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : [];
+    const attachUrls = (Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : []) as string[];
     setDraftSubmission({
       id: draft.id as number,
       subject: (draft.subject as string) || "",
@@ -151,7 +152,7 @@ export function WorkflowPlayerGroup({
       transportationProviderName: (draft.transportationProviderName as string) || "",
       phoneNumber: (draft.phoneNumber as string) || "",
       invoiceNumber: (draft.invoiceNumber as string) || "",
-      attachmentCount: attachUrls.length,
+      attachmentUrls: attachUrls,
     });
     setDraftEditing(false);
   };
@@ -194,7 +195,7 @@ export function WorkflowPlayerGroup({
       transportationProviderName: editProvider,
       phoneNumber: editPhone,
       invoiceNumber: editInvoice,
-      attachmentCount: draftSubmission.attachmentCount,
+      attachmentUrls: draftSubmission.attachmentUrls,
     });
     setDraftEditing(false);
   };
@@ -578,9 +579,9 @@ export function WorkflowPlayerGroup({
                     )}
                     <div className="grid grid-cols-3 gap-2 px-3 py-2">
                       <span className="text-muted-foreground">Evidence Files</span>
-                      <span className={`col-span-2 ${draftSubmission.attachmentCount > 0 ? "text-green-700 font-medium" : "text-red-500 font-medium"}`}>
-                        {draftSubmission.attachmentCount > 0 ? `${draftSubmission.attachmentCount} file(s) attached` : "No evidence files"}
-                      </span>
+                      <div className="col-span-2">
+                        <EvidenceFileList urls={draftSubmission.attachmentUrls} />
+                      </div>
                     </div>
                   </div>
 
