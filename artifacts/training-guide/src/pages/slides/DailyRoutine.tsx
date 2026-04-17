@@ -1,33 +1,89 @@
+import { SlideShell } from "@/components/slide-ui";
+
+const ROUTINE = [
+  {
+    time: "9:00",
+    page: "Dashboard",
+    tasks: [
+      "Scan the 4 KPI cards: any number jump out?",
+      "Open Expiring Soon — note any ≤7 day items",
+      "Check Bot Health — bots online, success rate >90%?",
+    ],
+  },
+  {
+    time: "9:15",
+    page: "Review Queue",
+    tasks: [
+      "Triage every Needs Review group",
+      "Non-Issue → resolve at $0 with a one-line reason",
+      "Issue Found → assign error type, send to Work Queue",
+    ],
+  },
+  {
+    time: "9:45",
+    page: "Work Queue · Action Required",
+    tasks: [
+      "Sort by days-left, work red first",
+      "Run the workflow, edit data, attach evidence",
+      "Read the AI dispute letter, then Send to Portal",
+    ],
+  },
+  {
+    time: "1:00",
+    page: "Portal Submissions",
+    tasks: [
+      "Click 'Process All Pending' to release the queue",
+      "Watch for Failed (red) — open and retry or escalate",
+      "Confirm batch completes before logging off for lunch",
+    ],
+  },
+  {
+    time: "3:00",
+    page: "Work Queue · Awaiting + Action Required",
+    tasks: [
+      "Re-check Action Required for new MAS responses",
+      "Handle each: Accept Loss, Submit New Invoice, or Re-dispute",
+      "Add a note on anything you couldn't finish",
+    ],
+  },
+  {
+    time: "4:30",
+    page: "Summary",
+    tasks: [
+      "Glance at today's Recovered total — track the win",
+      "Note any error type with abnormal denial rate to flag tomorrow",
+    ],
+  },
+];
+
 export default function DailyRoutine() {
   return (
-    <div className="w-screen h-screen overflow-hidden relative bg-primary">
-      <div className="absolute top-0 left-0 bg-accent/10 rounded-br-full" style={{ width: "30vw", height: "30vh" }} />
-      <div className="absolute bottom-0 right-0 bg-white/5 rounded-tl-full" style={{ width: "35vw", height: "35vh" }} />
-      <div className="relative z-10 flex flex-col h-full" style={{ padding: "7vh 8vw" }}>
-        <div className="flex items-center gap-[0.8vw]" style={{ marginBottom: "1.5vh" }}>
-          <div className="bg-orange rounded-full" style={{ width: "0.6vw", height: "0.6vw" }} />
-          <span className="font-body text-orange font-semibold tracking-wider uppercase" style={{ fontSize: "1.3vw" }}>Your Daily Routine</span>
-        </div>
-        <h2 className="font-display text-white font-bold tracking-tight" style={{ fontSize: "3.8vw", lineHeight: "1.1" }}>Putting It All Together</h2>
-        <p className="font-body text-white/50" style={{ fontSize: "1.5vw", marginTop: "1.5vh" }}>A typical day processing claims in ClaimClear</p>
-        <div className="flex gap-[2vw]" style={{ marginTop: "4vh", flex: 1 }}>
-          <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
-            <span className="font-display text-orange font-extrabold" style={{ fontSize: "2.5vw" }}>AM</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Attestation &amp; Upload</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Submit attestation on MAS portal. Export claims that couldn't be submitted, remove the Member Name column, and upload to ClaimClear.</p>
-          </div>
-          <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
-            <span className="font-display text-accent font-extrabold" style={{ fontSize: "2.5vw" }}>DAY</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Process Claims</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Work through the Action Required queue -- follow decision trees, collect evidence, and queue claims for portal submission</p>
-          </div>
-          <div className="bg-white/10 border border-white/15 rounded-[1.2vw] flex flex-col" style={{ flex: 1, padding: "3vh 2vw" }}>
-            <span className="font-display text-white/60 font-extrabold" style={{ fontSize: "2.5vw" }}>EOD</span>
-            <p className="font-display text-white font-bold" style={{ fontSize: "1.6vw", marginTop: "1.5vh" }}>Review &amp; Verify</p>
-            <p className="font-body text-white/50" style={{ fontSize: "1.2vw", marginTop: "1vh", lineHeight: "1.5" }}>Check Dashboard for bot status, verify portal submissions completed, review the Summary page for progress</p>
-          </div>
+    <SlideShell
+      step={20}
+      totalSteps={22}
+      title="A Day in the Life"
+      subtitle="Run this routine and you'll keep the queue clean, hit deadlines, and know what's worth escalating."
+    >
+      <div className="flex-1">
+        <div className="grid grid-cols-3 gap-[1vw]">
+          {ROUTINE.map((r) => (
+            <div key={r.time} className="bg-white rounded-[0.7vw] border border-primary/10" style={{ padding: "1.5vh 1.2vw" }}>
+              <div className="flex items-center gap-[0.6vw]" style={{ marginBottom: "0.6vh" }}>
+                <div className="bg-accent text-white font-display font-bold rounded-[0.3vw]" style={{ padding: "0.3vh 0.6vw", fontSize: "0.85vw" }}>{r.time}</div>
+                <span className="font-display text-primary font-bold" style={{ fontSize: "1vw" }}>{r.page}</span>
+              </div>
+              <ul className="space-y-[0.4vh]">
+                {r.tasks.map((t, i) => (
+                  <li key={i} className="flex items-start gap-[0.4vw]">
+                    <span className="text-accent font-display font-bold shrink-0" style={{ fontSize: "0.75vw", marginTop: "0.2vh" }}>•</span>
+                    <span className="font-body text-primary" style={{ fontSize: "0.82vw", lineHeight: "1.45" }}>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
+    </SlideShell>
   );
 }

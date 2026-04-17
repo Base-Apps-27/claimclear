@@ -3,112 +3,192 @@
     "id": "a1b2c3d4-0001-4000-8000-000000000001",
     "position": 1,
     "filepath": "src/pages/slides/TitleSlide.tsx",
-    "title": "ClaimClear Training Guide",
-    "description": "Title slide with hero image and Agape branding",
+    "title": "Using ClaimClear: A Step-by-Step Guide",
+    "description": "Title slide framing the post-upload training",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0002-4000-8000-000000000002",
     "position": 2,
-    "filepath": "src/pages/slides/WhatIsClaimClear.tsx",
-    "title": "What is ClaimClear?",
-    "description": "Overview of the platform: Import, Decide, Submit",
+    "filepath": "src/pages/slides/JourneyOverview.tsx",
+    "title": "The Claim Journey, in 5 Stages",
+    "description": "Triage, Classify, Process, Submit, Outcome — the full lifecycle",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0003-4000-8000-000000000003",
     "position": 3,
-    "filepath": "src/pages/slides/GettingStarted.tsx",
-    "title": "Sign In and Navigate",
-    "description": "How to sign in and navigate the sidebar modules",
+    "filepath": "src/pages/slides/Navigation.tsx",
+    "title": "Sign In and Find Your Way Around",
+    "description": "Login and the sidebar tour",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0004-4000-8000-000000000004",
     "position": 4,
-    "filepath": "src/pages/slides/Dashboard.tsx",
-    "title": "The Dashboard",
-    "description": "Pipeline metrics, expiring claims, and bot status",
+    "filepath": "src/pages/slides/StatusLifecycle.tsx",
+    "title": "The Status Badges, Decoded",
+    "description": "Reference card for every claim/group status",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0005-4000-8000-000000000005",
     "position": 5,
-    "filepath": "src/pages/slides/ImportClaims.tsx",
-    "title": "Import Claims",
-    "description": "Morning workflow: attestation, export, clean Member Name column, upload to ClaimClear",
+    "filepath": "src/pages/slides/ReviewQueue.tsx",
+    "title": "Triage New Uploads in the Review Queue",
+    "description": "First decision: real issue or non-issue",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0006-4000-8000-000000000006",
     "position": 6,
-    "filepath": "src/pages/slides/SectionWorkflow.tsx",
-    "title": "Processing Claims",
-    "description": "Section divider: Attest, Export, Clean, Upload, Process flow",
+    "filepath": "src/pages/slides/TriageNonIssue.tsx",
+    "title": "The Non-Issue Path",
+    "description": "Resolve at $0 with reason",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0007-4000-8000-000000000007",
     "position": 7,
-    "filepath": "src/pages/slides/WorkQueue.tsx",
-    "title": "The Work Queue",
-    "description": "Task-oriented split-pane view for daily processing",
+    "filepath": "src/pages/slides/TriageIssueFound.tsx",
+    "title": "The Issue Found Path",
+    "description": "Assigning the right error type",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0008-4000-8000-000000000008",
     "position": 8,
-    "filepath": "src/pages/slides/DecisionWorkflows.tsx",
-    "title": "Workflow Player",
-    "description": "Guided decision trees for each error type",
+    "filepath": "src/pages/slides/WorkQueueTabs.tsx",
+    "title": "Open the Work Queue",
+    "description": "Action Required, Portal Queued, Awaiting, On Hold",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0009-4000-8000-000000000009",
     "position": 9,
-    "filepath": "src/pages/slides/ClaimDetails.tsx",
-    "title": "Claim Details",
-    "description": "Deep dive into individual claims with all features",
+    "filepath": "src/pages/slides/WorkflowPlayer.tsx",
+    "title": "Follow the Guided Workflow",
+    "description": "Decision tree per error type",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0010-4000-8000-000000000010",
     "position": 10,
-    "filepath": "src/pages/slides/PortalSubmissions.tsx",
-    "title": "Portal Submissions",
-    "description": "Automated MAS portal dispute submissions via bot fleet",
+    "filepath": "src/pages/slides/ClaimDetailTour.tsx",
+    "title": "The Claim Detail Page",
+    "description": "Layout tour: header, columns, presence",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0011-4000-8000-000000000011",
     "position": 11,
-    "filepath": "src/pages/slides/ErrorTypes.tsx",
-    "title": "Error Types and SOPs",
-    "description": "Admin configuration of error classifications and decision trees",
+    "filepath": "src/pages/slides/EditingFields.tsx",
+    "title": "Edit the Claim Data",
+    "description": "Conf #, dates, amounts and how they save",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0012-4000-8000-000000000012",
     "position": 12,
-    "filepath": "src/pages/slides/SummaryAnalytics.tsx",
-    "title": "Summary and Reports",
-    "description": "Financial performance metrics and trend analysis",
+    "filepath": "src/pages/slides/AddEvidence.tsx",
+    "title": "Attach Evidence",
+    "description": "Drag/drop GPS logs, signatures, auth screenshots",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0013-4000-8000-000000000013",
     "position": 13,
-    "filepath": "src/pages/slides/DailyRoutine.tsx",
-    "title": "Putting It All Together",
-    "description": "A typical daily routine using ClaimClear",
+    "filepath": "src/pages/slides/DisputeLetter.tsx",
+    "title": "Review the AI Dispute Letter",
+    "description": "Auto-generated dispute text and how to edit it",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0014-4000-8000-000000000014",
     "position": 14,
+    "filepath": "src/pages/slides/NotesAudit.tsx",
+    "title": "Notes and the Audit Trail",
+    "description": "Team comments + system-recorded history",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0015-4000-8000-000000000015",
+    "position": 15,
+    "filepath": "src/pages/slides/SubmitDispute.tsx",
+    "title": "Send the Dispute to the Portal",
+    "description": "Pre-flight checklist and Sandbox Run",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0016-4000-8000-000000000016",
+    "position": 16,
+    "filepath": "src/pages/slides/BotFleet.tsx",
+    "title": "Monitor the Bot Fleet",
+    "description": "Portal Submissions live view and retries",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0017-4000-8000-000000000017",
+    "position": 17,
+    "filepath": "src/pages/slides/AwaitingResponse.tsx",
+    "title": "What Happens Next: Awaiting Response",
+    "description": "MAS reply window and follow-up rules",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0018-4000-8000-000000000018",
+    "position": 18,
+    "filepath": "src/pages/slides/HandlingResponse.tsx",
+    "title": "Handling the MAS Response",
+    "description": "Accept Loss, Submit New Invoice, or Re-dispute",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0019-4000-8000-000000000019",
+    "position": 19,
+    "filepath": "src/pages/slides/InvoiceGroupDetail.tsx",
+    "title": "Invoice Group Detail",
+    "description": "Process all rides in one invoice together",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0020-4000-8000-000000000020",
+    "position": 20,
+    "filepath": "src/pages/slides/ClaimsBulk.tsx",
+    "title": "All Claims: Search and Bulk Actions",
+    "description": "Filter, search, multi-select, bulk assign",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0021-4000-8000-000000000021",
+    "position": 21,
+    "filepath": "src/pages/slides/DashboardCheckIn.tsx",
+    "title": "The Dashboard: Morning Check-In",
+    "description": "KPIs, Expiring Soon, Bot Health",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0022-4000-8000-000000000022",
+    "position": 22,
+    "filepath": "src/pages/slides/DailyRoutine.tsx",
+    "title": "A Day in the Life",
+    "description": "Hour-by-hour routine through the platform",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0023-4000-8000-000000000023",
+    "position": 23,
+    "filepath": "src/pages/slides/CommonPitfalls.tsx",
+    "title": "Pitfalls to Avoid",
+    "description": "Six common mistakes and how to prevent them",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0024-4000-8000-000000000024",
+    "position": 24,
     "filepath": "src/pages/slides/ClosingSlide.tsx",
-    "title": "Ready to Start",
-    "description": "Closing slide with access information",
+    "title": "You're Ready",
+    "description": "Closing checklist and access info",
     "speakerNotes": ""
   }
 ]
