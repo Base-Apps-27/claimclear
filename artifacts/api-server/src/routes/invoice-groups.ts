@@ -459,6 +459,14 @@ router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promi
     collectedBy: user?.displayName || user?.email || null,
   }).returning();
 
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: id,
+    action: "group_evidence_added",
+    details: `Evidence collected: ${evidenceTypeName}`,
+    metadata: { evidenceId: created.id, evidenceTypeId: evidenceTypeId || null, treeNodeId: treeNodeId || null },
+    ...actorFromReq(req),
+  });
+
   emitGroupEvent(id, "group_evidence_added", req);
   res.status(201).json(created);
 }));
@@ -468,8 +476,21 @@ router.delete("/invoice-groups/:id/evidence/:evidenceId", asyncHandler(async (re
   const evidenceId = parseInt(String(req.params.evidenceId), 10);
   if (isNaN(id) || isNaN(evidenceId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  const [existing] = await db.select().from(claimEvidenceTable)
+    .where(and(eq(claimEvidenceTable.id, evidenceId), eq(claimEvidenceTable.invoiceGroupId, id)));
+
   await db.delete(claimEvidenceTable)
     .where(and(eq(claimEvidenceTable.id, evidenceId), eq(claimEvidenceTable.invoiceGroupId, id)));
+
+  if (existing) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "group_evidence_removed",
+      details: `Evidence removed: ${existing.evidenceTypeName}`,
+      metadata: { evidenceId, evidenceTypeId: existing.evidenceTypeId, treeNodeId: existing.treeNodeId },
+      ...actorFromReq(req),
+    });
+  }
 
   emitGroupEvent(id, "group_evidence_removed", req);
   res.json({ success: true });

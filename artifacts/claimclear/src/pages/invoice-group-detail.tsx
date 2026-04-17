@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useGetInvoiceGroup, useUpdateInvoiceGroupStatus, useUpdateInvoiceGroupOutcome, useTriageInvoiceGroup, useHoldInvoiceGroup, useRemoveInvoiceGroupHold, getGetInvoiceGroupQueryKey } from "@workspace/api-client-react";
+import { useGetInvoiceGroup, useUpdateInvoiceGroupStatus, useUpdateInvoiceGroupOutcome, useTriageInvoiceGroup, useHoldInvoiceGroup, useRemoveInvoiceGroupHold, getGetInvoiceGroupQueryKey, useListInvoiceGroupEvidence, getListInvoiceGroupEvidenceQueryKey, useDeleteInvoiceGroupEvidence } from "@workspace/api-client-react";
 import type { ClaimResponse } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import {
   ArrowLeft,
   Loader2,
@@ -18,6 +18,7 @@ import {
   User,
   Calendar,
   Car,
+  Trash2,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -31,16 +32,27 @@ export default function InvoiceGroupDetail() {
     query: { enabled: id > 0, queryKey: getGetInvoiceGroupQueryKey(id) },
   });
 
+  const { data: collectedEvidence } = useListInvoiceGroupEvidence(id, {
+    query: { enabled: id > 0, queryKey: getListInvoiceGroupEvidenceQueryKey(id) },
+  });
+
   const updateStatus = useUpdateInvoiceGroupStatus();
   const updateOutcome = useUpdateInvoiceGroupOutcome();
   const triageGroup = useTriageInvoiceGroup();
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
+  const deleteEvidence = useDeleteInvoiceGroupEvidence();
 
   const [holdReason, setHoldReason] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(id) });
+  };
+
+  const handleDeleteEvidence = async (evidenceId: number) => {
+    await deleteEvidence.mutateAsync({ id, evidenceId });
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupEvidenceQueryKey(id) });
+    invalidate();
   };
 
   if (isLoading) {
@@ -152,6 +164,77 @@ export default function InvoiceGroupDetail() {
                   <p className="text-sm text-yellow-700">{group.holdReason}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Evidence</CardTitle>
+              <CardDescription>Evidence items collected for this invoice group during workflow execution.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const evidenceItems = Array.isArray(collectedEvidence?.evidence) ? collectedEvidence.evidence : [];
+                if (evidenceItems.length === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground">No group evidence collected yet.</p>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    <Label className="text-xs text-muted-foreground">Collected Evidence ({evidenceItems.length} items)</Label>
+                    <div className="grid gap-3">
+                      {evidenceItems.map((ev) => (
+                        <div key={ev.id} className="border rounded-lg p-3 space-y-2 bg-muted/30">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-sm font-medium">{ev.evidenceTypeName}</p>
+                              {ev.treeNodeId && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  Tree node: {ev.treeNodeId}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground">
+                                {ev.collectedBy && `by ${ev.collectedBy} · `}
+                                {formatDateTime(ev.collectedAt)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive"
+                                onClick={() => handleDeleteEvidence(ev.id)}
+                                disabled={deleteEvidence.isPending}
+                                title="Delete evidence"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          {ev.imageUrl && (
+                            <a
+                              href={ev.imageUrl.startsWith("/objects/") ? `/api/storage${ev.imageUrl}` : ev.imageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block"
+                            >
+                              <img
+                                src={ev.imageUrl.startsWith("/objects/") ? `/api/storage${ev.imageUrl}` : ev.imageUrl}
+                                alt={ev.evidenceTypeName}
+                                className="rounded border max-h-40 w-auto hover:opacity-90 transition-opacity"
+                              />
+                            </a>
+                          )}
+                          {ev.notes && (
+                            <p className="text-xs bg-white dark:bg-background rounded p-2 border">{ev.notes}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 
