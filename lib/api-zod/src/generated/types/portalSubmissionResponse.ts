@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PortalSubmissionResponseAttachmentUrls } from "./portalSubmissionResponseAttachmentUrls";
+import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
 import type { PortalSubmissionResponseEvidenceFiles } from "./portalSubmissionResponseEvidenceFiles";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
 import type { PortalSubmissionResponseWorkflowHistory } from "./portalSubmissionResponseWorkflowHistory";
@@ -32,6 +33,8 @@ export interface PortalSubmissionResponse {
   gpsBreadcrumbsAvailable?: string | null;
   /** @nullable */
   descriptionHtml?: string | null;
+  /** @nullable */
+  descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
   /** @nullable */
   attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
   /** @nullable */

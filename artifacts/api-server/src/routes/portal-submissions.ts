@@ -467,6 +467,17 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   res.json(sub);
 }));
 
+const MAX_DESCRIPTION_HISTORY = 5;
+
+function pushHistory(
+  history: Array<{ description: string; generatedAt: string }> | null | undefined,
+  entry: { description: string; generatedAt: string } | null,
+): Array<{ description: string; generatedAt: string }> {
+  const list = Array.isArray(history) ? [...history] : [];
+  if (entry && entry.description) list.unshift(entry);
+  return list.slice(0, MAX_DESCRIPTION_HISTORY);
+}
+
 router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -494,8 +505,59 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "");
   }
 
+  const previousDescription = existing.descriptionHtml || "";
+  const newHistory = previousDescription
+    ? pushHistory(existing.descriptionHistory, {
+        description: previousDescription,
+        generatedAt: (existing.updatedAt instanceof Date ? existing.updatedAt : new Date()).toISOString(),
+      })
+    : (existing.descriptionHistory ?? []);
+
   const [sub] = await db.update(portalSubmissionsTable).set({
     descriptionHtml: generatedDescription,
+    descriptionHistory: newHistory,
+  }).where(eq(portalSubmissionsTable.id, id)).returning();
+
+  res.json(sub);
+}));
+
+router.post("/portal-submissions/:id/revert-description", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { index } = req.body as { index?: number };
+  if (typeof index !== "number" || index < 0) {
+    res.status(400).json({ error: "index must be a non-negative number" });
+    return;
+  }
+
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const editableStatuses = ["draft", "pending", "failed"];
+  if (!editableStatuses.includes(existing.status)) {
+    res.status(400).json({ error: "Cannot revert text for submissions in this status" });
+    return;
+  }
+
+  const history = Array.isArray(existing.descriptionHistory) ? [...existing.descriptionHistory] : [];
+  if (index >= history.length) {
+    res.status(400).json({ error: "History index out of range" });
+    return;
+  }
+
+  const [chosen] = history.splice(index, 1);
+  const previousDescription = existing.descriptionHtml || "";
+  const newHistory = previousDescription
+    ? [{
+        description: previousDescription,
+        generatedAt: (existing.updatedAt instanceof Date ? existing.updatedAt : new Date()).toISOString(),
+      }, ...history].slice(0, MAX_DESCRIPTION_HISTORY)
+    : history.slice(0, MAX_DESCRIPTION_HISTORY);
+
+  const [sub] = await db.update(portalSubmissionsTable).set({
+    descriptionHtml: chosen.description,
+    descriptionHistory: newHistory,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   res.json(sub);

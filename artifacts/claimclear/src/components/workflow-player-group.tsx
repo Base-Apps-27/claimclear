@@ -11,6 +11,7 @@ import {
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
   useRegeneratePortalSubmissionText,
+  useRevertPortalSubmissionDescription,
   getListInvoiceGroupsQueryKey,
   getGetInvoiceGroupQueryKey,
   useGetErrorType,
@@ -30,6 +31,7 @@ import { EvidenceFileList } from "@/components/evidence-file-list";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
   PauseCircle, ArrowRight, Eye, TreeDeciduous, Hash, FileText, Sparkles,
+  History, Undo2,
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { toast } from "@/hooks/use-toast";
@@ -63,7 +65,10 @@ export function WorkflowPlayerGroup({
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
   const regenerateText = useRegeneratePortalSubmissionText();
+  const revertDescription = useRevertPortalSubmissionDescription();
   const [portalSubmitted, setPortalSubmitted] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   const isOnHold = group.status === "On Hold";
   const PORTAL_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"];
@@ -100,6 +105,7 @@ export function WorkflowPlayerGroup({
     id: number;
     subject: string;
     descriptionHtml: string;
+    descriptionHistory: Array<{ description: string; generatedAt: string }>;
     issueType: string;
     gpsBreadcrumbsAvailable: string;
     requesterEmail: string;
@@ -145,10 +151,12 @@ export function WorkflowPlayerGroup({
     });
     const draft = result as unknown as Record<string, unknown>;
     const attachUrls = (Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : []) as string[];
+    const history = (Array.isArray(draft.descriptionHistory) ? draft.descriptionHistory : []) as Array<{ description: string; generatedAt: string }>;
     setDraftSubmission({
       id: draft.id as number,
       subject: (draft.subject as string) || "",
       descriptionHtml: (draft.descriptionHtml as string) || "",
+      descriptionHistory: history,
       issueType: (draft.issueType as string) || "",
       gpsBreadcrumbsAvailable: (draft.gpsBreadcrumbsAvailable as string) || "",
       requesterEmail: (draft.requesterEmail as string) || "",
@@ -158,6 +166,8 @@ export function WorkflowPlayerGroup({
       attachmentUrls: attachUrls,
     });
     setDraftEditing(false);
+    setHistoryOpen(false);
+    setPreviewIndex(null);
   };
 
   const handleEditDraft = () => {
@@ -207,15 +217,35 @@ export function WorkflowPlayerGroup({
     if (!draftSubmission) return;
     try {
       const result = await regenerateText.mutateAsync({ id: draftSubmission.id });
-      const updated = result as unknown as { descriptionHtml?: string };
+      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string }> };
       setDraftSubmission({
         ...draftSubmission,
         descriptionHtml: updated.descriptionHtml || "",
+        descriptionHistory: Array.isArray(updated.descriptionHistory) ? updated.descriptionHistory : draftSubmission.descriptionHistory,
       });
-      toast({ title: "Dispute write-up regenerated" });
+      setPreviewIndex(null);
+      toast({ title: "Dispute write-up regenerated", description: "The previous version was saved to history." });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Please try again.";
       toast({ title: "Could not regenerate write-up", description: message, variant: "destructive" });
+    }
+  };
+
+  const handleRevertToVersion = async (index: number) => {
+    if (!draftSubmission) return;
+    try {
+      const result = await revertDescription.mutateAsync({ id: draftSubmission.id, data: { index } });
+      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string }> };
+      setDraftSubmission({
+        ...draftSubmission,
+        descriptionHtml: updated.descriptionHtml || "",
+        descriptionHistory: Array.isArray(updated.descriptionHistory) ? updated.descriptionHistory : [],
+      });
+      setPreviewIndex(null);
+      toast({ title: "Reverted to previous version", description: "The current version was moved into history." });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Please try again.";
+      toast({ title: "Could not revert write-up", description: message, variant: "destructive" });
     }
   };
 
@@ -606,19 +636,32 @@ export function WorkflowPlayerGroup({
 
                   <div className="flex items-center justify-between mt-4">
                     <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">Dispute Write-Up</div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs gap-1"
-                      onClick={handleRegenerateText}
-                      disabled={regenerateText.isPending}
-                    >
-                      {regenerateText.isPending ? (
-                        <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>
-                      ) : (
-                        <><Sparkles className="h-3 w-3" />Regenerate Text</>
+                    <div className="flex items-center gap-1">
+                      {draftSubmission.descriptionHistory.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setHistoryOpen(o => !o)}
+                        >
+                          <History className="h-3 w-3" />
+                          {historyOpen ? "Hide History" : `History (${draftSubmission.descriptionHistory.length})`}
+                        </Button>
                       )}
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs gap-1"
+                        onClick={handleRegenerateText}
+                        disabled={regenerateText.isPending || revertDescription.isPending}
+                      >
+                        {regenerateText.isPending ? (
+                          <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>
+                        ) : (
+                          <><Sparkles className="h-3 w-3" />Regenerate Text</>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border max-h-64 overflow-y-auto">
                     {regenerateText.isPending ? (
@@ -629,6 +672,52 @@ export function WorkflowPlayerGroup({
                       draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>
                     )}
                   </div>
+                  {historyOpen && draftSubmission.descriptionHistory.length > 0 && (
+                    <div className="border rounded-md divide-y">
+                      <div className="px-3 py-2 bg-muted/30 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <History className="h-3 w-3" />Previous versions
+                      </div>
+                      {draftSubmission.descriptionHistory.map((entry, idx) => {
+                        const isExpanded = previewIndex === idx;
+                        let when = entry.generatedAt;
+                        try { when = new Date(entry.generatedAt).toLocaleString(); } catch { /* keep raw */ }
+                        return (
+                          <div key={`${entry.generatedAt}-${idx}`} className="px-3 py-2 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs">
+                                <span className="font-medium">Version {draftSubmission.descriptionHistory.length - idx}</span>
+                                <span className="text-muted-foreground"> · {when}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => setPreviewIndex(isExpanded ? null : idx)}
+                                >
+                                  <Eye className="h-3 w-3" />{isExpanded ? "Hide" : "Preview"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => handleRevertToVersion(idx)}
+                                  disabled={revertDescription.isPending || regenerateText.isPending}
+                                >
+                                  <Undo2 className="h-3 w-3" />Revert to this
+                                </Button>
+                              </div>
+                            </div>
+                            {isExpanded && (
+                              <div className="bg-background p-2 rounded border text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                {entry.description}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {portalSubmitted ? (
                     <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-center gap-2 animate-in fade-in duration-300">

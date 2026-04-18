@@ -1336,6 +1336,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /portal-submissions/{id}/revert-description:
+    post:
+      operationId: revertPortalSubmissionDescription
+      tags: [portalSubmissions]
+      summary: Revert the active dispute write-up to a previous version from history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index:
+                  type: integer
+                  description: Zero-based index of the version in descriptionHistory to make active
+      responses:
+        "200":
+          description: Updated submission with reverted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSubmissionResponse"
+
   /portal-submissions/{id}/confirm:
     post:
       operationId: confirmPortalSubmission
@@ -2848,6 +2878,18 @@ components:
           type: ["string", "null"]
         descriptionHtml:
           type: ["string", "null"]
+        descriptionHistory:
+          type: ["array", "null"]
+          items:
+            type: object
+            properties:
+              description:
+                type: string
+              generatedAt:
+                type: string
+            required:
+              - description
+              - generatedAt
         attachmentUrls:
           type: ["object", "null"]
         confNumber:

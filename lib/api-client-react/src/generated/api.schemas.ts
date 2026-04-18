@@ -248,6 +248,11 @@ export const PortalSubmissionResponseStatus = {
   dry_run: "dry_run",
 } as const;
 
+export type PortalSubmissionResponseDescriptionHistoryItem = {
+  description: string;
+  generatedAt: string;
+};
+
 /**
  * @nullable
  */
@@ -291,6 +296,8 @@ export interface PortalSubmissionResponse {
   gpsBreadcrumbsAvailable?: string | null;
   /** @nullable */
   descriptionHtml?: string | null;
+  /** @nullable */
+  descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
   /** @nullable */
   attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
   /** @nullable */
@@ -1226,6 +1233,11 @@ export type UpdatePortalSubmissionDraftBody = {
   transportationProviderName?: string;
   phoneNumber?: string;
   invoiceNumber?: string;
+};
+
+export type RevertPortalSubmissionDescriptionBody = {
+  /** Zero-based index of the version in descriptionHistory to make active */
+  index: number;
 };
 
 export type ListEvidenceTypes200 = {

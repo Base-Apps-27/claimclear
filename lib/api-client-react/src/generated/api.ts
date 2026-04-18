@@ -88,6 +88,7 @@ import type {
   RecordPortalResponseBody,
   RegisterBotBody,
   ResponseStats,
+  RevertPortalSubmissionDescriptionBody,
   SOPAnalysisResult,
   SaveMappingsBody,
   SaveMappingsResponse,
@@ -5072,6 +5073,99 @@ export const useRegeneratePortalSubmissionText = <
   TContext
 > => {
   return useMutation(getRegeneratePortalSubmissionTextMutationOptions(options));
+};
+
+/**
+ * @summary Revert the active dispute write-up to a previous version from history
+ */
+export const getRevertPortalSubmissionDescriptionUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/revert-description`;
+};
+
+export const revertPortalSubmissionDescription = async (
+  id: number,
+  revertPortalSubmissionDescriptionBody: RevertPortalSubmissionDescriptionBody,
+  options?: RequestInit,
+): Promise<PortalSubmissionResponse> => {
+  return customFetch<PortalSubmissionResponse>(
+    getRevertPortalSubmissionDescriptionUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(revertPortalSubmissionDescriptionBody),
+    },
+  );
+};
+
+export const getRevertPortalSubmissionDescriptionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertPortalSubmissionDescription>>,
+    TError,
+    { id: number; data: BodyType<RevertPortalSubmissionDescriptionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revertPortalSubmissionDescription>>,
+  TError,
+  { id: number; data: BodyType<RevertPortalSubmissionDescriptionBody> },
+  TContext
+> => {
+  const mutationKey = ["revertPortalSubmissionDescription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revertPortalSubmissionDescription>>,
+    { id: number; data: BodyType<RevertPortalSubmissionDescriptionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return revertPortalSubmissionDescription(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevertPortalSubmissionDescriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revertPortalSubmissionDescription>>
+>;
+export type RevertPortalSubmissionDescriptionMutationBody =
+  BodyType<RevertPortalSubmissionDescriptionBody>;
+export type RevertPortalSubmissionDescriptionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Revert the active dispute write-up to a previous version from history
+ */
+export const useRevertPortalSubmissionDescription = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revertPortalSubmissionDescription>>,
+    TError,
+    { id: number; data: BodyType<RevertPortalSubmissionDescriptionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revertPortalSubmissionDescription>>,
+  TError,
+  { id: number; data: BodyType<RevertPortalSubmissionDescriptionBody> },
+  TContext
+> => {
+  return useMutation(
+    getRevertPortalSubmissionDescriptionMutationOptions(options),
+  );
 };
 
 /**

@@ -21,6 +21,7 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   invoiceNumber: text("invoice_number"),
   gpsBreadcrumbsAvailable: text("gps_breadcrumbs_available"),
   descriptionHtml: text("description_html"),
+  descriptionHistory: jsonb("description_history").$type<Array<{ description: string; generatedAt: string }>>().default([]),
   attachmentUrls: jsonb("attachment_urls"),
   confNumber: text("conf_number"),
   serviceDate: text("service_date"),

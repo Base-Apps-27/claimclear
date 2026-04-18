@@ -254,6 +254,14 @@ export const GetInvoiceGroupResponse = zod
             invoiceNumber: zod.string().nullish(),
             gpsBreadcrumbsAvailable: zod.string().nullish(),
             descriptionHtml: zod.string().nullish(),
+            descriptionHistory: zod
+              .array(
+                zod.object({
+                  description: zod.string(),
+                  generatedAt: zod.string(),
+                }),
+              )
+              .nullish(),
             attachmentUrls: zod.object({}).passthrough().nullish(),
             confNumber: zod.string().nullish(),
             serviceDate: zod.string().nullish(),
@@ -2039,6 +2047,14 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2109,6 +2125,14 @@ export const GetPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2159,6 +2183,14 @@ export const RetryPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2209,6 +2241,14 @@ export const CancelPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2269,6 +2309,14 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2330,6 +2378,14 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2380,6 +2436,80 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
+  attachmentUrls: zod.object({}).passthrough().nullish(),
+  confNumber: zod.string().nullish(),
+  serviceDate: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  disputeReason: zod.string().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  workflowHistory: zod.object({}).passthrough().nullish(),
+  portalTicketId: zod.string().nullish(),
+  screenshotUrl: zod.string().nullish(),
+  errorMessage: zod.string().nullish(),
+  submittedAt: zod.string().nullish(),
+  attempts: zod.number(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Revert the active dispute write-up to a previous version from history
+ */
+export const RevertPortalSubmissionDescriptionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RevertPortalSubmissionDescriptionBody = zod.object({
+  index: zod
+    .number()
+    .describe(
+      "Zero-based index of the version in descriptionHistory to make active",
+    ),
+});
+
+export const RevertPortalSubmissionDescriptionResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  status: zod.enum([
+    "draft",
+    "pending",
+    "in_progress",
+    "submitted",
+    "failed",
+    "cancelled",
+    "dry_run",
+  ]),
+  issueType: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  requesterEmail: zod.string().nullish(),
+  transportationProviderName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  gpsBreadcrumbsAvailable: zod.string().nullish(),
+  descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2430,6 +2560,14 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2480,6 +2618,14 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2530,6 +2676,14 @@ export const PollPortalSubmissionsResponseItem = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2587,6 +2741,14 @@ export const ClaimPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2642,6 +2804,14 @@ export const CompletePortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2697,6 +2867,14 @@ export const CompleteDryRunPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
@@ -2752,6 +2930,14 @@ export const FailPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionHistory: zod
+    .array(
+      zod.object({
+        description: zod.string(),
+        generatedAt: zod.string(),
+      }),
+    )
+    .nullish(),
   attachmentUrls: zod.object({}).passthrough().nullish(),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
