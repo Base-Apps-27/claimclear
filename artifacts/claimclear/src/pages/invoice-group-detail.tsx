@@ -19,9 +19,50 @@ import {
   Calendar,
   Car,
   Trash2,
+  Camera,
+  ImageOff,
+  Pencil,
+  Tag,
+  Workflow,
+  PauseCircle,
+  PlayCircle,
+  CheckCircle2,
+  XCircle,
+  StickyNote,
+  Activity as ActivityIcon,
+  Mail,
+  Trash,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+
+type ActionMeta = {
+  label: string;
+  icon: LucideIcon;
+  iconClass: string;
+};
+
+const ACTION_META: Record<string, ActionMeta> = {
+  group_evidence_added: { label: "Evidence collected", icon: Camera, iconClass: "text-emerald-600" },
+  group_evidence_removed: { label: "Evidence removed", icon: ImageOff, iconClass: "text-rose-600" },
+  group_workflow_step: { label: "Workflow step completed", icon: Workflow, iconClass: "text-blue-600" },
+  group_edited: { label: "Group details updated", icon: Pencil, iconClass: "text-slate-600" },
+  group_error_type_assigned: { label: "Error type assigned", icon: Tag, iconClass: "text-violet-600" },
+  group_deleted: { label: "Group deleted", icon: Trash, iconClass: "text-rose-600" },
+  group_held: { label: "Placed on hold", icon: PauseCircle, iconClass: "text-amber-600" },
+  group_hold_removed: { label: "Hold removed", icon: PlayCircle, iconClass: "text-emerald-600" },
+  group_triaged: { label: "Triage completed", icon: CheckCircle2, iconClass: "text-emerald-600" },
+  group_resolved: { label: "Group resolved", icon: CheckCircle2, iconClass: "text-emerald-600" },
+  group_denied: { label: "Group denied", icon: XCircle, iconClass: "text-rose-600" },
+};
+
+const humanizeAction = (action: string): ActionMeta =>
+  ACTION_META[action] ?? {
+    label: action.replace(/^group_/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    icon: ActivityIcon,
+    iconClass: "text-muted-foreground",
+  };
 
 export default function InvoiceGroupDetail() {
   const params = useParams<{ id: string }>();
@@ -380,19 +421,76 @@ export default function InvoiceGroupDetail() {
               <CardTitle className="text-sm">Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              {auditLogs.length === 0 && notes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet.</p>
-              ) : (
-                <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {auditLogs.map((log: any) => (
-                    <div key={`audit-${log.id}`} className="border-l-2 border-muted pl-3 py-1">
-                      <p className="text-xs font-medium">{log.action}</p>
-                      <p className="text-xs text-muted-foreground">{log.details}</p>
-                      <p className="text-[10px] text-muted-foreground/60">{new Date(log.timestamp).toLocaleString()}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {(() => {
+                type FeedItem =
+                  | { kind: "audit"; id: number; timestamp: string; log: any }
+                  | { kind: "note"; id: number; timestamp: string; note: any };
+
+                const feed: FeedItem[] = [
+                  ...auditLogs.map((log: any) => ({
+                    kind: "audit" as const,
+                    id: log.id,
+                    timestamp: log.timestamp,
+                    log,
+                  })),
+                  ...notes.map((note: any) => ({
+                    kind: "note" as const,
+                    id: note.id,
+                    timestamp: note.createdAt,
+                    note,
+                  })),
+                ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+                if (feed.length === 0) {
+                  return <p className="text-sm text-muted-foreground">No activity yet.</p>;
+                }
+
+                return (
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                    {feed.map((item) => {
+                      if (item.kind === "audit") {
+                        const meta = humanizeAction(item.log.action);
+                        const Icon = meta.icon;
+                        return (
+                          <div key={`audit-${item.id}`} className="flex gap-2 border-l-2 border-muted pl-3 py-1">
+                            <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${meta.iconClass}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium">{meta.label}</p>
+                              {item.log.details && (
+                                <p className="text-xs text-muted-foreground break-words">{item.log.details}</p>
+                              )}
+                              <p className="text-[10px] text-muted-foreground/60">
+                                {item.log.userName && <span>{item.log.userName} · </span>}
+                                {new Date(item.timestamp).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      const isEmail = item.note.type === "email";
+                      const Icon = isEmail ? Mail : StickyNote;
+                      return (
+                        <div key={`note-${item.id}`} className="flex gap-2 border-l-2 border-muted pl-3 py-1">
+                          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${isEmail ? "text-blue-600" : "text-amber-600"}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium">
+                              {isEmail ? "Email note" : "Note added"}
+                              {item.note.emailSubject && (
+                                <span className="text-muted-foreground font-normal"> · {item.note.emailSubject}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">{item.note.content}</p>
+                            <p className="text-[10px] text-muted-foreground/60">
+                              {item.note.author && <span>{item.note.author} · </span>}
+                              {new Date(item.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
