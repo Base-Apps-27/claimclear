@@ -2878,6 +2878,10 @@ components:
           type: ["string", "null"]
         descriptionHtml:
           type: ["string", "null"]
+        descriptionEditorEmail:
+          type: ["string", "null"]
+        descriptionEditorName:
+          type: ["string", "null"]
         descriptionHistory:
           type: ["array", "null"]
           items:
@@ -2887,6 +2891,10 @@ components:
                 type: string
               generatedAt:
                 type: string
+              editorEmail:
+                type: ["string", "null"]
+              editorName:
+                type: ["string", "null"]
             required:
               - description
               - generatedAt

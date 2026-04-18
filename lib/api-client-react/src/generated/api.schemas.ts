@@ -251,6 +251,10 @@ export const PortalSubmissionResponseStatus = {
 export type PortalSubmissionResponseDescriptionHistoryItem = {
   description: string;
   generatedAt: string;
+  /** @nullable */
+  editorEmail?: string | null;
+  /** @nullable */
+  editorName?: string | null;
 };
 
 /**
@@ -296,6 +300,10 @@ export interface PortalSubmissionResponse {
   gpsBreadcrumbsAvailable?: string | null;
   /** @nullable */
   descriptionHtml?: string | null;
+  /** @nullable */
+  descriptionEditorEmail?: string | null;
+  /** @nullable */
+  descriptionEditorName?: string | null;
   /** @nullable */
   descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
   /** @nullable */

@@ -105,7 +105,9 @@ export function WorkflowPlayer({
     id: number;
     subject: string;
     descriptionHtml: string;
-    descriptionHistory: Array<{ description: string; generatedAt: string }>;
+    descriptionHistory: Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>;
+    descriptionEditorEmail: string | null;
+    descriptionEditorName: string | null;
     issueType: string;
     gpsBreadcrumbsAvailable: string;
     requesterEmail: string;
@@ -158,12 +160,14 @@ export function WorkflowPlayer({
     });
     const draft = result as unknown as Record<string, unknown>;
     const attachUrls = (Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : []) as string[];
-    const history = (Array.isArray(draft.descriptionHistory) ? draft.descriptionHistory : []) as Array<{ description: string; generatedAt: string }>;
+    const history = (Array.isArray(draft.descriptionHistory) ? draft.descriptionHistory : []) as Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>;
     setDraftSubmission({
       id: draft.id as number,
       subject: (draft.subject as string) || "",
       descriptionHtml: (draft.descriptionHtml as string) || "",
       descriptionHistory: history,
+      descriptionEditorEmail: (draft.descriptionEditorEmail as string | null) ?? null,
+      descriptionEditorName: (draft.descriptionEditorName as string | null) ?? null,
       issueType: (draft.issueType as string) || "",
       gpsBreadcrumbsAvailable: (draft.gpsBreadcrumbsAvailable as string) || "",
       requesterEmail: (draft.requesterEmail as string) || "",
@@ -192,7 +196,7 @@ export function WorkflowPlayer({
 
   const handleSaveDraft = async () => {
     if (!draftSubmission) return;
-    await updateDraft.mutateAsync({
+    const result = await updateDraft.mutateAsync({
       id: draftSubmission.id,
       data: {
         subject: editSubject,
@@ -205,10 +209,14 @@ export function WorkflowPlayer({
         invoiceNumber: editInvoice,
       },
     });
+    const updated = result as unknown as { descriptionHistory?: Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>; descriptionEditorEmail?: string | null; descriptionEditorName?: string | null };
     setDraftSubmission({
       ...draftSubmission,
       subject: editSubject,
       descriptionHtml: editDescription,
+      descriptionHistory: Array.isArray(updated.descriptionHistory) ? updated.descriptionHistory : draftSubmission.descriptionHistory,
+      descriptionEditorEmail: updated.descriptionEditorEmail ?? draftSubmission.descriptionEditorEmail,
+      descriptionEditorName: updated.descriptionEditorName ?? draftSubmission.descriptionEditorName,
       issueType: editIssueType,
       gpsBreadcrumbsAvailable: editGps,
       requesterEmail: editEmail,
@@ -224,11 +232,13 @@ export function WorkflowPlayer({
     if (!draftSubmission) return;
     try {
       const result = await regenerateText.mutateAsync({ id: draftSubmission.id });
-      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string }> };
+      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>; descriptionEditorEmail?: string | null; descriptionEditorName?: string | null };
       setDraftSubmission({
         ...draftSubmission,
         descriptionHtml: updated.descriptionHtml || "",
         descriptionHistory: Array.isArray(updated.descriptionHistory) ? updated.descriptionHistory : draftSubmission.descriptionHistory,
+        descriptionEditorEmail: updated.descriptionEditorEmail ?? null,
+        descriptionEditorName: updated.descriptionEditorName ?? null,
       });
       setPreviewIndex(null);
       toast({ title: "Dispute write-up regenerated", description: "The previous version was saved to history." });
@@ -242,11 +252,13 @@ export function WorkflowPlayer({
     if (!draftSubmission) return;
     try {
       const result = await revertDescription.mutateAsync({ id: draftSubmission.id, data: { index } });
-      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string }> };
+      const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>; descriptionEditorEmail?: string | null; descriptionEditorName?: string | null };
       setDraftSubmission({
         ...draftSubmission,
         descriptionHtml: updated.descriptionHtml || "",
         descriptionHistory: Array.isArray(updated.descriptionHistory) ? updated.descriptionHistory : [],
+        descriptionEditorEmail: updated.descriptionEditorEmail ?? null,
+        descriptionEditorName: updated.descriptionEditorName ?? null,
       });
       setPreviewIndex(null);
       toast({ title: "Reverted to previous version", description: "The current version was moved into history." });
@@ -716,6 +728,11 @@ export function WorkflowPlayer({
                 draftSubmission.descriptionHtml || <span className="text-red-500 font-medium">No dispute text generated</span>
               )}
             </div>
+            {(draftSubmission.descriptionEditorName || draftSubmission.descriptionEditorEmail) && !regenerateText.isPending && (
+              <div className="text-xs text-muted-foreground">
+                Last updated by {draftSubmission.descriptionEditorName || draftSubmission.descriptionEditorEmail}
+              </div>
+            )}
             {historyOpen && draftSubmission.descriptionHistory.length > 0 && (
               <div className="border rounded-md divide-y">
                 <div className="px-3 py-2 bg-muted/30 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
@@ -731,6 +748,9 @@ export function WorkflowPlayer({
                         <div className="text-xs">
                           <span className="font-medium">Version {draftSubmission.descriptionHistory.length - idx}</span>
                           <span className="text-muted-foreground"> · {when}</span>
+                          {(entry.editorName || entry.editorEmail) && (
+                            <span className="text-muted-foreground"> · by {entry.editorName || entry.editorEmail}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
                           <Button

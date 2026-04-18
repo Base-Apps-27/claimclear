@@ -9,4 +9,8 @@
 export type PortalSubmissionResponseDescriptionHistoryItem = {
   description: string;
   generatedAt: string;
+  /** @nullable */
+  editorEmail?: string | null;
+  /** @nullable */
+  editorName?: string | null;
 };

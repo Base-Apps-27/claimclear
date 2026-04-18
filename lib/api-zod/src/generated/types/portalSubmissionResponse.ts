@@ -34,6 +34,10 @@ export interface PortalSubmissionResponse {
   /** @nullable */
   descriptionHtml?: string | null;
   /** @nullable */
+  descriptionEditorEmail?: string | null;
+  /** @nullable */
+  descriptionEditorName?: string | null;
+  /** @nullable */
   descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
   /** @nullable */
   attachmentUrls?: PortalSubmissionResponseAttachmentUrls;

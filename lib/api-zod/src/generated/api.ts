@@ -254,11 +254,15 @@ export const GetInvoiceGroupResponse = zod
             invoiceNumber: zod.string().nullish(),
             gpsBreadcrumbsAvailable: zod.string().nullish(),
             descriptionHtml: zod.string().nullish(),
+            descriptionEditorEmail: zod.string().nullish(),
+            descriptionEditorName: zod.string().nullish(),
             descriptionHistory: zod
               .array(
                 zod.object({
                   description: zod.string(),
                   generatedAt: zod.string(),
+                  editorEmail: zod.string().nullish(),
+                  editorName: zod.string().nullish(),
                 }),
               )
               .nullish(),
@@ -2047,11 +2051,15 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2125,11 +2133,15 @@ export const GetPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2183,11 +2195,15 @@ export const RetryPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2241,11 +2257,15 @@ export const CancelPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2309,11 +2329,15 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2378,11 +2402,15 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2436,11 +2464,15 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2502,11 +2534,15 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2560,11 +2596,15 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2618,11 +2658,15 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2676,11 +2720,15 @@ export const PollPortalSubmissionsResponseItem = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2741,11 +2789,15 @@ export const ClaimPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2804,11 +2856,15 @@ export const CompletePortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2867,11 +2923,15 @@ export const CompleteDryRunPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),
@@ -2930,11 +2990,15 @@ export const FailPortalSubmissionResponse = zod.object({
   invoiceNumber: zod.string().nullish(),
   gpsBreadcrumbsAvailable: zod.string().nullish(),
   descriptionHtml: zod.string().nullish(),
+  descriptionEditorEmail: zod.string().nullish(),
+  descriptionEditorName: zod.string().nullish(),
   descriptionHistory: zod
     .array(
       zod.object({
         description: zod.string(),
         generatedAt: zod.string(),
+        editorEmail: zod.string().nullish(),
+        editorName: zod.string().nullish(),
       }),
     )
     .nullish(),

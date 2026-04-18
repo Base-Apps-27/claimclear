@@ -411,6 +411,8 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     invoiceNumber: snap.invoiceNumber,
     gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
+    descriptionEditorEmail: req.user?.email ?? null,
+    descriptionEditorName: req.user?.displayName ?? null,
     attachmentUrls,
     confNumber: snap.confNumber,
     serviceDate: snap.serviceDate,
@@ -451,15 +453,32 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
     return;
   }
 
-  const updates: Record<string, string> = {};
+  const updates: Record<string, unknown> = {};
   if (req.body.subject !== undefined) updates.subject = req.body.subject;
-  if (req.body.descriptionHtml !== undefined) updates.descriptionHtml = req.body.descriptionHtml;
   if (req.body.issueType !== undefined) updates.issueType = req.body.issueType;
   if (req.body.gpsBreadcrumbsAvailable !== undefined) updates.gpsBreadcrumbsAvailable = req.body.gpsBreadcrumbsAvailable;
   if (req.body.requesterEmail !== undefined) updates.requesterEmail = req.body.requesterEmail;
   if (req.body.transportationProviderName !== undefined) updates.transportationProviderName = req.body.transportationProviderName;
   if (req.body.phoneNumber !== undefined) updates.phoneNumber = req.body.phoneNumber;
   if (req.body.invoiceNumber !== undefined) updates.invoiceNumber = req.body.invoiceNumber;
+
+  if (req.body.descriptionHtml !== undefined) {
+    const newDescription = req.body.descriptionHtml;
+    const previousDescription = existing.descriptionHtml || "";
+    if (newDescription !== previousDescription) {
+      updates.descriptionHtml = newDescription;
+      updates.descriptionEditorEmail = req.user?.email ?? null;
+      updates.descriptionEditorName = req.user?.displayName ?? null;
+      if (previousDescription) {
+        updates.descriptionHistory = pushHistory(existing.descriptionHistory, {
+          description: previousDescription,
+          generatedAt: (existing.updatedAt instanceof Date ? existing.updatedAt : new Date()).toISOString(),
+          editorEmail: existing.descriptionEditorEmail ?? null,
+          editorName: existing.descriptionEditorName ?? null,
+        });
+      }
+    }
+  }
 
   const [sub] = await db.update(portalSubmissionsTable).set(updates)
     .where(eq(portalSubmissionsTable.id, id)).returning();
@@ -469,10 +488,17 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
 
 const MAX_DESCRIPTION_HISTORY = 5;
 
+type DescriptionHistoryEntry = {
+  description: string;
+  generatedAt: string;
+  editorEmail?: string | null;
+  editorName?: string | null;
+};
+
 function pushHistory(
-  history: Array<{ description: string; generatedAt: string }> | null | undefined,
-  entry: { description: string; generatedAt: string } | null,
-): Array<{ description: string; generatedAt: string }> {
+  history: DescriptionHistoryEntry[] | null | undefined,
+  entry: DescriptionHistoryEntry | null,
+): DescriptionHistoryEntry[] {
   const list = Array.isArray(history) ? [...history] : [];
   if (entry && entry.description) list.unshift(entry);
   return list.slice(0, MAX_DESCRIPTION_HISTORY);
@@ -510,12 +536,16 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     ? pushHistory(existing.descriptionHistory, {
         description: previousDescription,
         generatedAt: (existing.updatedAt instanceof Date ? existing.updatedAt : new Date()).toISOString(),
+        editorEmail: existing.descriptionEditorEmail ?? null,
+        editorName: existing.descriptionEditorName ?? null,
       })
     : (existing.descriptionHistory ?? []);
 
   const [sub] = await db.update(portalSubmissionsTable).set({
     descriptionHtml: generatedDescription,
     descriptionHistory: newHistory,
+    descriptionEditorEmail: req.user?.email ?? null,
+    descriptionEditorName: req.user?.displayName ?? null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   res.json(sub);
@@ -548,16 +578,20 @@ router.post("/portal-submissions/:id/revert-description", asyncHandler(async (re
 
   const [chosen] = history.splice(index, 1);
   const previousDescription = existing.descriptionHtml || "";
-  const newHistory = previousDescription
+  const newHistory: DescriptionHistoryEntry[] = previousDescription
     ? [{
         description: previousDescription,
         generatedAt: (existing.updatedAt instanceof Date ? existing.updatedAt : new Date()).toISOString(),
+        editorEmail: existing.descriptionEditorEmail ?? null,
+        editorName: existing.descriptionEditorName ?? null,
       }, ...history].slice(0, MAX_DESCRIPTION_HISTORY)
     : history.slice(0, MAX_DESCRIPTION_HISTORY);
 
   const [sub] = await db.update(portalSubmissionsTable).set({
     descriptionHtml: chosen.description,
     descriptionHistory: newHistory,
+    descriptionEditorEmail: chosen.editorEmail ?? null,
+    descriptionEditorName: chosen.editorName ?? null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   res.json(sub);
@@ -637,6 +671,8 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     invoiceNumber: invoiceNumber || snap.invoiceNumber,
     gpsBreadcrumbsAvailable: gpsBreadcrumbs,
     descriptionHtml: generatedDescription,
+    descriptionEditorEmail: req.user?.email ?? null,
+    descriptionEditorName: req.user?.displayName ?? null,
     attachmentUrls,
     confNumber: snap.confNumber,
     serviceDate: snap.serviceDate,
