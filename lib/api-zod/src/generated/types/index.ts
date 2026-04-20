@@ -7,6 +7,14 @@
  */
 
 export * from "./addClaimEvidenceBody";
+export * from "./adminAuditLogItem";
+export * from "./adminAuditLogItemCategory";
+export * from "./adminAuditLogItemMetadata";
+export * from "./adminAuditLogsResponse";
+export * from "./adminExportAuditLogsCsvCategory";
+export * from "./adminExportAuditLogsCsvParams";
+export * from "./adminListAuditLogsCategory";
+export * from "./adminListAuditLogsParams";
 export * from "./analyzeSOPBody";
 export * from "./anthropicConversation";
 export * from "./anthropicConversationWithMessages";

@@ -18,6 +18,9 @@ import type {
 
 import type {
   AddClaimEvidenceBody,
+  AdminAuditLogsResponse,
+  AdminExportAuditLogsCsvParams,
+  AdminListAuditLogsParams,
   AnalyzeSOPBody,
   AnthropicConversation,
   AnthropicConversationWithMessages,
@@ -8511,6 +8514,203 @@ export function useGetResponseStats<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetResponseStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List audit log entries (admin only) with filtering and pagination
+ */
+export const getAdminListAuditLogsUrl = (params?: AdminListAuditLogsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/audit-logs?${stringifiedParams}`
+    : `/api/admin/audit-logs`;
+};
+
+export const adminListAuditLogs = async (
+  params?: AdminListAuditLogsParams,
+  options?: RequestInit,
+): Promise<AdminAuditLogsResponse> => {
+  return customFetch<AdminAuditLogsResponse>(getAdminListAuditLogsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminListAuditLogsQueryKey = (
+  params?: AdminListAuditLogsParams,
+) => {
+  return [`/api/admin/audit-logs`, ...(params ? [params] : [])] as const;
+};
+
+export const getAdminListAuditLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListAuditLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminListAuditLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListAuditLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListAuditLogsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListAuditLogs>>
+  > = ({ signal }) => adminListAuditLogs(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListAuditLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListAuditLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListAuditLogs>>
+>;
+export type AdminListAuditLogsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List audit log entries (admin only) with filtering and pagination
+ */
+
+export function useAdminListAuditLogs<
+  TData = Awaited<ReturnType<typeof adminListAuditLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminListAuditLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListAuditLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListAuditLogsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export audit log entries as CSV (admin only)
+ */
+export const getAdminExportAuditLogsCsvUrl = (
+  params?: AdminExportAuditLogsCsvParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/audit-logs.csv?${stringifiedParams}`
+    : `/api/admin/audit-logs.csv`;
+};
+
+export const adminExportAuditLogsCsv = async (
+  params?: AdminExportAuditLogsCsvParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getAdminExportAuditLogsCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminExportAuditLogsCsvQueryKey = (
+  params?: AdminExportAuditLogsCsvParams,
+) => {
+  return [`/api/admin/audit-logs.csv`, ...(params ? [params] : [])] as const;
+};
+
+export const getAdminExportAuditLogsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminExportAuditLogsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminExportAuditLogsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminExportAuditLogsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminExportAuditLogsCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminExportAuditLogsCsv>>
+  > = ({ signal }) =>
+    adminExportAuditLogsCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminExportAuditLogsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminExportAuditLogsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminExportAuditLogsCsv>>
+>;
+export type AdminExportAuditLogsCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export audit log entries as CSV (admin only)
+ */
+
+export function useAdminExportAuditLogsCsv<
+  TData = Awaited<ReturnType<typeof adminExportAuditLogsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminExportAuditLogsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminExportAuditLogsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminExportAuditLogsCsvQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

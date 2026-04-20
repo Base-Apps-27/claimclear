@@ -2213,6 +2213,83 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResponseStats'
 
+  /admin/audit-logs:
+    get:
+      operationId: adminListAuditLogs
+      tags: [admin, auditLogs]
+      summary: List audit log entries (admin only) with filtering and pagination
+      parameters:
+        - name: userEmail
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [all, status, edit, evidence, workflow, hold, draft, communication, other]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Audit log feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditLogsResponse"
+
+  /admin/audit-logs.csv:
+    get:
+      operationId: adminExportAuditLogsCsv
+      tags: [admin, auditLogs]
+      summary: Export audit log entries as CSV (admin only)
+      parameters:
+        - name: userEmail
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [all, status, edit, evidence, workflow, hold, draft, communication, other]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
   /admin/backfill-invoice-groups:
     post:
       operationId: backfillInvoiceGroups
@@ -2714,6 +2791,63 @@ components:
         - claimId
         - action
         - details
+
+    AdminAuditLogItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: ["integer", "null"]
+        invoiceGroupId:
+          type: ["integer", "null"]
+        action:
+          type: string
+        actionLabel:
+          type: string
+        category:
+          type: string
+          enum: [status, edit, evidence, workflow, hold, draft, communication, other]
+        details:
+          type: string
+        metadata:
+          type: ["object", "null"]
+        userEmail:
+          type: ["string", "null"]
+        userName:
+          type: ["string", "null"]
+        timestamp:
+          type: string
+        claimConfNumber:
+          type: ["string", "null"]
+        invoiceGroupNumber:
+          type: ["string", "null"]
+      required:
+        - id
+        - action
+        - actionLabel
+        - category
+        - details
+        - timestamp
+
+    AdminAuditLogsResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditLogItem"
+      required:
+        - total
+        - limit
+        - offset
+        - items
 
     ErrorTypeResponse:
       type: object

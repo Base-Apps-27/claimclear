@@ -578,6 +578,55 @@ export interface CreateNoteBody {
   type?: string;
 }
 
+export type AdminAuditLogItemCategory =
+  (typeof AdminAuditLogItemCategory)[keyof typeof AdminAuditLogItemCategory];
+
+export const AdminAuditLogItemCategory = {
+  status: "status",
+  edit: "edit",
+  evidence: "evidence",
+  workflow: "workflow",
+  hold: "hold",
+  draft: "draft",
+  communication: "communication",
+  other: "other",
+} as const;
+
+/**
+ * @nullable
+ */
+export type AdminAuditLogItemMetadata = { [key: string]: unknown } | null;
+
+export interface AdminAuditLogItem {
+  id: number;
+  /** @nullable */
+  claimId?: number | null;
+  /** @nullable */
+  invoiceGroupId?: number | null;
+  action: string;
+  actionLabel: string;
+  category: AdminAuditLogItemCategory;
+  details: string;
+  /** @nullable */
+  metadata?: AdminAuditLogItemMetadata;
+  /** @nullable */
+  userEmail?: string | null;
+  /** @nullable */
+  userName?: string | null;
+  timestamp: string;
+  /** @nullable */
+  claimConfNumber?: string | null;
+  /** @nullable */
+  invoiceGroupNumber?: string | null;
+}
+
+export interface AdminAuditLogsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: AdminAuditLogItem[];
+}
+
 /**
  * @nullable
  */
@@ -1358,6 +1407,52 @@ export type RecordPortalResponse200 = {
   responseId?: number;
   claimId?: number;
 };
+
+export type AdminListAuditLogsParams = {
+  userEmail?: string;
+  category?: AdminListAuditLogsCategory;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type AdminListAuditLogsCategory =
+  (typeof AdminListAuditLogsCategory)[keyof typeof AdminListAuditLogsCategory];
+
+export const AdminListAuditLogsCategory = {
+  all: "all",
+  status: "status",
+  edit: "edit",
+  evidence: "evidence",
+  workflow: "workflow",
+  hold: "hold",
+  draft: "draft",
+  communication: "communication",
+  other: "other",
+} as const;
+
+export type AdminExportAuditLogsCsvParams = {
+  userEmail?: string;
+  category?: AdminExportAuditLogsCsvCategory;
+  from?: string;
+  to?: string;
+};
+
+export type AdminExportAuditLogsCsvCategory =
+  (typeof AdminExportAuditLogsCsvCategory)[keyof typeof AdminExportAuditLogsCsvCategory];
+
+export const AdminExportAuditLogsCsvCategory = {
+  all: "all",
+  status: "status",
+  edit: "edit",
+  evidence: "evidence",
+  workflow: "workflow",
+  hold: "hold",
+  draft: "draft",
+  communication: "communication",
+  other: "other",
+} as const;
 
 export type BackfillInvoiceGroupsBody = {
   /** If true, report what would change without writing to the database */

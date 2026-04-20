@@ -1,10 +1,16 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray, isNull } from "drizzle-orm";
+import { eq, inArray, isNull, and, gte, lte, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
+import {
+  actionKeysForCategory,
+  categoryForAction,
+  isActionCategory,
+  labelForAction,
+} from "../lib/audit-categories";
 
 const router: IRouter = Router();
 
@@ -121,6 +127,178 @@ router.post("/admin/backfill-invoice-groups", requireAdmin, asyncHandler(async (
   });
 
   res.json(result);
+}));
+
+function parseDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function buildAuditLogConditions(query: Record<string, unknown>) {
+  const conditions = [] as ReturnType<typeof eq>[];
+  const userEmail = typeof query.userEmail === "string" ? query.userEmail.trim() : "";
+  if (userEmail) conditions.push(eq(auditLogsTable.userEmail, userEmail));
+  const from = parseDate(query.from);
+  const to = parseDate(query.to);
+  if (from) conditions.push(gte(auditLogsTable.timestamp, from));
+  if (to) conditions.push(lte(auditLogsTable.timestamp, to));
+  const category = typeof query.category === "string" ? query.category : "";
+  if (category && category !== "all" && isActionCategory(category)) {
+    const actions = actionKeysForCategory(category);
+    if (actions.length === 0) {
+      conditions.push(sql`1=0`);
+    } else {
+      conditions.push(inArray(auditLogsTable.action, actions));
+    }
+  }
+  return conditions;
+}
+
+router.get("/admin/audit-logs", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const conditions = buildAuditLogConditions(req.query as Record<string, unknown>);
+  const limitRaw = parseInt(String(req.query.limit ?? "50"), 10);
+  const offsetRaw = parseInt(String(req.query.offset ?? "0"), 10);
+  const limit = Math.min(Math.max(isNaN(limitRaw) ? 50 : limitRaw, 1), 500);
+  const offset = Math.max(isNaN(offsetRaw) ? 0 : offsetRaw, 0);
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(auditLogsTable)
+    .where(where);
+
+  const rows = await db
+    .select({
+      id: auditLogsTable.id,
+      claimId: auditLogsTable.claimId,
+      invoiceGroupId: auditLogsTable.invoiceGroupId,
+      action: auditLogsTable.action,
+      details: auditLogsTable.details,
+      metadata: auditLogsTable.metadata,
+      userEmail: auditLogsTable.userEmail,
+      userName: auditLogsTable.userName,
+      timestamp: auditLogsTable.timestamp,
+      claimConfNumber: claimsTable.confNumber,
+      invoiceGroupNumber: invoiceGroupsTable.invoiceNumber,
+    })
+    .from(auditLogsTable)
+    .leftJoin(claimsTable, eq(auditLogsTable.claimId, claimsTable.id))
+    .leftJoin(invoiceGroupsTable, eq(auditLogsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(where)
+    .orderBy(desc(auditLogsTable.timestamp))
+    .limit(limit)
+    .offset(offset);
+
+  res.json({
+    total,
+    limit,
+    offset,
+    items: rows.map((r) => {
+      const kind: "claim" | "group" | "unknown" = r.invoiceGroupId != null ? "group" : r.claimId != null ? "claim" : "unknown";
+      return {
+        ...r,
+        category: categoryForAction(r.action, kind),
+        actionLabel: labelForAction(r.action, kind),
+      };
+    }),
+  });
+}));
+
+function csvEscape(value: unknown): string {
+  if (value == null) return "";
+  let s: string;
+  if (value instanceof Date) {
+    s = value.toISOString();
+  } else if (typeof value === "object") {
+    s = JSON.stringify(value);
+  } else {
+    s = String(value);
+  }
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+router.get("/admin/audit-logs.csv", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const conditions = buildAuditLogConditions(req.query as Record<string, unknown>);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const userEmail = typeof req.query.userEmail === "string" ? req.query.userEmail.trim() : "";
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = userEmail
+    ? `audit-${userEmail.replace(/[^a-zA-Z0-9._-]/g, "_")}-${stamp}.csv`
+    : `audit-${stamp}.csv`;
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+  const headers = [
+    "timestamp",
+    "user_email",
+    "user_name",
+    "action_key",
+    "action_label",
+    "category",
+    "claim_id",
+    "claim_conf_number",
+    "invoice_group_id",
+    "invoice_group_number",
+    "details",
+    "metadata_json",
+  ];
+  res.write(headers.join(",") + "\n");
+
+  const CHUNK = 1000;
+  let offset = 0;
+  // Page through results in chunks so we never hold the entire result set in memory.
+  while (true) {
+    const chunk = await db
+      .select({
+        id: auditLogsTable.id,
+        claimId: auditLogsTable.claimId,
+        invoiceGroupId: auditLogsTable.invoiceGroupId,
+        action: auditLogsTable.action,
+        details: auditLogsTable.details,
+        metadata: auditLogsTable.metadata,
+        userEmail: auditLogsTable.userEmail,
+        userName: auditLogsTable.userName,
+        timestamp: auditLogsTable.timestamp,
+        claimConfNumber: claimsTable.confNumber,
+        invoiceGroupNumber: invoiceGroupsTable.invoiceNumber,
+      })
+      .from(auditLogsTable)
+      .leftJoin(claimsTable, eq(auditLogsTable.claimId, claimsTable.id))
+      .leftJoin(invoiceGroupsTable, eq(auditLogsTable.invoiceGroupId, invoiceGroupsTable.id))
+      .where(where)
+      .orderBy(desc(auditLogsTable.timestamp), desc(auditLogsTable.id))
+      .limit(CHUNK)
+      .offset(offset);
+
+    for (const r of chunk) {
+      const kind: "claim" | "group" | "unknown" = r.invoiceGroupId != null ? "group" : r.claimId != null ? "claim" : "unknown";
+      const row = [
+        r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
+        r.userEmail ?? "",
+        r.userName ?? "",
+        r.action,
+        labelForAction(r.action, kind),
+        categoryForAction(r.action, kind),
+        r.claimId ?? "",
+        r.claimConfNumber ?? "",
+        r.invoiceGroupId ?? "",
+        r.invoiceGroupNumber ?? "",
+        r.details ?? "",
+        r.metadata ? JSON.stringify(r.metadata) : "",
+      ].map(csvEscape).join(",");
+      res.write(row + "\n");
+    }
+    if (chunk.length < CHUNK) break;
+    offset += CHUNK;
+  }
+  res.end();
 }));
 
 export default router;

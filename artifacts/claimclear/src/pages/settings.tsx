@@ -1,5 +1,6 @@
-import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings } from "@workspace/api-client-react";
+import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe } from "lucide-react";
+import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -191,6 +192,16 @@ export default function Settings() {
               {pendingUsers.length > 0 && (
                 <Badge variant="destructive" className="ml-2">{pendingUsers.length} pending</Badge>
               )}
+              <div className="ml-auto flex items-center gap-2">
+                <WrapTooltip content="Download a CSV of audit log entries across all users.">
+                  <a href={getAdminExportAuditLogsCsvUrl()}>
+                    <Button size="sm" variant="outline" className="gap-1">
+                      <Download className="h-3 w-3" />
+                      Export all activity
+                    </Button>
+                  </a>
+                </WrapTooltip>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -263,6 +274,26 @@ export default function Settings() {
                           </WrapTooltip>
                         </div>
                         <div className="flex items-center gap-2">
+                          {u.email && (
+                            <>
+                              <WrapTooltip content="View this user's audit log activity, with filters and CSV export.">
+                                <Link href={`/admin/users/activity?email=${encodeURIComponent(u.email)}`}>
+                                  <Button size="sm" variant="outline" className="gap-1">
+                                    <Activity className="h-3 w-3" />
+                                    Activity
+                                  </Button>
+                                </Link>
+                              </WrapTooltip>
+                              <WrapTooltip content="Download a CSV of this user's audit log entries.">
+                                <a href={getAdminExportAuditLogsCsvUrl({ userEmail: u.email })}>
+                                  <Button size="sm" variant="outline" className="gap-1">
+                                    <Download className="h-3 w-3" />
+                                    Export
+                                  </Button>
+                                </a>
+                              </WrapTooltip>
+                            </>
+                          )}
                           {u.id !== user?.id && (
                             <>
                               <WrapTooltip content={u.role === "admin" ? "Downgrade this user to a standard role. They will lose access to user management and admin features." : "Promote this user to admin. They will be able to manage users, trigger daily briefs, and access all features."}>

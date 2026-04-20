@@ -3764,6 +3764,87 @@ export const GetResponseStatsResponse = zod.object({
 });
 
 /**
+ * @summary List audit log entries (admin only) with filtering and pagination
+ */
+export const adminListAuditLogsQueryLimitDefault = 50;
+export const adminListAuditLogsQueryOffsetDefault = 0;
+
+export const AdminListAuditLogsQueryParams = zod.object({
+  userEmail: zod.coerce.string().optional(),
+  category: zod
+    .enum([
+      "all",
+      "status",
+      "edit",
+      "evidence",
+      "workflow",
+      "hold",
+      "draft",
+      "communication",
+      "other",
+    ])
+    .optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+  limit: zod.coerce.number().default(adminListAuditLogsQueryLimitDefault),
+  offset: zod.coerce.number().default(adminListAuditLogsQueryOffsetDefault),
+});
+
+export const AdminListAuditLogsResponse = zod.object({
+  total: zod.number(),
+  limit: zod.number(),
+  offset: zod.number(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      claimId: zod.number().nullish(),
+      invoiceGroupId: zod.number().nullish(),
+      action: zod.string(),
+      actionLabel: zod.string(),
+      category: zod.enum([
+        "status",
+        "edit",
+        "evidence",
+        "workflow",
+        "hold",
+        "draft",
+        "communication",
+        "other",
+      ]),
+      details: zod.string(),
+      metadata: zod.object({}).passthrough().nullish(),
+      userEmail: zod.string().nullish(),
+      userName: zod.string().nullish(),
+      timestamp: zod.string(),
+      claimConfNumber: zod.string().nullish(),
+      invoiceGroupNumber: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Export audit log entries as CSV (admin only)
+ */
+export const AdminExportAuditLogsCsvQueryParams = zod.object({
+  userEmail: zod.coerce.string().optional(),
+  category: zod
+    .enum([
+      "all",
+      "status",
+      "edit",
+      "evidence",
+      "workflow",
+      "hold",
+      "draft",
+      "communication",
+      "other",
+    ])
+    .optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+/**
  * @summary One-time backfill of invoice_group_id for claims imported before group migration
  */
 export const BackfillInvoiceGroupsBody = zod.object({
