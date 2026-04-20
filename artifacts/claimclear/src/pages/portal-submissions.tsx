@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import { EvidenceFileList } from "@/components/evidence-file-list";
+import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
 
 const statusColors: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
@@ -77,6 +78,7 @@ export default function PortalSubmissions() {
   const [savingFields, setSavingFields] = useState(false);
   const [saveFieldsError, setSaveFieldsError] = useState("");
   const [sandboxRunning, setSandboxRunning] = useState<number | null>(null);
+  const [previewId, setPreviewId] = useState<number | null>(null);
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
   const regenerateText = useRegeneratePortalSubmissionText();
@@ -408,6 +410,13 @@ export default function PortalSubmissions() {
                       </Button>
                     </WrapTooltip>
                   )}
+                  {(sub.status === "draft" || sub.status === "pending") && (
+                    <WrapTooltip content="Preview the exact payload (description, attachments, fields) the bot will submit. Read-only — no bot session is used.">
+                      <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setPreviewId(sub.id)}>
+                        <Eye className="h-3.5 w-3.5" /> Preview
+                      </Button>
+                    </WrapTooltip>
+                  )}
                   <WrapTooltip content="View full submission details and bot activity timeline.">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedId(sub.id)}>
                       <Eye className="h-4 w-4" />
@@ -433,6 +442,13 @@ export default function PortalSubmissions() {
           ))}
         </div>
       )}
+
+      <SubmissionPreviewDialog
+        submissionId={previewId}
+        initialSubmission={previewId ? (submissions || []).find(s => s.id === previewId) ?? null : null}
+        open={!!previewId}
+        onOpenChange={(open) => { if (!open) setPreviewId(null); }}
+      />
 
       <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditingDisputeText(false); setEditingFields(false); } }}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">

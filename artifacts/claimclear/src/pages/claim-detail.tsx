@@ -54,9 +54,12 @@ import {
 } from "@/lib/audit-action-meta";
 import { RefNumber } from "@/components/ref-number";
 import { WorkflowPlayer } from "@/components/workflow-player";
+import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
 
 function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
   const [showDescription, setShowDescription] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const canPreview = sub.status === "draft" || sub.status === "pending";
   const { data: botActivity } = useListBotActivity(sub.id, {
     query: { queryKey: getListBotActivityQueryKey(sub.id), enabled: !!sub.id }
   });
@@ -107,6 +110,21 @@ function SubmissionCard({ submission: sub }: { submission: PortalSubmissionRespo
         <div>Attempts: {sub.attempts}</div>
         {sub.submittedAt && <div>Submitted: {formatDateTime(sub.submittedAt)}</div>}
       </div>
+
+      {canPreview && (
+        <div>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setPreviewOpen(true)}>
+            <Eye className="h-3.5 w-3.5" /> Preview submission
+          </Button>
+        </div>
+      )}
+
+      <SubmissionPreviewDialog
+        submissionId={sub.id}
+        initialSubmission={sub}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
 
       {sub.descriptionHtml && (
         <div>
