@@ -25,7 +25,7 @@ import evidenceTypesRouter from "./evidence-types";
 import claimEvidenceRouter from "./claim-evidence";
 import appSettingsRouter from "./app-settings";
 import batchJobsRouter from "./batch-jobs";
-import responseTrackerRouter from "./response-tracker";
+import responseTrackerRouter, { checkEmailRouter } from "./response-tracker";
 import invoiceGroupsRouter from "./invoice-groups";
 import adminRouter from "./admin";
 
@@ -38,6 +38,7 @@ router.use("/bot/portal-submissions", requireBotToken, botPortalRouter);
 router.use("/bot/instances", requireBotToken, botInstancesRouter);
 
 router.use("/daily-brief", requireAuthOrBot, dailyBriefRouter);
+router.use(requireAuthOrBot, checkEmailRouter);
 
 router.use(requireAuth);
 

@@ -58,12 +58,24 @@ cron.schedule("0 0 * * *", async () => {
   }
 }, { timezone: "America/New_York" });
 
+const BOT_TOKEN = process.env.BOT_SERVICE_TOKEN;
+if (!BOT_TOKEN) {
+  logger.warn("BOT_SERVICE_TOKEN not set; cron jobs that call internal HTTP endpoints will fail authentication.");
+}
+
 cron.schedule("0 7 * * 1-5", async () => {
   logger.info("Daily brief cron: sending morning brief");
   try {
-    const res = await fetch(`http://localhost:${port}/api/daily-brief/trigger`, { method: "POST" });
+    const res = await fetch(`http://localhost:${port}/api/daily-brief`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-bot-token": BOT_TOKEN ?? "" },
+    });
     const data = await res.json();
-    logger.info({ result: data }, "Daily brief sent");
+    if (!res.ok) {
+      logger.error({ status: res.status, data }, "Daily brief cron returned non-OK");
+    } else {
+      logger.info({ result: data }, "Daily brief sent");
+    }
   } catch (err) {
     logger.error({ err }, "Daily brief cron failed");
   }
@@ -74,11 +86,15 @@ cron.schedule("*/30 8-18 * * 1-5", async () => {
   try {
     const res = await fetch(`http://localhost:${port}/api/responses/check-email`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-bot-token": BOT_TOKEN ?? "" },
       body: JSON.stringify({ hoursBack: 1 }),
     });
     const data = await res.json();
-    logger.info({ result: data }, "Email response check completed");
+    if (!res.ok) {
+      logger.error({ status: res.status, data }, "Response tracker cron returned non-OK");
+    } else {
+      logger.info({ result: data }, "Email response check completed");
+    }
   } catch (err) {
     logger.error({ err }, "Response tracker cron failed");
   }

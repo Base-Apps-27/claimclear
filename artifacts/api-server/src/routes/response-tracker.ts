@@ -155,7 +155,8 @@ router.patch("/responses/:id/link", asyncHandler(async (req, res): Promise<void>
   res.json(response);
 }));
 
-router.post("/responses/check-email", asyncHandler(async (req, res): Promise<void> => {
+export const checkEmailRouter: IRouter = Router();
+checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): Promise<void> => {
   const connected = await isOutlookConnected();
   if (!connected) {
     res.status(503).json({ error: "Outlook not connected" });
