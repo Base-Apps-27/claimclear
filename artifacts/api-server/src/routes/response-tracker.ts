@@ -1,11 +1,13 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, isNull } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable } from "@workspace/db";
+import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected } from "../lib/outlook";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse } from "../lib/response-matcher";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
+import { transitionClaimStatus } from "../lib/claim-transitions";
+import { transitionGroupStatus } from "../lib/group-transitions";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -305,6 +307,207 @@ router.get("/responses/stats", asyncHandler(async (_req, res): Promise<void> => 
     byType,
     outlookConnected: connected,
   });
+}));
+
+router.post("/responses/:id/reassign", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { targetClaimId, targetGroupId, unmatch } = req.body ?? {};
+  const wantsUnmatch = unmatch === true;
+  const wantsClaim = typeof targetClaimId === "number";
+  const wantsGroup = typeof targetGroupId === "number";
+
+  const provided = [wantsUnmatch, wantsClaim, wantsGroup].filter(Boolean).length;
+  if (provided !== 1) {
+    res.status(400).json({ error: "Provide exactly one of targetClaimId, targetGroupId, or unmatch:true" });
+    return;
+  }
+
+  const [response] = await db.select().from(portalResponsesTable).where(eq(portalResponsesTable.id, id));
+  if (!response) { res.status(404).json({ error: "Response not found" }); return; }
+
+  const sourceClaimId = response.claimId;
+  const sourceGroupId = response.invoiceGroupId;
+  const actor = {
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? "User",
+  };
+
+  // Reverse the original "Needs Review" transition on the source if it
+  // still sits in Needs Review and was triggered by this response's match.
+  if (sourceClaimId) {
+    const [src] = await db.select().from(claimsTable).where(eq(claimsTable.id, sourceClaimId));
+    if (src && src.status === "Needs Review") {
+      try {
+        await transitionClaimStatus({
+          claimId: sourceClaimId,
+          newStatus: "Awaiting Response",
+          source: "response_reassign",
+          reason: `Response #${response.id} reassigned away — reverting to Awaiting Response`,
+          actor,
+          systemOverride: true,
+        });
+      } catch (err) {
+        logger.warn({ err, claimId: sourceClaimId }, "Could not reverse claim status on reassign");
+      }
+    }
+  }
+  if (sourceGroupId) {
+    const [src] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, sourceGroupId));
+    if (src && src.status === "Needs Review") {
+      try {
+        await transitionGroupStatus({
+          groupId: sourceGroupId,
+          newStatus: "Awaiting Response",
+          source: "response_reassign",
+          reason: `Response #${response.id} reassigned away — reverting to Awaiting Response`,
+          actor,
+          systemOverride: true,
+        });
+      } catch (err) {
+        logger.warn({ err, groupId: sourceGroupId }, "Could not reverse group status on reassign");
+      }
+    }
+  }
+
+  let updated;
+  let targetDescription: string;
+  if (wantsUnmatch) {
+    [updated] = await db.update(portalResponsesTable).set({
+      claimId: null,
+      invoiceGroupId: null,
+      submissionId: null,
+      autoLinked: false,
+      matchedVia: "manual_unmatched",
+      matchConfidence: "low",
+      processed: false,
+    }).where(eq(portalResponsesTable.id, id)).returning();
+    targetDescription = "unmatched";
+  } else if (wantsClaim) {
+    const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, targetClaimId));
+    if (!claim) { res.status(404).json({ error: "Target claim not found" }); return; }
+    [updated] = await db.update(portalResponsesTable).set({
+      claimId: targetClaimId,
+      invoiceGroupId: null,
+      autoLinked: false,
+      matchedVia: "manual_reassign",
+      matchConfidence: "high",
+    }).where(eq(portalResponsesTable.id, id)).returning();
+    targetDescription = `claim #${targetClaimId} (${claim.confNumber})`;
+  } else {
+    const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, targetGroupId));
+    if (!group) { res.status(404).json({ error: "Target group not found" }); return; }
+    [updated] = await db.update(portalResponsesTable).set({
+      claimId: null,
+      invoiceGroupId: targetGroupId,
+      autoLinked: false,
+      matchedVia: "manual_reassign",
+      matchConfidence: "high",
+    }).where(eq(portalResponsesTable.id, id)).returning();
+    targetDescription = `invoice group #${targetGroupId} (${group.invoiceNumber})`;
+  }
+
+  const auditAction = wantsUnmatch ? "response_unmatched" : "response_reassigned";
+  const sharedMetadata = {
+    responseId: id,
+    fromClaimId: sourceClaimId,
+    fromGroupId: sourceGroupId,
+    toClaimId: wantsClaim ? targetClaimId : null,
+    toGroupId: wantsGroup ? targetGroupId : null,
+    target: targetDescription,
+  };
+
+  if (sourceClaimId) {
+    await db.insert(auditLogsTable).values({
+      claimId: sourceClaimId,
+      action: auditAction,
+      details: `Response #${response.id} ${wantsUnmatch ? "unlinked" : `reassigned to ${targetDescription}`}`,
+      metadata: sharedMetadata,
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+  }
+  if (sourceGroupId) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: sourceGroupId,
+      action: auditAction,
+      details: `Response #${response.id} ${wantsUnmatch ? "unlinked" : `reassigned to ${targetDescription}`}`,
+      metadata: sharedMetadata,
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+  }
+  if (wantsClaim) {
+    await db.insert(auditLogsTable).values({
+      claimId: targetClaimId,
+      action: auditAction,
+      details: `Response #${response.id} reassigned here from ${sourceClaimId ? `claim #${sourceClaimId}` : sourceGroupId ? `group #${sourceGroupId}` : "unmatched pool"}`,
+      metadata: sharedMetadata,
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+  }
+  if (wantsGroup) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: targetGroupId,
+      action: auditAction,
+      details: `Response #${response.id} reassigned here from ${sourceClaimId ? `claim #${sourceClaimId}` : sourceGroupId ? `group #${sourceGroupId}` : "unmatched pool"}`,
+      metadata: sharedMetadata,
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+  }
+
+  res.json(updated);
+}));
+
+router.get("/claims/:id/email-thread", asyncHandler(async (req, res): Promise<void> => {
+  const claimId = parseInt(String(req.params.id), 10);
+  if (isNaN(claimId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const inboundForClaim = await db.select().from(portalResponsesTable)
+    .where(eq(portalResponsesTable.claimId, claimId));
+  const outboundForClaim = await db.select().from(outboundEmailsTable)
+    .where(eq(outboundEmailsTable.claimId, claimId));
+
+  const conversationIds = new Set<string>();
+  for (const r of inboundForClaim) if (r.conversationId) conversationIds.add(r.conversationId);
+  for (const o of outboundForClaim) if (o.conversationId) conversationIds.add(o.conversationId);
+
+  const allInbound = conversationIds.size > 0
+    ? await db.select().from(portalResponsesTable)
+        .where(inArray(portalResponsesTable.conversationId, Array.from(conversationIds)))
+    : inboundForClaim;
+  const allOutbound = conversationIds.size > 0
+    ? await db.select().from(outboundEmailsTable)
+        .where(inArray(outboundEmailsTable.conversationId, Array.from(conversationIds)))
+    : outboundForClaim;
+
+  const messages = [
+    ...allInbound.map((r) => ({
+      id: `in-${r.id}`,
+      direction: "inbound" as const,
+      conversationId: r.conversationId,
+      subject: r.subject,
+      sender: r.senderName || r.senderEmail || "Unknown",
+      senderEmail: r.senderEmail,
+      bodyPreview: r.content,
+      timestamp: (r.receivedAt instanceof Date ? r.receivedAt : new Date(r.receivedAt as any)).toISOString(),
+    })),
+    ...allOutbound.map((o) => ({
+      id: `out-${o.id}`,
+      direction: "outbound" as const,
+      conversationId: o.conversationId,
+      subject: o.subject,
+      sender: o.sentByUserName || o.sentByUserEmail || "ClaimClear",
+      senderEmail: o.sentByUserEmail,
+      bodyPreview: o.bodyPreview,
+      timestamp: (o.sentAt instanceof Date ? o.sentAt : new Date(o.sentAt as any)).toISOString(),
+    })),
+  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  res.json({ messages, conversationIds: Array.from(conversationIds) });
 }));
 
 export default router;

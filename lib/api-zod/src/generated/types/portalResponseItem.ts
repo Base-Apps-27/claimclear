@@ -24,6 +24,7 @@ export interface PortalResponseItem {
   matchConfidence?: string | null;
   portalTicketId?: string | null;
   externalMessageId?: string | null;
+  conversationId?: string | null;
   processed: boolean;
   autoLinked: boolean;
   metadata?: PortalResponseItemMetadata;

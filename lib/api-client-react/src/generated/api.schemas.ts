@@ -430,6 +430,7 @@ export interface PortalResponseItem {
   matchConfidence?: string | null;
   portalTicketId?: string | null;
   externalMessageId?: string | null;
+  conversationId?: string | null;
   processed: boolean;
   autoLinked: boolean;
   metadata?: PortalResponseItemMetadata;
@@ -1120,6 +1121,30 @@ export interface ClaimEvidenceResponse {
   collectedAt: string;
 }
 
+export type EmailThreadMessageDirection =
+  (typeof EmailThreadMessageDirection)[keyof typeof EmailThreadMessageDirection];
+
+export const EmailThreadMessageDirection = {
+  inbound: "inbound",
+  outbound: "outbound",
+} as const;
+
+export interface EmailThreadMessage {
+  id: string;
+  direction: EmailThreadMessageDirection;
+  conversationId?: string | null;
+  subject?: string | null;
+  sender: string;
+  senderEmail?: string | null;
+  bodyPreview?: string | null;
+  timestamp: string;
+}
+
+export interface EmailThreadResponse {
+  messages: EmailThreadMessage[];
+  conversationIds: string[];
+}
+
 export type EmailCheckResultResultsItem = {
   emailSubject?: string;
   status?: string;
@@ -1376,6 +1401,12 @@ export type ProcessResponseBody = {
 
 export type LinkResponseBody = {
   claimId: number;
+};
+
+export type ReassignResponseBody = {
+  targetClaimId?: number;
+  targetGroupId?: number;
+  unmatch?: boolean;
 };
 
 export type CheckEmailResponsesBody = {

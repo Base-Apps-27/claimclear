@@ -53,6 +53,7 @@ import type {
   DailyBriefResponse,
   DashboardSummary,
   EmailCheckResult,
+  EmailThreadResponse,
   ErrorTypeResponse,
   EvidenceTypeBody,
   EvidenceTypeResponse,
@@ -90,6 +91,7 @@ import type {
   PresenceLeaveBody,
   PresenceResponse,
   ProcessResponseBody,
+  ReassignResponseBody,
   RecordPortalResponse200,
   RecordPortalResponseBody,
   RegisterBotBody,
@@ -8273,6 +8275,180 @@ export const useLinkResponse = <
 > => {
   return useMutation(getLinkResponseMutationOptions(options));
 };
+
+/**
+ * @summary Move a response to a different claim/group or mark it as unmatched
+ */
+export const getReassignResponseUrl = (id: number) => {
+  return `/api/responses/${id}/reassign`;
+};
+
+export const reassignResponse = async (
+  id: number,
+  reassignResponseBody: ReassignResponseBody,
+  options?: RequestInit,
+): Promise<PortalResponseItem> => {
+  return customFetch<PortalResponseItem>(getReassignResponseUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reassignResponseBody),
+  });
+};
+
+export const getReassignResponseMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reassignResponse>>,
+    TError,
+    { id: number; data: BodyType<ReassignResponseBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reassignResponse>>,
+  TError,
+  { id: number; data: BodyType<ReassignResponseBody> },
+  TContext
+> => {
+  const mutationKey = ["reassignResponse"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reassignResponse>>,
+    { id: number; data: BodyType<ReassignResponseBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return reassignResponse(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReassignResponseMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reassignResponse>>
+>;
+export type ReassignResponseMutationBody = BodyType<ReassignResponseBody>;
+export type ReassignResponseMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Move a response to a different claim/group or mark it as unmatched
+ */
+export const useReassignResponse = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reassignResponse>>,
+    TError,
+    { id: number; data: BodyType<ReassignResponseBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reassignResponse>>,
+  TError,
+  { id: number; data: BodyType<ReassignResponseBody> },
+  TContext
+> => {
+  return useMutation(getReassignResponseMutationOptions(options));
+};
+
+/**
+ * @summary Get the merged inbound + outbound email thread for a claim
+ */
+export const getGetClaimEmailThreadUrl = (id: number) => {
+  return `/api/claims/${id}/email-thread`;
+};
+
+export const getClaimEmailThread = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmailThreadResponse> => {
+  return customFetch<EmailThreadResponse>(getGetClaimEmailThreadUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClaimEmailThreadQueryKey = (id: number) => {
+  return [`/api/claims/${id}/email-thread`] as const;
+};
+
+export const getGetClaimEmailThreadQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClaimEmailThread>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClaimEmailThread>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClaimEmailThreadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClaimEmailThread>>
+  > = ({ signal }) => getClaimEmailThread(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClaimEmailThread>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClaimEmailThreadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClaimEmailThread>>
+>;
+export type GetClaimEmailThreadQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the merged inbound + outbound email thread for a claim
+ */
+
+export function useGetClaimEmailThread<
+  TData = Awaited<ReturnType<typeof getClaimEmailThread>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClaimEmailThread>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClaimEmailThreadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Trigger email inbox scan for responses

@@ -4,7 +4,8 @@ import { db } from "@workspace/db";
 import { claimsTable, portalSubmissionsTable, usersTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
-import { sendEmail, isOutlookConnected } from "../lib/outlook";
+import { isOutlookConnected } from "../lib/outlook";
+import { sendEmailWithContext } from "../lib/email-send";
 
 const router: IRouter = Router();
 
@@ -153,7 +154,7 @@ router.post("/", asyncHandler(async (req, res): Promise<void> => {
 
   if (outlookAvailable && recipients) {
     try {
-      await sendEmail({ to: recipients, subject, html });
+      await sendEmailWithContext({ to: recipients, subject, html }, { kind: "daily_brief" });
       emailSent = true;
       emailMethod = "outlook";
     } catch (err) {

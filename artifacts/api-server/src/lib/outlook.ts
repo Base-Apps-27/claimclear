@@ -61,7 +61,12 @@ export interface SendEmailOptions {
   cc?: string | string[];
 }
 
-export async function sendEmail(options: SendEmailOptions): Promise<void> {
+export interface SendEmailResult {
+  messageId: string | null;
+  conversationId: string | null;
+}
+
+export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const client = await getOutlookClient();
 
   const toRecipients = (Array.isArray(options.to) ? options.to : options.to.split(","))
@@ -76,7 +81,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
         .map((email) => ({ emailAddress: { address: email } }))
     : [];
 
-  const message: any = {
+  const draft: any = {
     subject: options.subject,
     body: {
       contentType: "HTML",
@@ -86,10 +91,21 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
   };
 
   if (ccRecipients.length > 0) {
-    message.ccRecipients = ccRecipients;
+    draft.ccRecipients = ccRecipients;
   }
 
-  await client.api("/me/sendMail").post({ message, saveToSentItems: true });
+  // Create a draft message so we can read back its id + conversationId
+  const created = await client.api("/me/messages").post(draft);
+  const messageId: string = created?.id;
+  const conversationId: string | null = created?.conversationId ?? null;
+
+  if (!messageId) {
+    throw new Error("Outlook draft create did not return an id");
+  }
+
+  await client.api(`/me/messages/${messageId}/send`).post({});
+
+  return { messageId, conversationId };
 }
 
 export async function isOutlookConnected(): Promise<boolean> {

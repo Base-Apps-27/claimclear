@@ -17,8 +17,11 @@ import {
   useListResponses, getListResponsesQueryKey, useProcessResponse,
   useGetClaimValidTransitions, getGetClaimValidTransitionsQueryKey,
   usePostResponseAction,
+  useReassignResponse,
+  useGetClaimEmailThread, getGetClaimEmailThreadQueryKey,
+  useListClaims,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadMessage } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -38,9 +41,11 @@ import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
   ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox,
-  StickyNote
+  StickyNote,
+  ArrowRightLeft, MailQuestion, MessagesSquare, Search
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import {
   humanizeAuditAction,
@@ -229,6 +234,21 @@ export default function ClaimDetail() {
   const claimResponses: PortalResponseItem[] = responsesData?.responses || [];
   const processResponseMutation = useProcessResponse();
   const postResponseActionMutation = usePostResponseAction();
+  const reassignResponseMutation = useReassignResponse();
+
+  const { data: emailThreadData } = useGetClaimEmailThread(claimId, {
+    query: { queryKey: getGetClaimEmailThreadQueryKey(claimId), enabled: !!claimId },
+  });
+  const emailThread: EmailThreadMessage[] = emailThreadData?.messages || [];
+
+  const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
+  const [reassignSearch, setReassignSearch] = useState("");
+  const [reassignSelectedClaimId, setReassignSelectedClaimId] = useState<number | null>(null);
+  const reassignListParams = { search: reassignSearch || undefined, limit: 10 };
+  const { data: reassignClaimsData } = useListClaims(
+    reassignListParams,
+    { query: { queryKey: ["reassignClaimSearch", reassignSearch], enabled: !!reassignTarget && reassignSearch.length >= 2 } }
+  );
 
   interface ClaimEditData {
     confNumber: string;
@@ -899,11 +919,45 @@ export default function ClaimDetail() {
                         {resp.matchedVia && (
                           <span>Matched: {resp.matchedVia}</span>
                         )}
-                        {resp.matchConfidence && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {resp.matchConfidence} confidence
-                          </Badge>
-                        )}
+                        {resp.matchConfidence && (() => {
+                          const conf = String(resp.matchConfidence).toLowerCase();
+                          const confColors: Record<string, string> = {
+                            high: "bg-green-100 text-green-800 border-green-300",
+                            medium: "bg-amber-100 text-amber-800 border-amber-300",
+                            low: "bg-red-100 text-red-800 border-red-300",
+                          };
+                          const confTips: Record<string, string> = {
+                            high: "Strong match — sender, claim ref, and amount aligned.",
+                            medium: "Likely match — partial signals matched. Please verify.",
+                            low: "Weak match — auto-linked on minimal signals. Review carefully.",
+                          };
+                          return (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className={`text-[10px] capitalize cursor-help ${confColors[conf] || ""}`}>
+                                    {conf} confidence
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs">
+                                  {confTips[conf] || `Match confidence: ${conf}`}
+                                  {resp.matchedVia ? ` (matched via ${resp.matchedVia})` : ""}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          );
+                        })()}
+                        <Button
+                          size="sm" variant="ghost"
+                          className="text-xs h-6 px-2 ml-auto opacity-70 hover:opacity-100"
+                          onClick={() => {
+                            setReassignTarget(resp);
+                            setReassignSearch("");
+                            setReassignSelectedClaimId(null);
+                          }}
+                        >
+                          <ArrowRightLeft className="h-3 w-3 mr-1" /> Not the right claim?
+                        </Button>
                       </div>
 
                       {!resp.processed && (
@@ -942,6 +996,40 @@ export default function ClaimDetail() {
                           </Button>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {emailThread.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessagesSquare className="h-5 w-5" />
+                  Email Thread
+                  <Badge variant="secondary">{emailThread.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {emailThread.map((msg) => {
+                  const isOutbound = msg.direction === "outbound";
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`border rounded-lg p-3 ${isOutbound ? "bg-blue-50/40 border-blue-200 ml-6" : "bg-slate-50 border-slate-200 mr-6"}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          {isOutbound ? <Send className="h-4 w-4 text-blue-700" /> : <Inbox className="h-4 w-4 text-slate-700" />}
+                          <span className="font-medium">{isOutbound ? "Sent" : "Received"}</span>
+                          <span className="opacity-70">{msg.sender}{msg.senderEmail && msg.senderEmail !== msg.sender ? ` <${msg.senderEmail}>` : ""}</span>
+                        </div>
+                        <span className="text-xs opacity-60">{formatDateTime(msg.timestamp)}</span>
+                      </div>
+                      {msg.subject && <p className="text-sm font-medium mt-1">{msg.subject}</p>}
+                      {msg.bodyPreview && <p className="text-sm opacity-80 mt-1 whitespace-pre-wrap">{msg.bodyPreview}</p>}
                     </div>
                   );
                 })}
@@ -1192,6 +1280,97 @@ export default function ClaimDetail() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={!!reassignTarget} onOpenChange={(open) => { if (!open) setReassignTarget(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5" /> Reassign response
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Move this response to a different claim, or unmatch it so it returns to the unmatched inbox.
+            </p>
+            <div className="space-y-2">
+              <Label className="text-xs">Search for the correct claim</Label>
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  placeholder="Search by ref #, conf #, client #, car # …"
+                  value={reassignSearch}
+                  onChange={(e) => { setReassignSearch(e.target.value); setReassignSelectedClaimId(null); }}
+                />
+              </div>
+              {reassignSearch.length >= 2 && reassignClaimsData?.claims && (
+                <div className="border rounded-md max-h-56 overflow-y-auto divide-y">
+                  {reassignClaimsData.claims.length === 0 && (
+                    <div className="p-3 text-xs text-muted-foreground">No claims found.</div>
+                  )}
+                  {reassignClaimsData.claims
+                    .filter((c: any) => c.id !== claimId)
+                    .map((c: any) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => setReassignSelectedClaimId(c.id)}
+                        className={`w-full text-left p-2 text-sm hover:bg-muted ${reassignSelectedClaimId === c.id ? "bg-blue-50" : ""}`}
+                      >
+                        <div className="font-medium">Ref #{c.refNumber || c.id} — {c.clientNumber || "—"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Conf #{c.confNumber || "—"} · Car #{c.carNumber || "—"} · {c.status}
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-between pt-2">
+              <Button
+                variant="outline"
+                disabled={reassignResponseMutation.isPending}
+                onClick={async () => {
+                  if (!reassignTarget) return;
+                  await reassignResponseMutation.mutateAsync({
+                    id: reassignTarget.id,
+                    data: { unmatch: true },
+                  });
+                  queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+                  queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+                  queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+                  queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
+                  queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+                  setReassignTarget(null);
+                }}
+              >
+                <MailQuestion className="h-4 w-4 mr-1" /> Unmatch
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => setReassignTarget(null)}>Cancel</Button>
+                <Button
+                  disabled={!reassignSelectedClaimId || reassignResponseMutation.isPending}
+                  onClick={async () => {
+                    if (!reassignTarget || !reassignSelectedClaimId) return;
+                    await reassignResponseMutation.mutateAsync({
+                      id: reassignTarget.id,
+                      data: { targetClaimId: reassignSelectedClaimId },
+                    });
+                    queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+                    queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+                    queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+                    queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
+                    queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+                    setReassignTarget(null);
+                  }}
+                >
+                  Reassign
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -221,6 +221,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     matchedVia: match.matchedVia,
     matchConfidence: match.confidence,
     externalMessageId: email.id,
+    conversationId: email.conversationId || null,
     autoLinked: true,
     processed: false,
     receivedAt: new Date(email.receivedDateTime),

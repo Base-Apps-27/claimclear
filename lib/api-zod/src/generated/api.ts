@@ -350,6 +350,7 @@ export const GetInvoiceGroupResponse = zod
             matchConfidence: zod.string().nullish(),
             portalTicketId: zod.string().nullish(),
             externalMessageId: zod.string().nullish(),
+            conversationId: zod.string().nullish(),
             processed: zod.boolean(),
             autoLinked: zod.boolean(),
             metadata: zod.object({}).passthrough().nullish(),
@@ -3554,6 +3555,7 @@ export const ListResponsesResponse = zod.object({
         matchConfidence: zod.string().nullish(),
         portalTicketId: zod.string().nullish(),
         externalMessageId: zod.string().nullish(),
+        conversationId: zod.string().nullish(),
         processed: zod.boolean(),
         autoLinked: zod.boolean(),
         metadata: zod.object({}).passthrough().nullish(),
@@ -3594,6 +3596,7 @@ export const GetResponseResponse = zod.object({
   matchConfidence: zod.string().nullish(),
   portalTicketId: zod.string().nullish(),
   externalMessageId: zod.string().nullish(),
+  conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
   metadata: zod.object({}).passthrough().nullish(),
@@ -3645,6 +3648,7 @@ export const ProcessResponseResponse = zod.object({
   matchConfidence: zod.string().nullish(),
   portalTicketId: zod.string().nullish(),
   externalMessageId: zod.string().nullish(),
+  conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
   metadata: zod.object({}).passthrough().nullish(),
@@ -3686,12 +3690,80 @@ export const LinkResponseResponse = zod.object({
   matchConfidence: zod.string().nullish(),
   portalTicketId: zod.string().nullish(),
   externalMessageId: zod.string().nullish(),
+  conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
   metadata: zod.object({}).passthrough().nullish(),
   receivedAt: zod.string(),
   createdAt: zod.string(),
   updatedAt: zod.string().nullish(),
+});
+
+/**
+ * @summary Move a response to a different claim/group or mark it as unmatched
+ */
+export const ReassignResponseParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReassignResponseBody = zod.object({
+  targetClaimId: zod.number().optional(),
+  targetGroupId: zod.number().optional(),
+  unmatch: zod.boolean().optional(),
+});
+
+export const ReassignResponseResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number().nullish(),
+  submissionId: zod.number().nullish(),
+  source: zod.enum(["email", "portal", "manual"]),
+  responseType: zod.enum([
+    "approval",
+    "denial",
+    "partial_approval",
+    "info_request",
+    "acknowledgment",
+    "other",
+  ]),
+  subject: zod.string().nullish(),
+  content: zod.string().nullish(),
+  rawContent: zod.string().nullish(),
+  senderEmail: zod.string().nullish(),
+  senderName: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  portalTicketId: zod.string().nullish(),
+  externalMessageId: zod.string().nullish(),
+  conversationId: zod.string().nullish(),
+  processed: zod.boolean(),
+  autoLinked: zod.boolean(),
+  metadata: zod.object({}).passthrough().nullish(),
+  receivedAt: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string().nullish(),
+});
+
+/**
+ * @summary Get the merged inbound + outbound email thread for a claim
+ */
+export const GetClaimEmailThreadParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClaimEmailThreadResponse = zod.object({
+  messages: zod.array(
+    zod.object({
+      id: zod.string(),
+      direction: zod.enum(["inbound", "outbound"]),
+      conversationId: zod.string().nullish(),
+      subject: zod.string().nullish(),
+      sender: zod.string(),
+      senderEmail: zod.string().nullish(),
+      bodyPreview: zod.string().nullish(),
+      timestamp: zod.string(),
+    }),
+  ),
+  conversationIds: zod.array(zod.string()),
 });
 
 /**

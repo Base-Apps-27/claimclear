@@ -15,6 +15,9 @@ import {
   RefreshCw,
   Undo2,
   Send,
+  Mail,
+  MailQuestion,
+  ArrowRightLeft,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -50,6 +53,9 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },
   portal_draft_reverted: { label: "Dispute write-up reverted", icon: Undo2, iconClass: "text-amber-600", category: "draft" },
   portal_submission_submitted: { label: "Portal submission sent", icon: Send, iconClass: "text-emerald-600", category: "communication" },
+  response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
+  response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
+  outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {
@@ -68,6 +74,9 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   portal_draft_edited: { label: "Dispute write-up edited", icon: FileEdit, iconClass: "text-violet-600", category: "draft" },
   portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },
   portal_draft_reverted: { label: "Dispute write-up reverted", icon: Undo2, iconClass: "text-amber-600", category: "draft" },
+  response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
+  response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
+  outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {

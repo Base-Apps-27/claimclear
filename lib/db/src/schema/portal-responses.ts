@@ -29,6 +29,7 @@ export const portalResponsesTable = pgTable("portal_responses", {
   matchConfidence: text("match_confidence"),
   portalTicketId: text("portal_ticket_id"),
   externalMessageId: text("external_message_id"),
+  conversationId: text("conversation_id"),
   processed: boolean("processed").notNull().default(false),
   autoLinked: boolean("auto_linked").notNull().default(false),
   metadata: jsonb("metadata"),
@@ -40,6 +41,7 @@ export const portalResponsesTable = pgTable("portal_responses", {
   index("portal_responses_submission_id_idx").on(table.submissionId),
   index("portal_responses_source_idx").on(table.source),
   index("portal_responses_external_message_id_idx").on(table.externalMessageId),
+  index("portal_responses_conversation_id_idx").on(table.conversationId),
   index("portal_responses_processed_idx").on(table.processed),
 ]);
 

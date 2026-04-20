@@ -23,6 +23,18 @@ import { sql } from "drizzle-orm";
   } catch (err) {
     logger.warn({ err }, "One-time migration: attachment_urls backfill failed");
   }
+
+  try {
+    await db.execute(sql`
+      UPDATE portal_responses
+      SET conversation_id = metadata->>'conversationId'
+      WHERE conversation_id IS NULL
+        AND metadata ? 'conversationId'
+    `);
+    logger.info("One-time migration: backfilled portal_responses.conversation_id from metadata");
+  } catch (err) {
+    logger.warn({ err }, "One-time migration: conversation_id backfill failed");
+  }
 })();
 
 const rawPort = process.env["PORT"];

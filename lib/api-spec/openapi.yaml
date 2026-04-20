@@ -2143,6 +2143,57 @@ paths:
               schema:
                 $ref: '#/components/schemas/PortalResponseItem'
 
+  /responses/{id}/reassign:
+    post:
+      operationId: reassignResponse
+      tags: [responses]
+      summary: Move a response to a different claim/group or mark it as unmatched
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetClaimId:
+                  type: integer
+                targetGroupId:
+                  type: integer
+                unmatch:
+                  type: boolean
+      responses:
+        '200':
+          description: Reassigned response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalResponseItem'
+
+  /claims/{id}/email-thread:
+    get:
+      operationId: getClaimEmailThread
+      tags: [responses]
+      summary: Get the merged inbound + outbound email thread for a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Email thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailThreadResponse'
+
   /responses/check-email:
     post:
       operationId: checkEmailResponses
@@ -3866,6 +3917,9 @@ components:
         externalMessageId:
           type: string
           nullable: true
+        conversationId:
+          type: string
+          nullable: true
         processed:
           type: boolean
         autoLinked:
@@ -3880,6 +3934,45 @@ components:
         updatedAt:
           type: string
           nullable: true
+
+    EmailThreadMessage:
+      type: object
+      required: [id, direction, sender, timestamp]
+      properties:
+        id:
+          type: string
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        conversationId:
+          type: string
+          nullable: true
+        subject:
+          type: string
+          nullable: true
+        sender:
+          type: string
+        senderEmail:
+          type: string
+          nullable: true
+        bodyPreview:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+
+    EmailThreadResponse:
+      type: object
+      required: [messages, conversationIds]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailThreadMessage'
+        conversationIds:
+          type: array
+          items:
+            type: string
 
     EmailCheckResult:
       type: object
