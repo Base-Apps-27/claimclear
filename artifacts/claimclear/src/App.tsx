@@ -20,6 +20,7 @@ import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
+import SystemHealth from "@/pages/system-health";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -58,6 +59,7 @@ function Router() {
         <Route path="/summary" component={Summary} />
         <Route path="/settings" component={Settings} />
         <Route path="/admin/users/activity" component={AdminUserActivity} />
+        <Route path="/system-health" component={SystemHealth} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

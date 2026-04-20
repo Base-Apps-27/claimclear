@@ -1200,6 +1200,55 @@ export interface ResponseStats {
   outlookConnected: boolean;
 }
 
+export interface CronRunRecord {
+  id: number;
+  startedAt: string;
+  finishedAt?: string | null;
+  status: string;
+  message?: string | null;
+}
+
+export interface CronJobSummary {
+  jobName: string;
+  cron?: string | null;
+  nextRunAt?: string | null;
+  runs7d: number;
+  failures7d: number;
+  successRate7d: number;
+  lastRun?: CronRunRecord | null;
+  recent: CronRunRecord[];
+}
+
+export interface CronRunsResponse {
+  jobs: CronJobSummary[];
+}
+
+export interface ConnectorHealthRecord {
+  connectorName: string;
+  status: string;
+  lastCheckedAt: string;
+  lastError?: string | null;
+}
+
+export interface ConnectorHealthResponse {
+  connectors: ConnectorHealthRecord[];
+}
+
+export interface EmailBounceRecord {
+  id: number;
+  recipientEmail?: string | null;
+  subject?: string | null;
+  receivedAt: string;
+  rawExcerpt?: string | null;
+  matchedClaimId?: string | null;
+  matchedInvoiceGroupId?: string | null;
+  matchedOutboundId?: string | null;
+}
+
+export interface EmailBouncesResponse {
+  bounces: EmailBounceRecord[];
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -1483,6 +1532,19 @@ export const AdminExportAuditLogsCsvCategory = {
   draft: "draft",
   communication: "communication",
   other: "other",
+} as const;
+
+export type GetSystemHealthBouncesParams = {
+  limit?: number;
+  onlyUnmatched?: GetSystemHealthBouncesOnlyUnmatched;
+};
+
+export type GetSystemHealthBouncesOnlyUnmatched =
+  (typeof GetSystemHealthBouncesOnlyUnmatched)[keyof typeof GetSystemHealthBouncesOnlyUnmatched];
+
+export const GetSystemHealthBouncesOnlyUnmatched = {
+  true: "true",
+  false: "false",
 } as const;
 
 export type BackfillInvoiceGroupsBody = {

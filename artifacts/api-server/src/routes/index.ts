@@ -28,6 +28,7 @@ import batchJobsRouter from "./batch-jobs";
 import responseTrackerRouter, { checkEmailRouter } from "./response-tracker";
 import invoiceGroupsRouter from "./invoice-groups";
 import adminRouter from "./admin";
+import systemHealthRouter from "./system-health";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,7 @@ router.use(batchJobsRouter);
 router.use(responseTrackerRouter);
 router.use(invoiceGroupsRouter);
 router.use(adminRouter);
+router.use(systemHealthRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

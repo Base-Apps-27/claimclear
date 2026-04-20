@@ -45,13 +45,16 @@ import type {
   CompleteSubmissionBody,
   ConfirmPortalSubmission422,
   ConfirmPortalSubmissionBody,
+  ConnectorHealthResponse,
   CreateAnthropicConversationBody,
   CreateClaimBody,
   CreateErrorTypeBody,
   CreateNoteBody,
   CreatePortalSubmissionBody,
+  CronRunsResponse,
   DailyBriefResponse,
   DashboardSummary,
+  EmailBouncesResponse,
   EmailCheckResult,
   EmailThreadResponse,
   ErrorTypeResponse,
@@ -62,6 +65,7 @@ import type {
   GetAuthSession200,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
+  GetSystemHealthBouncesParams,
   HealthStatus,
   HoldInvoiceGroupBody,
   ImportClaimsBody,
@@ -8887,6 +8891,267 @@ export function useAdminExportAuditLogsCsv<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAdminExportAuditLogsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recent cron job runs grouped by job (admin only)
+ */
+export const getGetSystemHealthCronRunsUrl = () => {
+  return `/api/admin/system-health/cron-runs`;
+};
+
+export const getSystemHealthCronRuns = async (
+  options?: RequestInit,
+): Promise<CronRunsResponse> => {
+  return customFetch<CronRunsResponse>(getGetSystemHealthCronRunsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSystemHealthCronRunsQueryKey = () => {
+  return [`/api/admin/system-health/cron-runs`] as const;
+};
+
+export const getGetSystemHealthCronRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthCronRuns>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthCronRuns>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthCronRunsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthCronRuns>>
+  > = ({ signal }) => getSystemHealthCronRuns({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthCronRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthCronRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthCronRuns>>
+>;
+export type GetSystemHealthCronRunsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent cron job runs grouped by job (admin only)
+ */
+
+export function useGetSystemHealthCronRuns<
+  TData = Awaited<ReturnType<typeof getSystemHealthCronRuns>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthCronRuns>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthCronRunsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Current connector health statuses (admin only)
+ */
+export const getGetSystemHealthConnectorsUrl = () => {
+  return `/api/admin/system-health/connectors`;
+};
+
+export const getSystemHealthConnectors = async (
+  options?: RequestInit,
+): Promise<ConnectorHealthResponse> => {
+  return customFetch<ConnectorHealthResponse>(
+    getGetSystemHealthConnectorsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthConnectorsQueryKey = () => {
+  return [`/api/admin/system-health/connectors`] as const;
+};
+
+export const getGetSystemHealthConnectorsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthConnectors>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthConnectors>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthConnectorsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthConnectors>>
+  > = ({ signal }) => getSystemHealthConnectors({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthConnectors>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthConnectorsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthConnectors>>
+>;
+export type GetSystemHealthConnectorsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Current connector health statuses (admin only)
+ */
+
+export function useGetSystemHealthConnectors<
+  TData = Awaited<ReturnType<typeof getSystemHealthConnectors>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthConnectors>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthConnectorsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recent email bounces (admin only)
+ */
+export const getGetSystemHealthBouncesUrl = (
+  params?: GetSystemHealthBouncesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/system-health/bounces?${stringifiedParams}`
+    : `/api/admin/system-health/bounces`;
+};
+
+export const getSystemHealthBounces = async (
+  params?: GetSystemHealthBouncesParams,
+  options?: RequestInit,
+): Promise<EmailBouncesResponse> => {
+  return customFetch<EmailBouncesResponse>(
+    getGetSystemHealthBouncesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthBouncesQueryKey = (
+  params?: GetSystemHealthBouncesParams,
+) => {
+  return [
+    `/api/admin/system-health/bounces`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetSystemHealthBouncesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthBounces>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSystemHealthBouncesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthBounces>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthBouncesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthBounces>>
+  > = ({ signal }) =>
+    getSystemHealthBounces(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthBounces>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthBouncesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthBounces>>
+>;
+export type GetSystemHealthBouncesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent email bounces (admin only)
+ */
+
+export function useGetSystemHealthBounces<
+  TData = Awaited<ReturnType<typeof getSystemHealthBounces>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSystemHealthBouncesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthBounces>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthBouncesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

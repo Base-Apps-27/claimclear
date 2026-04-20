@@ -49,6 +49,8 @@ tags:
     description: Application settings
   - name: responses
     description: Portal and email response tracking
+  - name: systemHealth
+    description: System health, cron runs, connector status, bounces (admin)
 
 paths:
   /healthz:
@@ -2341,6 +2343,55 @@ paths:
                 type: string
                 format: binary
 
+  /admin/system-health/cron-runs:
+    get:
+      operationId: getSystemHealthCronRuns
+      tags: [systemHealth]
+      summary: Recent cron job runs grouped by job (admin only)
+      responses:
+        '200':
+          description: Cron runs grouped by job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CronRunsResponse'
+
+  /admin/system-health/connectors:
+    get:
+      operationId: getSystemHealthConnectors
+      tags: [systemHealth]
+      summary: Current connector health statuses (admin only)
+      responses:
+        '200':
+          description: Connector statuses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorHealthResponse'
+
+  /admin/system-health/bounces:
+    get:
+      operationId: getSystemHealthBounces
+      tags: [systemHealth]
+      summary: Recent email bounces (admin only)
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: onlyUnmatched
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Bounce records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailBouncesResponse'
+
   /admin/backfill-invoice-groups:
     post:
       operationId: backfillInvoiceGroups
@@ -4066,3 +4117,115 @@ components:
               type: integer
         outlookConnected:
           type: boolean
+
+    CronRunRecord:
+      type: object
+      required: [id, startedAt, status]
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true
+
+    CronJobSummary:
+      type: object
+      required: [jobName, runs7d, failures7d, successRate7d, recent]
+      properties:
+        jobName:
+          type: string
+        cron:
+          type: string
+          nullable: true
+        nextRunAt:
+          type: string
+          nullable: true
+        runs7d:
+          type: integer
+        failures7d:
+          type: integer
+        successRate7d:
+          type: integer
+        lastRun:
+          oneOf:
+            - $ref: '#/components/schemas/CronRunRecord'
+            - type: 'null'
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/CronRunRecord'
+
+    CronRunsResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CronJobSummary'
+
+    ConnectorHealthRecord:
+      type: object
+      required: [connectorName, status, lastCheckedAt]
+      properties:
+        connectorName:
+          type: string
+        status:
+          type: string
+        lastCheckedAt:
+          type: string
+        lastError:
+          type: string
+          nullable: true
+
+    ConnectorHealthResponse:
+      type: object
+      required: [connectors]
+      properties:
+        connectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectorHealthRecord'
+
+    EmailBounceRecord:
+      type: object
+      required: [id, receivedAt]
+      properties:
+        id:
+          type: integer
+        recipientEmail:
+          type: string
+          nullable: true
+        subject:
+          type: string
+          nullable: true
+        receivedAt:
+          type: string
+        rawExcerpt:
+          type: string
+          nullable: true
+        matchedClaimId:
+          type: string
+          nullable: true
+        matchedInvoiceGroupId:
+          type: string
+          nullable: true
+        matchedOutboundId:
+          type: string
+          nullable: true
+
+    EmailBouncesResponse:
+      type: object
+      required: [bounces]
+      properties:
+        bounces:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailBounceRecord'

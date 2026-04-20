@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { isNotNull, eq, or, and, sql, count } from "drizzle-orm";
+import { isNotNull, eq, or, and, sql, count, gte, lt } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, usersTable } from "@workspace/db";
+import { claimsTable, portalSubmissionsTable, usersTable, cronRunsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
 import { isOutlookConnected } from "../lib/outlook";
 import { sendEmailWithContext } from "../lib/email-send";
+import { getConnectorHealth } from "../lib/connector-health";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,12 @@ interface ExpiringClaim {
   daysLeft: number;
 }
 
+interface AutomationSummary {
+  totalRuns: number;
+  failures: number;
+  byJob: { jobName: string; runs: number; failures: number }[];
+}
+
 function generateBriefHtml(
   openClaims: number,
   expiring: ExpiringClaim[],
@@ -29,6 +36,9 @@ function generateBriefHtml(
   totalAtRisk: number,
   submittedCount: number,
   failedCount: number,
+  automation: AutomationSummary,
+  outlookHealthy: boolean,
+  outlookError: string | null,
 ): string {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
@@ -41,6 +51,17 @@ function generateBriefHtml(
     </tr>`)
     .join("");
 
+  const outlookBanner = !outlookHealthy
+    ? `<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;">
+        <strong>Outlook connector unhealthy.</strong> Email automation may be delayed or skipped. ${outlookError ? `<br/><span style="font-family:monospace;font-size:11px;opacity:0.8;">${outlookError.slice(0, 240)}</span>` : ""}
+      </div>`
+    : "";
+
+  const automationFooter = `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
+      Yesterday's automation: <strong>${automation.totalRuns} runs, ${automation.failures} failure${automation.failures === 1 ? "" : "s"}</strong> &mdash;
+      <a href="/system-health" style="color:#3478F6;text-decoration:none;">View System Health</a>
+    </div>`;
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -51,6 +72,7 @@ function generateBriefHtml(
       <p style="margin:8px 0 0;opacity:0.9;">${today}</p>
     </div>
     <div style="background:white;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      ${outlookBanner}
       <div style="display:flex;gap:16px;margin-bottom:24px;">
         <div style="flex:1;text-align:center;padding:16px;background:#EBF0FA;border-radius:8px;">
           <div style="font-size:28px;font-weight:700;color:#1B2A4A;">${openClaims}</div>
@@ -71,6 +93,8 @@ function generateBriefHtml(
         <h2 style="font-size:16px;color:#1e293b;margin:0 0 8px;">Portal Submissions</h2>
         <p style="margin:0;color:#64748b;font-size:14px;">${submittedCount} submitted, ${failedCount} failed</p>
       </div>
+
+      ${automationFooter}
 
       ${expiring.length > 0 ? `
       <div>
@@ -136,7 +160,38 @@ router.post("/", asyncHandler(async (req, res): Promise<void> => {
   const submitted = subCounts["submitted"] || 0;
   const failed = subCounts["failed"] || 0;
 
-  const html = generateBriefHtml(openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  const automationRows = await db
+    .select({ jobName: cronRunsTable.jobName, status: cronRunsTable.status, count: count() })
+    .from(cronRunsTable)
+    .where(and(gte(cronRunsTable.startedAt, yesterdayStart), lt(cronRunsTable.startedAt, todayStart)))
+    .groupBy(cronRunsTable.jobName, cronRunsTable.status);
+
+  const byJobMap = new Map<string, { runs: number; failures: number }>();
+  let totalRuns = 0;
+  let totalFailures = 0;
+  for (const r of automationRows) {
+    const entry = byJobMap.get(r.jobName) ?? { runs: 0, failures: 0 };
+    entry.runs += r.count;
+    if (r.status === "failed") entry.failures += r.count;
+    byJobMap.set(r.jobName, entry);
+    totalRuns += r.count;
+    if (r.status === "failed") totalFailures += r.count;
+  }
+  const automation = {
+    totalRuns,
+    failures: totalFailures,
+    byJob: Array.from(byJobMap.entries()).map(([jobName, v]) => ({ jobName, runs: v.runs, failures: v.failures })),
+  };
+
+  const outlookHealthRow = await getConnectorHealth("outlook");
+  const outlookHealthy = outlookHealthRow ? outlookHealthRow.status === "healthy" : await isOutlookConnected();
+  const outlookError = outlookHealthRow?.lastError ?? null;
+
+  const html = generateBriefHtml(openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError);
 
   let emailSent = false;
   let emailMethod = "none";

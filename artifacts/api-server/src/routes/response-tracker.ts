@@ -9,6 +9,7 @@ import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { logger } from "../lib/logger";
+import { isBounceMessage, recordBounce } from "../lib/bounce-detection";
 
 const router: IRouter = Router();
 
@@ -184,11 +185,22 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
   let matched = 0;
   let unmatched = 0;
   let skipped = 0;
+  let bounces = 0;
   const results: { emailSubject: string; status: string; claimId?: number; responseType?: string }[] = [];
 
   for (const email of emails) {
     if (existingMessageIds.has(email.id)) {
       skipped++;
+      continue;
+    }
+
+    if (isBounceMessage(email)) {
+      const bounce = await recordBounce(email);
+      bounces++;
+      results.push({
+        emailSubject: email.subject,
+        status: bounce ? (bounce.matchedClaimId || bounce.matchedInvoiceGroupId ? "bounce_matched" : "bounce_unmatched") : "bounce_error",
+      });
       continue;
     }
 
@@ -224,13 +236,14 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
     }
   }
 
-  logger.info({ matched, unmatched, skipped }, "Email response check completed");
+  logger.info({ matched, unmatched, skipped, bounces }, "Email response check completed");
 
   res.json({
     checked: emails.length,
     matched,
     unmatched,
     skipped,
+    bounces,
     results,
   });
 }));

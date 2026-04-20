@@ -3917,6 +3917,80 @@ export const AdminExportAuditLogsCsvQueryParams = zod.object({
 });
 
 /**
+ * @summary Recent cron job runs grouped by job (admin only)
+ */
+export const GetSystemHealthCronRunsResponse = zod.object({
+  jobs: zod.array(
+    zod.object({
+      jobName: zod.string(),
+      cron: zod.string().nullish(),
+      nextRunAt: zod.string().nullish(),
+      runs7d: zod.number(),
+      failures7d: zod.number(),
+      successRate7d: zod.number(),
+      lastRun: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            startedAt: zod.string(),
+            finishedAt: zod.string().nullish(),
+            status: zod.string(),
+            message: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional(),
+      recent: zod.array(
+        zod.object({
+          id: zod.number(),
+          startedAt: zod.string(),
+          finishedAt: zod.string().nullish(),
+          status: zod.string(),
+          message: zod.string().nullish(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * @summary Current connector health statuses (admin only)
+ */
+export const GetSystemHealthConnectorsResponse = zod.object({
+  connectors: zod.array(
+    zod.object({
+      connectorName: zod.string(),
+      status: zod.string(),
+      lastCheckedAt: zod.string(),
+      lastError: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Recent email bounces (admin only)
+ */
+export const GetSystemHealthBouncesQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  onlyUnmatched: zod.enum(["true", "false"]).optional(),
+});
+
+export const GetSystemHealthBouncesResponse = zod.object({
+  bounces: zod.array(
+    zod.object({
+      id: zod.number(),
+      recipientEmail: zod.string().nullish(),
+      subject: zod.string().nullish(),
+      receivedAt: zod.string(),
+      rawExcerpt: zod.string().nullish(),
+      matchedClaimId: zod.string().nullish(),
+      matchedInvoiceGroupId: zod.string().nullish(),
+      matchedOutboundId: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary One-time backfill of invoice_group_id for claims imported before group migration
  */
 export const BackfillInvoiceGroupsBody = zod.object({

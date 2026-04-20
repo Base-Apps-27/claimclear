@@ -32,7 +32,8 @@ import {
   Clock,
   ShieldX,
   Search,
-  FolderOpen
+  FolderOpen,
+  HeartPulse
 } from "lucide-react";
 
 const navDescriptions: Record<string, string> = {
@@ -46,12 +47,14 @@ const navDescriptions: Record<string, string> = {
   "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
   "Summary": "Analytics dashboard with recovery rates, exposure, and claim breakdowns.",
   "Settings": "Account settings, user management, daily brief triggers, and bot instance health.",
+  "System Health": "Admin-only view of cron job runs, connector probes, and unmatched email bounces.",
 };
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, isAuthenticated, sessionExpiry, login, logout } = useAuth();
 
+  const isAdmin = user?.role === "admin";
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Queue", href: "/queue", icon: ListTodo },
@@ -63,6 +66,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Portal Submissions", href: "/portal-submissions", icon: Send },
     { label: "Summary", href: "/summary", icon: BarChart3 },
     { label: "Settings", href: "/settings", icon: Settings },
+    ...(isAdmin ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }] : []),
   ];
 
   if (!isAuthenticated || !user) {

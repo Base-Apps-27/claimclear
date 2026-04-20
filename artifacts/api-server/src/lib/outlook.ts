@@ -117,6 +117,23 @@ export async function isOutlookConnected(): Promise<boolean> {
   }
 }
 
+export interface OutlookProbeResult {
+  ok: boolean;
+  error?: string;
+  email?: string;
+}
+
+export async function probeOutlook(): Promise<OutlookProbeResult> {
+  try {
+    const client = await getOutlookClient();
+    const me = await client.api("/me").select("mail,userPrincipalName").get();
+    return { ok: true, email: me?.mail || me?.userPrincipalName };
+  } catch (err: any) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    return { ok: false, error: msg.slice(0, 500) };
+  }
+}
+
 export interface InboxMessage {
   id: string;
   subject: string;

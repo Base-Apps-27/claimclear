@@ -18,6 +18,8 @@ import {
   Mail,
   MailQuestion,
   ArrowRightLeft,
+  AlertOctagon,
+  MailX,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -56,6 +58,8 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
   response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
   outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
+  bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
+  connector_unhealthy: { label: "Connector unhealthy", icon: AlertOctagon, iconClass: "text-amber-600", category: "other" },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {
@@ -77,6 +81,7 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
   response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
   outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
+  bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {
