@@ -1249,6 +1249,12 @@ export interface EmailBouncesResponse {
   bounces: EmailBounceRecord[];
 }
 
+export interface BotAuthStatusResponse {
+  lastBotAuthAt: string | null;
+  activeTokenHashPrefix: string | null;
+  hasGraceToken: boolean;
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };

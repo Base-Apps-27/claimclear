@@ -31,6 +31,7 @@ import type {
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
   BotActivityLogResponse,
+  BotAuthStatusResponse,
   BotInstanceResponse,
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorType200,
@@ -8891,6 +8892,81 @@ export function useAdminExportAuditLogsCsv<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAdminExportAuditLogsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Bot service token observability (admin only)
+ */
+export const getGetBotAuthStatusUrl = () => {
+  return `/api/admin/bot-auth-status`;
+};
+
+export const getBotAuthStatus = async (
+  options?: RequestInit,
+): Promise<BotAuthStatusResponse> => {
+  return customFetch<BotAuthStatusResponse>(getGetBotAuthStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBotAuthStatusQueryKey = () => {
+  return [`/api/admin/bot-auth-status`] as const;
+};
+
+export const getGetBotAuthStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBotAuthStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBotAuthStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBotAuthStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBotAuthStatus>>
+  > = ({ signal }) => getBotAuthStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBotAuthStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBotAuthStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBotAuthStatus>>
+>;
+export type GetBotAuthStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Bot service token observability (admin only)
+ */
+
+export function useGetBotAuthStatus<
+  TData = Awaited<ReturnType<typeof getBotAuthStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBotAuthStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBotAuthStatusQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

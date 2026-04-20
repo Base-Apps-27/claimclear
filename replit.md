@@ -48,3 +48,18 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **Google Cloud Storage (GCS):** Object storage for evidence files.
 - **Microsoft Outlook (Graph API):** For sending daily brief emails and tracking payor responses, with SMTP as a fallback.
 - **Replit Auth:** OpenID Connect for user authentication.
+## Rotating BOT_SERVICE_TOKEN
+
+The bot service token authenticates internal API calls from the Playwright bots and from internal cron jobs (`x-bot-token` header). Rotate it safely with a grace window so bots can be restarted one at a time:
+
+1. Generate a new random token (e.g. `openssl rand -hex 32`).
+2. In Replit Secrets, set `BOT_SERVICE_TOKEN_PREVIOUS` to the **current** value of `BOT_SERVICE_TOKEN`, then set `BOT_SERVICE_TOKEN` to the **new** value.
+3. Restart the API server workflow. The middleware reads both env vars per request, so any bot still using the old token continues to authenticate.
+4. Restart each bot one at a time. They pick up the new token at startup.
+5. Verify in Settings → "Bot Service Token" panel that "Last successful bot auth" is recent and the active hash prefix matches what you expect. The grace banner indicates `BOT_SERVICE_TOKEN_PREVIOUS` is still set.
+6. Once all bots are confirmed on the new token, unset `BOT_SERVICE_TOKEN_PREVIOUS` in Replit Secrets and restart the API server one final time. The grace banner should disappear.
+
+Notes:
+- Never log or paste the raw token. The admin panel only ever shows the first 8 chars of `sha256(token)`.
+- The token comparison is constant-time (`crypto.timingSafeEqual`) to avoid timing leaks.
+- If you skip the grace step, every bot must be restarted simultaneously with the API server or polling will return 401 until they catch up.

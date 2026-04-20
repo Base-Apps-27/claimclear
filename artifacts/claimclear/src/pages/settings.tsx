@@ -1,4 +1,4 @@
-import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl } from "@workspace/api-client-react";
+import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl, useGetBotAuthStatus, getGetBotAuthStatusQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download } from "lucide-react";
+import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download, KeyRound } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -30,6 +30,7 @@ export default function Settings() {
   const triggerBrief = useTriggerDailyBrief();
   const { data: botInstances } = useListBotInstances();
   const { data: appSettings } = useGetAppSettings();
+  const { data: botAuthStatus } = useGetBotAuthStatus({ query: { queryKey: getGetBotAuthStatusQueryKey(), enabled: user?.role === "admin", refetchInterval: 30000 } });
   const updateAppSettings = useUpdateAppSettings();
   const [briefResult, setBriefResult] = useState<string | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -489,6 +490,40 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              Bot Service Token
+              <InfoTooltip content="Shows when bots last successfully authenticated and a hash prefix of the active token. Use this to verify rotation and detect missed bot restarts. The full token is never shown." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {botAuthStatus?.hasGraceToken && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2 text-amber-800 dark:text-amber-300">
+                A grace token (<code>BOT_SERVICE_TOKEN_PREVIOUS</code>) is currently active. Unset it once all bots have been restarted with the new token.
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Active token hash prefix</span>
+              <code className="font-mono">{botAuthStatus?.activeTokenHashPrefix ?? "not configured"}</code>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Last successful bot auth</span>
+              <span>{botAuthStatus?.lastBotAuthAt ? new Date(botAuthStatus.lastBotAuthAt).toLocaleString() : "never since last API restart"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Grace token configured</span>
+              <span>{botAuthStatus?.hasGraceToken ? "Yes" : "No"}</span>
+            </div>
+            <p className="text-xs text-muted-foreground pt-2 border-t">
+              To rotate safely, see the "Rotating BOT_SERVICE_TOKEN" runbook in <code>replit.md</code>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

@@ -28,6 +28,7 @@ export * from "./backfillInvoiceGroupsBody";
 export * from "./backfillInvoiceGroupsResponse";
 export * from "./backfillInvoiceGroupsResponseUnparseableItem";
 export * from "./botActivityLogResponse";
+export * from "./botAuthStatusResponse";
 export * from "./botInstanceResponse";
 export * from "./botPresenceEntry";
 export * from "./bulkAssignErrorTypeBody";

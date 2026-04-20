@@ -11,6 +11,11 @@ import {
   isActionCategory,
   labelForAction,
 } from "../lib/audit-categories";
+import {
+  getActiveTokenHashPrefix,
+  getLastBotAuthAt,
+  hasGraceToken,
+} from "../lib/bot-token";
 
 const router: IRouter = Router();
 
@@ -299,6 +304,15 @@ router.get("/admin/audit-logs.csv", requireAdmin, asyncHandler(async (req, res):
     offset += CHUNK;
   }
   res.end();
+}));
+
+router.get("/admin/bot-auth-status", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  const lastBotAuthAt = getLastBotAuthAt();
+  res.json({
+    lastBotAuthAt: lastBotAuthAt ? lastBotAuthAt.toISOString() : null,
+    activeTokenHashPrefix: getActiveTokenHashPrefix(),
+    hasGraceToken: hasGraceToken(),
+  });
 }));
 
 export default router;

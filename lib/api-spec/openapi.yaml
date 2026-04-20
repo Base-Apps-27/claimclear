@@ -2343,6 +2343,19 @@ paths:
                 type: string
                 format: binary
 
+  /admin/bot-auth-status:
+    get:
+      operationId: getBotAuthStatus
+      tags: [admin]
+      summary: Bot service token observability (admin only)
+      responses:
+        "200":
+          description: Bot auth status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotAuthStatusResponse"
+
   /admin/system-health/cron-runs:
     get:
       operationId: getSystemHealthCronRuns
@@ -4229,3 +4242,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EmailBounceRecord'
+
+    BotAuthStatusResponse:
+      type: object
+      required: [lastBotAuthAt, activeTokenHashPrefix, hasGraceToken]
+      properties:
+        lastBotAuthAt:
+          type: string
+          nullable: true
+        activeTokenHashPrefix:
+          type: string
+          nullable: true
+        hasGraceToken:
+          type: boolean

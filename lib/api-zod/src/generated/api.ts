@@ -3917,6 +3917,15 @@ export const AdminExportAuditLogsCsvQueryParams = zod.object({
 });
 
 /**
+ * @summary Bot service token observability (admin only)
+ */
+export const GetBotAuthStatusResponse = zod.object({
+  lastBotAuthAt: zod.string().nullable(),
+  activeTokenHashPrefix: zod.string().nullable(),
+  hasGraceToken: zod.boolean(),
+});
+
+/**
  * @summary Recent cron job runs grouped by job (admin only)
  */
 export const GetSystemHealthCronRunsResponse = zod.object({

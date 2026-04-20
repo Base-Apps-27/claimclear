@@ -1,18 +1,12 @@
 import { type Request, type Response, type NextFunction } from "express";
+import { verifyBotToken, getValidTokens } from "../lib/bot-token";
 
-const BOT_TOKEN = process.env.BOT_SERVICE_TOKEN;
-
-if (!BOT_TOKEN) {
+if (getValidTokens().length === 0) {
   console.warn("[AUTH] BOT_SERVICE_TOKEN is not set. Bot endpoints will reject all requests until configured.");
 }
 
-function isValidBotToken(headerValue: string | string[] | undefined): boolean {
-  if (!BOT_TOKEN) return false;
-  return headerValue === BOT_TOKEN;
-}
-
 export function requireBotToken(req: Request, res: Response, next: NextFunction) {
-  if (isValidBotToken(req.headers["x-bot-token"])) {
+  if (verifyBotToken(req.headers["x-bot-token"])) {
     next();
     return;
   }
@@ -26,7 +20,7 @@ export function requireAuthOrBot(req: Request, res: Response, next: NextFunction
     return;
   }
 
-  if (isValidBotToken(req.headers["x-bot-token"])) {
+  if (verifyBotToken(req.headers["x-bot-token"])) {
     next();
     return;
   }
