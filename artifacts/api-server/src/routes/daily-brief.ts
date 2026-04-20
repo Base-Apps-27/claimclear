@@ -92,7 +92,8 @@ function generateBriefHtml(
 </html>`;
 }
 
-router.post("/", asyncHandler(async (_req, res): Promise<void> => {
+router.post("/", asyncHandler(async (req, res): Promise<void> => {
+  const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
 
   const [openCountResult] = await db
@@ -139,7 +140,7 @@ router.post("/", asyncHandler(async (_req, res): Promise<void> => {
   let emailSent = false;
   let emailMethod = "none";
 
-  let recipients = process.env.DAILY_BRIEF_RECIPIENTS;
+  let recipients = recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS;
   if (!recipients) {
     const usersWithEmail = await db.select({ email: usersTable.email }).from(usersTable).where(isNotNull(usersTable.email));
     const emails = usersWithEmail.map(u => u.email).filter(Boolean);
