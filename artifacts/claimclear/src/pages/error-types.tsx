@@ -21,6 +21,7 @@ import {
   MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle
 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { EmptyState } from "@/components/empty-state";
 import {
   TreeEditor, TreePreview, TreePlayer, PlainTextEditor,
   type DecisionTree, type LegacyTreeNode,
@@ -415,6 +416,20 @@ export default function ErrorTypes() {
 
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Loading...</div>
+      ) : (errorTypes || []).length === 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={TreeDeciduous}
+              title="No error types defined yet"
+              description="Error types classify denials and drive the dispute workflow. Create one to get started."
+              primaryAction={{
+                label: "Add error type",
+                onClick: () => { setForm(emptyForm); setShowCreate(true); },
+              }}
+            />
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {(errorTypes || []).map(et => (

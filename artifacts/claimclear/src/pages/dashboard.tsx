@@ -4,10 +4,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { Link } from "wouter";
-import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send } from "lucide-react";
+import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send, Inbox } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { EmptyState } from "@/components/empty-state";
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary({
@@ -40,6 +41,20 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-2">Overview of dispute pipeline and recovery performance.</p>
       </div>
 
+      {(stats.total ?? 0) === 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Inbox}
+              title="Welcome to ClaimClear"
+              description="No claims yet. Import a MAS report to populate the pipeline, or create your first claim manually."
+              primaryAction={{ label: "Import claims", href: "/import" }}
+              secondaryAction={{ label: "Connect a portal", href: "/settings" }}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -254,6 +269,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+      </>
+      )}
     </div>
   );
 }

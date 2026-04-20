@@ -21,7 +21,9 @@ import {
   Trash2,
   StickyNote,
   Mail,
+  Filter,
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -434,10 +436,21 @@ export default function InvoiceGroupDetail() {
                     );
 
                 if (filtered.length === 0) {
-                  return (
-                    <p className="text-sm text-muted-foreground" data-testid="text-empty-activity">
-                      {activityFilter === "all" ? "No activity yet." : "No matching activity."}
-                    </p>
+                  return activityFilter === "all" ? (
+                    <EmptyState
+                      icon={StickyNote}
+                      title="No activity yet"
+                      description="Status changes, notes, and edits on this group will appear here."
+                      className="py-6"
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Filter}
+                      title="No matching activity"
+                      description="Try a different category to see more activity."
+                      primaryAction={{ label: "Clear filter", onClick: () => setActivityFilter("all") }}
+                      className="py-6"
+                    />
                   );
                 }
 

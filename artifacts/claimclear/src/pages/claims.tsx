@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link } from "wouter";
-import { Search, Filter, Tag, X, Loader2, CheckCircle2 } from "lucide-react";
+import { Search, Filter, Tag, X, Loader2, CheckCircle2, Inbox } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { EmptyState } from "@/components/empty-state";
 import {
   Popover,
   PopoverContent,
@@ -345,7 +346,27 @@ export default function ClaimsList() {
                   </tr>
                 ) : claims.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No claims found.</td>
+                    <td colSpan={9} className="px-4 py-0">
+                      {(search || activeFilterCount > 0) ? (
+                        <EmptyState
+                          icon={Filter}
+                          title="No claims match your filters"
+                          description="Try removing a filter or adjusting your search to see more results."
+                          primaryAction={{
+                            label: "Clear filters",
+                            onClick: () => { clearFilters(); setSearch(""); },
+                          }}
+                        />
+                      ) : (
+                        <EmptyState
+                          icon={Inbox}
+                          title="No claims yet"
+                          description="Import a MAS report to bring in claims, or create one manually."
+                          primaryAction={{ label: "Import claims", href: "/import" }}
+                          secondaryAction={{ label: "Create a claim", href: "/claims/new" }}
+                        />
+                      )}
+                    </td>
                   </tr>
                 ) : (
                   claims.map((claim) => (

@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency } from "@/lib/format";
 import { Link } from "wouter";
-import { Search, CheckCircle2, XCircle, AlertTriangle, ChevronRight, Eye, Tag, Loader2, Plus, FileText } from "lucide-react";
+import { Search, CheckCircle2, XCircle, AlertTriangle, ChevronRight, Eye, Tag, Loader2, Plus, FileText, Filter } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { useCreateErrorType, getListErrorTypesQueryKey } from "@workspace/api-client-react";
@@ -153,10 +154,21 @@ export default function Review() {
             </Card>
           ) : filteredGroups.length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                {groups.length === 0
-                  ? "No invoice groups need review right now."
-                  : "No matching groups found."}
+              <CardContent className="p-0">
+                {groups.length === 0 ? (
+                  <EmptyState
+                    icon={CheckCircle2}
+                    title="All caught up — no responses to review"
+                    description="When new invoice groups need triage, they'll appear here."
+                  />
+                ) : (
+                  <EmptyState
+                    icon={Filter}
+                    title="No groups match your search"
+                    description="Try a different search term to find groups in the review queue."
+                    primaryAction={{ label: "Clear search", onClick: () => setSearch("") }}
+                  />
+                )}
               </CardContent>
             </Card>
           ) : (

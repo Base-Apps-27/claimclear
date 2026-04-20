@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/format";
 import { Link } from "wouter";
 import { Search, Filter, Tag, X, Loader2, CheckCircle2, FolderOpen } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { EmptyState } from "@/components/empty-state";
 import {
   Popover,
   PopoverContent,
@@ -360,12 +361,25 @@ export default function InvoiceGroupsList() {
                   </tr>
                 ) : groups.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center gap-2">
-                        <FolderOpen className="h-8 w-8 text-muted-foreground/50" />
-                        <p>No invoice groups found.</p>
-                        <p className="text-xs">Import claims to create invoice groups automatically.</p>
-                      </div>
+                    <td colSpan={9} className="px-4 py-0">
+                      {(search || activeFilterCount > 0) ? (
+                        <EmptyState
+                          icon={Filter}
+                          title="No invoice groups match your filters"
+                          description="Try removing a filter or adjusting your search to see more results."
+                          primaryAction={{
+                            label: "Clear filters",
+                            onClick: () => { clearFilters(); setSearch(""); },
+                          }}
+                        />
+                      ) : (
+                        <EmptyState
+                          icon={FolderOpen}
+                          title="No invoice groups yet"
+                          description="Import claims to create invoice groups automatically."
+                          primaryAction={{ label: "Import claims", href: "/import" }}
+                        />
+                      )}
                     </td>
                   </tr>
                 ) : (

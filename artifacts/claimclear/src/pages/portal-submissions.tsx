@@ -17,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import { EvidenceFileList } from "@/components/evidence-file-list";
@@ -342,7 +343,25 @@ export default function PortalSubmissions() {
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Loading...</div>
       ) : (submissions || []).length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">No portal submissions found.</CardContent></Card>
+        <Card>
+          <CardContent className="p-0">
+            {statusFilter ? (
+              <EmptyState
+                icon={Filter}
+                title="No submissions match this filter"
+                description="Try a different status to see more submissions."
+                primaryAction={{ label: "Clear filter", onClick: () => setStatusFilter("") }}
+              />
+            ) : (
+              <EmptyState
+                icon={Send}
+                title="No submissions yet"
+                description="Drafts you create on a claim show up here, ready to submit to the portal."
+                primaryAction={{ label: "Go to claims", href: "/claims" }}
+              />
+            )}
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2">
           {(submissions || []).map(sub => (

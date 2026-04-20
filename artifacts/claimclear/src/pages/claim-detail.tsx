@@ -37,8 +37,10 @@ import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
-  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox
+  ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox,
+  StickyNote
 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import {
   humanizeAuditAction,
@@ -1098,6 +1100,14 @@ export default function ClaimDetail() {
                 <Button size="sm" onClick={handleAddNote} disabled={!noteContent.trim()}>Add</Button>
               </div>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {(notes || []).length === 0 && (
+                  <EmptyState
+                    icon={StickyNote}
+                    title="No notes yet"
+                    description="Add a note above to capture observations or next steps for this claim."
+                    className="py-6"
+                  />
+                )}
                 {(notes || []).map(note => (
                   <div key={note.id} className="p-3 border rounded-md text-sm">
                     <div className="flex items-center justify-between mb-1">
