@@ -723,6 +723,20 @@ export interface ImportSummary {
   invoiceGroupCount?: number;
 }
 
+export type LintResultSeverity =
+  (typeof LintResultSeverity)[keyof typeof LintResultSeverity];
+
+export const LintResultSeverity = {
+  warn: "warn",
+  fail: "fail",
+} as const;
+
+export interface LintResult {
+  ruleKey: string;
+  severity: LintResultSeverity;
+  message: string;
+}
+
 export interface CreatePortalSubmissionBody {
   claimId?: number;
   invoiceGroupId?: number;
@@ -1246,6 +1260,15 @@ export type UpdatePortalSubmissionDraftBody = {
 export type RevertPortalSubmissionDescriptionBody = {
   /** Zero-based index of the version in descriptionHistory to make active */
   index: number;
+};
+
+export type ConfirmPortalSubmissionBody = {
+  /** When true, acknowledges and bypasses warn-level lint findings. */
+  ack?: boolean;
+};
+
+export type ConfirmPortalSubmission422 = {
+  failures: LintResult[];
 };
 
 export type ListEvidenceTypes200 = {

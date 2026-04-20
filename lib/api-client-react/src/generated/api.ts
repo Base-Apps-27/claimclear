@@ -40,6 +40,8 @@ import type {
   ClaimsListResponse,
   CompleteDryRunBody,
   CompleteSubmissionBody,
+  ConfirmPortalSubmission422,
+  ConfirmPortalSubmissionBody,
   CreateAnthropicConversationBody,
   CreateClaimBody,
   CreateErrorTypeBody,
@@ -64,6 +66,7 @@ import type {
   InvoiceGroupResponse,
   InvoiceGroupsListResponse,
   LinkResponseBody,
+  LintResult,
   ListClaimEvidence200,
   ListClaimsParams,
   ListEvidenceTypes200,
@@ -5169,6 +5172,90 @@ export const useRevertPortalSubmissionDescription = <
 };
 
 /**
+ * @summary Run pre-submit quality checks against a draft submission
+ */
+export const getLintPortalSubmissionUrl = (id: number) => {
+  return `/api/portal-submissions/${id}/lint`;
+};
+
+export const lintPortalSubmission = async (
+  id: number,
+  options?: RequestInit,
+): Promise<LintResult[]> => {
+  return customFetch<LintResult[]>(getLintPortalSubmissionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLintPortalSubmissionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof lintPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof lintPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["lintPortalSubmission"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof lintPortalSubmission>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return lintPortalSubmission(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LintPortalSubmissionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof lintPortalSubmission>>
+>;
+
+export type LintPortalSubmissionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run pre-submit quality checks against a draft submission
+ */
+export const useLintPortalSubmission = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof lintPortalSubmission>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof lintPortalSubmission>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getLintPortalSubmissionMutationOptions(options));
+};
+
+/**
  * @summary Confirm a draft submission and move it to pending status for bot processing
  */
 export const getConfirmPortalSubmissionUrl = (id: number) => {
@@ -5177,6 +5264,7 @@ export const getConfirmPortalSubmissionUrl = (id: number) => {
 
 export const confirmPortalSubmission = async (
   id: number,
+  confirmPortalSubmissionBody?: ConfirmPortalSubmissionBody,
   options?: RequestInit,
 ): Promise<PortalSubmissionResponse> => {
   return customFetch<PortalSubmissionResponse>(
@@ -5184,25 +5272,27 @@ export const confirmPortalSubmission = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(confirmPortalSubmissionBody),
     },
   );
 };
 
 export const getConfirmPortalSubmissionMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<ConfirmPortalSubmission422>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof confirmPortalSubmission>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<ConfirmPortalSubmissionBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof confirmPortalSubmission>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<ConfirmPortalSubmissionBody> },
   TContext
 > => {
   const mutationKey = ["confirmPortalSubmission"];
@@ -5216,11 +5306,11 @@ export const getConfirmPortalSubmissionMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof confirmPortalSubmission>>,
-    { id: number }
+    { id: number; data: BodyType<ConfirmPortalSubmissionBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return confirmPortalSubmission(id, requestOptions);
+    return confirmPortalSubmission(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -5229,27 +5319,29 @@ export const getConfirmPortalSubmissionMutationOptions = <
 export type ConfirmPortalSubmissionMutationResult = NonNullable<
   Awaited<ReturnType<typeof confirmPortalSubmission>>
 >;
-
-export type ConfirmPortalSubmissionMutationError = ErrorType<unknown>;
+export type ConfirmPortalSubmissionMutationBody =
+  BodyType<ConfirmPortalSubmissionBody>;
+export type ConfirmPortalSubmissionMutationError =
+  ErrorType<ConfirmPortalSubmission422>;
 
 /**
  * @summary Confirm a draft submission and move it to pending status for bot processing
  */
 export const useConfirmPortalSubmission = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<ConfirmPortalSubmission422>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof confirmPortalSubmission>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<ConfirmPortalSubmissionBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof confirmPortalSubmission>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<ConfirmPortalSubmissionBody> },
   TContext
 > => {
   return useMutation(getConfirmPortalSubmissionMutationOptions(options));

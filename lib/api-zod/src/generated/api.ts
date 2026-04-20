@@ -2569,10 +2569,33 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
 });
 
 /**
+ * @summary Run pre-submit quality checks against a draft submission
+ */
+export const LintPortalSubmissionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const LintPortalSubmissionResponseItem = zod.object({
+  ruleKey: zod.string(),
+  severity: zod.enum(["warn", "fail"]),
+  message: zod.string(),
+});
+export const LintPortalSubmissionResponse = zod.array(
+  LintPortalSubmissionResponseItem,
+);
+
+/**
  * @summary Confirm a draft submission and move it to pending status for bot processing
  */
 export const ConfirmPortalSubmissionParams = zod.object({
   id: zod.coerce.number(),
+});
+
+export const ConfirmPortalSubmissionBody = zod.object({
+  ack: zod
+    .boolean()
+    .optional()
+    .describe("When true, acknowledges and bypasses warn-level lint findings."),
 });
 
 export const ConfirmPortalSubmissionResponse = zod.object({

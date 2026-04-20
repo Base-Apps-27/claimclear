@@ -37,6 +37,10 @@ import {
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { toast } from "@/hooks/use-toast";
+import { QualityCheckPanel } from "@/components/quality-check-panel";
+import { LintGateDialog } from "@/components/lint-gate-dialog";
+import type { LintResult } from "@workspace/api-client-react";
+import { ApiError } from "@workspace/api-client-react";
 import {
   TreePlayer,
   type TreePlayerHandle, type TreePlayerState,
@@ -268,15 +272,45 @@ export function WorkflowPlayer({
     }
   };
 
-  const handleConfirmSubmit = async () => {
+  const [lintResults, setLintResults] = useState<LintResult[]>([]);
+  const [lintGate, setLintGate] = useState<{ open: boolean; mode: "fail" | "warn"; results: LintResult[] }>({ open: false, mode: "fail", results: [] });
+
+  const submitConfirm = async (ack: boolean) => {
     if (!draftSubmission) return;
-    await confirmSubmission.mutateAsync({ id: draftSubmission.id });
-    setPortalSubmitted(true);
-    invalidate();
-    setTimeout(() => {
-      setDraftSubmission(null);
-      onComplete();
-    }, 2000);
+    try {
+      await confirmSubmission.mutateAsync({ id: draftSubmission.id, data: ack ? { ack: true } : {} });
+      setLintGate({ open: false, mode: "fail", results: [] });
+      setPortalSubmitted(true);
+      invalidate();
+      setTimeout(() => {
+        setDraftSubmission(null);
+        onComplete();
+      }, 2000);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        const data = err.data as { failures?: LintResult[] } | null;
+        const failures = data?.failures ?? [];
+        const hasFail = failures.some(f => f.severity === "fail");
+        setLintGate({ open: true, mode: hasFail ? "fail" : "warn", results: failures });
+        return;
+      }
+      const message = err instanceof Error ? err.message : "Please try again.";
+      toast({ title: "Could not queue submission", description: message, variant: "destructive" });
+    }
+  };
+
+  const handleConfirmSubmit = async () => {
+    const failures = lintResults.filter(r => r.severity === "fail");
+    const warnings = lintResults.filter(r => r.severity === "warn");
+    if (failures.length > 0) {
+      setLintGate({ open: true, mode: "fail", results: lintResults });
+      return;
+    }
+    if (warnings.length > 0) {
+      setLintGate({ open: true, mode: "warn", results: warnings });
+      return;
+    }
+    await submitConfirm(false);
   };
 
   const handlePlaceHold = async () => {
@@ -783,6 +817,12 @@ export function WorkflowPlayer({
               </div>
             )}
 
+            <QualityCheckPanel
+              submissionId={draftSubmission.id}
+              refreshKey={draftSubmission.descriptionHtml}
+              onResults={setLintResults}
+            />
+
             {portalSubmitted ? (
               <div className="bg-green-50 text-green-800 p-3 rounded-md text-sm flex items-center gap-2 animate-in fade-in duration-300">
                 <CheckCircle className="h-4 w-4 flex-shrink-0" />
@@ -804,6 +844,15 @@ export function WorkflowPlayer({
                 </Button>
               </div>
             )}
+
+            <LintGateDialog
+              open={lintGate.open}
+              mode={lintGate.mode}
+              results={lintGate.results}
+              pending={confirmSubmission.isPending}
+              onClose={() => setLintGate(s => ({ ...s, open: false }))}
+              onConfirmAnyway={() => submitConfirm(true)}
+            />
           </CardContent>
         </Card>
         );

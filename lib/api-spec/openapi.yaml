@@ -1366,6 +1366,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /portal-submissions/{id}/lint:
+    post:
+      operationId: lintPortalSubmission
+      tags: [portalSubmissions]
+      summary: Run pre-submit quality checks against a draft submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lint results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LintResult"
+
   /portal-submissions/{id}/confirm:
     post:
       operationId: confirmPortalSubmission
@@ -1377,6 +1398,16 @@ paths:
           required: true
           schema:
             type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ack:
+                  type: boolean
+                  description: When true, acknowledges and bypasses warn-level lint findings.
       responses:
         "200":
           description: Confirmed and queued
@@ -1384,6 +1415,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
+        "422":
+          description: Lint failures or unacknowledged warnings block submission
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  failures:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LintResult"
+                required:
+                  - failures
 
   /portal-submissions/{id}/sandbox-run:
     post:
@@ -2849,6 +2893,21 @@ components:
         - updated
         - total
         - batchId
+
+    LintResult:
+      type: object
+      properties:
+        ruleKey:
+          type: string
+        severity:
+          type: string
+          enum: ["warn", "fail"]
+        message:
+          type: string
+      required:
+        - ruleKey
+        - severity
+        - message
 
     PortalSubmissionResponse:
       type: object

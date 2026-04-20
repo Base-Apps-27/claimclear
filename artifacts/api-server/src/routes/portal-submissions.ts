@@ -7,6 +7,22 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { lintDraft, type LintResult } from "../lib/draft-lint";
+
+async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, submission.claimId));
+  let evidence: { evidenceTypeName: string | null }[] = [];
+  if (submission.invoiceGroupId) {
+    evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
+      .from(claimEvidenceTable)
+      .where(eq(claimEvidenceTable.invoiceGroupId, submission.invoiceGroupId));
+  } else {
+    evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
+      .from(claimEvidenceTable)
+      .where(eq(claimEvidenceTable.claimId, submission.claimId));
+  }
+  return { claim: claim || null, evidence };
+}
 
 const router: IRouter = Router();
 
@@ -629,6 +645,20 @@ router.post("/portal-submissions/:id/revert-description", asyncHandler(async (re
   res.json(sub);
 }));
 
+router.post("/portal-submissions/:id/lint", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const { claim, evidence } = await loadLintInputs(existing);
+  if (!claim) { res.status(404).json({ error: "Claim not found for submission" }); return; }
+
+  const results: LintResult[] = lintDraft(existing, claim, evidence);
+  res.json(results);
+}));
+
 router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -637,6 +667,22 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
   if (existing.status !== "draft") {
     res.status(400).json({ error: "Only draft submissions can be confirmed" });
+    return;
+  }
+
+  const ack = req.body?.ack === true;
+
+  const { claim, evidence } = await loadLintInputs(existing);
+  if (!claim) { res.status(404).json({ error: "Claim not found for submission" }); return; }
+  const lintResults = lintDraft(existing, claim, evidence);
+  const failures = lintResults.filter(r => r.severity === "fail");
+  const warnings = lintResults.filter(r => r.severity === "warn");
+  if (failures.length > 0) {
+    res.status(422).json({ failures });
+    return;
+  }
+  if (warnings.length > 0 && !ack) {
+    res.status(422).json({ failures: warnings });
     return;
   }
 
@@ -653,6 +699,20 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
       actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
     });
   }
+
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    invoiceGroupId: existing.invoiceGroupId ?? null,
+    action: "portal_submission_confirmed",
+    details: `Portal submission #${id} confirmed${warnings.length > 0 ? ` with ${warnings.length} warning(s) acknowledged` : ""}`,
+    metadata: {
+      submissionId: id,
+      lintWarningsAcknowledged: warnings.length > 0,
+      lintWarnings: warnings,
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
 
   res.json(sub);
 }));
