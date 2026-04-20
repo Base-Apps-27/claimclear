@@ -40,6 +40,11 @@ import {
   ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox
 } from "lucide-react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
+import {
+  humanizeAuditAction,
+  ACTION_CATEGORY_LABELS,
+  type ActionCategory,
+} from "@/lib/audit-action-meta";
 import { RefNumber } from "@/components/ref-number";
 import { WorkflowPlayer } from "@/components/workflow-player";
 
@@ -245,6 +250,7 @@ export default function ClaimDetail() {
   const [holdPending, setHoldPending] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [postResponseNotes, setPostResponseNotes] = useState("");
+  const [auditFilter, setAuditFilter] = useState<ActionCategory | "all">("all");
 
   useEffect(() => {
     if (claim) {
@@ -1115,22 +1121,63 @@ export default function ClaimDetail() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-1">
                 Audit Trail
                 <InfoTooltip content="A chronological record of every status change, edit, and action taken on this claim. Entries are system-generated and cannot be modified." />
               </CardTitle>
+              <Select value={auditFilter} onValueChange={(v) => setAuditFilter(v as ActionCategory | "all")}>
+                <SelectTrigger className="h-8 w-[170px] text-xs" data-testid="select-audit-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ACTION_CATEGORY_LABELS) as Array<ActionCategory | "all">).map((key) => (
+                    <SelectItem key={key} value={key} className="text-xs">
+                      {ACTION_CATEGORY_LABELS[key]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {(auditLogs || []).slice(0, 20).map(log => (
-                  <div key={log.id} className="text-sm border-l-2 border-muted pl-3 py-1">
-                    <p className="font-medium">{log.action}</p>
-                    <p className="text-muted-foreground text-xs">{log.details}</p>
-                    <p className="text-muted-foreground/70 text-xs">{log.userName || log.userEmail || "System"} - {formatDateTime(log.timestamp)}</p>
+              {(() => {
+                const annotated = (auditLogs || []).map((log) => ({
+                  log,
+                  meta: humanizeAuditAction(log.action, "claim"),
+                }));
+                const filtered = auditFilter === "all"
+                  ? annotated
+                  : annotated.filter((entry) => entry.meta.category === auditFilter);
+                const visible = filtered.slice(0, 20);
+                if (visible.length === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground" data-testid="text-empty-audit">
+                      {auditFilter === "all" ? "No audit entries yet." : "No matching audit entries."}
+                    </p>
+                  );
+                }
+                return (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto" data-testid="list-audit-trail">
+                    {visible.map(({ log, meta }) => {
+                      const Icon = meta.icon;
+                      return (
+                        <div key={log.id} className="text-sm border-l-2 border-muted pl-3 py-1 flex gap-2">
+                          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${meta.iconClass}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium">{meta.label}</p>
+                            {log.details && (
+                              <p className="text-muted-foreground text-xs break-words">{log.details}</p>
+                            )}
+                            <p className="text-muted-foreground/70 text-xs">
+                              {log.userName || log.userEmail || "System"} — {formatDateTime(log.timestamp)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
