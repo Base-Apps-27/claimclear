@@ -483,6 +483,18 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   const [sub] = await db.update(portalSubmissionsTable).set(updates)
     .where(eq(portalSubmissionsTable.id, id)).returning();
 
+  if (updates.descriptionHtml !== undefined) {
+    await db.insert(auditLogsTable).values({
+      claimId: existing.claimId,
+      invoiceGroupId: existing.invoiceGroupId,
+      action: "portal_draft_edited",
+      details: `Portal submission #${id} description manually edited`,
+      metadata: { submissionId: id },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+  }
+
   res.json(sub);
 }));
 
@@ -548,6 +560,16 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     descriptionEditorName: req.user?.displayName ?? null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    invoiceGroupId: existing.invoiceGroupId,
+    action: "portal_draft_regenerated",
+    details: `Portal submission #${id} description regenerated`,
+    metadata: { submissionId: id },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
   res.json(sub);
 }));
 
@@ -593,6 +615,16 @@ router.post("/portal-submissions/:id/revert-description", asyncHandler(async (re
     descriptionEditorEmail: chosen.editorEmail ?? null,
     descriptionEditorName: chosen.editorName ?? null,
   }).where(eq(portalSubmissionsTable.id, id)).returning();
+
+  await db.insert(auditLogsTable).values({
+    claimId: existing.claimId,
+    invoiceGroupId: existing.invoiceGroupId,
+    action: "portal_draft_reverted",
+    details: `Portal submission #${id} description reverted to history entry ${index}`,
+    metadata: { submissionId: id, historyIndex: index },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
 
   res.json(sub);
 }));
