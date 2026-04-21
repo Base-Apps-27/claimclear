@@ -150,25 +150,7 @@ async function mainLoop() {
           try {
             const claimed = await claimSubmission(sub.id);
             if (claimed) {
-              try {
-                await processSubmission(claimed);
-              } catch (firstErr: unknown) {
-                const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-                console.warn(`[BOT] Submission ${sub.id} failed on first attempt: ${firstMsg}. Retrying in 10s...`);
-                try {
-                  await api(`/bot/portal-submissions/${sub.id}/retry`, { method: "POST" });
-                } catch {}
-                await new Promise(resolve => setTimeout(resolve, 10000));
-                try {
-                  const reclaimed = await claimSubmission(sub.id);
-                  if (reclaimed) {
-                    await processSubmission(reclaimed);
-                  }
-                } catch (retryErr: unknown) {
-                  const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-                  console.error(`[BOT] Submission ${sub.id} failed on retry: ${retryMsg}`);
-                }
-              }
+              await processSubmission(claimed);
             }
           } catch (err: unknown) {
             const errMsg = err instanceof Error ? err.message : String(err);

@@ -57,6 +57,26 @@ interface BatchJob {
   results: { submissionId: number; status: string; message: string }[];
 }
 
+function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const diffMs = new Date(nextRetryAt).getTime() - now;
+  if (diffMs <= 0) return <span>retrying soon</span>;
+  const totalSec = Math.floor(diffMs / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return <span>retry in {h}h {mm}m</span>;
+  }
+  if (m >= 1) return <span>retry in {m}m {s.toString().padStart(2, "0")}s</span>;
+  return <span>retry in {s}s</span>;
+}
+
 export default function PortalSubmissions() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -391,6 +411,20 @@ export default function PortalSubmissions() {
                       <AlertTriangle className="h-4 w-4 text-red-500 cursor-help" />
                     </WrapTooltip>
                   )}
+                  {(sub.attempts ?? 0) > 0 && (sub.status === "pending" || sub.status === "in_progress" || sub.status === "failed") && (
+                    <WrapTooltip content={`Attempt ${sub.attempts} of ${sub.maxAttempts ?? 4}`}>
+                      <Badge variant="outline" className="cursor-help text-xs">
+                        {sub.attempts}/{sub.maxAttempts ?? 4}
+                      </Badge>
+                    </WrapTooltip>
+                  )}
+                  {sub.status === "pending" && sub.nextRetryAt && (
+                    <WrapTooltip content={`Next retry at ${new Date(sub.nextRetryAt).toLocaleString()}`}>
+                      <Badge variant="outline" className="cursor-help text-xs text-amber-700 border-amber-400">
+                        <RetryCountdown nextRetryAt={sub.nextRetryAt} />
+                      </Badge>
+                    </WrapTooltip>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">{formatCurrency(sub.claimAmount)}</span>
@@ -583,7 +617,10 @@ export default function PortalSubmissions() {
                           )}
                         </div>
                         <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}</div>
+                        <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}/{selected.maxAttempts ?? 4}</div>
+                        {selected.nextRetryAt && selected.status === "pending" && (
+                          <div className="min-w-0"><span className="text-muted-foreground">Next retry:</span> <RetryCountdown nextRetryAt={selected.nextRetryAt} /></div>
+                        )}
                         {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
                         {selected.submittedAt && <div className="min-w-0"><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
                         {selected.errorMessage && <div className="col-span-2 min-w-0"><span className="text-muted-foreground">Error:</span> <span className="text-red-600 break-words">{selected.errorMessage}</span></div>}

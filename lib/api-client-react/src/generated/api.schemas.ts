@@ -341,6 +341,9 @@ export interface PortalSubmissionResponse {
   /** @nullable */
   submittedAt?: string | null;
   attempts: number;
+  maxAttempts: number;
+  /** @nullable */
+  nextRetryAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

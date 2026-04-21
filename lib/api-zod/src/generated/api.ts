@@ -284,6 +284,8 @@ export const GetInvoiceGroupResponse = zod
             errorMessage: zod.string().nullish(),
             submittedAt: zod.string().nullish(),
             attempts: zod.number(),
+            maxAttempts: zod.number(),
+            nextRetryAt: zod.string().nullish(),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
           }),
@@ -2082,6 +2084,8 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2164,6 +2168,8 @@ export const GetPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2226,6 +2232,8 @@ export const RetryPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2288,6 +2296,8 @@ export const CancelPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2360,6 +2370,8 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2433,6 +2445,8 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2495,6 +2509,8 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2565,6 +2581,8 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2650,6 +2668,8 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2712,6 +2732,8 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2774,6 +2796,8 @@ export const PollPortalSubmissionsResponseItem = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2843,6 +2867,8 @@ export const ClaimPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2910,6 +2936,8 @@ export const CompletePortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2977,6 +3005,8 @@ export const CompleteDryRunPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -3044,6 +3074,8 @@ export const FailPortalSubmissionResponse = zod.object({
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
   attempts: zod.number(),
+  maxAttempts: zod.number(),
+  nextRetryAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });

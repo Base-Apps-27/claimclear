@@ -21,6 +21,8 @@ import {
   AlertOctagon,
   MailX,
   BellOff,
+  Timer,
+  AlarmClockOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -62,6 +64,9 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
   connector_unhealthy: { label: "Connector unhealthy", icon: AlertOctagon, iconClass: "text-amber-600", category: "other" },
   notification_opt_out_changed: { label: "Notification preferences changed", icon: BellOff, iconClass: "text-slate-600", category: "other" },
+  submission_retry_scheduled: { label: "Portal submission retry scheduled", icon: Timer, iconClass: "text-amber-600", category: "workflow" },
+  submission_retries_exhausted: { label: "Portal submission retries exhausted", icon: AlertOctagon, iconClass: "text-rose-600", category: "workflow" },
+  submission_stuck_reset: { label: "Stuck submission auto-reset", icon: AlarmClockOff, iconClass: "text-amber-600", category: "workflow" },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {

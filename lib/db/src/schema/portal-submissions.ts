@@ -42,6 +42,8 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   errorMessage: text("error_message"),
   submittedAt: text("submitted_at"),
   attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(4),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

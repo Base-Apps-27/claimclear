@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import { recordCronRun } from "./lib/cron-runs";
 import { isOutlookConnected, probeOutlook } from "./lib/outlook";
 import { recordConnectorHealth } from "./lib/connector-health";
+import { resetStuckSubmissions } from "./lib/stuck-submissions";
 
 (async () => {
   try {
@@ -131,6 +132,18 @@ cron.schedule("*/15 * * * *", async () => {
     }
     await recordConnectorHealth("outlook", "healthy", null, { email: probe.email });
     return { message: `Outlook healthy (${probe.email ?? "unknown mailbox"})` };
+  });
+}, { timezone: "America/New_York" });
+
+cron.schedule("*/30 * * * *", async () => {
+  await recordCronRun("stuck_submission_reset", async () => {
+    const result = await resetStuckSubmissions();
+    return {
+      message: result.reset === 0
+        ? "No stuck portal submissions found"
+        : `Reset ${result.reset} stuck portal submission${result.reset === 1 ? "" : "s"}`,
+      metadata: { reset: result.reset, ids: result.ids },
+    };
   });
 }, { timezone: "America/New_York" });
 

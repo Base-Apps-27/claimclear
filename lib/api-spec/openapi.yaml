@@ -3290,6 +3290,10 @@ components:
           type: ["string", "null"]
         attempts:
           type: integer
+        maxAttempts:
+          type: integer
+        nextRetryAt:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -3299,6 +3303,7 @@ components:
         - claimId
         - status
         - attempts
+        - maxAttempts
 
     CreatePortalSubmissionBody:
       type: object

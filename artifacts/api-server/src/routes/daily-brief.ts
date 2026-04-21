@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, or, and, sql, count, gte, lt } from "drizzle-orm";
+import { eq, or, and, sql, count, gte, lt, desc, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, cronRunsTable } from "@workspace/db";
+import { claimsTable, portalSubmissionsTable, cronRunsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
 import { isOutlookConnected } from "../lib/outlook";
@@ -39,6 +39,17 @@ interface AutomationSummary {
   byJob: { jobName: string; runs: number; failures: number }[];
 }
 
+interface NeedsAttentionRow {
+  id: number;
+  confNumber: string | null;
+  attempts: number;
+  maxAttempts: number;
+  status: string;
+  errorMessage: string | null;
+  nextRetryAt: string | null;
+  reason: "failed" | "auto_reset";
+}
+
 interface AdminMetrics {
   openCount: number;
   expiring: ExpiringClaim[];
@@ -50,6 +61,7 @@ interface AdminMetrics {
   automation: AutomationSummary;
   outlookHealthy: boolean;
   outlookError: string | null;
+  needsAttention: NeedsAttentionRow[];
 }
 
 function briefShell(title: string, dateLabel: string, body: string, outlookHealthy: boolean, outlookError: string | null): string {
@@ -124,6 +136,36 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
     </tr>`)
     .join("");
 
+  const attentionRows = m.needsAttention.map(r => {
+    const reasonLabel = r.reason === "auto_reset" ? "Auto-reset (was stuck)" : "Failed";
+    const nextRetry = r.nextRetryAt ? `Next retry: ${new Date(r.nextRetryAt).toLocaleString("en-US", { timeZone: "America/New_York" })}` : (r.status === "failed" ? "Retries exhausted" : "");
+    const errSnippet = (r.errorMessage || "").slice(0, 140);
+    return `<tr>
+      <td style="padding:8px;border-bottom:1px solid #fde68a;font-family:monospace;font-size:12px;">${r.confNumber || `#${r.id}`}</td>
+      <td style="padding:8px;border-bottom:1px solid #fde68a;font-size:12px;">${reasonLabel}</td>
+      <td style="padding:8px;border-bottom:1px solid #fde68a;font-size:12px;">${r.attempts}/${r.maxAttempts}</td>
+      <td style="padding:8px;border-bottom:1px solid #fde68a;font-size:12px;color:#92400e;">${nextRetry}</td>
+      <td style="padding:8px;border-bottom:1px solid #fde68a;font-size:11px;color:#7c2d12;">${errSnippet}</td>
+    </tr>`;
+  }).join("");
+
+  const attentionBlock = m.needsAttention.length > 0
+    ? `<div style="margin-bottom:24px;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+        <h2 style="font-size:16px;color:#92400e;margin:0 0 8px;">Submissions needing attention (${m.needsAttention.length})</h2>
+        <p style="margin:0 0 12px;color:#78350f;font-size:12px;">Failed portal submissions and recently auto-reset stuck submissions from the last 24 hours.</p>
+        <table style="width:100%;border-collapse:collapse;background:white;border-radius:6px;overflow:hidden;">
+          <thead><tr style="background:#fef3c7;">
+            <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Conf #</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Reason</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Attempts</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Next retry</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Last error</th>
+          </tr></thead>
+          <tbody>${attentionRows}</tbody>
+        </table>
+      </div>`
+    : "";
+
   const automationFooter = `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
       Yesterday's automation: <strong>${m.automation.totalRuns} runs, ${m.automation.failures} failure${m.automation.failures === 1 ? "" : "s"}</strong> &mdash;
       <a href="/system-health" style="color:#3478F6;text-decoration:none;">View System Health</a>
@@ -160,6 +202,8 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
           <div><strong style="color:#1B2A4A;">${yesterday.decisionsLogged}</strong> decisions logged</div>
         </div>
       </div>
+
+      ${attentionBlock}
 
       ${automationFooter}
 
@@ -288,11 +332,72 @@ async function gatherAdminMetrics(): Promise<AdminMetrics> {
     byJob: Array.from(byJobMap.entries()).map(([jobName, v]) => ({ jobName, runs: v.runs, failures: v.failures })),
   };
 
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const failedSubs = await db.select({
+    id: portalSubmissionsTable.id,
+    confNumber: portalSubmissionsTable.confNumber,
+    attempts: portalSubmissionsTable.attempts,
+    maxAttempts: portalSubmissionsTable.maxAttempts,
+    status: portalSubmissionsTable.status,
+    errorMessage: portalSubmissionsTable.errorMessage,
+    nextRetryAt: portalSubmissionsTable.nextRetryAt,
+    updatedAt: portalSubmissionsTable.updatedAt,
+  }).from(portalSubmissionsTable)
+    .where(and(eq(portalSubmissionsTable.status, "failed"), gte(portalSubmissionsTable.updatedAt, since24h)))
+    .orderBy(desc(portalSubmissionsTable.updatedAt))
+    .limit(50);
+
+  const stuckResetEvents = await db.select({
+    submissionId: sql<number>`(${auditLogsTable.metadata}->>'submissionId')::int`,
+    timestamp: auditLogsTable.timestamp,
+  }).from(auditLogsTable)
+    .where(and(eq(auditLogsTable.action, "submission_stuck_reset"), gte(auditLogsTable.timestamp, since24h)))
+    .orderBy(desc(auditLogsTable.timestamp))
+    .limit(50);
+
+  const stuckIds = Array.from(new Set(stuckResetEvents.map(e => e.submissionId).filter((v): v is number => typeof v === "number")));
+  const failedIdSet = new Set(failedSubs.map(s => s.id));
+  const extraStuckIds = stuckIds.filter(id => !failedIdSet.has(id));
+  const stuckSubs = extraStuckIds.length > 0
+    ? await db.select({
+        id: portalSubmissionsTable.id,
+        confNumber: portalSubmissionsTable.confNumber,
+        attempts: portalSubmissionsTable.attempts,
+        maxAttempts: portalSubmissionsTable.maxAttempts,
+        status: portalSubmissionsTable.status,
+        errorMessage: portalSubmissionsTable.errorMessage,
+        nextRetryAt: portalSubmissionsTable.nextRetryAt,
+      }).from(portalSubmissionsTable).where(inArray(portalSubmissionsTable.id, extraStuckIds))
+    : [];
+
+  const needsAttention: NeedsAttentionRow[] = [
+    ...failedSubs.map(s => ({
+      id: s.id,
+      confNumber: s.confNumber,
+      attempts: s.attempts,
+      maxAttempts: s.maxAttempts,
+      status: s.status,
+      errorMessage: s.errorMessage,
+      nextRetryAt: s.nextRetryAt ? s.nextRetryAt.toISOString() : null,
+      reason: "failed" as const,
+    })),
+    ...stuckSubs.map(s => ({
+      id: s.id,
+      confNumber: s.confNumber,
+      attempts: s.attempts,
+      maxAttempts: s.maxAttempts,
+      status: s.status,
+      errorMessage: s.errorMessage,
+      nextRetryAt: s.nextRetryAt ? s.nextRetryAt.toISOString() : null,
+      reason: "auto_reset" as const,
+    })),
+  ];
+
   const outlookHealthRow = await getConnectorHealth("outlook");
   const outlookHealthy = outlookHealthRow ? outlookHealthRow.status === "healthy" : await isOutlookConnected();
   const outlookError = outlookHealthRow?.lastError ?? null;
 
-  return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError };
+  return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError, needsAttention };
 }
 
 router.post("/", asyncHandler(async (req, res): Promise<void> => {
