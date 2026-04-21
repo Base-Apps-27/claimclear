@@ -4000,6 +4000,39 @@ export const GetSystemHealthBouncesResponse = zod.object({
 });
 
 /**
+ * @summary Get notification preferences for a user
+ */
+export const GetUserNotificationPreferencesParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const GetUserNotificationPreferencesResponse = zod.object({
+  userId: zod.string(),
+  dailyBrief: zod.boolean(),
+  weeklyDigest: zod.boolean(),
+  updatedAt: zod.union([zod.coerce.date(), zod.null()]).optional(),
+});
+
+/**
+ * @summary Update notification preferences for a user
+ */
+export const UpdateUserNotificationPreferencesParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const UpdateUserNotificationPreferencesBody = zod.object({
+  dailyBrief: zod.boolean().optional(),
+  weeklyDigest: zod.boolean().optional(),
+});
+
+export const UpdateUserNotificationPreferencesResponse = zod.object({
+  userId: zod.string(),
+  dailyBrief: zod.boolean(),
+  weeklyDigest: zod.boolean(),
+  updatedAt: zod.union([zod.coerce.date(), zod.null()]).optional(),
+});
+
+/**
  * @summary One-time backfill of invoice_group_id for claims imported before group migration
  */
 export const BackfillInvoiceGroupsBody = zod.object({

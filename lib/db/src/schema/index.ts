@@ -17,3 +17,4 @@ export * from "./app-settings";
 export * from "./portal-responses";
 export * from "./outbound-emails";
 export * from "./system-health";
+export * from "./notification-preferences";

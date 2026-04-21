@@ -1,16 +1,27 @@
 import { Router, type IRouter } from "express";
-import { isNotNull, eq, or, and, sql, count, gte, lt } from "drizzle-orm";
+import { eq, or, and, sql, count, gte, lt } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, usersTable, cronRunsTable } from "@workspace/db";
+import { claimsTable, portalSubmissionsTable, cronRunsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
 import { isOutlookConnected } from "../lib/outlook";
 import { sendEmailWithContext } from "../lib/email-send";
 import { getConnectorHealth } from "../lib/connector-health";
+import {
+  OPEN_STATUSES,
+  getYesterdayActivity,
+  getNeedsYouToday,
+  getWeeklyDigest,
+  getBriefRecipients,
+  isMondayInNewYork,
+  type YesterdayActivity,
+  type NeedsYouToday,
+  type WeeklyDigest,
+} from "../lib/brief-personalization";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 const VENDOR_PREPAY_RATE = 0.70;
 
 interface ExpiringClaim {
@@ -28,21 +39,83 @@ interface AutomationSummary {
   byJob: { jobName: string; runs: number; failures: number }[];
 }
 
-function generateBriefHtml(
-  openClaims: number,
-  expiring: ExpiringClaim[],
-  expired: ExpiringClaim[],
-  claimAmountAtRisk: number,
-  totalAtRisk: number,
-  submittedCount: number,
-  failedCount: number,
-  automation: AutomationSummary,
-  outlookHealthy: boolean,
-  outlookError: string | null,
-): string {
-  const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+interface AdminMetrics {
+  openCount: number;
+  expiring: ExpiringClaim[];
+  expired: ExpiringClaim[];
+  claimAmountAtRisk: number;
+  totalAtRisk: number;
+  submitted: number;
+  failed: number;
+  automation: AutomationSummary;
+  outlookHealthy: boolean;
+  outlookError: string | null;
+}
 
-  const expiringRows = expiring
+function briefShell(title: string, dateLabel: string, body: string, outlookHealthy: boolean, outlookError: string | null): string {
+  const outlookBanner = !outlookHealthy
+    ? `<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;">
+        <strong>Outlook connector unhealthy.</strong> Email automation may be delayed or skipped. ${outlookError ? `<br/><span style="font-family:monospace;font-size:11px;opacity:0.8;">${outlookError.slice(0, 240)}</span>` : ""}
+      </div>`
+    : "";
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:20px;">
+    <div style="background:#1B2A4A;color:white;padding:24px;border-radius:12px 12px 0 0;">
+      <h1 style="margin:0;font-size:24px;color:white;">${title}</h1>
+      <p style="margin:8px 0 0;opacity:0.9;">${dateLabel}</p>
+    </div>
+    <div style="background:white;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      ${outlookBanner}
+      ${body}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function renderWeeklyDigestSection(d: WeeklyDigest): string {
+  const wonDelta = d.thisWeek.won - d.priorWeek.won;
+  const lostDelta = d.thisWeek.lost - d.priorWeek.lost;
+  const fmtDelta = (n: number) => (n === 0 ? "no change" : n > 0 ? `+${n}` : `${n}`);
+  const topRows = d.topErrorTypes.length === 0
+    ? `<tr><td colspan="2" style="padding:8px;color:#64748b;font-size:13px;">No recoveries this week.</td></tr>`
+    : d.topErrorTypes
+        .map(
+          (t) => `<tr>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${t.errorTypeName}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;">$${t.recoveredAmount.toFixed(2)}</td>
+          </tr>`,
+        )
+        .join("");
+  return `
+  <div style="margin-top:24px;padding-top:16px;border-top:2px solid #e2e8f0;">
+    <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Weekly Digest</h2>
+    <div style="display:flex;gap:12px;margin-bottom:16px;">
+      <div style="flex:1;padding:12px;background:#f0fdf4;border-radius:8px;">
+        <div style="font-size:20px;font-weight:700;color:#16a34a;">${d.thisWeek.won}</div>
+        <div style="font-size:11px;color:#166534;">Won this week (${fmtDelta(wonDelta)} vs prior)</div>
+      </div>
+      <div style="flex:1;padding:12px;background:#fef2f2;border-radius:8px;">
+        <div style="font-size:20px;font-weight:700;color:#dc2626;">${d.thisWeek.lost}</div>
+        <div style="font-size:11px;color:#991b1b;">Lost this week (${fmtDelta(lostDelta)} vs prior)</div>
+      </div>
+      <div style="flex:1;padding:12px;background:#EBF0FA;border-radius:8px;">
+        <div style="font-size:20px;font-weight:700;color:#1B2A4A;">${d.avgDaysToResolution != null ? d.avgDaysToResolution.toFixed(1) : "—"}</div>
+        <div style="font-size:11px;color:#3478F6;">Avg days to resolution</div>
+      </div>
+    </div>
+    <h3 style="font-size:14px;color:#1e293b;margin:0 0 8px;">Top error types by recovered amount</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tbody>${topRows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDigest: WeeklyDigest | null): string {
+  const expiringRows = m.expiring
     .map(c => `<tr>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.confNumber}</td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.date}</td>
@@ -51,54 +124,48 @@ function generateBriefHtml(
     </tr>`)
     .join("");
 
-  const outlookBanner = !outlookHealthy
-    ? `<div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;">
-        <strong>Outlook connector unhealthy.</strong> Email automation may be delayed or skipped. ${outlookError ? `<br/><span style="font-family:monospace;font-size:11px;opacity:0.8;">${outlookError.slice(0, 240)}</span>` : ""}
-      </div>`
-    : "";
-
   const automationFooter = `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
-      Yesterday's automation: <strong>${automation.totalRuns} runs, ${automation.failures} failure${automation.failures === 1 ? "" : "s"}</strong> &mdash;
+      Yesterday's automation: <strong>${m.automation.totalRuns} runs, ${m.automation.failures} failure${m.automation.failures === 1 ? "" : "s"}</strong> &mdash;
       <a href="/system-health" style="color:#3478F6;text-decoration:none;">View System Health</a>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:20px;">
-    <div style="background:#1B2A4A;color:white;padding:24px;border-radius:12px 12px 0 0;">
-      <h1 style="margin:0;font-size:24px;color:white;">Agape ClaimClear Daily Brief</h1>
-      <p style="margin:8px 0 0;opacity:0.9;">${today}</p>
-    </div>
-    <div style="background:white;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-      ${outlookBanner}
+  return `
       <div style="display:flex;gap:16px;margin-bottom:24px;">
         <div style="flex:1;text-align:center;padding:16px;background:#EBF0FA;border-radius:8px;">
-          <div style="font-size:28px;font-weight:700;color:#1B2A4A;">${openClaims}</div>
+          <div style="font-size:28px;font-weight:700;color:#1B2A4A;">${m.openCount}</div>
           <div style="font-size:12px;color:#3478F6;margin-top:4px;">Open Claims</div>
         </div>
-        <div style="flex:1;text-align:center;padding:16px;background:${expired.length > 0 ? "#fef2f2" : "#f0fdf4"};border-radius:8px;">
-          <div style="font-size:28px;font-weight:700;color:${expired.length > 0 ? "#dc2626" : "#16a34a"};">${expired.length}</div>
+        <div style="flex:1;text-align:center;padding:16px;background:${m.expired.length > 0 ? "#fef2f2" : "#f0fdf4"};border-radius:8px;">
+          <div style="font-size:28px;font-weight:700;color:${m.expired.length > 0 ? "#dc2626" : "#16a34a"};">${m.expired.length}</div>
           <div style="font-size:12px;color:#6b7280;margin-top:4px;">Expired</div>
         </div>
         <div style="flex:1;text-align:center;padding:16px;background:#fffbeb;border-radius:8px;">
-          <div style="font-size:28px;font-weight:700;color:#d97706;">$${totalAtRisk.toFixed(2)}</div>
+          <div style="font-size:28px;font-weight:700;color:#d97706;">$${m.totalAtRisk.toFixed(2)}</div>
           <div style="font-size:12px;color:#92400e;margin-top:4px;">Total Exposure (approx.)</div>
-          <div style="font-size:10px;color:#92400e;margin-top:2px;">Claims $${claimAmountAtRisk.toFixed(2)} + ~70% vendor prepay</div>
+          <div style="font-size:10px;color:#92400e;margin-top:2px;">Claims $${m.claimAmountAtRisk.toFixed(2)} + ~70% vendor prepay</div>
         </div>
       </div>
 
       <div style="margin-bottom:24px;">
         <h2 style="font-size:16px;color:#1e293b;margin:0 0 8px;">Portal Submissions</h2>
-        <p style="margin:0;color:#64748b;font-size:14px;">${submittedCount} submitted, ${failedCount} failed</p>
+        <p style="margin:0;color:#64748b;font-size:14px;">${m.submitted} submitted, ${m.failed} failed</p>
+      </div>
+
+      <div style="margin-bottom:24px;padding:16px;background:#f8fafc;border-radius:8px;">
+        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Yesterday at a glance</h2>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#475569;">
+          <div><strong style="color:#1B2A4A;">${yesterday.claimsCreated}</strong> claims created</div>
+          <div><strong style="color:#1B2A4A;">${yesterday.draftsSubmitted}</strong> drafts submitted</div>
+          <div><strong style="color:#1B2A4A;">${yesterday.responsesReceived}</strong> responses received</div>
+          <div><strong style="color:#1B2A4A;">${yesterday.decisionsLogged}</strong> decisions logged</div>
+        </div>
       </div>
 
       ${automationFooter}
 
-      ${expiring.length > 0 ? `
+      ${m.expiring.length > 0 ? `
       <div>
-        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Expiring Claims (${expiring.length})</h2>
+        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Expiring Claims (${m.expiring.length})</h2>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           <thead>
             <tr style="background:#f8fafc;">
@@ -111,14 +178,48 @@ function generateBriefHtml(
           <tbody>${expiringRows}</tbody>
         </table>
       </div>` : "<p style='color:#16a34a;font-size:14px;'>No claims expiring within 10 days.</p>"}
-    </div>
-  </div>
-</body>
-</html>`;
+
+      ${weeklyDigest ? renderWeeklyDigestSection(weeklyDigest) : ""}`;
 }
 
-router.post("/", asyncHandler(async (req, res): Promise<void> => {
-  const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
+function renderItemList(title: string, items: { id: number; confNumber: string; status: string; reason: string; href: string }[]): string {
+  if (items.length === 0) {
+    return `<div style="margin-bottom:20px;">
+      <h2 style="font-size:15px;color:#1e293b;margin:0 0 8px;">${title}</h2>
+      <p style="margin:0;color:#64748b;font-size:13px;">Nothing here today.</p>
+    </div>`;
+  }
+  const rows = items
+    .map(
+      (i) => `<tr>
+        <td style="padding:8px;border-bottom:1px solid #e2e8f0;"><a href="${i.href}" style="color:#3478F6;text-decoration:none;">${i.confNumber}</a></td>
+        <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:12px;">${i.status}</td>
+        <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;">${i.reason}</td>
+      </tr>`,
+    )
+    .join("");
+  return `<div style="margin-bottom:20px;">
+    <h2 style="font-size:15px;color:#1e293b;margin:0 0 8px;">${title} (${items.length})</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderOperatorBody(needs: NeedsYouToday, weeklyDigest: WeeklyDigest | null): string {
+  const total = needs.recentlyTouched.length + needs.unsubmittedDrafts.length + needs.needsReview.length;
+  const intro = total === 0
+    ? `<p style="color:#16a34a;font-size:14px;margin:0 0 16px;">You're all caught up — nothing on your worklist today.</p>`
+    : `<p style="color:#475569;font-size:14px;margin:0 0 16px;">${total} item${total === 1 ? "" : "s"} need your attention today.</p>`;
+  return `
+      ${intro}
+      ${renderItemList("Drafts you started but haven't submitted", needs.unsubmittedDrafts)}
+      ${renderItemList("Recently touched (still open)", needs.recentlyTouched)}
+      ${renderItemList("Responses needing review", needs.needsReview)}
+      ${weeklyDigest ? renderWeeklyDigestSection(weeklyDigest) : ""}`;
+}
+
+async function gatherAdminMetrics(): Promise<AdminMetrics> {
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
 
   const [openCountResult] = await db
@@ -181,7 +282,7 @@ router.post("/", asyncHandler(async (req, res): Promise<void> => {
     totalRuns += r.count;
     if (r.status === "failed") totalFailures += r.count;
   }
-  const automation = {
+  const automation: AutomationSummary = {
     totalRuns,
     failures: totalFailures,
     byJob: Array.from(byJobMap.entries()).map(([jobName, v]) => ({ jobName, runs: v.runs, failures: v.failures })),
@@ -191,63 +292,137 @@ router.post("/", asyncHandler(async (req, res): Promise<void> => {
   const outlookHealthy = outlookHealthRow ? outlookHealthRow.status === "healthy" : await isOutlookConnected();
   const outlookError = outlookHealthRow?.lastError ?? null;
 
-  const html = generateBriefHtml(openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError);
+  return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError };
+}
 
-  let emailSent = false;
-  let emailMethod = "none";
+router.post("/", asyncHandler(async (req, res): Promise<void> => {
+  const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
 
-  let recipients = recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS;
-  if (!recipients) {
-    const usersWithEmail = await db.select({ email: usersTable.email }).from(usersTable).where(isNotNull(usersTable.email));
-    const emails = usersWithEmail.map(u => u.email).filter(Boolean);
-    recipients = emails.length > 0 ? emails.join(",") : undefined;
-  }
+  const metrics = await gatherAdminMetrics();
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-  const subject = `Agape ClaimClear Daily Brief - ${openCount} open claims, ${expired.length} expired`;
-
+  const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const subject = `Agape ClaimClear Daily Brief - ${metrics.openCount} open claims, ${metrics.expired.length} expired`;
   const outlookAvailable = await isOutlookConnected();
 
-  if (outlookAvailable && recipients) {
+  // Legacy/shared mode: single brief to explicit recipients (smoke test path)
+  if (recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS) {
+    const recipients = recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS!;
+    const yesterday = await getYesterdayActivity(yesterdayStart, todayStart);
+    const weekly = isMondayInNewYork(now) ? await getWeeklyDigest(now) : null;
+    const html = briefShell(
+      "Agape ClaimClear Daily Brief",
+      dateLabel,
+      renderAdminBody(metrics, yesterday, weekly),
+      metrics.outlookHealthy,
+      metrics.outlookError,
+    );
+
+    let emailSent = false;
+    let emailMethod = "none";
+    if (outlookAvailable && recipients) {
+      try {
+        await sendEmailWithContext({ to: recipients, subject, html }, { kind: "daily_brief" });
+        emailSent = true;
+        emailMethod = "outlook";
+      } catch (err) {
+        logger.error({ err }, "[DAILY BRIEF] Outlook send failed");
+      }
+    }
+
+    if (!emailSent && process.env.SMTP_HOST && process.env.SMTP_USER && recipients) {
+      try {
+        const nodemailer = await import("nodemailer");
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || "587", 10),
+          secure: process.env.SMTP_SECURE === "true",
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          to: recipients,
+          subject,
+          html,
+        });
+        emailSent = true;
+        emailMethod = "smtp";
+      } catch (err) {
+        logger.error({ err }, "[DAILY BRIEF] SMTP send failed");
+      }
+    }
+
+    const message = `${metrics.openCount} open claims, ${metrics.expired.length} expired, $${metrics.totalAtRisk.toFixed(2)} at risk. ${metrics.submitted} submitted, ${metrics.failed} failed portal submissions.${emailSent ? ` Email sent via ${emailMethod}.` : " Email not sent (no provider configured or no recipients)."}`;
+    res.json({ sent: emailSent, method: emailMethod, message });
+    return;
+  }
+
+  // Personalized mode: one email per approved user
+  const recipients = await getBriefRecipients();
+  const isMonday = isMondayInNewYork(now);
+  const yesterday = await getYesterdayActivity(yesterdayStart, todayStart);
+  const weeklyDigest = isMonday ? await getWeeklyDigest(now) : null;
+
+  let totalSent = 0;
+  let totalSkipped = 0;
+  const failures: { email: string; error: string }[] = [];
+
+  if (!outlookAvailable) {
+    res.json({
+      sent: false,
+      method: "none",
+      message: `Outlook unavailable; skipped ${recipients.length} personalized briefs.`,
+    });
+    return;
+  }
+
+  for (const r of recipients) {
+    const includeWeekly = isMonday && r.weeklyDigestEnabled ? weeklyDigest : null;
+    const isAdmin = r.role === "admin";
+    let html: string;
+    if (isAdmin) {
+      html = briefShell(
+        "Agape ClaimClear Daily Brief",
+        dateLabel,
+        renderAdminBody(metrics, yesterday, includeWeekly),
+        metrics.outlookHealthy,
+        metrics.outlookError,
+      );
+    } else {
+      const needs = await getNeedsYouToday(r.email, now);
+      html = briefShell(
+        "Your ClaimClear Worklist",
+        dateLabel,
+        renderOperatorBody(needs, includeWeekly),
+        metrics.outlookHealthy,
+        metrics.outlookError,
+      );
+    }
+
     try {
-      await sendEmailWithContext({ to: recipients, subject, html }, { kind: "daily_brief" });
-      emailSent = true;
-      emailMethod = "outlook";
+      await sendEmailWithContext({ to: r.email, subject, html }, { kind: "daily_brief" });
+      totalSent++;
     } catch (err) {
-      console.error("[DAILY BRIEF] Outlook send failed:", err);
+      totalSkipped++;
+      const msg = err instanceof Error ? err.message : String(err);
+      failures.push({ email: r.email, error: msg.slice(0, 200) });
+      logger.error({ err, email: r.email }, "[DAILY BRIEF] per-user send failed");
     }
   }
 
-  if (!emailSent && process.env.SMTP_HOST && process.env.SMTP_USER && recipients) {
-    try {
-      const nodemailer = await import("nodemailer");
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || "587", 10),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || process.env.SMTP_USER,
-        to: recipients,
-        subject,
-        html,
-      });
-      emailSent = true;
-      emailMethod = "smtp";
-    } catch (err) {
-      console.error("[DAILY BRIEF] SMTP send failed:", err);
-    }
-  }
-
-  const message = `${openCount} open claims, ${expired.length} expired, $${totalAtRisk.toFixed(2)} at risk. ${submitted} submitted, ${failed} failed portal submissions.${emailSent ? ` Email sent via ${emailMethod}.` : " Email not sent (no provider configured or no recipients)."}`;
+  const message = `Sent ${totalSent} personalized brief${totalSent === 1 ? "" : "s"}${totalSkipped > 0 ? `, ${totalSkipped} failed` : ""}. ${metrics.openCount} open claims, ${metrics.expired.length} expired.`;
   res.json({
-    sent: emailSent,
-    method: emailMethod,
+    sent: totalSent > 0,
+    method: totalSent > 0 ? "outlook" : "none",
     message,
+    recipientCount: recipients.length,
+    sentCount: totalSent,
+    failedCount: totalSkipped,
+    failures,
   });
 }));
 

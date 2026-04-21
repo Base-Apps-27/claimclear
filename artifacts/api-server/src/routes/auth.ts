@@ -3,7 +3,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import {
   GetCurrentAuthUserResponse,
 } from "@workspace/api-zod";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, notificationPreferencesTable, auditLogsTable } from "@workspace/db";
 import { eq, sql, count } from "drizzle-orm";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
@@ -197,6 +197,89 @@ router.patch("/admin/users/:userId/role", requireAdmin, asyncHandler(async (req:
     return;
   }
   res.json({ message: "Role updated", user: { id: user.id, email: user.email, role: user.role } });
+}));
+
+router.get("/admin/users/:userId/notification-preferences", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  const [prefs] = await db
+    .select()
+    .from(notificationPreferencesTable)
+    .where(eq(notificationPreferencesTable.userId, userId));
+  res.json({
+    userId,
+    dailyBrief: prefs?.dailyBrief ?? true,
+    weeklyDigest: prefs?.weeklyDigest ?? true,
+    updatedAt: prefs?.updatedAt ?? null,
+  });
+}));
+
+router.patch("/admin/users/:userId/notification-preferences", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const body = req.body ?? {};
+  const dailyBrief = typeof body.dailyBrief === "boolean" ? body.dailyBrief : undefined;
+  const weeklyDigest = typeof body.weeklyDigest === "boolean" ? body.weeklyDigest : undefined;
+  if (dailyBrief === undefined && weeklyDigest === undefined) {
+    res.status(400).json({ error: "Must provide dailyBrief and/or weeklyDigest boolean" });
+    return;
+  }
+
+  const [user] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(notificationPreferencesTable)
+    .where(eq(notificationPreferencesTable.userId, userId));
+
+  const insertValues = {
+    userId,
+    dailyBrief: dailyBrief ?? existing?.dailyBrief ?? true,
+    weeklyDigest: weeklyDigest ?? existing?.weeklyDigest ?? true,
+  };
+
+  const [prefs] = await db
+    .insert(notificationPreferencesTable)
+    .values(insertValues)
+    .onConflictDoUpdate({
+      target: notificationPreferencesTable.userId,
+      set: {
+        dailyBrief: insertValues.dailyBrief,
+        weeklyDigest: insertValues.weeklyDigest,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  const actor = req.user;
+  await db.insert(auditLogsTable).values({
+    action: "notification_opt_out_changed",
+    details: `Notification preferences for ${user.email ?? userId} set to dailyBrief=${prefs.dailyBrief}, weeklyDigest=${prefs.weeklyDigest}`,
+    metadata: {
+      targetUserId: userId,
+      targetUserEmail: user.email,
+      previous: existing
+        ? { dailyBrief: existing.dailyBrief, weeklyDigest: existing.weeklyDigest }
+        : null,
+      next: { dailyBrief: prefs.dailyBrief, weeklyDigest: prefs.weeklyDigest },
+    },
+    userEmail: actor?.email ?? null,
+    userName: actor?.displayName ?? null,
+  });
+
+  res.json({
+    userId: prefs.userId,
+    dailyBrief: prefs.dailyBrief,
+    weeklyDigest: prefs.weeklyDigest,
+    updatedAt: prefs.updatedAt,
+  });
 }));
 
 router.get("/login", async (req: Request, res: Response) => {

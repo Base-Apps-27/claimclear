@@ -934,6 +934,18 @@ export interface DashboardSummary {
   botInstances?: BotInstanceResponse[];
 }
 
+export interface NotificationPreferencesResponse {
+  userId: string;
+  dailyBrief: boolean;
+  weeklyDigest: boolean;
+  updatedAt?: string | null;
+}
+
+export interface UpdateNotificationPreferencesBody {
+  dailyBrief?: boolean;
+  weeklyDigest?: boolean;
+}
+
 export interface DailyBriefResponse {
   sent: boolean;
   message: string;

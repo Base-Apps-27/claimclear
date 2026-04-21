@@ -20,6 +20,7 @@ import {
   ArrowRightLeft,
   AlertOctagon,
   MailX,
+  BellOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -60,6 +61,7 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
   bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
   connector_unhealthy: { label: "Connector unhealthy", icon: AlertOctagon, iconClass: "text-amber-600", category: "other" },
+  notification_opt_out_changed: { label: "Notification preferences changed", icon: BellOff, iconClass: "text-slate-600", category: "other" },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {

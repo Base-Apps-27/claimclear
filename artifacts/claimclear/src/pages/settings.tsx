@@ -1,4 +1,5 @@
-import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl, useGetBotAuthStatus, getGetBotAuthStatusQueryKey } from "@workspace/api-client-react";
+import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl, useGetBotAuthStatus, getGetBotAuthStatusQueryKey, useGetUserNotificationPreferences, useUpdateUserNotificationPreferences } from "@workspace/api-client-react";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +24,45 @@ interface ManagedUser {
   role: string;
   status: string;
   createdAt: string;
+}
+
+function NotificationTogglesRow({ userId }: { userId: string }) {
+  const { data, refetch, isLoading } = useGetUserNotificationPreferences(userId);
+  const update = useUpdateUserNotificationPreferences();
+
+  const handleToggle = async (field: "dailyBrief" | "weeklyDigest", value: boolean) => {
+    await update.mutateAsync({ userId, data: { [field]: value } });
+    await refetch();
+  };
+
+  if (isLoading || !data) {
+    return <span className="text-xs text-muted-foreground">Loading prefs…</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      <WrapTooltip content="When off, this user will not receive the daily brief email.">
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <Switch
+            checked={data.dailyBrief}
+            disabled={update.isPending}
+            onCheckedChange={(v) => handleToggle("dailyBrief", v)}
+          />
+          <span>Daily brief</span>
+        </label>
+      </WrapTooltip>
+      <WrapTooltip content="When off, this user will not receive the Monday weekly digest section.">
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <Switch
+            checked={data.weeklyDigest}
+            disabled={update.isPending}
+            onCheckedChange={(v) => handleToggle("weeklyDigest", v)}
+          />
+          <span>Weekly digest</span>
+        </label>
+      </WrapTooltip>
+    </div>
+  );
 }
 
 export default function Settings() {
@@ -260,8 +300,8 @@ export default function Settings() {
                     {pendingUsers.length > 0 && <Separator />}
                     <h4 className="text-sm font-semibold text-green-600">Approved Users</h4>
                     {approvedUsers.map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
+                      <div key={u.id} className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <Avatar className="h-8 w-8">
                             <AvatarImage src={u.profileImageUrl || undefined} />
                             <AvatarFallback>{getUserDisplayName(u).charAt(0).toUpperCase()}</AvatarFallback>
@@ -273,6 +313,7 @@ export default function Settings() {
                           <WrapTooltip content={u.role === "admin" ? "This user has admin privileges: user management, daily briefs, and full platform access." : "Standard user with access to claim processing features."}>
                             <Badge variant={u.role === "admin" ? "default" : "outline"} className="cursor-help">{u.role}</Badge>
                           </WrapTooltip>
+                          <NotificationTogglesRow userId={u.id} />
                         </div>
                         <div className="flex items-center gap-2">
                           {u.email && (

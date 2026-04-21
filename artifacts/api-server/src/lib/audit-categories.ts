@@ -34,6 +34,7 @@ const CLAIM_CATEGORY_MAP: Record<string, ActionCategory> = {
   portal_draft_regenerated: "draft",
   portal_draft_reverted: "draft",
   portal_submission_submitted: "communication",
+  notification_opt_out_changed: "other",
 };
 
 const GROUP_CATEGORY_MAP: Record<string, ActionCategory> = {
@@ -69,6 +70,7 @@ const CLAIM_LABELS: Record<string, string> = {
   portal_draft_regenerated: "Dispute write-up regenerated",
   portal_draft_reverted: "Dispute write-up reverted",
   portal_submission_submitted: "Portal submission sent",
+  notification_opt_out_changed: "Notification preferences changed",
 };
 
 const GROUP_LABELS: Record<string, string> = {
