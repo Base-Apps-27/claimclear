@@ -1268,6 +1268,12 @@ export interface BotAuthStatusResponse {
   lastBotAuthAt: string | null;
   activeTokenHashPrefix: string | null;
   hasGraceToken: boolean;
+  /** Threshold (minutes) after which the absence of bot auth is considered stale. */
+  staleThresholdMinutes: number;
+  /** Minutes since the last successful bot auth, or null if a bot has never authenticated since startup. */
+  minutesSinceLastAuth?: number | null;
+  /** True when no bot has authenticated within the threshold window (or never since startup). */
+  isStale: boolean;
 }
 
 export type GetCurrentAuthUser200 = {

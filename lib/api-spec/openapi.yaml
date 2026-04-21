@@ -4325,7 +4325,7 @@ components:
 
     BotAuthStatusResponse:
       type: object
-      required: [lastBotAuthAt, activeTokenHashPrefix, hasGraceToken]
+      required: [lastBotAuthAt, activeTokenHashPrefix, hasGraceToken, staleThresholdMinutes, isStale]
       properties:
         lastBotAuthAt:
           type: string
@@ -4335,3 +4335,13 @@ components:
           nullable: true
         hasGraceToken:
           type: boolean
+        staleThresholdMinutes:
+          type: integer
+          description: Threshold (minutes) after which the absence of bot auth is considered stale.
+        minutesSinceLastAuth:
+          type: integer
+          nullable: true
+          description: Minutes since the last successful bot auth, or null if a bot has never authenticated since startup.
+        isStale:
+          type: boolean
+          description: True when no bot has authenticated within the threshold window (or never since startup).

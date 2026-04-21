@@ -13,7 +13,7 @@ import {
 } from "../lib/audit-categories";
 import {
   getActiveTokenHashPrefix,
-  getLastBotAuthAt,
+  getBotAuthStaleness,
   hasGraceToken,
 } from "../lib/bot-token";
 
@@ -307,11 +307,14 @@ router.get("/admin/audit-logs.csv", requireAdmin, asyncHandler(async (req, res):
 }));
 
 router.get("/admin/bot-auth-status", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
-  const lastBotAuthAt = getLastBotAuthAt();
+  const staleness = getBotAuthStaleness();
   res.json({
-    lastBotAuthAt: lastBotAuthAt ? lastBotAuthAt.toISOString() : null,
+    lastBotAuthAt: staleness.lastBotAuthAt ? staleness.lastBotAuthAt.toISOString() : null,
     activeTokenHashPrefix: getActiveTokenHashPrefix(),
     hasGraceToken: hasGraceToken(),
+    staleThresholdMinutes: staleness.staleThresholdMinutes,
+    minutesSinceLastAuth: staleness.minutesSinceLastAuth,
+    isStale: staleness.isStale,
   });
 }));
 

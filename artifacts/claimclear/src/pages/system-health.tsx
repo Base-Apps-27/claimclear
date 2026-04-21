@@ -2,14 +2,16 @@ import {
   useGetSystemHealthCronRuns,
   useGetSystemHealthConnectors,
   useGetSystemHealthBounces,
+  useGetBotAuthStatus,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
   getGetSystemHealthBouncesQueryKey,
+  getGetBotAuthStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const REFRESH_MS = 30_000;
@@ -50,6 +52,12 @@ export default function SystemHealth() {
   const { data: connectorsData, isLoading: connectorsLoading } = useGetSystemHealthConnectors({
     query: {
       queryKey: getGetSystemHealthConnectorsQueryKey(),
+      refetchInterval: REFRESH_MS,
+    },
+  });
+  const { data: botAuthData, isLoading: botAuthLoading } = useGetBotAuthStatus({
+    query: {
+      queryKey: getGetBotAuthStatusQueryKey(),
       refetchInterval: REFRESH_MS,
     },
   });
@@ -161,6 +169,64 @@ export default function SystemHealth() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No connector probes recorded yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-blue-600" /> Bot Authentication
+          </CardTitle>
+          <CardDescription>
+            Bots authenticate to the API on every poll. We warn if no bot has authenticated within the threshold window.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {botAuthLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : botAuthData ? (
+            <div className="space-y-3">
+              {botAuthData.isStale ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-800 px-3 py-3 text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <div className="font-medium">
+                      {botAuthData.lastBotAuthAt
+                        ? `Bots have not authenticated in ${botAuthData.minutesSinceLastAuth} minute${botAuthData.minutesSinceLastAuth === 1 ? "" : "s"}.`
+                        : "No bot has authenticated since the API last started."}
+                    </div>
+                    <div className="text-xs mt-1 opacity-80">
+                      Threshold is {botAuthData.staleThresholdMinutes} minutes. Check that bots are running and that <code>BOT_SERVICE_TOKEN</code> rotation completed successfully.
+                    </div>
+                  </div>
+                </div>
+              ) : botAuthData.lastBotAuthAt ? (
+                <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 px-3 py-2 text-green-800 dark:text-green-300 flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span>
+                    Bots authenticated {relTime(botAuthData.lastBotAuthAt)} (within the {botAuthData.staleThresholdMinutes}-minute threshold).
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 px-3 py-2 text-blue-800 dark:text-blue-300 flex items-center gap-2 text-sm">
+                  <Clock className="h-5 w-5" />
+                  <span>
+                    Waiting for the first bot poll since the API restarted. We'll warn if none arrives within {botAuthData.staleThresholdMinutes} minutes.
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Last successful bot auth</span>
+                <span>{botAuthData.lastBotAuthAt ? new Date(botAuthData.lastBotAuthAt).toLocaleString() : "never since last API restart"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Stale threshold</span>
+                <span>{botAuthData.staleThresholdMinutes} min</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Bot auth status unavailable.</p>
           )}
         </CardContent>
       </Card>

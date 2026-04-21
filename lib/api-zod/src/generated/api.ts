@@ -3955,6 +3955,22 @@ export const GetBotAuthStatusResponse = zod.object({
   lastBotAuthAt: zod.string().nullable(),
   activeTokenHashPrefix: zod.string().nullable(),
   hasGraceToken: zod.boolean(),
+  staleThresholdMinutes: zod
+    .number()
+    .describe(
+      "Threshold (minutes) after which the absence of bot auth is considered stale.",
+    ),
+  minutesSinceLastAuth: zod
+    .number()
+    .nullish()
+    .describe(
+      "Minutes since the last successful bot auth, or null if a bot has never authenticated since startup.",
+    ),
+  isStale: zod
+    .boolean()
+    .describe(
+      "True when no bot has authenticated within the threshold window (or never since startup).",
+    ),
 });
 
 /**
