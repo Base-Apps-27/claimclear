@@ -25,3 +25,7 @@ serve = "static"
 [[services.production.rewrites]]
 from = "/*"
 to = "/index.html"
+
+[services.env]
+PORT = "5173"
+BASE_PATH = "/"
