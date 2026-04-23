@@ -353,6 +353,7 @@ export function WorkflowPlayer({
     treeNodeId: string;
     imageUrl?: string;
     notes?: string;
+    scope?: string;
   }) => {
     try {
       await addEvidence.mutateAsync({

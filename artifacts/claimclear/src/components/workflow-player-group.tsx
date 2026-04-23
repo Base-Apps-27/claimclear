@@ -7,6 +7,8 @@ import {
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
   useAddInvoiceGroupEvidence,
+  useAddClaimEvidence,
+  useGetInvoiceGroup,
   useGeneratePortalSubmissionPreview,
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
@@ -65,6 +67,10 @@ export function WorkflowPlayerGroup({
   const placeHold = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
   const addEvidence = useAddInvoiceGroupEvidence();
+  const addClaimEvidence = useAddClaimEvidence();
+  const { data: groupDetail } = useGetInvoiceGroup(group.id, {
+    query: { queryKey: getGetInvoiceGroupQueryKey(group.id) },
+  });
   const generatePreview = useGeneratePortalSubmissionPreview();
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
@@ -345,20 +351,45 @@ export function WorkflowPlayerGroup({
     treeNodeId: string;
     imageUrl?: string;
     notes?: string;
+    scope?: string;
   }) => {
+    const scopedClaimId = evidence.scope && evidence.scope !== "group" ? Number(evidence.scope) : null;
     try {
-      await addEvidence.mutateAsync({
-        id: group.id,
-        data: {
-          evidenceTypeId: evidence.evidenceTypeId,
-          evidenceTypeName: evidence.evidenceTypeName,
-          treeNodeId: evidence.treeNodeId,
-          imageUrl: evidence.imageUrl,
-          notes: evidence.notes,
-        },
-      });
+      if (scopedClaimId && Number.isFinite(scopedClaimId)) {
+        await addClaimEvidence.mutateAsync({
+          claimId: scopedClaimId,
+          data: {
+            evidenceTypeId: evidence.evidenceTypeId,
+            evidenceTypeName: evidence.evidenceTypeName,
+            treeNodeId: evidence.treeNodeId,
+            imageUrl: evidence.imageUrl,
+            notes: evidence.notes,
+          },
+        });
+      } else {
+        await addEvidence.mutateAsync({
+          id: group.id,
+          data: {
+            evidenceTypeId: evidence.evidenceTypeId,
+            evidenceTypeName: evidence.evidenceTypeName,
+            treeNodeId: evidence.treeNodeId,
+            imageUrl: evidence.imageUrl,
+            notes: evidence.notes,
+          },
+        });
+      }
     } catch {}
   };
+
+  const evidenceLegs = (() => {
+    const detail = groupDetail as unknown as { rides?: Array<{ id: number; confNumber?: string | null; date?: string | null }> } | undefined;
+    const rides = detail?.rides ?? [];
+    if (rides.length < 2) return undefined;
+    return rides.map((r, i) => ({
+      id: r.id,
+      label: `Leg ${i + 1}${r.confNumber ? ` — Conf ${r.confNumber}` : ""}`,
+    }));
+  })();
 
   const handleResumeFromHold = async () => {
     await removeHold.mutateAsync({ id: group.id });
@@ -544,6 +575,7 @@ export function WorkflowPlayerGroup({
                     tree={parsedTree}
                     claimId={group.id}
                     initialState={savedTreeState}
+                    legs={evidenceLegs}
                     onEvidenceCollected={handleEvidenceCollected}
                     onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {
                       setTreeOutcomeLabel(outcomeLabel);

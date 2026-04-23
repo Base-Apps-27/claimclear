@@ -13,11 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import {
   ChevronRight, Undo2, HelpCircle, CheckCircle2,
   Send, Ban, PauseCircle, Mail, FileText, ClipboardPaste,
-  Upload, X, Image as ImageIcon, Info, Loader2, ExternalLink, AlertTriangle,
+  Upload, X, Info, Loader2, ExternalLink, AlertTriangle, Plus,
 } from "lucide-react";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -34,24 +35,35 @@ interface Step {
   optionIndex: number;
 }
 
-interface EvidenceItem {
-  key: string;
-  checked: boolean;
+export interface EvidenceItem {
+  id: string;
   imageUrl?: string;
   imagePreview?: string;
-  notes?: string;
   uploading?: boolean;
+  scope?: string; // "group" or claim id as string
+}
+
+export interface NodeEvidenceEntry {
+  acknowledged?: boolean;
+  notes?: string;
+  notesScope?: string;
+  items: EvidenceItem[];
 }
 
 export interface TreePlayerState {
   steps: Step[];
   currentNodeId: string;
-  nodeEvidence: Record<string, Record<string, EvidenceItem>>;
+  nodeEvidence: Record<string, Record<string, NodeEvidenceEntry>>;
   outcome?: { type: OutcomeType; label: string } | null;
 }
 
 export interface TreePlayerHandle {
   getState: () => TreePlayerState;
+}
+
+export interface EvidenceLeg {
+  id: number;
+  label: string;
 }
 
 interface PlayerProps {
@@ -60,20 +72,66 @@ interface PlayerProps {
   isTestMode?: boolean;
   claimId?: number;
   initialState?: TreePlayerState;
+  legs?: EvidenceLeg[]; // when present, shows per-thumbnail "Applies to" chip selector
   onEvidenceCollected?: (evidence: {
     evidenceTypeId?: number;
     evidenceTypeName: string;
     treeNodeId: string;
     imageUrl?: string;
     notes?: string;
+    scope?: string; // "group" or claim id string; undefined => default behavior
   }) => void;
   onConclude?: () => void;
   onQueueForPortal?: () => void;
   onPlaceHold?: () => void;
 }
 
+let __evIdCounter = 0;
+const newId = () => `ev_${Date.now().toString(36)}_${(++__evIdCounter).toString(36)}`;
+
+function normalizeNodeEvidence(saved: unknown): Record<string, Record<string, NodeEvidenceEntry>> {
+  if (!saved || typeof saved !== "object") return {};
+  const out: Record<string, Record<string, NodeEvidenceEntry>> = {};
+  for (const [nid, recs] of Object.entries(saved as Record<string, unknown>)) {
+    if (!recs || typeof recs !== "object") continue;
+    out[nid] = {};
+    for (const [k, v] of Object.entries(recs as Record<string, unknown>)) {
+      if (!v) continue;
+      // New shape: { acknowledged?, notes?, notesScope?, items: [...] }
+      if (typeof v === "object" && "items" in (v as object) && Array.isArray((v as NodeEvidenceEntry).items)) {
+        const entry = v as NodeEvidenceEntry;
+        out[nid][k] = {
+          acknowledged: !!entry.acknowledged,
+          notes: entry.notes,
+          notesScope: entry.notesScope,
+          items: entry.items.map((it, i) => ({ ...it, id: it.id || `${k}-${i}-${newId()}` })),
+        };
+        continue;
+      }
+      // Legacy shape: { key, checked, imageUrl?, imagePreview?, notes? }
+      const single = v as { checked?: boolean; imageUrl?: string; imagePreview?: string; notes?: string };
+      const items: EvidenceItem[] = [];
+      if (single.imageUrl || single.imagePreview) {
+        items.push({
+          id: newId(),
+          imageUrl: single.imageUrl,
+          imagePreview: single.imagePreview,
+          scope: "group",
+        });
+      }
+      out[nid][k] = {
+        acknowledged: !!single.checked,
+        notes: single.notes,
+        notesScope: "group",
+        items,
+      };
+    }
+  }
+  return out;
+}
+
 export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function TreePlayer(
-  { tree, onOutcome, isTestMode, claimId, initialState, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold },
+  { tree, onOutcome, isTestMode, claimId, initialState, legs, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold },
   ref
 ) {
   const restoredNodeExists = initialState?.currentNodeId
@@ -83,7 +141,9 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   const [steps, setSteps] = useState<Step[]>(canRestore ? initialState.steps : []);
   const [currentNodeId, setCurrentNodeId] = useState(canRestore ? initialState.currentNodeId : tree.rootId);
   const [outcome, setOutcome] = useState<{ type: OutcomeType; label: string } | null>(canRestore && initialState.outcome ? initialState.outcome : null);
-  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, EvidenceItem>>>(canRestore ? initialState.nodeEvidence : {});
+  const [nodeEvidence, setNodeEvidence] = useState<Record<string, Record<string, NodeEvidenceEntry>>>(
+    canRestore ? normalizeNodeEvidence(initialState.nodeEvidence) : {}
+  );
   const [showRestoreNotice, setShowRestoreNotice] = useState(!!initialState && !canRestore);
 
   useImperativeHandle(ref, () => ({
@@ -100,22 +160,47 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   const maxDepth = getMaxDepth(tree);
   const progress = maxDepth > 0 ? Math.round((steps.length / maxDepth) * 100) : 0;
 
+  const getEntry = (nodeId: string, key: string): NodeEvidenceEntry =>
+    nodeEvidence[nodeId]?.[key] ?? { acknowledged: false, items: [] };
+
+  const updateEntry = (nodeId: string, key: string, updater: (e: NodeEvidenceEntry) => NodeEvidenceEntry) => {
+    setNodeEvidence(prev => {
+      const cur = prev[nodeId]?.[key] ?? { acknowledged: false, items: [] };
+      return {
+        ...prev,
+        [nodeId]: { ...prev[nodeId], [key]: updater(cur) },
+      };
+    });
+  };
+
   const handleChoice = useCallback((optionIndex: number) => {
     if (!currentNode) return;
     const opt = currentNode.options[optionIndex];
     if (!opt) return;
 
     if (currentNode.evidenceRequirements?.length && onEvidenceCollected && claimId) {
-      const items = nodeEvidence[currentNode.id] || {};
+      const recs = nodeEvidence[currentNode.id] || {};
       for (const req of currentNode.evidenceRequirements) {
-        const item = items[req.key];
-        if (item?.checked && (item.imageUrl || item.notes)) {
+        const entry = recs[req.key];
+        if (!entry) continue;
+        for (const item of entry.items) {
+          if (!item.imageUrl) continue;
           onEvidenceCollected({
             evidenceTypeId: req.evidenceTypeId,
             evidenceTypeName: req.label,
             treeNodeId: currentNode.id,
             imageUrl: item.imageUrl,
-            notes: item.notes,
+            scope: item.scope,
+          });
+        }
+        const trimmedNotes = entry.notes?.trim();
+        if (trimmedNotes) {
+          onEvidenceCollected({
+            evidenceTypeId: req.evidenceTypeId,
+            evidenceTypeName: req.label,
+            treeNodeId: currentNode.id,
+            notes: trimmedNotes,
+            scope: entry.notesScope,
           });
         }
       }
@@ -170,22 +255,20 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     setNodeEvidence({});
   };
 
-  const updateEvidenceItem = (nodeId: string, key: string, updates: Partial<EvidenceItem>) => {
-    setNodeEvidence(prev => ({
-      ...prev,
-      [nodeId]: {
-        ...prev[nodeId],
-        [key]: { ...prev[nodeId]?.[key], key, checked: prev[nodeId]?.[key]?.checked ?? false, ...updates },
-      },
-    }));
+  const isReqSatisfied = (req: EvidenceReq, entry: NodeEvidenceEntry): boolean => {
+    if (!req.required) return true;
+    if (entry.acknowledged) return true;
+    const acceptsImage = req.acceptsImage !== false;
+    const acceptsText = req.acceptsText === true;
+    if (acceptsImage && entry.items.some(i => i.imageUrl)) return true;
+    if (acceptsText && entry.notes?.trim().length) return true;
+    return false;
   };
 
   const nodeEvidenceComplete = (node: TreeNode): boolean => {
     if (!node.evidenceRequirements?.length) return true;
-    const items = nodeEvidence[node.id] || {};
-    return node.evidenceRequirements
-      .filter(r => r.required)
-      .every(r => items[r.key]?.checked);
+    const recs = nodeEvidence[node.id] || {};
+    return node.evidenceRequirements.every(r => isReqSatisfied(r, recs[r.key] ?? { acknowledged: false, items: [] }));
   };
 
   if (outcome) {
@@ -244,6 +327,46 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
 
   const hasEvidence = !!currentNode.evidenceRequirements?.length;
   const evidenceReady = nodeEvidenceComplete(currentNode);
+
+  const uploadFile = async (nodeId: string, key: string, file: File) => {
+    const tempId = newId();
+    const previewUrl = URL.createObjectURL(file);
+    updateEntry(nodeId, key, (e) => ({
+      ...e,
+      items: [...e.items, { id: tempId, uploading: true, imagePreview: previewUrl, scope: "group" }],
+    }));
+    try {
+      const res = await fetch("/api/storage/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+      const { uploadURL, objectPath } = await res.json();
+      await fetch(uploadURL, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      updateEntry(nodeId, key, (e) => ({
+        ...e,
+        items: e.items.map(it => it.id === tempId ? { ...it, imageUrl: objectPath, uploading: false } : it),
+      }));
+    } catch {
+      updateEntry(nodeId, key, (e) => ({
+        ...e,
+        items: e.items.filter(it => it.id !== tempId),
+      }));
+      toast({ title: "Upload failed", description: "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const removeItem = (nodeId: string, key: string, itemId: string) => {
+    updateEntry(nodeId, key, (e) => ({ ...e, items: e.items.filter(it => it.id !== itemId) }));
+  };
+
+  const setItemScope = (nodeId: string, key: string, itemId: string, scope: string) => {
+    updateEntry(nodeId, key, (e) => ({
+      ...e,
+      items: e.items.map(it => it.id === itemId ? { ...it, scope } : it),
+    }));
+  };
 
   return (
     <div className="space-y-3 min-w-0 overflow-hidden">
@@ -330,77 +453,72 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
                 <span className="text-xs font-medium text-violet-700">Evidence needed at this step</span>
               </div>
               {currentNode.evidenceRequirements!.map(req => {
-                const item = nodeEvidence[currentNode.id]?.[req.key];
+                const entry = getEntry(currentNode.id, req.key);
                 const showImage = req.acceptsImage !== false;
                 const showText = req.acceptsText === true;
+                const satisfied = isReqSatisfied(req, entry);
 
                 return (
                   <div key={req.key} className="space-y-2 bg-white dark:bg-background rounded-md p-2 border">
-                    <label className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!item?.checked}
-                        onChange={(e) => updateEvidenceItem(currentNode.id, req.key, { checked: e.target.checked })}
-                        className="rounded"
-                      />
-                      <span className="font-medium">{req.label}</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!entry.acknowledged}
+                          onChange={(e) => updateEntry(currentNode.id, req.key, (cur) => ({ ...cur, acknowledged: e.target.checked }))}
+                          className="rounded"
+                        />
+                        <span className="font-medium">{req.label}</span>
+                      </label>
                       {req.required && <Badge variant="secondary" className="text-[9px] h-4">Required</Badge>}
-                    </label>
+                      {satisfied && <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />}
+                      {showImage && entry.items.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {entry.items.length} image{entry.items.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
 
                     {showImage && (
-                      <EvidenceImageUploader
-                        imagePreview={item?.imagePreview}
-                        imageUrl={item?.imageUrl}
-                        uploading={item?.uploading}
-                        onUpload={async (file) => {
-                          updateEvidenceItem(currentNode.id, req.key, {
-                            uploading: true,
-                            imagePreview: URL.createObjectURL(file),
-                          });
-                          try {
-                            const res = await fetch("/api/storage/uploads/request-url", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
-                              body: JSON.stringify({
-                                name: file.name,
-                                size: file.size,
-                                contentType: file.type,
-                              }),
-                            });
-                            const { uploadURL, objectPath } = await res.json();
-                            await fetch(uploadURL, {
-                              method: "PUT",
-                              headers: { "Content-Type": file.type },
-                              body: file,
-                            });
-                            updateEvidenceItem(currentNode.id, req.key, {
-                              imageUrl: objectPath,
-                              uploading: false,
-                              checked: true,
-                            });
-                          } catch {
-                            updateEvidenceItem(currentNode.id, req.key, { uploading: false });
-                          }
-                        }}
-                        onRemove={() => {
-                          updateEvidenceItem(currentNode.id, req.key, {
-                            imageUrl: undefined,
-                            imagePreview: undefined,
-                            checked: false,
-                          });
-                        }}
-                      />
+                      <div className="space-y-2">
+                        {entry.items.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {entry.items.map(item => (
+                              <EvidenceThumbnail
+                                key={item.id}
+                                item={item}
+                                legs={legs}
+                                onRemove={() => removeItem(currentNode.id, req.key, item.id)}
+                                onScopeChange={(s) => setItemScope(currentNode.id, req.key, item.id, s)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <EvidenceUploadTrigger
+                          hasItems={entry.items.length > 0}
+                          onUpload={(file) => uploadFile(currentNode.id, req.key, file)}
+                        />
+                      </div>
                     )}
 
                     {showText && (
-                      <Textarea
-                        placeholder={`Notes for ${req.label}...`}
-                        value={item?.notes || ""}
-                        onChange={(e) => updateEvidenceItem(currentNode.id, req.key, { notes: e.target.value })}
-                        rows={2}
-                        className="text-xs"
-                      />
+                      <div className="space-y-1.5">
+                        <Textarea
+                          placeholder={`Notes for ${req.label}...`}
+                          value={entry.notes || ""}
+                          onChange={(e) => updateEntry(currentNode.id, req.key, (cur) => ({ ...cur, notes: e.target.value }))}
+                          rows={2}
+                          className="text-xs"
+                        />
+                        {legs && legs.length > 0 && entry.notes?.trim() && (
+                          <ScopeSelector
+                            value={entry.notesScope || "group"}
+                            legs={legs}
+                            onChange={(s) => updateEntry(currentNode.id, req.key, (cur) => ({ ...cur, notesScope: s }))}
+                            label="Notes apply to:"
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -442,18 +560,77 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   );
 });
 
-function EvidenceImageUploader({
-  imagePreview,
-  imageUrl,
-  uploading,
-  onUpload,
-  onRemove,
+function ScopeSelector({
+  value, legs, onChange, label,
 }: {
-  imagePreview?: string;
-  imageUrl?: string;
-  uploading?: boolean;
-  onUpload: (file: File) => void;
+  value: string;
+  legs: EvidenceLeg[];
+  onChange: (s: string) => void;
+  label?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-muted-foreground whitespace-nowrap">{label || "Applies to:"}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-6 text-[10px] px-2 py-0 w-auto min-w-[120px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="group" className="text-xs">All legs</SelectItem>
+          {legs.map(leg => (
+            <SelectItem key={leg.id} value={String(leg.id)} className="text-xs">{leg.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function EvidenceThumbnail({
+  item, legs, onRemove, onScopeChange,
+}: {
+  item: EvidenceItem;
+  legs?: EvidenceLeg[];
   onRemove: () => void;
+  onScopeChange: (s: string) => void;
+}) {
+  const src = item.imagePreview || (item.imageUrl?.startsWith("/objects/") ? `/api/storage${item.imageUrl}` : item.imageUrl);
+  return (
+    <div className="border rounded-md p-1.5 bg-muted/20 space-y-1.5">
+      <div className="relative group">
+        {src && <img src={src} alt="Evidence" className="rounded border max-h-24 w-auto" />}
+        {item.uploading && (
+          <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded">
+            <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+          </div>
+        )}
+        {!item.uploading && (
+          <button
+            onClick={onRemove}
+            className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="Remove image"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {legs && legs.length > 0 && (
+        <ScopeSelector
+          value={item.scope || "group"}
+          legs={legs}
+          onChange={onScopeChange}
+        />
+      )}
+    </div>
+  );
+}
+
+function EvidenceUploadTrigger({
+  hasItems,
+  onUpload,
+}: {
+  hasItems: boolean;
+  onUpload: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -488,7 +665,6 @@ function EvidenceImageUploader({
         return;
       }
     }
-    toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
   }, [onUpload]);
 
   useEffect(() => {
@@ -497,28 +673,6 @@ function EvidenceImageUploader({
     el.addEventListener("paste", handlePasteEvent);
     return () => el.removeEventListener("paste", handlePasteEvent);
   }, [handlePasteEvent]);
-
-  if (imagePreview || imageUrl) {
-    const src = imagePreview || (imageUrl?.startsWith("/objects/") ? `/api/storage${imageUrl}` : imageUrl!);
-    return (
-      <div className="relative group">
-        <img src={src} alt="Evidence" className="rounded border max-h-32 w-auto" />
-        {uploading && (
-          <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded">
-            <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
-          </div>
-        )}
-        {!uploading && (
-          <button
-            onClick={onRemove}
-            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div ref={containerRef} className="flex gap-2" tabIndex={0}>
@@ -529,7 +683,10 @@ function EvidenceImageUploader({
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) onUpload(file);
+          if (file) {
+            onUpload(file);
+            e.target.value = "";
+          }
         }}
       />
       <Button
@@ -539,8 +696,8 @@ function EvidenceImageUploader({
         className="text-xs gap-1"
         onClick={() => inputRef.current?.click()}
       >
-        <Upload className="h-3 w-3" />
-        Upload Image
+        {hasItems ? <Plus className="h-3 w-3" /> : <Upload className="h-3 w-3" />}
+        {hasItems ? "Add another" : "Upload image"}
       </Button>
       <Button
         type="button"
@@ -550,7 +707,7 @@ function EvidenceImageUploader({
         onClick={handlePasteImage}
       >
         <ClipboardPaste className="h-3 w-3" />
-        Paste Image
+        Paste image
       </Button>
     </div>
   );
