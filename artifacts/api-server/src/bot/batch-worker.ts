@@ -295,6 +295,67 @@ const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
   "Trip Concern": "trip_concern",
 };
 
+/**
+ * Navigate to a Freshdesk ticket form using a wait strategy that tolerates
+ * the portal's long-polling scripts: `domcontentloaded` instead of
+ * `networkidle`, plus an explicit selector wait for the form being attached.
+ * On a thrown timeout we retry once — the second attempt usually succeeds
+ * once slow assets are cached. */
+async function gotoTicketForm(page: any, url: string, submissionId: number): Promise<void> {
+  const FORM_SELECTOR = "#new_helpdesk_ticket";
+  const NAV_TIMEOUT = 60_000;
+  const SELECTOR_TIMEOUT = 30_000;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+      await page.waitForSelector(FORM_SELECTOR, { state: "attached", timeout: SELECTOR_TIMEOUT });
+      if (attempt > 1) {
+        logger.info({ submissionId, url, attempt }, "gotoTicketForm: succeeded on retry");
+      }
+      return;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (attempt === 1) {
+        logger.warn({ submissionId, url, err: errMsg }, "gotoTicketForm: first attempt timed out, retrying once");
+        continue;
+      }
+      throw new Error(`Ticket form did not load at ${url} after 2 attempts: ${errMsg}`);
+    }
+  }
+}
+
+/**
+ * After a portal-induced reload (e.g. the form-type dropdown change), wait
+ * for the ticket form to be attached again. Mirrors `gotoTicketForm`'s
+ * resilience: avoids `networkidle` (the portal's long-poll never satisfies it),
+ * uses a 60s total budget split across an attached-selector wait, and on
+ * timeout does one soft retry by reloading the page (the URL still encodes the
+ * newly-selected form type) and waiting for the selector again. */
+async function waitForTicketFormReload(page: any, submissionId: number): Promise<void> {
+  const FORM_SELECTOR = "#new_helpdesk_ticket";
+  const FIRST_WAIT_MS = 30_000;
+  const RELOAD_TIMEOUT_MS = 60_000;
+  const RETRY_WAIT_MS = 30_000;
+
+  try {
+    await page.waitForSelector(FORM_SELECTOR, { state: "attached", timeout: FIRST_WAIT_MS });
+    return;
+  } catch (firstErr) {
+    const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    logger.warn({ submissionId, err: firstMsg }, "waitForTicketFormReload: form not re-attached within 30s, soft-retrying via page.reload");
+    try {
+      await page.reload({ waitUntil: "domcontentloaded", timeout: RELOAD_TIMEOUT_MS });
+      await page.waitForSelector(FORM_SELECTOR, { state: "attached", timeout: RETRY_WAIT_MS });
+      logger.info({ submissionId }, "waitForTicketFormReload: succeeded after soft retry");
+      return;
+    } catch (retryErr) {
+      const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+      throw new Error(`Ticket form did not re-attach after dropdown change (after 1 soft retry): ${retryMsg}`);
+    }
+  }
+}
+
 export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Promise<{ ticketId?: string; screenshotPath?: string }> {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -365,7 +426,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
     }
 
     logger.info({ submissionId: sub.id, ticketUrl }, "Batch worker: navigating to ticket form (authenticated)");
-    await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
+    await gotoTicketForm(page, ticketUrl, sub.id);
     await page.waitForTimeout(2000);
 
     const loginLink = await page.$('a[href*="login"], a:has-text("Login"), a:has-text("Log in"), a:has-text("Sign in")');
@@ -401,7 +462,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         throw new Error("Portal login form not recognized on re-login");
       }
 
-      await page.goto(ticketUrl, { waitUntil: "networkidle", timeout: 30000 });
+      await gotoTicketForm(page, ticketUrl, sub.id);
       await page.waitForTimeout(2000);
     }
 
@@ -414,7 +475,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       logger.info({ submissionId: sub.id, selectedValue, expected: ticketFormSlug }, "Batch worker: ticket form dropdown value");
       if (selectedValue !== ticketFormSlug) {
         await fillChoicesDropdown(page, "#helpdesk_ticket_forms_dropdown", ticketFormSlug, sub.id);
-        await page.waitForLoadState("networkidle", { timeout: 15000 });
+        await waitForTicketFormReload(page, sub.id);
         await page.waitForTimeout(2000);
         logger.info({ submissionId: sub.id }, "Batch worker: ticket form changed, page reloaded");
       }

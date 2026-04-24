@@ -62,6 +62,13 @@ interface AdminMetrics {
   outlookHealthy: boolean;
   outlookError: string | null;
   needsAttention: NeedsAttentionRow[];
+  manualRequeues: ManualRequeueRow[];
+}
+
+interface ManualRequeueRow {
+  submissionId: number;
+  reason: string | null;
+  timestamp: string;
 }
 
 function briefShell(title: string, dateLabel: string, body: string, outlookHealthy: boolean, outlookError: string | null): string {
@@ -149,11 +156,20 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
     </tr>`;
   }).join("");
 
-  const attentionBlock = m.needsAttention.length > 0
+  const requeueIds = m.manualRequeues.map(r => `#${r.submissionId}`).join(", ");
+  const requeueReason = m.manualRequeues.find(r => r.reason)?.reason?.slice(0, 200) || null;
+  const requeueNote = m.manualRequeues.length > 0
+    ? `<p style="margin:0 0 12px;color:#1e3a8a;font-size:12px;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:8px 10px;">
+        <strong>Auto re-queued in the last 24h:</strong> ${m.manualRequeues.length} submission${m.manualRequeues.length === 1 ? "" : "s"} (${requeueIds})${requeueReason ? ` — ${requeueReason}` : ""}.
+      </p>`
+    : "";
+
+  const attentionBlock = (m.needsAttention.length > 0 || m.manualRequeues.length > 0)
     ? `<div style="margin-bottom:24px;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
         <h2 style="font-size:16px;color:#92400e;margin:0 0 8px;">Submissions needing attention (${m.needsAttention.length})</h2>
         <p style="margin:0 0 12px;color:#78350f;font-size:12px;">Failed portal submissions and recently auto-reset stuck submissions from the last 24 hours.</p>
-        <table style="width:100%;border-collapse:collapse;background:white;border-radius:6px;overflow:hidden;">
+        ${requeueNote}
+        ${m.needsAttention.length > 0 ? `<table style="width:100%;border-collapse:collapse;background:white;border-radius:6px;overflow:hidden;">
           <thead><tr style="background:#fef3c7;">
             <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Conf #</th>
             <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Reason</th>
@@ -162,7 +178,7 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
             <th style="padding:8px;text-align:left;font-size:12px;color:#92400e;">Last error</th>
           </tr></thead>
           <tbody>${attentionRows}</tbody>
-        </table>
+        </table>` : ""}
       </div>`
     : "";
 
@@ -393,11 +409,32 @@ async function gatherAdminMetrics(): Promise<AdminMetrics> {
     })),
   ];
 
+  const manualRequeueEvents = await db.select({
+    submissionId: sql<number>`(${auditLogsTable.metadata}->>'submissionId')::int`,
+    reason: sql<string | null>`${auditLogsTable.metadata}->>'reason'`,
+    timestamp: auditLogsTable.timestamp,
+  }).from(auditLogsTable)
+    .where(and(eq(auditLogsTable.action, "submission_manual_requeue"), gte(auditLogsTable.timestamp, since24h)))
+    .orderBy(desc(auditLogsTable.timestamp))
+    .limit(50);
+
+  const seenRequeueIds = new Set<number>();
+  const manualRequeues: ManualRequeueRow[] = [];
+  for (const e of manualRequeueEvents) {
+    if (typeof e.submissionId !== "number" || seenRequeueIds.has(e.submissionId)) continue;
+    seenRequeueIds.add(e.submissionId);
+    manualRequeues.push({
+      submissionId: e.submissionId,
+      reason: e.reason ?? null,
+      timestamp: e.timestamp ? new Date(e.timestamp as unknown as string).toISOString() : new Date().toISOString(),
+    });
+  }
+
   const outlookHealthRow = await getConnectorHealth("outlook");
   const outlookHealthy = outlookHealthRow ? outlookHealthRow.status === "healthy" : await isOutlookConnected();
   const outlookError = outlookHealthRow?.lastError ?? null;
 
-  return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError, needsAttention };
+  return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError, needsAttention, manualRequeues };
 }
 
 router.post("/", asyncHandler(async (req, res): Promise<void> => {

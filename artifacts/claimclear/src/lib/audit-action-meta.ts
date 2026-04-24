@@ -23,6 +23,7 @@ import {
   BellOff,
   Timer,
   AlarmClockOff,
+  RotateCcw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -67,6 +68,7 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   submission_retry_scheduled: { label: "Portal submission retry scheduled", icon: Timer, iconClass: "text-amber-600", category: "workflow" },
   submission_retries_exhausted: { label: "Portal submission retries exhausted", icon: AlertOctagon, iconClass: "text-rose-600", category: "workflow" },
   submission_stuck_reset: { label: "Stuck submission auto-reset", icon: AlarmClockOff, iconClass: "text-amber-600", category: "workflow" },
+  submission_manual_requeue: { label: "Portal submission manually re-queued", icon: RotateCcw, iconClass: "text-blue-600", category: "workflow" },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {

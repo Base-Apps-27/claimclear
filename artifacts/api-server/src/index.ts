@@ -39,6 +39,66 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
   } catch (err) {
     logger.warn({ err }, "One-time migration: conversation_id backfill failed");
   }
+
+  // Task #64: re-queue last night's three failed batch portal submissions
+  // (#9, #10, #12) that hit the midnight Freshdesk-portal `networkidle` timeout.
+  // PRODUCTION ONLY — the failed rows live in the deployed database; we
+  // explicitly skip dev/staging boots so this never accidentally touches
+  // unrelated rows that happen to share IDs in another environment.
+  // Idempotent: each submission is only touched if it is still status='failed'
+  // AND no `submission_manual_requeue` audit row already exists for it. Leaves
+  // `attempts` unchanged so they still have 3 of 4 attempts left, and writes
+  // an audit row per submission so the daily brief can surface the action.
+  const isProduction = process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1";
+  if (!isProduction) {
+    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Task #64 backfill: skipping (not production)");
+  } else try {
+    const result = await db.execute(sql`
+      WITH targets AS (
+        SELECT id, claim_id
+        FROM portal_submissions
+        WHERE id IN (9, 10, 12)
+          AND status = 'failed'
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_logs al
+            WHERE al.action = 'submission_manual_requeue'
+              AND (al.metadata->>'submissionId')::int = portal_submissions.id
+          )
+      ),
+      updated AS (
+        UPDATE portal_submissions ps
+        SET status = 'pending',
+            next_retry_at = NOW(),
+            error_message = NULL,
+            updated_at = NOW()
+        FROM targets t
+        WHERE ps.id = t.id
+        RETURNING ps.id, ps.claim_id
+      )
+      INSERT INTO audit_logs (claim_id, action, details, metadata, user_email, user_name)
+      SELECT
+        u.claim_id,
+        'submission_manual_requeue',
+        'Auto re-queued after the 2026-04-24 midnight Freshdesk portal slowdown (Task #64). Attempts unchanged; bot will retry on next poll.',
+        jsonb_build_object(
+          'submissionId', u.id,
+          'reason', 'Midnight portal networkidle timeout (~2026-04-24 00:00 ET); portal slowdown not a code bug. See Task #64.',
+          'task', 64
+        ),
+        'system@claimclear',
+        'System (Task #64 backfill)'
+      FROM updated u
+      RETURNING (metadata->>'submissionId')::int AS submission_id
+    `);
+    const requeuedIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
+    if (requeuedIds.length > 0) {
+      logger.info({ requeuedIds }, "Task #64 backfill: manually re-queued failed batch submissions");
+    } else {
+      logger.info("Task #64 backfill: no submissions needed re-queueing (already done or no longer failed)");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Task #64 backfill: re-queue failed batch submissions failed");
+  }
 })();
 
 const rawPort = process.env["PORT"];

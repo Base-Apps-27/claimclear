@@ -6,15 +6,11 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { scheduleRetryOrFail, computeNextRetryDelayMinutes } from "../lib/submission-retry";
 
 const router: IRouter = Router();
 
-const RETRY_BACKOFF_MINUTES = [1, 5, 15, 60];
-
-export function computeNextRetryDelayMinutes(attemptsSoFar: number): number {
-  const idx = Math.min(Math.max(attemptsSoFar - 1, 0), RETRY_BACKOFF_MINUTES.length - 1);
-  return RETRY_BACKOFF_MINUTES[idx];
-}
+export { computeNextRetryDelayMinutes };
 
 function parseId(raw: string | string[]): number {
   const s = Array.isArray(raw) ? raw[0] : raw;
@@ -248,33 +244,17 @@ router.post("/:id/fail", asyncHandler(async (req, res): Promise<void> => {
   const { errorMessage, botInstanceId, screenshotPath, pageHtmlPath } = req.body;
   const errMsg = errorMessage || "Unknown error";
 
-  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
-  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
+  const result = await scheduleRetryOrFail({
+    submissionId: id,
+    errorMessage: errMsg,
+    source: "external_bot",
+    userName: "Portal Bot",
+  });
 
-  const attemptsSoFar = existing.attempts || 0;
-  const maxAttempts = existing.maxAttempts || 4;
-  const exhausted = attemptsSoFar >= maxAttempts;
-
-  let updated: typeof portalSubmissionsTable.$inferSelect | undefined;
-  let nextRetryAt: Date | null = null;
-
-  if (exhausted) {
-    [updated] = await db.update(portalSubmissionsTable).set({
-      status: "failed",
-      errorMessage: errMsg,
-      nextRetryAt: null,
-    }).where(eq(portalSubmissionsTable.id, id)).returning();
-  } else {
-    const delayMin = computeNextRetryDelayMinutes(attemptsSoFar);
-    nextRetryAt = new Date(Date.now() + delayMin * 60_000);
-    [updated] = await db.update(portalSubmissionsTable).set({
-      status: "pending",
-      errorMessage: errMsg,
-      nextRetryAt,
-    }).where(eq(portalSubmissionsTable.id, id)).returning();
+  if (result.outcome === "not_found" || !result.updated) {
+    res.status(404).json({ error: "Submission not found" });
+    return;
   }
-
-  if (!updated) { res.status(404).json({ error: "Submission not found" }); return; }
 
   if (botInstanceId) {
     await db.update(botInstancesTable).set({
@@ -292,38 +272,16 @@ router.post("/:id/fail", asyncHandler(async (req, res): Promise<void> => {
     pageHtmlPath: pageHtmlPath || null,
   });
 
-  if (exhausted) {
-    await db.insert(auditLogsTable).values({
-      claimId: updated.claimId,
-      invoiceGroupId: updated.invoiceGroupId ?? null,
-      action: "submission_retries_exhausted",
-      details: `Portal submission #${id} failed after ${attemptsSoFar} attempt${attemptsSoFar === 1 ? "" : "s"} (max ${maxAttempts}): ${errMsg.slice(0, 200)}`,
-      metadata: { submissionId: id, attempts: attemptsSoFar, maxAttempts, lastError: errMsg },
-      userEmail: null,
-      userName: "Portal Bot",
-    });
-  } else {
-    await db.insert(auditLogsTable).values({
-      claimId: updated.claimId,
-      invoiceGroupId: updated.invoiceGroupId ?? null,
-      action: "submission_retry_scheduled",
-      details: `Portal submission #${id} retry ${attemptsSoFar + 1}/${maxAttempts} scheduled for ${nextRetryAt!.toISOString()} (after: ${errMsg.slice(0, 200)})`,
-      metadata: { submissionId: id, attempts: attemptsSoFar, maxAttempts, nextRetryAt: nextRetryAt!.toISOString(), lastError: errMsg },
-      userEmail: null,
-      userName: "Portal Bot",
-    });
-  }
-
   broadcastPresenceEvent({
     type: "bot_completed",
-    claimId: updated.claimId,
+    claimId: result.updated.claimId,
     userName: "Portal Bot",
     userEmail: null,
     botProcess: "portal_submission",
     timestamp: new Date().toISOString(),
   });
 
-  res.json(updated);
+  res.json(result.updated);
 }));
 
 export default router;

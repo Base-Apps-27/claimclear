@@ -7,6 +7,7 @@ import { ObjectStorageService } from "./objectStorage";
 import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
 import { invoiceGroupsTable } from "@workspace/db";
+import { scheduleRetryOrFail } from "./submission-retry";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -154,17 +155,42 @@ async function processSequentially(job: BatchJob): Promise<void> {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.error({ err, submissionId: subId, batchId: job.id }, "Batch submission processing failed");
 
-      await db.update(portalSubmissionsTable).set({
-        status: "failed",
+      const retryResult = await scheduleRetryOrFail({
+        submissionId: subId,
         errorMessage: errMsg,
-      }).where(eq(portalSubmissionsTable.id, subId)).catch(() => {});
+        source: `batch_processor:${job.id}`,
+        userName: "Batch Processor",
+      }).catch((helperErr) => {
+        logger.error({ err: helperErr, submissionId: subId }, "scheduleRetryOrFail threw — falling back to direct status='failed' write");
+        return null;
+      });
+
+      // Last-resort fallback: if the helper threw, the row would otherwise
+      // stay stuck in `in_progress`. Force it to `failed` so the next
+      // batch / stuck-reset sweep doesn't ignore it. The fallback write
+      // is best-effort and never throws out of the catch block.
+      if (!retryResult) {
+        try {
+          await db.update(portalSubmissionsTable).set({
+            status: "failed",
+            errorMessage: errMsg,
+            nextRetryAt: null,
+          }).where(eq(portalSubmissionsTable.id, subId));
+        } catch (fallbackErr) {
+          logger.error({ err: fallbackErr, submissionId: subId }, "Fallback status='failed' write also failed — submission may be left in in_progress");
+        }
+      }
 
       await db.insert(botActivityLogTable).values({
         submissionId: subId,
         botInstanceId: null,
         action: "batch_failed",
         success: false,
-        message: errMsg,
+        message: retryResult?.outcome === "retry_scheduled"
+          ? `${errMsg} (retry ${retryResult.attempts + 1}/${retryResult.maxAttempts} scheduled for ${retryResult.nextRetryAt!.toISOString()})`
+          : retryResult?.outcome === "retries_exhausted"
+            ? `${errMsg} (retries exhausted after ${retryResult.attempts}/${retryResult.maxAttempts})`
+            : `${errMsg} (retry helper failed; row force-marked failed)`,
       }).catch(() => {});
 
       if (subClaimId) {
@@ -399,17 +425,46 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error({ err, submissionId: subId }, "Sandbox run failed");
 
-    const [updated] = await db.update(portalSubmissionsTable).set({
-      status: previousStatus === "dry_run" ? "dry_run" : "failed",
-      errorMessage: `Sandbox run failed: ${errMsg}`,
-    }).where(eq(portalSubmissionsTable.id, subId)).returning();
+    let updated: typeof portalSubmissionsTable.$inferSelect;
+    let activityMessage = errMsg;
+
+    if (previousStatus === "dry_run") {
+      // Sandbox-only re-run from a prior dry_run; do not consume retry budget.
+      [updated] = await db.update(portalSubmissionsTable).set({
+        status: "dry_run",
+        errorMessage: `Sandbox run failed: ${errMsg}`,
+      }).where(eq(portalSubmissionsTable.id, subId)).returning();
+    } else {
+      const retryResult = await scheduleRetryOrFail({
+        submissionId: subId,
+        errorMessage: `Sandbox run failed: ${errMsg}`,
+        source: "sandbox_runner",
+        userName: "Sandbox Runner",
+      }).catch((helperErr) => {
+        logger.error({ err: helperErr, submissionId: subId }, "scheduleRetryOrFail threw in sandbox runner");
+        return null;
+      });
+
+      if (retryResult?.updated) {
+        updated = retryResult.updated;
+        activityMessage = retryResult.outcome === "retry_scheduled"
+          ? `${errMsg} (retry ${retryResult.attempts + 1}/${retryResult.maxAttempts} scheduled for ${retryResult.nextRetryAt!.toISOString()})`
+          : `${errMsg} (retries exhausted after ${retryResult.attempts}/${retryResult.maxAttempts})`;
+      } else {
+        // Helper failed — fall back to direct status write so we never leave the row in_progress.
+        [updated] = await db.update(portalSubmissionsTable).set({
+          status: "failed",
+          errorMessage: `Sandbox run failed: ${errMsg}`,
+        }).where(eq(portalSubmissionsTable.id, subId)).returning();
+      }
+    }
 
     await db.insert(botActivityLogTable).values({
       submissionId: subId,
       botInstanceId: null,
       action: "sandbox_run_failed",
       success: false,
-      message: errMsg,
+      message: activityMessage,
     });
 
     broadcastPresenceEvent({
