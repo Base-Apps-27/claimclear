@@ -326,7 +326,15 @@ export async function processPortalResponse(data: {
   portalTicketId: string;
   responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
   content: string;
-  metadata?: Record<string, unknown>;
+  /** Full body text of the portal message; preserved verbatim for UI display. */
+  rawContent?: string;
+  /** Subject / title of the portal message, if available. */
+  subject?: string;
+  /** Email of the portal user that posted the response, if available. */
+  senderEmail?: string;
+  /** Display name of the portal user that posted the response, if available. */
+  senderName?: string;
+  metadata?: Record<string, unknown> | null;
 }): Promise<number> {
   const isGroup = data.invoiceGroupId !== null && data.invoiceGroupId !== undefined;
 
@@ -336,7 +344,11 @@ export async function processPortalResponse(data: {
     submissionId: data.submissionId,
     source: "portal",
     responseType: data.responseType,
+    subject: data.subject ?? null,
     content: data.content,
+    rawContent: data.rawContent ?? null,
+    senderEmail: data.senderEmail ?? null,
+    senderName: data.senderName ?? null,
     portalTicketId: data.portalTicketId,
     matchedVia: `portal_ticket_id:${data.portalTicketId}`,
     matchConfidence: "high",

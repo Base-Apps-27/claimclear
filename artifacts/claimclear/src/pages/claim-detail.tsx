@@ -262,6 +262,14 @@ export default function ClaimDetail() {
   const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
   const [reassignSearch, setReassignSearch] = useState("");
   const [reassignSelectedClaimId, setReassignSelectedClaimId] = useState<number | null>(null);
+  const [expandedResponseIds, setExpandedResponseIds] = useState<Set<number>>(new Set());
+  const toggleResponseExpanded = (id: number) => {
+    setExpandedResponseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const reassignListParams = { search: reassignSearch || undefined, limit: 10 };
   const { data: reassignClaimsData } = useListClaims(
     reassignListParams,
@@ -926,9 +934,35 @@ export default function ClaimDetail() {
                         <p className="text-sm font-medium">{resp.subject}</p>
                       )}
 
-                      {resp.content && (
-                        <p className="text-sm opacity-80">{resp.content}</p>
-                      )}
+                      {(() => {
+                        const fullBody = (resp.rawContent && resp.rawContent.trim().length > 0)
+                          ? resp.rawContent
+                          : (resp.content || "");
+                        if (!fullBody) return null;
+                        const isLong = fullBody.length > 400 || fullBody.split("\n").length > 6;
+                        const isExpanded = expandedResponseIds.has(resp.id);
+                        return (
+                          <div className="space-y-1">
+                            <div
+                              className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 whitespace-pre-wrap break-words font-sans overflow-y-auto ${
+                                isExpanded ? "max-h-[32rem]" : "max-h-32"
+                              }`}
+                            >
+                              {fullBody}
+                            </div>
+                            {isLong && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs opacity-70 hover:opacity-100"
+                                onClick={() => toggleResponseExpanded(resp.id)}
+                              >
+                                {isExpanded ? "Show less" : "Show full message"}
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex items-center gap-3 text-xs opacity-60">
                         {resp.senderEmail && (

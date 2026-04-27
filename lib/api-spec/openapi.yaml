@@ -2223,6 +2223,11 @@ paths:
       operationId: recordPortalResponse
       tags: [responses]
       summary: Record a response from the portal
+      description: |
+        Records a response captured by the portal scraper bot. The bot may
+        optionally include the full message body (`rawContent`), the message
+        `subject`, and the portal sender's `senderEmail` / `senderName` so
+        reviewers can read the original payor message in the UI.
       requestBody:
         required: true
         content:
@@ -2238,6 +2243,19 @@ paths:
                   enum: [approval, denial, partial_approval, info_request, acknowledgment, other]
                 content:
                   type: string
+                  description: Short preview / summary of the portal response.
+                rawContent:
+                  type: string
+                  description: Full body text of the portal response, preserved verbatim for display.
+                subject:
+                  type: string
+                  description: Optional subject / title of the portal message.
+                senderEmail:
+                  type: string
+                  description: Optional email address of the portal user that posted the response.
+                senderName:
+                  type: string
+                  description: Optional display name of the portal user that posted the response.
                 metadata:
                   type: object
       responses:

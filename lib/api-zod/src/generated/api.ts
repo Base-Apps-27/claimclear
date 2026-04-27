@@ -3823,6 +3823,11 @@ export const CheckEmailResponsesResponse = zod.object({
 });
 
 /**
+ * Records a response captured by the portal scraper bot. The bot may
+optionally include the full message body (`rawContent`), the message
+`subject`, and the portal sender's `senderEmail` / `senderName` so
+reviewers can read the original payor message in the UI.
+
  * @summary Record a response from the portal
  */
 export const RecordPortalResponseBody = zod.object({
@@ -3835,7 +3840,32 @@ export const RecordPortalResponseBody = zod.object({
     "acknowledgment",
     "other",
   ]),
-  content: zod.string().optional(),
+  content: zod
+    .string()
+    .optional()
+    .describe("Short preview \/ summary of the portal response."),
+  rawContent: zod
+    .string()
+    .optional()
+    .describe(
+      "Full body text of the portal response, preserved verbatim for display.",
+    ),
+  subject: zod
+    .string()
+    .optional()
+    .describe("Optional subject \/ title of the portal message."),
+  senderEmail: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional email address of the portal user that posted the response.",
+    ),
+  senderName: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional display name of the portal user that posted the response.",
+    ),
   metadata: zod.object({}).passthrough().optional(),
 });
 

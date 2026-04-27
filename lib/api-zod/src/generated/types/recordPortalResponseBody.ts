@@ -11,6 +11,15 @@ import type { RecordPortalResponseBodyResponseType } from "./recordPortalRespons
 export type RecordPortalResponseBody = {
   submissionId: number;
   responseType: RecordPortalResponseBodyResponseType;
+  /** Short preview / summary of the portal response. */
   content?: string;
+  /** Full body text of the portal response, preserved verbatim for display. */
+  rawContent?: string;
+  /** Optional subject / title of the portal message. */
+  subject?: string;
+  /** Optional email address of the portal user that posted the response. */
+  senderEmail?: string;
+  /** Optional display name of the portal user that posted the response. */
+  senderName?: string;
   metadata?: RecordPortalResponseBodyMetadata;
 };

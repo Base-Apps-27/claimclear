@@ -8544,6 +8544,11 @@ export const useCheckEmailResponses = <
 };
 
 /**
+ * Records a response captured by the portal scraper bot. The bot may
+optionally include the full message body (`rawContent`), the message
+`subject`, and the portal sender's `senderEmail` / `senderName` so
+reviewers can read the original payor message in the UI.
+
  * @summary Record a response from the portal
  */
 export const getRecordPortalResponseUrl = () => {

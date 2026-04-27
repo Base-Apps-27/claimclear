@@ -248,8 +248,22 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
   });
 }));
 
+/**
+ * Records a portal response captured by the scraper bot.
+ *
+ * Required:
+ * - `submissionId`: id of the portal submission this response belongs to.
+ * - `responseType`: detected outcome category.
+ *
+ * Optional fields the bot may send so reviewers can see the actual message:
+ * - `content`: short preview / summary of the response (kept for backwards compat).
+ * - `rawContent`: full body text of the portal response (preserves line breaks).
+ * - `subject`: subject / title of the portal message.
+ * - `senderEmail` / `senderName`: portal user that posted the response.
+ * - `metadata`: free-form JSON for any additional bot-side context.
+ */
 router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<void> => {
-  const { submissionId, responseType, content } = req.body;
+  const { submissionId, responseType, content, rawContent, subject, senderEmail, senderName } = req.body;
 
   if (!submissionId || !responseType) {
     res.status(400).json({ error: "submissionId and responseType are required" });
@@ -266,6 +280,10 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
     portalTicketId: submission.portalTicketId || "",
     responseType,
     content: content || "",
+    rawContent: typeof rawContent === "string" ? rawContent : undefined,
+    subject: typeof subject === "string" ? subject : undefined,
+    senderEmail: typeof senderEmail === "string" ? senderEmail : undefined,
+    senderName: typeof senderName === "string" ? senderName : undefined,
     metadata: req.body.metadata || null,
   });
 
