@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
 
-const RETRY_BACKOFF_MINUTES = [1, 5, 15, 60];
+const RETRY_BACKOFF_MINUTES = [5, 30, 240, 480];
 
 export function computeNextRetryDelayMinutes(attemptsSoFar: number): number {
   const idx = Math.min(Math.max(attemptsSoFar - 1, 0), RETRY_BACKOFF_MINUTES.length - 1);

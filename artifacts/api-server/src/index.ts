@@ -99,6 +99,70 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
   } catch (err) {
     logger.warn({ err }, "Task #64 backfill: re-queue failed batch submissions failed");
   }
+
+  // Followup to Task #64: submissions #9 and #10 went through all 4 retries
+  // on subsequent nights and exhausted at 4/4 (each retry landed inside the
+  // same recurring midnight Freshdesk slowdown window). With the new wider
+  // retry schedule [5m, 30m, 4h, 8h] and the loosened login-page navigation,
+  // give them a full fresh batch of attempts by resetting attempts → 0.
+  // PRODUCTION ONLY. Idempotent: gated by an audit row whose metadata
+  // contains `phase: 'attempts-reset-apr27'`, distinct from the original
+  // Task #64 backfill marker so it doesn't collide.
+  if (!isProduction) {
+    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Apr-27 attempts reset: skipping (not production)");
+  } else try {
+    const result = await db.execute(sql`
+      WITH targets AS (
+        SELECT id, claim_id
+        FROM portal_submissions
+        WHERE id IN (9, 10)
+          AND status = 'failed'
+          AND attempts >= max_attempts
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_logs al
+            WHERE al.action = 'submission_manual_requeue'
+              AND (al.metadata->>'submissionId')::int = portal_submissions.id
+              AND al.metadata->>'phase' = 'attempts-reset-apr27'
+          )
+      ),
+      updated AS (
+        UPDATE portal_submissions ps
+        SET status = 'pending',
+            attempts = 0,
+            next_retry_at = NULL,
+            error_message = NULL,
+            updated_at = NOW()
+        FROM targets t
+        WHERE ps.id = t.id
+        RETURNING ps.id, ps.claim_id
+      )
+      INSERT INTO audit_logs (claim_id, action, details, metadata, user_email, user_name)
+      SELECT
+        u.claim_id,
+        'submission_manual_requeue',
+        'Reset to 0/4 attempts after retries exhausted across the recurring 2026-04-24..27 midnight Freshdesk slowdown. New retry schedule [5m, 30m, 4h, 8h] now spreads attempts so at least one lands outside the slow window. Login-page navigation also loosened to match the form-page fix.',
+        jsonb_build_object(
+          'submissionId', u.id,
+          'phase', 'attempts-reset-apr27',
+          'previousStatus', 'failed',
+          'previousAttempts', 4,
+          'reason', 'Recurring midnight portal slowdown exhausted retries on 4 consecutive nights.',
+          'newScheduleMinutes', jsonb_build_array(5, 30, 240, 480)
+        ),
+        'system@claimclear',
+        'System (Apr-27 attempts reset)'
+      FROM updated u
+      RETURNING (metadata->>'submissionId')::int AS submission_id
+    `);
+    const resetIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
+    if (resetIds.length > 0) {
+      logger.info({ resetIds }, "Apr-27 attempts reset: manually reset attempts to 0 for exhausted submissions");
+    } else {
+      logger.info("Apr-27 attempts reset: no submissions needed reset (already done or no longer exhausted)");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Apr-27 attempts reset: failed");
+  }
 })();
 
 const rawPort = process.env["PORT"];

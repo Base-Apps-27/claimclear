@@ -326,6 +326,53 @@ async function gotoTicketForm(page: any, url: string, submissionId: number): Pro
 }
 
 /**
+ * Navigate to the Freshdesk `/support/login` page using the same resilience
+ * strategy as `gotoTicketForm`: `domcontentloaded` instead of `networkidle`
+ * (the portal's long-poll scripts never let `networkidle` settle), an explicit
+ * wait for the password input to confirm the login form actually rendered, a
+ * 60s total budget, and one soft retry on timeout. The portal exhibits a
+ * recurring midnight slowdown that previously timed out the 30s `networkidle`
+ * wait; this helper is what unblocks attempts during that window. */
+async function gotoLoginPage(page: any, url: string, submissionId: number): Promise<void> {
+  const PASSWORD_SELECTOR = 'input[name="user[password]"], input[name="helpdesk_user[password]"], input[type="password"], #user_password';
+  const NAV_TIMEOUT = 60_000;
+  const SELECTOR_TIMEOUT = 30_000;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+      await page.waitForSelector(PASSWORD_SELECTOR, { state: "attached", timeout: SELECTOR_TIMEOUT });
+      if (attempt > 1) {
+        logger.info({ submissionId, url, attempt }, "gotoLoginPage: succeeded on retry");
+      }
+      return;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (attempt === 1) {
+        logger.warn({ submissionId, url, err: errMsg }, "gotoLoginPage: first attempt timed out, retrying once");
+        continue;
+      }
+      throw new Error(`Login page did not load at ${url} after 2 attempts: ${errMsg}`);
+    }
+  }
+}
+
+/**
+ * After clicking the login submit button, wait for the post-login navigation
+ * to settle. Uses `domcontentloaded` (not `networkidle`) so the portal's
+ * background long-poll scripts don't keep us blocked indefinitely. Caller is
+ * responsible for verifying we're actually logged in (e.g. checking that the
+ * password input is no longer visible). */
+async function waitForLoginRedirect(page: any, submissionId: number): Promise<void> {
+  try {
+    await page.waitForLoadState("domcontentloaded", { timeout: 30_000 });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ submissionId, err: errMsg }, "waitForLoginRedirect: domcontentloaded timed out; continuing — caller will verify login state");
+  }
+}
+
+/**
  * After a portal-induced reload (e.g. the form-type dropdown change), wait
  * for the ticket form to be attached again. Mirrors `gotoTicketForm`'s
  * resilience: avoids `networkidle` (the portal's long-poll never satisfies it),
@@ -395,7 +442,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
 
       logger.info({ submissionId: sub.id }, "Batch worker: no saved session, logging in first");
-      await page.goto(`${PORTAL_URL}/support/login`, { waitUntil: "networkidle", timeout: 30000 });
+      await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.id);
       await page.waitForTimeout(2000);
 
       const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
@@ -409,7 +456,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
         if (submitBtn) {
           await submitBtn.click();
-          await page.waitForLoadState("networkidle", { timeout: 15000 });
+          await waitForLoginRedirect(page, sub.id);
           await page.waitForTimeout(3000);
         }
 
@@ -436,7 +483,16 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
       await loginLink.click();
-      await page.waitForLoadState("networkidle", { timeout: 15000 });
+      try {
+        await page.waitForSelector(
+          'input[name="user[password]"], input[name="helpdesk_user[password]"], input[type="password"], #user_password',
+          { state: "attached", timeout: 30_000 },
+        );
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.warn({ submissionId: sub.id, err: errMsg }, "Re-login: password input did not attach in 30s after clicking login link; falling back to direct goto");
+        await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.id);
+      }
       await page.waitForTimeout(2000);
 
       const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
@@ -449,7 +505,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
         if (submitBtn) {
           await submitBtn.click();
-          await page.waitForLoadState("networkidle", { timeout: 15000 });
+          await waitForLoginRedirect(page, sub.id);
           await page.waitForTimeout(3000);
         }
         const stillOnLogin = await page.$('input[type="password"]:visible');

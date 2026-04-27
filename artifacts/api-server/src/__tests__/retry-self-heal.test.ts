@@ -9,20 +9,22 @@ import { computeNextRetryDelayMinutes } from "../lib/submission-retry";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoSrc = resolve(__dirname, "..");
 
-test("computeNextRetryDelayMinutes follows the [1, 5, 15, 60] backoff schedule", () => {
+test("computeNextRetryDelayMinutes follows the [5, 30, 240, 480] backoff schedule", () => {
   // attemptsSoFar is the count *after* the current attempt was claimed/incremented,
-  // so attempts=1 schedules retry #1 (1 min), attempts=2 → 5 min, attempts=3 → 15 min.
+  // so attempts=1 schedules retry #1 (5 min), attempts=2 → 30 min, attempts=3 → 4h.
   // attempts=4 (the final attempt) is past the schedule and the helper marks
   // the submission failed instead of using this delay; we still test the value
-  // here for completeness.
-  assert.equal(computeNextRetryDelayMinutes(1), 1);
-  assert.equal(computeNextRetryDelayMinutes(2), 5);
-  assert.equal(computeNextRetryDelayMinutes(3), 15);
-  assert.equal(computeNextRetryDelayMinutes(4), 60);
+  // here for completeness. The wide gaps (especially the 4h jump from attempt
+  // 3 to attempt 4) are intentional: the portal has a recurring midnight
+  // slowdown window, so we want at least one retry to land outside it.
+  assert.equal(computeNextRetryDelayMinutes(1), 5);
+  assert.equal(computeNextRetryDelayMinutes(2), 30);
+  assert.equal(computeNextRetryDelayMinutes(3), 240);
+  assert.equal(computeNextRetryDelayMinutes(4), 480);
   // Defensive: 0 / negative attempts clamp to first slot, very large clamps to last.
-  assert.equal(computeNextRetryDelayMinutes(0), 1);
-  assert.equal(computeNextRetryDelayMinutes(-3), 1);
-  assert.equal(computeNextRetryDelayMinutes(99), 60);
+  assert.equal(computeNextRetryDelayMinutes(0), 5);
+  assert.equal(computeNextRetryDelayMinutes(-3), 5);
+  assert.equal(computeNextRetryDelayMinutes(99), 480);
 });
 
 test("batch-processor catch blocks delegate to scheduleRetryOrFail (no direct status='failed' write in processSequentially)", () => {
