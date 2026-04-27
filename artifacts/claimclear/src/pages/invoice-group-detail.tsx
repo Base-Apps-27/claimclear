@@ -1,8 +1,9 @@
 import { useParams, Link } from "wouter";
 import { useGetInvoiceGroup, useUpdateInvoiceGroupStatus, useUpdateInvoiceGroupOutcome, useTriageInvoiceGroup, useHoldInvoiceGroup, useRemoveInvoiceGroupHold, getGetInvoiceGroupQueryKey, useListInvoiceGroupEvidence, getListInvoiceGroupEvidenceQueryKey, useDeleteInvoiceGroupEvidence } from "@workspace/api-client-react";
-import type { ClaimResponse } from "@workspace/api-client-react";
+import type { ClaimResponse, PortalResponseItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,8 @@ import {
   StickyNote,
   Mail,
   Filter,
+  Inbox,
+  Bot,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +58,15 @@ export default function InvoiceGroupDetail() {
 
   const [holdReason, setHoldReason] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
+  const [expandedResponseIds, setExpandedResponseIds] = useState<Set<number>>(new Set());
+  const toggleResponseExpanded = (responseId: number) => {
+    setExpandedResponseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(responseId)) next.delete(responseId);
+      else next.add(responseId);
+      return next;
+    });
+  };
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(id) });
@@ -93,6 +105,7 @@ export default function InvoiceGroupDetail() {
   const rides: ClaimResponse[] = (group as any).rides ?? [];
   const auditLogs: any[] = (group as any).auditLogs ?? [];
   const notes: any[] = (group as any).notes ?? [];
+  const responses: PortalResponseItem[] = (group as any).responses ?? [];
 
   const handleTriage = async (outcome: "non_issue" | "issue_found") => {
     await triageGroup.mutateAsync({
@@ -311,6 +324,128 @@ export default function InvoiceGroupDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {responses.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Inbox className="h-5 w-5" />
+                  Responses Received
+                  <Badge variant="secondary">{responses.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {responses.map((resp) => {
+                  const typeColors: Record<string, string> = {
+                    approval: "bg-green-50 border-green-200 text-green-800",
+                    denial: "bg-red-50 border-red-200 text-red-800",
+                    partial_approval: "bg-amber-50 border-amber-200 text-amber-800",
+                    info_request: "bg-blue-50 border-blue-200 text-blue-800",
+                    acknowledgment: "bg-slate-50 border-slate-200 text-slate-700",
+                    other: "bg-gray-50 border-gray-200 text-gray-700",
+                  };
+                  const typeLabels: Record<string, string> = {
+                    approval: "Approved",
+                    denial: "Denied",
+                    partial_approval: "Partially Approved",
+                    info_request: "Info Requested",
+                    acknowledgment: "Acknowledged",
+                    other: "Other",
+                  };
+                  const colorClass = typeColors[resp.responseType] || typeColors.other;
+                  return (
+                    <div key={resp.id} className={`border rounded-lg p-4 space-y-2 ${colorClass}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {resp.source === "email" ? (
+                            <Mail className="h-4 w-4" />
+                          ) : (
+                            <Bot className="h-4 w-4" />
+                          )}
+                          <span className="text-sm font-medium">
+                            {resp.source === "email" ? "Email" : "Portal"} Response
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {typeLabels[resp.responseType] || resp.responseType}
+                          </Badge>
+                          {!resp.processed && (
+                            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                              Needs Review
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs opacity-70">
+                          {resp.receivedAt ? formatDateTime(resp.receivedAt) : ""}
+                        </span>
+                      </div>
+
+                      {resp.subject && (
+                        <p className="text-sm font-medium">{resp.subject}</p>
+                      )}
+
+                      {(() => {
+                        const fullBody = (resp.rawContent && resp.rawContent.trim().length > 0)
+                          ? resp.rawContent
+                          : (resp.content || "");
+                        if (!fullBody) return null;
+                        const isLong = fullBody.length > 400 || fullBody.split("\n").length > 6;
+                        const isExpanded = expandedResponseIds.has(resp.id);
+                        const isHtml = resp.bodyFormat === "html";
+                        const sanitizedHtml = isHtml
+                          ? DOMPurify.sanitize(fullBody, {
+                              ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li", "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4", "h5", "h6", "span", "div"],
+                              ALLOWED_ATTR: ["href", "target", "rel"],
+                            })
+                          : "";
+                        return (
+                          <div className="space-y-1">
+                            {isHtml ? (
+                              <div
+                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 break-words font-sans overflow-y-auto prose prose-sm max-w-none ${
+                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
+                                }`}
+                                // Sanitized via DOMPurify above with a strict tag/attr allow-list.
+                                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                              />
+                            ) : (
+                              <div
+                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 whitespace-pre-wrap break-words font-sans overflow-y-auto ${
+                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
+                                }`}
+                              >
+                                {fullBody}
+                              </div>
+                            )}
+                            {isLong && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs opacity-70 hover:opacity-100"
+                                onClick={() => toggleResponseExpanded(resp.id)}
+                              >
+                                {isExpanded ? "Show less" : "Show full message"}
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {(resp.senderEmail || resp.matchedVia) && (
+                        <div className="flex items-center gap-3 text-xs opacity-60">
+                          {resp.senderEmail && (
+                            <span>From: {resp.senderName || resp.senderEmail}</span>
+                          )}
+                          {resp.matchedVia && (
+                            <span>Matched: {resp.matchedVia}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-6">
