@@ -9,9 +9,36 @@ import { isOutlookConnected, probeOutlook } from "./lib/outlook";
 import { recordConnectorHealth } from "./lib/connector-health";
 import { resetStuckSubmissions } from "./lib/stuck-submissions";
 
+// Boot-time DB ops have to tolerate a cold Neon serverless endpoint that
+// auto-suspends after inactivity. The first query then fails with
+// "The endpoint has been disabled. Enable it using the API and retry." but
+// the act of querying wakes the endpoint, so a short retry succeeds.
+// Without this, all the boot-time backfills silently fail on every cold
+// production boot.
+async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attempts = 5): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isColdEndpoint = /endpoint has been disabled|endpoint is disabled|Connection terminated|ECONNRESET|ETIMEDOUT/i.test(msg);
+      if (i < attempts - 1 && isColdEndpoint) {
+        const delayMs = 1000 * 2 ** i;
+        logger.warn({ name, attempt: i + 1, delayMs, err: msg }, `Boot block: db endpoint cold, retrying`);
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 (async () => {
   try {
-    await db.execute(sql`
+    await runWithDbWarmupRetry("attachment_urls backfill", () => db.execute(sql`
       UPDATE portal_submissions ps
       SET attachment_urls = (
         SELECT COALESCE(json_agg(ce.image_url), '[]'::json)
@@ -22,19 +49,19 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
       )
       WHERE (ps.attachment_urls IS NULL OR ps.attachment_urls::text = '[]' OR ps.attachment_urls::text = 'null')
         AND ps.claim_id IS NOT NULL
-    `);
+    `));
     logger.info("One-time migration: backfilled attachment_urls from claim_evidence");
   } catch (err) {
     logger.warn({ err }, "One-time migration: attachment_urls backfill failed");
   }
 
   try {
-    await db.execute(sql`
+    await runWithDbWarmupRetry("conversation_id backfill", () => db.execute(sql`
       UPDATE portal_responses
       SET conversation_id = metadata->>'conversationId'
       WHERE conversation_id IS NULL
         AND metadata ? 'conversationId'
-    `);
+    `));
     logger.info("One-time migration: backfilled portal_responses.conversation_id from metadata");
   } catch (err) {
     logger.warn({ err }, "One-time migration: conversation_id backfill failed");
@@ -53,7 +80,7 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
   if (!isProduction) {
     logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Task #64 backfill: skipping (not production)");
   } else try {
-    const result = await db.execute(sql`
+    const result = await runWithDbWarmupRetry("Task #64 backfill", () => db.execute(sql`
       WITH targets AS (
         SELECT id, claim_id
         FROM portal_submissions
@@ -89,7 +116,7 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
         'System (Task #64 backfill)'
       FROM updated u
       RETURNING (metadata->>'submissionId')::int AS submission_id
-    `);
+    `));
     const requeuedIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
     if (requeuedIds.length > 0) {
       logger.info({ requeuedIds }, "Task #64 backfill: manually re-queued failed batch submissions");
@@ -111,7 +138,7 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
   if (!isProduction) {
     logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Apr-27 attempts reset: skipping (not production)");
   } else try {
-    const result = await db.execute(sql`
+    const result = await runWithDbWarmupRetry("Apr-27 attempts reset", () => db.execute(sql`
       WITH targets AS (
         SELECT id, claim_id
         FROM portal_submissions
@@ -153,7 +180,7 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
         'System (Apr-27 attempts reset)'
       FROM updated u
       RETURNING (metadata->>'submissionId')::int AS submission_id
-    `);
+    `));
     const resetIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
     if (resetIds.length > 0) {
       logger.info({ resetIds }, "Apr-27 attempts reset: manually reset attempts to 0 for exhausted submissions");
