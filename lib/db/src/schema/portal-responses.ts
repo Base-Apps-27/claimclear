@@ -23,6 +23,7 @@ export const portalResponsesTable = pgTable("portal_responses", {
   subject: text("subject"),
   content: text("content"),
   rawContent: text("raw_content"),
+  bodyFormat: text("body_format").notNull().default("text"),
   senderEmail: text("sender_email"),
   senderName: text("sender_name"),
   matchedVia: text("matched_via"),

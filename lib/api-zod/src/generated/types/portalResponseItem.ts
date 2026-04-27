@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PortalResponseItemBodyFormat } from "./portalResponseItemBodyFormat";
 import type { PortalResponseItemMetadata } from "./portalResponseItemMetadata";
 import type { PortalResponseItemResponseType } from "./portalResponseItemResponseType";
 import type { PortalResponseItemSource } from "./portalResponseItemSource";
@@ -18,6 +19,11 @@ export interface PortalResponseItem {
   subject?: string | null;
   content?: string | null;
   rawContent?: string | null;
+  /** Format of `content` / `rawContent`. `html` indicates the body is HTML and
+the UI should render it through a sanitizer; `text` (the default) renders
+with whitespace preserved.
+ */
+  bodyFormat: PortalResponseItemBodyFormat;
   senderEmail?: string | null;
   senderName?: string | null;
   matchedVia?: string | null;

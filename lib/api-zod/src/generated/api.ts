@@ -346,6 +346,11 @@ export const GetInvoiceGroupResponse = zod
             subject: zod.string().nullish(),
             content: zod.string().nullish(),
             rawContent: zod.string().nullish(),
+            bodyFormat: zod
+              .enum(["html", "text"])
+              .describe(
+                "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+              ),
             senderEmail: zod.string().nullish(),
             senderName: zod.string().nullish(),
             matchedVia: zod.string().nullish(),
@@ -3581,6 +3586,11 @@ export const ListResponsesResponse = zod.object({
         subject: zod.string().nullish(),
         content: zod.string().nullish(),
         rawContent: zod.string().nullish(),
+        bodyFormat: zod
+          .enum(["html", "text"])
+          .describe(
+            "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+          ),
         senderEmail: zod.string().nullish(),
         senderName: zod.string().nullish(),
         matchedVia: zod.string().nullish(),
@@ -3622,6 +3632,11 @@ export const GetResponseResponse = zod.object({
   subject: zod.string().nullish(),
   content: zod.string().nullish(),
   rawContent: zod.string().nullish(),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+    ),
   senderEmail: zod.string().nullish(),
   senderName: zod.string().nullish(),
   matchedVia: zod.string().nullish(),
@@ -3674,6 +3689,11 @@ export const ProcessResponseResponse = zod.object({
   subject: zod.string().nullish(),
   content: zod.string().nullish(),
   rawContent: zod.string().nullish(),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+    ),
   senderEmail: zod.string().nullish(),
   senderName: zod.string().nullish(),
   matchedVia: zod.string().nullish(),
@@ -3716,6 +3736,11 @@ export const LinkResponseResponse = zod.object({
   subject: zod.string().nullish(),
   content: zod.string().nullish(),
   rawContent: zod.string().nullish(),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+    ),
   senderEmail: zod.string().nullish(),
   senderName: zod.string().nullish(),
   matchedVia: zod.string().nullish(),
@@ -3760,6 +3785,11 @@ export const ReassignResponseResponse = zod.object({
   subject: zod.string().nullish(),
   content: zod.string().nullish(),
   rawContent: zod.string().nullish(),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of `content` \/ `rawContent`. `html` indicates the body is HTML and\nthe UI should render it through a sanitizer; `text` (the default) renders\nwith whitespace preserved.\n",
+    ),
   senderEmail: zod.string().nullish(),
   senderName: zod.string().nullish(),
   matchedVia: zod.string().nullish(),
@@ -3848,7 +3878,13 @@ export const RecordPortalResponseBody = zod.object({
     .string()
     .optional()
     .describe(
-      "Full body text of the portal response, preserved verbatim for display.",
+      "Full body of the portal response, preserved verbatim for display.",
+    ),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .optional()
+    .describe(
+      "Declares whether `rawContent`\/`content` is HTML or plain text. When\n`html`, the UI renders the response through a sanitizer so links,\nemphasis, and lists survive. Defaults to `text` for backwards\ncompatibility with bots that have not been updated.\n",
     ),
   subject: zod
     .string()

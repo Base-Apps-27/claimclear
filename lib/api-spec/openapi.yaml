@@ -2246,7 +2246,15 @@ paths:
                   description: Short preview / summary of the portal response.
                 rawContent:
                   type: string
-                  description: Full body text of the portal response, preserved verbatim for display.
+                  description: Full body of the portal response, preserved verbatim for display.
+                bodyFormat:
+                  type: string
+                  enum: [html, text]
+                  description: |
+                    Declares whether `rawContent`/`content` is HTML or plain text. When
+                    `html`, the UI renders the response through a sanitizer so links,
+                    emphasis, and lists survive. Defaults to `text` for backwards
+                    compatibility with bots that have not been updated.
                 subject:
                   type: string
                   description: Optional subject / title of the portal message.
@@ -4036,7 +4044,7 @@ components:
 
     PortalResponseItem:
       type: object
-      required: [id, source, responseType, processed, autoLinked, receivedAt, createdAt]
+      required: [id, source, responseType, bodyFormat, processed, autoLinked, receivedAt, createdAt]
       properties:
         id:
           type: integer
@@ -4061,6 +4069,13 @@ components:
         rawContent:
           type: string
           nullable: true
+        bodyFormat:
+          type: string
+          enum: [html, text]
+          description: |
+            Format of `content` / `rawContent`. `html` indicates the body is HTML and
+            the UI should render it through a sanitizer; `text` (the default) renders
+            with whitespace preserved.
         senderEmail:
           type: string
           nullable: true

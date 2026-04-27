@@ -207,6 +207,11 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
   const responseType = detectResponseType(email.subject, email.body?.content || email.bodyPreview);
   const isGroup = match.invoiceGroupId !== null && match.invoiceGroupId !== undefined;
 
+  // Outlook reports the original body content type; preserve it so the UI can
+  // render formatted bodies safely instead of dumping raw HTML as text.
+  const bodyFormat: "html" | "text" =
+    (email.body?.contentType || "").toLowerCase() === "html" ? "html" : "text";
+
   const [response] = await db.insert(portalResponsesTable).values({
     claimId: match.claimId,
     invoiceGroupId: match.invoiceGroupId,
@@ -216,6 +221,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     subject: email.subject,
     content: email.bodyPreview,
     rawContent: email.body?.content || null,
+    bodyFormat,
     senderEmail: email.from?.emailAddress?.address || null,
     senderName: email.from?.emailAddress?.name || null,
     matchedVia: match.matchedVia,
@@ -326,8 +332,13 @@ export async function processPortalResponse(data: {
   portalTicketId: string;
   responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
   content: string;
-  /** Full body text of the portal message; preserved verbatim for UI display. */
+  /** Full body of the portal message; preserved verbatim for UI display. */
   rawContent?: string;
+  /**
+   * Whether `rawContent`/`content` is HTML or plain text. Defaults to `text`
+   * when omitted to preserve behaviour for bots that have not been updated.
+   */
+  bodyFormat?: "html" | "text";
   /** Subject / title of the portal message, if available. */
   subject?: string;
   /** Email of the portal user that posted the response, if available. */
@@ -347,6 +358,7 @@ export async function processPortalResponse(data: {
     subject: data.subject ?? null,
     content: data.content,
     rawContent: data.rawContent ?? null,
+    bodyFormat: data.bodyFormat ?? "text",
     senderEmail: data.senderEmail ?? null,
     senderName: data.senderName ?? null,
     portalTicketId: data.portalTicketId,

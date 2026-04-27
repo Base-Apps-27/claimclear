@@ -416,6 +416,20 @@ export const PortalResponseItemResponseType = {
   other: "other",
 } as const;
 
+/**
+ * Format of `content` / `rawContent`. `html` indicates the body is HTML and
+the UI should render it through a sanitizer; `text` (the default) renders
+with whitespace preserved.
+
+ */
+export type PortalResponseItemBodyFormat =
+  (typeof PortalResponseItemBodyFormat)[keyof typeof PortalResponseItemBodyFormat];
+
+export const PortalResponseItemBodyFormat = {
+  html: "html",
+  text: "text",
+} as const;
+
 export type PortalResponseItemMetadata = { [key: string]: unknown } | null;
 
 export interface PortalResponseItem {
@@ -427,6 +441,11 @@ export interface PortalResponseItem {
   subject?: string | null;
   content?: string | null;
   rawContent?: string | null;
+  /** Format of `content` / `rawContent`. `html` indicates the body is HTML and
+the UI should render it through a sanitizer; `text` (the default) renders
+with whitespace preserved.
+ */
+  bodyFormat: PortalResponseItemBodyFormat;
   senderEmail?: string | null;
   senderName?: string | null;
   matchedVia?: string | null;
@@ -1501,6 +1520,21 @@ export const RecordPortalResponseBodyResponseType = {
   other: "other",
 } as const;
 
+/**
+ * Declares whether `rawContent`/`content` is HTML or plain text. When
+`html`, the UI renders the response through a sanitizer so links,
+emphasis, and lists survive. Defaults to `text` for backwards
+compatibility with bots that have not been updated.
+
+ */
+export type RecordPortalResponseBodyBodyFormat =
+  (typeof RecordPortalResponseBodyBodyFormat)[keyof typeof RecordPortalResponseBodyBodyFormat];
+
+export const RecordPortalResponseBodyBodyFormat = {
+  html: "html",
+  text: "text",
+} as const;
+
 export type RecordPortalResponseBodyMetadata = { [key: string]: unknown };
 
 export type RecordPortalResponseBody = {
@@ -1508,8 +1542,14 @@ export type RecordPortalResponseBody = {
   responseType: RecordPortalResponseBodyResponseType;
   /** Short preview / summary of the portal response. */
   content?: string;
-  /** Full body text of the portal response, preserved verbatim for display. */
+  /** Full body of the portal response, preserved verbatim for display. */
   rawContent?: string;
+  /** Declares whether `rawContent`/`content` is HTML or plain text. When
+`html`, the UI renders the response through a sanitizer so links,
+emphasis, and lists survive. Defaults to `text` for backwards
+compatibility with bots that have not been updated.
+ */
+  bodyFormat?: RecordPortalResponseBodyBodyFormat;
   /** Optional subject / title of the portal message. */
   subject?: string;
   /** Optional email address of the portal user that posted the response. */

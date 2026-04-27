@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import DOMPurify from "dompurify";
 import {
   useGetClaim, getGetClaimQueryKey,
   useUpdateClaim, useUpdateClaimStatus, useUpdateClaimOutcome,
@@ -941,15 +942,32 @@ export default function ClaimDetail() {
                         if (!fullBody) return null;
                         const isLong = fullBody.length > 400 || fullBody.split("\n").length > 6;
                         const isExpanded = expandedResponseIds.has(resp.id);
+                        const isHtml = resp.bodyFormat === "html";
+                        const sanitizedHtml = isHtml
+                          ? DOMPurify.sanitize(fullBody, {
+                              ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li", "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4", "h5", "h6", "span", "div"],
+                              ALLOWED_ATTR: ["href", "target", "rel"],
+                            })
+                          : "";
                         return (
                           <div className="space-y-1">
-                            <div
-                              className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 whitespace-pre-wrap break-words font-sans overflow-y-auto ${
-                                isExpanded ? "max-h-[32rem]" : "max-h-32"
-                              }`}
-                            >
-                              {fullBody}
-                            </div>
+                            {isHtml ? (
+                              <div
+                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 break-words font-sans overflow-y-auto prose prose-sm max-w-none ${
+                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
+                                }`}
+                                // Sanitized via DOMPurify above with a strict tag/attr allow-list.
+                                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                              />
+                            ) : (
+                              <div
+                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 whitespace-pre-wrap break-words font-sans overflow-y-auto ${
+                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
+                                }`}
+                              >
+                                {fullBody}
+                              </div>
+                            )}
                             {isLong && (
                               <Button
                                 size="sm"

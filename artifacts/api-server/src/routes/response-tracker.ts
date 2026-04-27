@@ -263,12 +263,15 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
  * - `metadata`: free-form JSON for any additional bot-side context.
  */
 router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<void> => {
-  const { submissionId, responseType, content, rawContent, subject, senderEmail, senderName } = req.body;
+  const { submissionId, responseType, content, rawContent, bodyFormat, subject, senderEmail, senderName } = req.body;
 
   if (!submissionId || !responseType) {
     res.status(400).json({ error: "submissionId and responseType are required" });
     return;
   }
+
+  const normalizedBodyFormat: "html" | "text" | undefined =
+    bodyFormat === "html" ? "html" : bodyFormat === "text" ? "text" : undefined;
 
   const [submission] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, submissionId));
   if (!submission) { res.status(404).json({ error: "Submission not found" }); return; }
@@ -281,6 +284,7 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
     responseType,
     content: content || "",
     rawContent: typeof rawContent === "string" ? rawContent : undefined,
+    bodyFormat: normalizedBodyFormat,
     subject: typeof subject === "string" ? subject : undefined,
     senderEmail: typeof senderEmail === "string" ? senderEmail : undefined,
     senderName: typeof senderName === "string" ? senderName : undefined,

@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { RecordPortalResponseBodyBodyFormat } from "./recordPortalResponseBodyBodyFormat";
 import type { RecordPortalResponseBodyMetadata } from "./recordPortalResponseBodyMetadata";
 import type { RecordPortalResponseBodyResponseType } from "./recordPortalResponseBodyResponseType";
 
@@ -13,8 +14,14 @@ export type RecordPortalResponseBody = {
   responseType: RecordPortalResponseBodyResponseType;
   /** Short preview / summary of the portal response. */
   content?: string;
-  /** Full body text of the portal response, preserved verbatim for display. */
+  /** Full body of the portal response, preserved verbatim for display. */
   rawContent?: string;
+  /** Declares whether `rawContent`/`content` is HTML or plain text. When
+`html`, the UI renders the response through a sanitizer so links,
+emphasis, and lists survive. Defaults to `text` for backwards
+compatibility with bots that have not been updated.
+ */
+  bodyFormat?: RecordPortalResponseBodyBodyFormat;
   /** Optional subject / title of the portal message. */
   subject?: string;
   /** Optional email address of the portal user that posted the response. */
