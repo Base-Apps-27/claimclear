@@ -195,6 +195,12 @@ export const GetInvoiceGroupResponse = zod
   })
   .and(
     zod.object({
+      isPartial: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when at least one leg is On Hold and at least one is not — the group is split, with part of it moving forward while part is parked.",
+        ),
       rides: zod
         .array(
           zod.object({

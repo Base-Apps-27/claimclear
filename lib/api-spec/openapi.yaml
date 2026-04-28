@@ -2549,6 +2549,9 @@ components:
         - $ref: "#/components/schemas/InvoiceGroupResponse"
         - type: object
           properties:
+            isPartial:
+              type: boolean
+              description: True when at least one leg is On Hold and at least one is not — the group is split, with part of it moving forward while part is parked.
             rides:
               type: array
               items:

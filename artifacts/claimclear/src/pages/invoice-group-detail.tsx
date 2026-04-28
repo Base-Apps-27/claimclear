@@ -17,12 +17,14 @@ import {
   getListResponsesQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   useGetInvoiceGroupValidTransitions,
+  usePlaceClaimOnHold,
+  useRemoveClaimHold,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +53,9 @@ import {
   ArrowRightLeft,
   MailQuestion,
   Search,
+  PauseCircle,
+  Play,
+  SplitSquareHorizontal,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,11 +91,21 @@ export default function InvoiceGroupDetail() {
   const triageGroup = useTriageInvoiceGroup();
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
+  const placeLegHold = usePlaceClaimOnHold();
+  const removeLegHold = useRemoveClaimHold();
   const deleteEvidence = useDeleteInvoiceGroupEvidence();
   const processResponseMutation = useProcessResponse();
   const reassignResponseMutation = useReassignResponse();
 
   const [holdReason, setHoldReason] = useState("");
+
+  // Per-leg hold dialog state — tracks which ride row's Hold dialog is open,
+  // plus its reason / pending-from inputs. Mirrors the claim-detail flow so
+  // the user doesn't have to drill into a separate page to park a single leg.
+  const [legHoldDialogFor, setLegHoldDialogFor] = useState<number | null>(null);
+  const [legHoldReason, setLegHoldReason] = useState("");
+  const [legHoldPendingFrom, setLegHoldPendingFrom] = useState("");
+  const [legActionError, setLegActionError] = useState<string | null>(null);
   const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
   const [expandedResponseIds, setExpandedResponseIds] = useState<Set<number>>(new Set());
   const toggleResponseExpanded = (responseId: number) => {
@@ -162,6 +177,12 @@ export default function InvoiceGroupDetail() {
   const notes: any[] = (group as any).notes ?? [];
   const responses: PortalResponseItem[] = (group as any).responses ?? [];
 
+  // A group is "partial" when at least one leg is on hold and at least one is
+  // not — surfaced as a Partial badge in the header so users can see at a
+  // glance that the group has been split into separate workflows.
+  const heldLegCount = rides.filter((r) => r.status === "On Hold").length;
+  const isPartial: boolean = (group as any).isPartial ?? (heldLegCount > 0 && heldLegCount < rides.length);
+
   const handleTriage = async (outcome: "non_issue" | "issue_found") => {
     await triageGroup.mutateAsync({
       id,
@@ -195,6 +216,44 @@ export default function InvoiceGroupDetail() {
     invalidate();
   };
 
+  const openLegHoldDialog = (legId: number) => {
+    setLegHoldDialogFor(legId);
+    setLegHoldReason("");
+    setLegHoldPendingFrom("");
+    setLegActionError(null);
+  };
+
+  const closeLegHoldDialog = () => {
+    setLegHoldDialogFor(null);
+    setLegHoldReason("");
+    setLegHoldPendingFrom("");
+    setLegActionError(null);
+  };
+
+  const handlePlaceLegHold = async () => {
+    if (!legHoldDialogFor || !legHoldReason.trim()) return;
+    try {
+      await placeLegHold.mutateAsync({
+        id: legHoldDialogFor,
+        data: { holdReason: legHoldReason, holdPendingFrom: legHoldPendingFrom || undefined },
+      });
+      closeLegHoldDialog();
+      invalidate();
+    } catch (err: any) {
+      setLegActionError(err?.response?.data?.error || err?.message || "Failed to place leg on hold");
+    }
+  };
+
+  const handleRemoveLegHold = async (legId: number) => {
+    setLegActionError(null);
+    try {
+      await removeLegHold.mutateAsync({ id: legId });
+      invalidate();
+    } catch (err: any) {
+      setLegActionError(err?.response?.data?.error || err?.message || "Failed to remove leg hold");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -214,6 +273,25 @@ export default function InvoiceGroupDetail() {
               <Badge variant="secondary" data-testid="badge-closure-reason">
                 {closureReasonLabel(group.closureReason)}
               </Badge>
+            )}
+            {isPartial && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-700 gap-1"
+                      data-testid="badge-partial"
+                    >
+                      <SplitSquareHorizontal className="h-3 w-3" />
+                      Partial
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {heldLegCount} of {rides.length} leg{rides.length === 1 ? "" : "s"} on hold — the rest can be submitted independently.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
@@ -363,38 +441,138 @@ export default function InvoiceGroupDetail() {
                         <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> Amount</span>
                       </th>
                       <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rides.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
+                        <td colSpan={9} className="px-4 py-6 text-center text-muted-foreground">
                           No rides in this group.
                         </td>
                       </tr>
                     ) : (
-                      rides.map((ride) => (
-                        <tr key={ride.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                          <td className="px-4 py-3 font-mono font-medium text-primary">
-                            <Link href={`/claims/${ride.id}`}>{ride.confNumber}</Link>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">{ride.refNumber || '-'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{formatDate(ride.date)}</td>
-                          <td className="px-4 py-3">{ride.clientNumber || '-'}</td>
-                          <td className="px-4 py-3">{ride.carNumber || '-'}</td>
-                          <td className="px-4 py-3 max-w-[200px]">
-                            <span className="text-xs text-muted-foreground line-clamp-2">{ride.errorDetails || '-'}</span>
-                          </td>
-                          <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(ride.claimAmount)}</td>
-                          <td className="px-4 py-3"><StatusBadge status={ride.status} /></td>
-                        </tr>
-                      ))
+                      rides.map((ride) => {
+                        const isHeld = ride.status === "On Hold";
+                        return (
+                          <Fragment key={ride.id}>
+                            <tr
+                              className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${isHeld ? "bg-amber-50/40 dark:bg-amber-950/20" : ""}`}
+                              data-testid={`leg-row-${ride.id}`}
+                            >
+                              <td className="px-4 py-3 font-mono font-medium text-primary">
+                                <Link href={`/claims/${ride.id}`}>{ride.confNumber}</Link>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-muted-foreground">{ride.refNumber || '-'}</td>
+                              <td className="px-4 py-3 whitespace-nowrap">{formatDate(ride.date)}</td>
+                              <td className="px-4 py-3">{ride.clientNumber || '-'}</td>
+                              <td className="px-4 py-3">{ride.carNumber || '-'}</td>
+                              <td className="px-4 py-3 max-w-[200px]">
+                                <span className="text-xs text-muted-foreground line-clamp-2">{ride.errorDetails || '-'}</span>
+                              </td>
+                              <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(ride.claimAmount)}</td>
+                              <td className="px-4 py-3"><StatusBadge status={ride.status} /></td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                {isHeld ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoveLegHold(ride.id)}
+                                    disabled={removeLegHold.isPending}
+                                    data-testid={`btn-remove-leg-hold-${ride.id}`}
+                                  >
+                                    <Play className="h-3.5 w-3.5 mr-1" />Remove Hold
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openLegHoldDialog(ride.id)}
+                                    data-testid={`btn-hold-leg-${ride.id}`}
+                                  >
+                                    <PauseCircle className="h-3.5 w-3.5 mr-1" />Hold
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                            {isHeld && ride.holdReason && (
+                              <tr className="bg-amber-50/40 dark:bg-amber-950/20 border-b last:border-0">
+                                <td colSpan={9} className="px-4 pb-3 -mt-1">
+                                  <div className="text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                                    <PauseCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                                    <span>
+                                      <span className="font-medium">On hold:</span> {ride.holdReason}
+                                      {ride.holdPendingFrom ? <span className="opacity-70"> · pending from {ride.holdPendingFrom}</span> : null}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
               </div>
+              {legActionError && (
+                <div className="px-4 py-2 text-xs text-destructive border-t bg-destructive/5" data-testid="leg-action-error">
+                  {legActionError}
+                </div>
+              )}
+              {isPartial && (
+                <div className="px-4 py-2 text-xs text-amber-800 dark:text-amber-200 border-t bg-amber-50/60 dark:bg-amber-950/30 flex items-center gap-2">
+                  <SplitSquareHorizontal className="h-3.5 w-3.5" />
+                  This invoice is split: only the {rides.length - heldLegCount} non-held leg{rides.length - heldLegCount === 1 ? "" : "s"} will be included in the next portal submission.
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          <Dialog open={legHoldDialogFor !== null} onOpenChange={(open) => { if (!open) closeLegHoldDialog(); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Place this leg on hold</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  This leg will be excluded from the next portal submission for this invoice. The other legs can still move forward independently.
+                </p>
+                <div>
+                  <Label className="text-xs">Reason</Label>
+                  <Textarea
+                    value={legHoldReason}
+                    onChange={(e) => setLegHoldReason(e.target.value)}
+                    placeholder="Why is this leg on hold? (e.g. waiting on driver statement)"
+                    data-testid="input-leg-hold-reason"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Pending from (optional)</Label>
+                  <Input
+                    value={legHoldPendingFrom}
+                    onChange={(e) => setLegHoldPendingFrom(e.target.value)}
+                    placeholder="Person or department"
+                    data-testid="input-leg-hold-pending-from"
+                  />
+                </div>
+                {legActionError && (
+                  <div className="text-xs text-destructive">{legActionError}</div>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="ghost" onClick={closeLegHoldDialog}>Cancel</Button>
+                  <Button
+                    onClick={handlePlaceLegHold}
+                    disabled={!legHoldReason.trim() || placeLegHold.isPending}
+                    data-testid="btn-confirm-leg-hold"
+                  >
+                    {placeLegHold.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <PauseCircle className="h-4 w-4 mr-1" />}
+                    Place on Hold
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {responses.length > 0 && (
             <Card>

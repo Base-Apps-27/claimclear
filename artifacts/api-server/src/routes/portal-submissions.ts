@@ -52,6 +52,43 @@ async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext 
   return { group, rides, primaryClaim: rides[0] };
 }
 
+/**
+ * Filter rides down to those eligible for inclusion in a new portal submission.
+ * Excludes:
+ *   - legs currently On Hold (they're being parked while evidence is gathered)
+ *   - legs that already have an in-flight submission (pending/in_progress) or a
+ *     submitted-and-awaiting-response submission tied to the same group
+ *
+ * Returns the filtered rides plus the excluded buckets so the caller can audit
+ * what was skipped.
+ */
+async function filterRidesForSubmission(
+  rides: (typeof claimsTable.$inferSelect)[],
+  groupId: number | null,
+): Promise<{
+  rides: (typeof claimsTable.$inferSelect)[];
+  excludedHeld: (typeof claimsTable.$inferSelect)[];
+  excludedAlreadySubmitted: (typeof claimsTable.$inferSelect)[];
+}> {
+  const excludedHeld = rides.filter(r => r.status === "On Hold");
+  let candidate = rides.filter(r => r.status !== "On Hold");
+  let excludedAlreadySubmitted: (typeof claimsTable.$inferSelect)[] = [];
+
+  if (groupId && candidate.length > 0) {
+    const activeSubs = await db.select({ claimId: portalSubmissionsTable.claimId })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.invoiceGroupId, groupId),
+        inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
+      ));
+    const blockedIds = new Set(activeSubs.map(s => s.claimId));
+    excludedAlreadySubmitted = candidate.filter(r => blockedIds.has(r.id));
+    candidate = candidate.filter(r => !blockedIds.has(r.id));
+  }
+
+  return { rides: candidate, excludedHeld, excludedAlreadySubmitted };
+}
+
 async function loadGroupContextByClaimId(claimId: number): Promise<GroupContext | { primaryClaim: typeof claimsTable.$inferSelect; group: null; rides: (typeof claimsTable.$inferSelect)[] } | null> {
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!claim) return null;
@@ -390,10 +427,32 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     return;
   }
 
-  const ctx = await resolveContext({ invoiceGroupId, claimId });
-  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+  const rawCtx = await resolveContext({ invoiceGroupId, claimId });
+  if (!rawCtx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
 
-  const groupIdForCancel = ctx.group?.id ?? null;
+  const groupIdForCancel = rawCtx.group?.id ?? null;
+  const totalLegs = rawCtx.rides.length;
+
+  // Filter held legs and already-submitted legs out of the snapshot so the
+  // submission only covers the legs the user actually wants to file right now.
+  const filtered = await filterRidesForSubmission(rawCtx.rides, groupIdForCancel);
+  if (filtered.rides.length === 0) {
+    const heldCount = filtered.excludedHeld.length;
+    const subCount = filtered.excludedAlreadySubmitted.length;
+    const reasons: string[] = [];
+    if (heldCount > 0) reasons.push(`${heldCount} on hold`);
+    if (subCount > 0) reasons.push(`${subCount} already submitted`);
+    res.status(400).json({
+      error: `Nothing to submit — every leg is excluded (${reasons.join(", ") || "no eligible legs"}). Remove a hold or wait for the existing submission to resolve.`,
+    });
+    return;
+  }
+  const ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] } =
+    rawCtx.group
+      ? { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] }
+      : { group: null, rides: filtered.rides, primaryClaim: filtered.rides[0] };
+  const isPartialSubmission = filtered.rides.length < totalLegs;
+
   const existingDrafts = await db.select().from(portalSubmissionsTable)
     .where(and(
       groupIdForCancel
@@ -455,11 +514,19 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     attempts: 0,
   }).returning();
 
+  const partialSuffix = isPartialSubmission
+    ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted)`
+    : "";
   await db.insert(auditLogsTable).values({
     claimId: ctx.primaryClaim.id,
     invoiceGroupId: ctx.group?.id ?? null,
     action: "portal_draft_created",
-    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})`,
+    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}`,
+    metadata: isPartialSubmission ? {
+      includedLegs: ctx.rides.map(r => r.confNumber || r.id),
+      excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
+      excludedAlreadySubmitted: filtered.excludedAlreadySubmitted.map(r => r.confNumber || r.id),
+    } : undefined,
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });

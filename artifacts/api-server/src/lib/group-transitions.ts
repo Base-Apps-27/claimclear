@@ -1,4 +1,4 @@
-import { eq, and, or, inArray } from "drizzle-orm";
+import { eq, and, or, ne, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
@@ -98,9 +98,28 @@ async function syncChildRides(
     ...extraChildFields,
   };
 
+  // Held legs are intentionally excluded — they are tracked separately and
+  // resolved on their own ticket once the hold is removed.
   await db.update(claimsTable)
     .set(updateData)
-    .where(eq(claimsTable.invoiceGroupId, groupId));
+    .where(and(
+      eq(claimsTable.invoiceGroupId, groupId),
+      ne(claimsTable.status, "On Hold"),
+    ));
+}
+
+async function ensureNoHeldLegsBeforeClosure(groupId: number, newStatus: string): Promise<void> {
+  if (!TERMINAL_STATUSES.includes(newStatus)) return;
+  const held = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, groupId),
+      eq(claimsTable.status, "On Hold"),
+    ));
+  if (held.length > 0) {
+    const labels = held.map(h => h.confNumber || `claim ${h.id}`).join(", ");
+    throw new Error(`Cannot close this invoice group while leg${held.length === 1 ? "" : "s"} ${labels} ${held.length === 1 ? "is" : "are"} on hold. Remove the hold and resolve ${held.length === 1 ? "it" : "them"} first, or withdraw the leg${held.length === 1 ? "" : "s"} individually.`);
+  }
 }
 
 export async function transitionGroupStatus(opts: {
@@ -124,6 +143,7 @@ export async function transitionGroupStatus(opts: {
 
   if (!systemOverride) {
     await checkActiveSubmissions(groupId);
+    await ensureNoHeldLegsBeforeClosure(groupId, newStatus);
 
     if (SYSTEM_CONTROLLED_GROUP_STATUSES.includes(newStatus)) {
       throw new Error(`"${newStatus}" is a system-controlled status and cannot be set manually.`);
@@ -291,6 +311,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
 
   if (!systemOverride) {
     await checkActiveSubmissions(groupId);
+    await ensureNoHeldLegsBeforeClosure(groupId, newStatus);
 
     if (old.status !== newStatus) {
       if (SYSTEM_CONTROLLED_GROUP_STATUSES.includes(newStatus)) {

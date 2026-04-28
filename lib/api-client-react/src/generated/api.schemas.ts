@@ -498,6 +498,8 @@ with whitespace preserved.
 }
 
 export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
+  /** True when at least one leg is On Hold and at least one is not — the group is split, with part of it moving forward while part is parked. */
+  isPartial?: boolean;
   rides?: ClaimResponse[];
   submissions?: PortalSubmissionResponse[];
   notes?: NoteResponse[];

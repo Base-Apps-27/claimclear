@@ -115,7 +115,13 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     .where(eq(portalResponsesTable.invoiceGroupId, id))
     .orderBy(desc(portalResponsesTable.receivedAt));
 
-  res.json({ ...group, rides, submissions, notes, auditLogs, responses });
+  // A group is "partial" when at least one leg is on hold AND at least one is
+  // not — i.e. the user has split the group so part of it can move forward
+  // while another part is parked.
+  const heldCount = rides.filter(r => r.status === "On Hold").length;
+  const isPartial = heldCount > 0 && heldCount < rides.length;
+
+  res.json({ ...group, rides, submissions, notes, auditLogs, responses, isPartial });
 }));
 
 router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {
