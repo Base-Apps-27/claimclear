@@ -16,17 +16,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
+import { usePortalBatchEvents } from "@/hooks/use-portal-batch-events";
+import { useAuth } from "@workspace/replit-auth-web";
 
 const statusColors: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
   pending: "bg-amber-500/20 text-amber-700 border-amber-300",
+  queued: "bg-indigo-500/20 text-indigo-700 border-indigo-300",
   in_progress: "bg-blue-500/20 text-blue-700 border-blue-300",
   submitted: "bg-green-500/20 text-green-700 border-green-300",
   failed: "bg-red-500/20 text-red-700 border-red-300",
@@ -37,6 +40,7 @@ const statusColors: Record<string, string> = {
 const statusDescriptions: Record<string, string> = {
   draft: "Preview generated — awaiting review and confirmation before queuing.",
   pending: "Waiting in the queue for processing.",
+  queued: "Locked by the in-flight batch run — will be processed in turn.",
   in_progress: "Currently being processed — filling out the dispute form on the MAS portal.",
   submitted: "Successfully submitted to the portal. A ticket ID should be assigned.",
   failed: "Encountered an error during submission. Review the error and retry if needed.",
@@ -79,12 +83,25 @@ function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
 
 export default function PortalSubmissions() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [activeBatch, setActiveBatch] = useState<BatchJob | null>(null);
+  // Local "I just clicked the button" guard so the buttons disable instantly,
+  // before the batch_started SSE event arrives back from the server.
+  const [batchTriggering, setBatchTriggering] = useState(false);
+  const [completedJob, setCompletedJob] = useState<BatchJob | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Shared in-flight batch (visible to all viewers via SSE).
+  const sharedBatch = usePortalBatchEvents();
+  const myDisplayName = user?.displayName || user?.email || "";
+  // The batch is "owned" by the user who clicked Process. Other viewers see
+  // disabled buttons + a tooltip. Match by triggeredBy (display name / email).
+  const isMyBatch = !!sharedBatch && !!myDisplayName &&
+    sharedBatch.triggeredBy === myDisplayName;
+  const batchOwnerName = sharedBatch?.triggeredBy ?? "";
+  const batchInFlight = !!sharedBatch || batchTriggering;
 
   const { data: submissions, isLoading } = useListPortalSubmissions(
     statusFilter ? { status: statusFilter } : undefined
@@ -135,24 +152,35 @@ export default function PortalSubmissions() {
     }
   };
 
-  const pollBatchStatus = (batchId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/portal-submissions/batch-status/${batchId}`, { credentials: "include" });
-        if (res.ok) {
-          const job: BatchJob = await res.json();
-          setActiveBatch(job);
-          invalidate();
-          if (job.status !== "running") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            setBatchRunning(false);
-          }
-        }
-      } catch {}
-    }, 3000);
-  };
+  // Track the last batch ID we saw running so we can fetch its final result
+  // list (per-row outcomes) once it completes — SSE delivers events, not the
+  // full results array, so we hydrate it from /batch-status/:id once.
+  const lastBatchIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sharedBatch) {
+      lastBatchIdRef.current = sharedBatch.batchId;
+      // A new batch started — clear any old completed-job summary.
+      setCompletedJob(null);
+      // Local trigger guard is no longer needed once the SSE stream confirms
+      // the run; clear it so the UI reflects the shared state directly.
+      setBatchTriggering(false);
+    } else if (lastBatchIdRef.current) {
+      const finishedId = lastBatchIdRef.current;
+      lastBatchIdRef.current = null;
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+      fetch(`${base}/api/portal-submissions/batch-status/${finishedId}`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((job: BatchJob | null) => {
+          if (job) setCompletedJob(job);
+        })
+        .catch(() => {
+          // Best-effort; the row badges already reflect final state.
+        });
+      invalidate();
+    }
+    // We intentionally only depend on the batch ID + presence transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedBatch?.batchId, !!sharedBatch]);
 
   useEffect(() => {
     return () => {
@@ -160,20 +188,29 @@ export default function PortalSubmissions() {
     };
   }, []);
 
+  // Auto-dismiss the completed/failed batch summary card after 30s so it
+  // doesn't sit on the page indefinitely; the row-level badges still show
+  // the per-submission outcome.
+  useEffect(() => {
+    if (!completedJob) return;
+    const t = setTimeout(() => setCompletedJob(null), 30000);
+    return () => clearTimeout(t);
+  }, [completedJob]);
+
   const handleBatchProcess = async (ids: number[] | "all") => {
-    setBatchRunning(true);
-    setActiveBatch(null);
+    setBatchTriggering(true);
+    setCompletedJob(null);
     try {
-      // The on-demand worker always processes the full pending queue and is
-      // gated to one run at a time, so we no longer pass submissionIds. Both
-      // "Process Selected" and "Process All Pending" trigger the same worker
-      // run; concurrent clicks are coalesced server-side.
-      void ids;
+      // "Process Selected" forwards the explicit ID list; "Process All
+      // Pending" omits it and lets the worker claim the full pending+due
+      // queue. Both go through the same one-worker-at-a-time gate so
+      // concurrent clicks are coalesced server-side.
+      const requestBody = ids === "all" ? {} : { submissionIds: ids };
       const res = await fetch("/api/portal-submissions/batch-process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({}),
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -181,7 +218,7 @@ export default function PortalSubmissions() {
       }
       const body = await res.json();
       if (body.skipped) {
-        setBatchRunning(false);
+        setBatchTriggering(false);
         if (body.reason === "no_pending") {
           alert("No pending submissions to process.");
         } else if (body.reason === "already_running") {
@@ -189,10 +226,11 @@ export default function PortalSubmissions() {
         }
         return;
       }
-      pollBatchStatus(body.batchId);
+      // SSE delivers batch_started shortly; the local trigger flag will be
+      // cleared by the effect above once sharedBatch becomes non-null.
       setCheckedIds(new Set());
     } catch (err) {
-      setBatchRunning(false);
+      setBatchTriggering(false);
       alert(err instanceof Error ? err.message : "Failed to start batch processing");
     }
   };
@@ -226,6 +264,14 @@ export default function PortalSubmissions() {
 
   const selected = selectedId ? (submissions || []).find(s => s.id === selectedId) : null;
   const checkedCount = checkedIds.size;
+  // Disable Process / Select / row-level Cancel-Pending controls whenever any
+  // batch is running. The buttons get a tooltip explaining why; if the run
+  // belongs to the current user we just say "Processing..." like before.
+  const buttonsDisabled = batchInFlight;
+  const otherUserOwnsBatch = !!sharedBatch && !isMyBatch;
+  const lockedTooltip = otherUserOwnsBatch
+    ? `Batch already running by ${batchOwnerName}`
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -268,90 +314,133 @@ export default function PortalSubmissions() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleToggleAll}
-                  disabled={batchRunning}
-                >
-                  <CheckSquare className="h-4 w-4 mr-1" />
-                  {allPendingChecked ? "Deselect All" : "Select All Pending"}
-                </Button>
-                {checkedCount > 0 && (
-                  <Button
-                    size="sm"
-                    onClick={() => handleBatchProcess(Array.from(checkedIds))}
-                    disabled={batchRunning}
-                  >
-                    {batchRunning ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
-                    ) : (
-                      <><Play className="h-4 w-4 mr-1" />Process Selected ({checkedCount})</>
-                    )}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={() => handleBatchProcess("all")}
-                  disabled={batchRunning}
-                >
-                  {batchRunning ? (
-                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
-                  ) : (
-                    <><Play className="h-4 w-4 mr-1" />Process All Pending</>
-                  )}
-                </Button>
+                {(() => {
+                  const selectAllBtn = (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleToggleAll}
+                      disabled={buttonsDisabled}
+                    >
+                      <CheckSquare className="h-4 w-4 mr-1" />
+                      {allPendingChecked ? "Deselect All" : "Select All Pending"}
+                    </Button>
+                  );
+                  return lockedTooltip
+                    ? <WrapTooltip content={lockedTooltip}><span>{selectAllBtn}</span></WrapTooltip>
+                    : selectAllBtn;
+                })()}
+                {checkedCount > 0 && (() => {
+                  const btn = (
+                    <Button
+                      size="sm"
+                      onClick={() => handleBatchProcess(Array.from(checkedIds))}
+                      disabled={buttonsDisabled}
+                    >
+                      {otherUserOwnsBatch ? (
+                        <><Lock className="h-4 w-4 mr-1" />Batch already running by {batchOwnerName}</>
+                      ) : batchInFlight ? (
+                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
+                      ) : (
+                        <><Play className="h-4 w-4 mr-1" />Process Selected ({checkedCount})</>
+                      )}
+                    </Button>
+                  );
+                  return lockedTooltip
+                    ? <WrapTooltip content={lockedTooltip}><span>{btn}</span></WrapTooltip>
+                    : btn;
+                })()}
+                {(() => {
+                  const btn = (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => handleBatchProcess("all")}
+                      disabled={buttonsDisabled}
+                    >
+                      {otherUserOwnsBatch ? (
+                        <><Lock className="h-4 w-4 mr-1" />Batch already running by {batchOwnerName}</>
+                      ) : batchInFlight ? (
+                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
+                      ) : (
+                        <><Play className="h-4 w-4 mr-1" />Process All Pending</>
+                      )}
+                    </Button>
+                  );
+                  return lockedTooltip
+                    ? <WrapTooltip content={lockedTooltip}><span>{btn}</span></WrapTooltip>
+                    : btn;
+                })()}
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {activeBatch && (
+      {sharedBatch && (
+        <Card className="border-2 border-blue-300 bg-blue-50/50">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                <div>
+                  <p className="text-sm font-semibold">
+                    Batch Processing — In Progress
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Triggered by {sharedBatch.triggeredBy}{isMyBatch ? " (you)" : ""} · {formatDateTime(sharedBatch.startedAt)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <span>{sharedBatch.processed} / {sharedBatch.total} processed</span>
+                {sharedBatch.succeeded > 0 && <Badge className="bg-green-100 text-green-700">{sharedBatch.succeeded} succeeded</Badge>}
+                {sharedBatch.failed > 0 && <Badge variant="destructive">{sharedBatch.failed} failed</Badge>}
+              </div>
+            </div>
+
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${sharedBatch.total > 0 ? (sharedBatch.processed / sharedBatch.total) * 100 : 0}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!sharedBatch && completedJob && (
         <Card className={`border-2 ${
-          activeBatch.status === "running" ? "border-blue-300 bg-blue-50/50" :
-          activeBatch.status === "completed" ? "border-green-300 bg-green-50/50" :
+          completedJob.status === "completed" ? "border-green-300 bg-green-50/50" :
           "border-red-300 bg-red-50/50"
         }`}>
           <CardContent className="py-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {activeBatch.status === "running" ? (
-                  <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                ) : activeBatch.status === "completed" ? (
+                {completedJob.status === "completed" ? (
                   <CheckCircle className="h-5 w-5 text-green-600" />
                 ) : (
                   <AlertTriangle className="h-5 w-5 text-red-600" />
                 )}
                 <div>
                   <p className="text-sm font-semibold">
-                    Batch Processing — {activeBatch.status === "running" ? "In Progress" : activeBatch.status === "completed" ? "Complete" : "Failed"}
+                    Batch Processing — {completedJob.status === "completed" ? "Complete" : "Failed"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Triggered by {activeBatch.triggeredBy} · {formatDateTime(activeBatch.startedAt)}
+                    Triggered by {completedJob.triggeredBy} · {formatDateTime(completedJob.startedAt)}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-sm">
-                <span>{activeBatch.processed} / {activeBatch.total} processed</span>
-                {activeBatch.succeeded > 0 && <Badge className="bg-green-100 text-green-700">{activeBatch.succeeded} succeeded</Badge>}
-                {activeBatch.failed > 0 && <Badge variant="destructive">{activeBatch.failed} failed</Badge>}
+                <span>{completedJob.processed} / {completedJob.total} processed</span>
+                {completedJob.succeeded > 0 && <Badge className="bg-green-100 text-green-700">{completedJob.succeeded} succeeded</Badge>}
+                {completedJob.failed > 0 && <Badge variant="destructive">{completedJob.failed} failed</Badge>}
               </div>
             </div>
 
-            {activeBatch.status === "running" && (
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${activeBatch.total > 0 ? (activeBatch.processed / activeBatch.total) * 100 : 0}%` }}
-                />
-              </div>
-            )}
-
-            {activeBatch.status !== "running" && activeBatch.results.length > 0 && (
+            {completedJob.results.length > 0 && (
               <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                {activeBatch.results.map((r, i) => (
+                {completedJob.results.map((r, i) => (
                   <div key={i} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
                     r.status === "success" ? "bg-green-50 text-green-700" :
                     r.status === "skipped" ? "bg-gray-50 text-gray-600" :
@@ -393,21 +482,45 @@ export default function PortalSubmissions() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {(submissions || []).map(sub => (
+          {(submissions || []).map(sub => {
+            // A pending row is "queued" if the in-flight batch has claimed it.
+            const isQueued = sub.status === "pending" && !!sub.claimedByBatchId;
+            const displayStatus = isQueued ? "queued" : sub.status;
+            const queuedTooltip = isQueued && sub.claimedByUserName
+              ? `Queued by ${sub.claimedByUserName} — will be processed by the running batch.`
+              : statusDescriptions[displayStatus] || displayStatus;
+            return (
             <Card key={sub.id} className="hover:bg-accent/30 transition-colors">
               <CardContent className="py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  {sub.status === "pending" && (
-                    <Checkbox
-                      checked={checkedIds.has(sub.id)}
-                      onCheckedChange={() => handleToggle(sub.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  )}
+                  {sub.status === "pending" && (() => {
+                    const cb = (
+                      <Checkbox
+                        checked={checkedIds.has(sub.id)}
+                        onCheckedChange={() => handleToggle(sub.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={buttonsDisabled}
+                      />
+                    );
+                    return buttonsDisabled
+                      ? <WrapTooltip content={lockedTooltip ?? "Selection is locked while a batch is running."}><span>{cb}</span></WrapTooltip>
+                      : cb;
+                  })()}
                   <span className="font-mono font-semibold text-sm">{sub.confNumber}</span>
-                  <WrapTooltip content={statusDescriptions[sub.status] || sub.status}>
-                    <Badge className={`${statusColors[sub.status] || ""} cursor-help`} variant="outline">{sub.status === "dry_run" ? "Dry Run" : sub.status === "draft" ? "Draft" : sub.status === "in_progress" ? "In Progress" : sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}</Badge>
+                  <WrapTooltip content={queuedTooltip}>
+                    <Badge className={`${statusColors[displayStatus] || ""} cursor-help`} variant="outline">{
+                      displayStatus === "dry_run" ? "Dry Run"
+                      : displayStatus === "draft" ? "Draft"
+                      : displayStatus === "in_progress" ? "In Progress"
+                      : displayStatus === "queued" ? "Queued"
+                      : displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
+                    }</Badge>
                   </WrapTooltip>
+                  {isQueued && sub.claimedByUserName && (
+                    <span className="text-xs text-muted-foreground italic">
+                      claimed by {sub.claimedByUserName}
+                    </span>
+                  )}
                   {sub.portalTicketId && (
                     <WrapTooltip content="The ticket ID assigned by the MAS portal after submission.">
                       <Badge variant="outline" className="cursor-help">Ticket: {sub.portalTicketId}</Badge>
@@ -439,12 +552,18 @@ export default function PortalSubmissions() {
                     {sub.createdAt ? formatDateTime(sub.createdAt) : ""}
                   </span>
                   {["draft", "pending", "failed", "dry_run"].includes(sub.status) && (
-                    <WrapTooltip content="Sandbox run — fill out the portal form without submitting, and capture a screenshot.">
+                    <WrapTooltip content={
+                      isQueued && lockedTooltip
+                        ? lockedTooltip
+                        : isQueued
+                          ? "This submission is queued in an active batch."
+                          : "Sandbox run — fill out the portal form without submitting, and capture a screenshot."
+                    }>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-purple-600"
-                        disabled={sandboxRunning === sub.id}
+                        disabled={sandboxRunning === sub.id || isQueued}
                         onClick={(e) => { e.stopPropagation(); handleSandboxRun(sub.id); }}
                       >
                         {sandboxRunning === sub.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
@@ -471,8 +590,20 @@ export default function PortalSubmissions() {
                     </WrapTooltip>
                   )}
                   {(sub.status === "pending" || sub.status === "draft") && (
-                    <WrapTooltip content={sub.status === "draft" ? "Discard this draft." : "Cancel this submission."}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleCancel(sub.id)}>
+                    <WrapTooltip content={
+                      isQueued && lockedTooltip
+                        ? lockedTooltip
+                        : sub.status === "draft"
+                          ? "Discard this draft."
+                          : "Cancel this submission."
+                    }>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => handleCancel(sub.id)}
+                        disabled={isQueued}
+                      >
                         <XCircle className="h-4 w-4" />
                       </Button>
                     </WrapTooltip>
@@ -480,7 +611,8 @@ export default function PortalSubmissions() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

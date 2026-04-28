@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import cron from "node-cron";
-import { triggerWorkerRun, jobToCronOutcome } from "./lib/batch-processor";
+import { triggerWorkerRun, jobToCronOutcome, clearOrphanedBatchClaims } from "./lib/batch-processor";
 import { db } from "@workspace/db";
 import { sql, eq, and, or, isNull, lte, count } from "drizzle-orm";
 import { portalSubmissionsTable } from "@workspace/db";
@@ -454,6 +454,13 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Boot cleanup: any rows still flagged as Queued by an in-memory batch from
+  // a prior process are orphaned (the batch state was lost on restart). Clear
+  // them so they show as plain Pending and the next run can pick them up.
+  clearOrphanedBatchClaims().catch((cleanupErr) => {
+    logger.error({ err: cleanupErr }, "Boot cleanup of orphaned batch claims failed");
+  });
 });
 
 cron.schedule("0 0 * * *", async () => {

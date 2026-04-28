@@ -384,6 +384,24 @@ export const GetInvoiceGroupResponse = zod
             attempts: zod.number(),
             maxAttempts: zod.number(),
             nextRetryAt: zod.string().nullish(),
+            claimedByBatchId: zod
+              .string()
+              .nullish()
+              .describe(
+                "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+              ),
+            claimedByUserName: zod
+              .string()
+              .nullish()
+              .describe(
+                "Display name of the user who triggered the in-flight batch holding this row.",
+              ),
+            claimedAt: zod
+              .string()
+              .nullish()
+              .describe(
+                "Timestamp when the row was claimed by the current batch.",
+              ),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
           }),
@@ -2456,6 +2474,22 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2540,6 +2574,22 @@ export const GetPortalSubmissionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2604,6 +2654,22 @@ export const RetryPortalSubmissionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2668,6 +2734,22 @@ export const CancelPortalSubmissionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2742,6 +2824,22 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2817,6 +2915,22 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2881,6 +2995,22 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2953,6 +3083,22 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -3040,6 +3186,22 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -3104,6 +3266,22 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
+  claimedByBatchId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.",
+    ),
+  claimedByUserName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the user who triggered the in-flight batch holding this row.",
+    ),
+  claimedAt: zod
+    .string()
+    .nullish()
+    .describe("Timestamp when the row was claimed by the current batch."),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });

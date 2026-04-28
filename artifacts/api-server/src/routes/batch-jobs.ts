@@ -5,20 +5,60 @@ import {
   getBatchJob,
   listBatchJobs,
   getLastWorkerRun,
+  getActiveBatchJob,
 } from "../lib/batch-processor";
+import { addGlobalBatchClient } from "../lib/sse";
 
 const router: IRouter = Router();
 
-// Admin "Process Pending" trigger. Routes through triggerWorkerRun so the
-// one-worker-at-a-time gate is honored — concurrent admin clicks, sweeper
-// kicks, and midnight cron can never spawn parallel Playwright sessions.
-// We intentionally drop the legacy "submissionIds" array filter: the worker
-// now always processes the full pending queue, and per-submission retry has
-// its own dedicated endpoint in routes/portal-submissions.ts.
+// SSE channel that broadcasts batch lifecycle events (started, row status
+// changes, progress, completed/failed/aborted) to every connected client so
+// all viewers of the Portal Submissions page see the same shared run.
+router.get("/portal-submissions/batch-events", (req, res) => {
+  const userEmail = req.user?.email ?? null;
+  const cleanup = addGlobalBatchClient(res, userEmail);
+  req.on("close", cleanup);
+});
+
+// Snapshot of the currently-running batch (if any). Used by clients on
+// initial page load and on reconnect to hydrate UI state without waiting for
+// the next SSE event.
+router.get("/portal-submissions/active-batch", asyncHandler(async (_req, res): Promise<void> => {
+  const job = getActiveBatchJob();
+  if (!job) {
+    res.json({ active: false });
+    return;
+  }
+  res.json({
+    active: true,
+    batchId: job.id,
+    triggeredBy: job.triggeredBy,
+    startedAt: job.startedAt,
+    total: job.total,
+    processed: job.processed,
+    succeeded: job.succeeded,
+    failed: job.failed,
+    submissionIds: job.submissionIds,
+  });
+}));
+
+// Admin "Process Pending" / "Process Selected" trigger. Routes through
+// triggerWorkerRun so the one-worker-at-a-time gate is honored — concurrent
+// admin clicks, sweeper kicks, and midnight cron can never spawn parallel
+// Playwright sessions. If the body includes a non-empty `submissionIds`
+// array, only those rows (filtered to pending + due) are claimed; otherwise
+// the full pending queue is processed.
 router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): Promise<void> => {
   const triggeredBy = req.user?.displayName || req.user?.email || "Admin";
 
-  const outcome = await triggerWorkerRun({ triggeredBy });
+  const rawIds = (req.body && Array.isArray(req.body.submissionIds))
+    ? req.body.submissionIds
+    : null;
+  const submissionIds: number[] | "all" = rawIds && rawIds.length > 0
+    ? rawIds.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+    : "all";
+
+  const outcome = await triggerWorkerRun({ triggeredBy, submissionIds });
 
   if (outcome.kind === "skipped") {
     if (outcome.reason === "already_running") {

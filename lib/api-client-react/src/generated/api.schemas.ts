@@ -380,6 +380,21 @@ export interface PortalSubmissionResponse {
   maxAttempts: number;
   /** @nullable */
   nextRetryAt?: string | null;
+  /**
+   * ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.
+   * @nullable
+   */
+  claimedByBatchId?: string | null;
+  /**
+   * Display name of the user who triggered the in-flight batch holding this row.
+   * @nullable
+   */
+  claimedByUserName?: string | null;
+  /**
+   * Timestamp when the row was claimed by the current batch.
+   * @nullable
+   */
+  claimedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

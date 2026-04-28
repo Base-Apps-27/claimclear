@@ -44,6 +44,13 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   attempts: integer("attempts").notNull().default(0),
   maxAttempts: integer("max_attempts").notNull().default(4),
   nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  // Set when a batch run claims this row so other users can see it is "Queued"
+  // for the active run (still status='pending' until the worker picks it up).
+  // Cleared when the row leaves the queue (in_progress, submitted, failed,
+  // cancelled) or when the run releases it on completion/abort.
+  claimedByBatchId: text("claimed_by_batch_id"),
+  claimedByUserName: text("claimed_by_user_name"),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

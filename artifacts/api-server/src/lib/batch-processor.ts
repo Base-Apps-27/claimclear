@@ -1,8 +1,8 @@
-import { eq, and, or, isNull, lte } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lte, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { broadcastPresenceEvent } from "./sse";
+import { broadcastPresenceEvent, broadcastBatchEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
 import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
@@ -52,6 +52,18 @@ export function listBatchJobs(): BatchJob[] {
   return Array.from(activeBatches.values()).sort((a, b) =>
     new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   );
+}
+
+/**
+ * The currently-running batch job, if any. Used by the /active-batch
+ * endpoint so a client loading the page mid-run can hydrate its UI without
+ * waiting for the next SSE event.
+ */
+export function getActiveBatchJob(): BatchJob | undefined {
+  for (const job of activeBatches.values()) {
+    if (job.status === "running") return job;
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +141,12 @@ export async function triggerWorkerRun(opts: {
   triggeredBy: string;
   awaitCompletion?: boolean;
   awaitTimeoutMs?: number;
+  /**
+   * Optional explicit ID list. When omitted (or "all"), the worker processes
+   * the entire pending+due queue. When provided, only those rows are
+   * considered (still filtered to pending + due inside startBatchJob).
+   */
+  submissionIds?: number[] | "all";
 }): Promise<TriggerWorkerOutcome> {
   if (workerGate.isInProgress()) {
     return { kind: "skipped", reason: "already_running" };
@@ -152,7 +170,7 @@ export async function triggerWorkerRun(opts: {
   const gateOutcome = await workerGate.run(async () => {
     let job: BatchJob;
     try {
-      job = await startBatchJob("all", opts.triggeredBy);
+      job = await startBatchJob(opts.submissionIds ?? "all", opts.triggeredBy);
       ctx.job = job;
     } catch (err) {
       ctx.err = err instanceof Error ? err : new Error(String(err));
@@ -290,26 +308,39 @@ export async function startBatchJob(
 ): Promise<BatchJob> {
   let ids: number[];
 
+  // Only claim rows that are pending AND due. If next_retry_at is in the
+  // future, the row is on backoff (set by submission-retry.ts) and must be
+  // skipped — otherwise frequent triggers (create/confirm/retry + sweeper +
+  // midnight) would defeat the backoff schedule and bombard the portal.
+  // The DB filter here is the canonical claim; isSubmissionDue() above is
+  // the same rule expressed in code so it can be unit-tested. The same
+  // filter applies to explicit ID lists ("Process Selected") so a stale
+  // selection can never bypass backoff or pull in non-pending rows.
+  const now = new Date();
+  const dueClause = and(
+    eq(portalSubmissionsTable.status, "pending"),
+    or(
+      isNull(portalSubmissionsTable.nextRetryAt),
+      lte(portalSubmissionsTable.nextRetryAt, now),
+    ),
+  );
+
   if (submissionIds === "all") {
-    // Only claim rows that are pending AND due. If next_retry_at is in the
-    // future, the row is on backoff (set by submission-retry.ts) and must be
-    // skipped — otherwise frequent triggers (create/confirm/retry + sweeper +
-    // midnight) would defeat the backoff schedule and bombard the portal.
-    // The DB filter here is the canonical claim; isSubmissionDue() above is
-    // the same rule expressed in code so it can be unit-tested.
-    const now = new Date();
+    const pending = await db.select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(dueClause);
+    ids = pending.map(s => s.id);
+  } else {
+    if (submissionIds.length === 0) {
+      throw new Error("No pending submissions to process");
+    }
     const pending = await db.select({ id: portalSubmissionsTable.id })
       .from(portalSubmissionsTable)
       .where(and(
-        eq(portalSubmissionsTable.status, "pending"),
-        or(
-          isNull(portalSubmissionsTable.nextRetryAt),
-          lte(portalSubmissionsTable.nextRetryAt, now),
-        ),
+        inArray(portalSubmissionsTable.id, submissionIds),
+        dueClause,
       ));
     ids = pending.map(s => s.id);
-  } else {
-    ids = submissionIds;
   }
 
   if (ids.length === 0) {
@@ -332,13 +363,107 @@ export async function startBatchJob(
 
   activeBatches.set(batchId, job);
 
+  // Mark every selected row as Queued under the triggering user so other
+  // viewers of the Portal Submissions page see the row as locked to this
+  // batch immediately (still status='pending' until the worker picks it up).
+  // We narrow the WHERE to status='pending' to avoid clobbering any row
+  // whose status raced ahead between the SELECT above and this UPDATE.
+  await db.update(portalSubmissionsTable).set({
+    claimedByBatchId: batchId,
+    claimedByUserName: triggeredBy,
+    claimedAt: new Date(),
+  }).where(and(
+    inArray(portalSubmissionsTable.id, ids),
+    eq(portalSubmissionsTable.status, "pending"),
+  ));
+
+  broadcastBatchEvent({
+    type: "batch_started",
+    batchId,
+    triggeredBy,
+    startedAt: job.startedAt,
+    total: job.total,
+    submissionIds: ids,
+  });
+  for (const subId of ids) {
+    broadcastBatchEvent({
+      type: "row_status_changed",
+      batchId,
+      submissionId: subId,
+      newStatus: "queued",
+    });
+  }
+
   processSequentially(job).catch(err => {
     logger.error({ err, batchId }, "Batch processing fatal error");
     job.status = "failed";
     job.completedAt = new Date().toISOString();
+    void releaseClaimedRows(batchId).catch((releaseErr) => {
+      logger.error({ err: releaseErr, batchId }, "Failed to release claimed rows after fatal error");
+    });
+    broadcastBatchEvent({
+      type: "batch_failed",
+      batchId,
+      completedAt: job.completedAt,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      total: job.total,
+      message: err instanceof Error ? err.message : String(err),
+    });
   });
 
   return job;
+}
+
+/**
+ * Clear `claimed_by_batch_id` from any rows still attributed to this batch.
+ * Called when a run completes / fails / aborts so rows that never made it to
+ * `in_progress` revert to plain Pending and can be picked up by the next run.
+ * Returns the IDs that were released so we can broadcast `row_status_changed`
+ * for each one.
+ */
+async function releaseClaimedRows(batchId: string): Promise<number[]> {
+  const released = await db.update(portalSubmissionsTable).set({
+    claimedByBatchId: null,
+    claimedByUserName: null,
+    claimedAt: null,
+  }).where(eq(portalSubmissionsTable.claimedByBatchId, batchId))
+    .returning({ id: portalSubmissionsTable.id, status: portalSubmissionsTable.status });
+
+  for (const row of released) {
+    // Only broadcast as "pending" for rows that are actually back in pending;
+    // rows that already moved to in_progress / submitted / failed have their
+    // own row_status_changed broadcasts from the worker loop.
+    if (row.status === "pending") {
+      broadcastBatchEvent({
+        type: "row_status_changed",
+        batchId,
+        submissionId: row.id,
+        newStatus: "pending",
+      });
+    }
+  }
+  return released.map((r) => r.id);
+}
+
+/**
+ * Boot-time cleanup: any `claimed_by_batch_id` set in the DB is from a prior
+ * process whose in-memory batch state is gone, so the rows are effectively
+ * orphaned. Clear the claim so they appear as plain Pending again. Called
+ * once on server start.
+ */
+export async function clearOrphanedBatchClaims(): Promise<number> {
+  const cleared = await db.update(portalSubmissionsTable).set({
+    claimedByBatchId: null,
+    claimedByUserName: null,
+    claimedAt: null,
+  }).where(isNotNull(portalSubmissionsTable.claimedByBatchId))
+    .returning({ id: portalSubmissionsTable.id });
+  if (cleared.length > 0) {
+    logger.info({ count: cleared.length, ids: cleared.map((r) => r.id) }, "Boot cleanup: cleared orphaned batch claims");
+  }
+  return cleared.length;
 }
 
 async function processSequentially(job: BatchJob): Promise<void> {
@@ -363,7 +488,19 @@ async function processSequentially(job: BatchJob): Promise<void> {
       await db.update(portalSubmissionsTable).set({
         status: "in_progress",
         attempts: (sub.attempts || 0) + 1,
+        // Clear the queue claim — the row is now actively being worked on, so
+        // the In-Progress treatment kicks in for everyone, not the Queued one.
+        claimedByBatchId: null,
+        claimedByUserName: null,
+        claimedAt: null,
       }).where(eq(portalSubmissionsTable.id, subId));
+
+      broadcastBatchEvent({
+        type: "row_status_changed",
+        batchId: job.id,
+        submissionId: subId,
+        newStatus: "in_progress",
+      });
 
       await db.insert(botActivityLogTable).values({
         submissionId: subId,
@@ -391,6 +528,13 @@ async function processSequentially(job: BatchJob): Promise<void> {
         userEmail: null,
         botProcess: "portal_submission",
         timestamp: new Date().toISOString(),
+      });
+
+      broadcastBatchEvent({
+        type: "row_status_changed",
+        batchId: job.id,
+        submissionId: subId,
+        newStatus: "submitted",
       });
 
       job.results.push({ submissionId: subId, status: "success", message: "Processed successfully" });
@@ -448,12 +592,39 @@ async function processSequentially(job: BatchJob): Promise<void> {
         });
       }
 
+      // The retry helper may have rescheduled (status='pending' with
+      // next_retry_at) or exhausted retries (status='failed'). Either way the
+      // row is no longer in_progress, so emit a row_status_changed so other
+      // viewers update their badges.
+      broadcastBatchEvent({
+        type: "row_status_changed",
+        batchId: job.id,
+        submissionId: subId,
+        newStatus: retryResult?.outcome === "retry_scheduled" ? "pending" : "failed",
+      });
+
       job.results.push({ submissionId: subId, status: "failed", message: errMsg });
       job.failed++;
     }
 
     job.processed++;
+
+    broadcastBatchEvent({
+      type: "batch_progress",
+      batchId: job.id,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      total: job.total,
+    });
   }
+
+  // Release any rows that were claimed but never reached in_progress (e.g.
+  // status raced ahead between SELECT and UPDATE, or row was deleted). This
+  // is the normal happy-path cleanup; the fatal-error path also calls it.
+  await releaseClaimedRows(job.id).catch((err) => {
+    logger.error({ err, batchId: job.id }, "Failed to release claimed rows on completion");
+  });
 
   job.status = "completed";
   job.completedAt = new Date().toISOString();
@@ -463,6 +634,16 @@ async function processSequentially(job: BatchJob): Promise<void> {
     succeeded: job.succeeded,
     failed: job.failed,
   }, "Batch processing completed");
+
+  broadcastBatchEvent({
+    type: "batch_completed",
+    batchId: job.id,
+    completedAt: job.completedAt,
+    processed: job.processed,
+    succeeded: job.succeeded,
+    failed: job.failed,
+    total: job.total,
+  });
 
   setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000);
 }

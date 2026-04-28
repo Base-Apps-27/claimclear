@@ -3420,6 +3420,15 @@ components:
           type: integer
         nextRetryAt:
           type: ["string", "null"]
+        claimedByBatchId:
+          type: ["string", "null"]
+          description: ID of the in-flight portal-submission batch that has claimed this row, or null. When set on a pending row, the row should be rendered as Queued.
+        claimedByUserName:
+          type: ["string", "null"]
+          description: Display name of the user who triggered the in-flight batch holding this row.
+        claimedAt:
+          type: ["string", "null"]
+          description: Timestamp when the row was claimed by the current batch.
         createdAt:
           type: string
         updatedAt:

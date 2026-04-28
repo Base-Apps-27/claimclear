@@ -34,6 +34,47 @@ const claimClients = new Map<number, Set<SSEClient>>();
 const globalClients = new Set<SSEClient>();
 const groupClients = new Map<number, Set<SSEClient>>();
 const globalGroupClients = new Set<SSEClient>();
+const globalBatchClients = new Set<SSEClient>();
+
+// Lifecycle event for the shared portal-submission batch run. Pushed on the
+// global batch channel so every connected user sees the same in-flight queue,
+// the row currently being processed, who triggered the run, and the final
+// outcome.
+export type BatchEvent =
+  | {
+      type: "batch_started";
+      batchId: string;
+      triggeredBy: string;
+      startedAt: string;
+      total: number;
+      submissionIds: number[];
+    }
+  | {
+      type: "batch_progress";
+      batchId: string;
+      processed: number;
+      succeeded: number;
+      failed: number;
+      total: number;
+    }
+  | {
+      type: "row_status_changed";
+      batchId: string;
+      submissionId: number;
+      // "queued" = pending + claimedByBatchId. The client should refetch the
+      // row (or use the optional `submission` payload) to render the badge.
+      newStatus: "queued" | "in_progress" | "submitted" | "failed" | "pending";
+    }
+  | {
+      type: "batch_completed" | "batch_failed" | "batch_aborted";
+      batchId: string;
+      completedAt: string;
+      processed: number;
+      succeeded: number;
+      failed: number;
+      total: number;
+      message?: string;
+    };
 
 function initSSE(res: Response): void {
   res.writeHead(200, {
@@ -185,5 +226,35 @@ export function broadcastPresenceEvent(event: PresenceEvent): void {
     for (const client of clients) {
       sendPresenceEvent(client, event);
     }
+  }
+}
+
+export function addGlobalBatchClient(res: Response, userEmail: string | null): () => void {
+  initSSE(res);
+  const client: SSEClient = { res, userEmail };
+  globalBatchClients.add(client);
+
+  const keepAlive = setInterval(() => {
+    try { res.write(":ping\n\n"); } catch { cleanup(); }
+  }, 25000);
+
+  const cleanup = () => {
+    clearInterval(keepAlive);
+    globalBatchClients.delete(client);
+  };
+  return cleanup;
+}
+
+function sendBatchEvent(client: SSEClient, event: BatchEvent): void {
+  try {
+    client.res.write(`event: batch_update\ndata: ${JSON.stringify(event)}\n\n`);
+  } catch {
+    // client disconnected
+  }
+}
+
+export function broadcastBatchEvent(event: BatchEvent): void {
+  for (const client of globalBatchClients) {
+    sendBatchEvent(client, event);
   }
 }

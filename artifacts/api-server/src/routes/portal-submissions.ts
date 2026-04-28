@@ -976,6 +976,24 @@ router.post("/portal-submissions/:id/sandbox-run", asyncHandler(async (req, res)
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  // Refuse sandbox runs on rows that are part of an in-flight batch (claimed
+  // or actively being submitted). Two concurrent Playwright sessions on the
+  // same row would race in the portal and corrupt the submission state.
+  const [row] = await db.select({
+    status: portalSubmissionsTable.status,
+    claimedByBatchId: portalSubmissionsTable.claimedByBatchId,
+    claimedByUserName: portalSubmissionsTable.claimedByUserName,
+  }).from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id)).limit(1);
+  if (!row) { res.status(404).json({ error: "Submission not found" }); return; }
+  if (row.status === "in_progress" || row.claimedByBatchId) {
+    res.status(409).json({
+      error: row.claimedByUserName
+        ? `Batch already running by ${row.claimedByUserName}`
+        : "This submission is already being processed by an active batch.",
+    });
+    return;
+  }
+
   const { runSandboxForSubmission } = await import("../lib/batch-processor");
   const updated = await runSandboxForSubmission(id);
   res.json(updated);
