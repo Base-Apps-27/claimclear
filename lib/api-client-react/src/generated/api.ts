@@ -56,6 +56,8 @@ import type {
   ErrorTypeResponse,
   EvidenceTypeBody,
   EvidenceTypeResponse,
+  ExportClaimsCsvParams,
+  ExportInvoiceGroupsCsvParams,
   GenerateEmailBody,
   GetAuthSession200,
   GetClaimValidTransitions200,
@@ -447,6 +449,109 @@ export function useListInvoiceGroups<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListInvoiceGroupsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export invoice groups as CSV (all matching rows, respects same filters as list)
+ */
+export const getExportInvoiceGroupsCsvUrl = (
+  params?: ExportInvoiceGroupsCsvParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invoice-groups/export-csv?${stringifiedParams}`
+    : `/api/invoice-groups/export-csv`;
+};
+
+export const exportInvoiceGroupsCsv = async (
+  params?: ExportInvoiceGroupsCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportInvoiceGroupsCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportInvoiceGroupsCsvQueryKey = (
+  params?: ExportInvoiceGroupsCsvParams,
+) => {
+  return [
+    `/api/invoice-groups/export-csv`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportInvoiceGroupsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportInvoiceGroupsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportInvoiceGroupsCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>
+  > = ({ signal }) =>
+    exportInvoiceGroupsCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportInvoiceGroupsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>
+>;
+export type ExportInvoiceGroupsCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export invoice groups as CSV (all matching rows, respects same filters as list)
+ */
+
+export function useExportInvoiceGroupsCsv<
+  TData = Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportInvoiceGroupsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportInvoiceGroupsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportInvoiceGroupsCsvQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1875,6 +1980,100 @@ export const useCreateClaim = <
 > => {
   return useMutation(getCreateClaimMutationOptions(options));
 };
+
+/**
+ * @summary Export claims as CSV (all matching rows, respects same filters as list)
+ */
+export const getExportClaimsCsvUrl = (params?: ExportClaimsCsvParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/claims/export-csv?${stringifiedParams}`
+    : `/api/claims/export-csv`;
+};
+
+export const exportClaimsCsv = async (
+  params?: ExportClaimsCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportClaimsCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportClaimsCsvQueryKey = (params?: ExportClaimsCsvParams) => {
+  return [`/api/claims/export-csv`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportClaimsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportClaimsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportClaimsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportClaimsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportClaimsCsvQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof exportClaimsCsv>>> = ({
+    signal,
+  }) => exportClaimsCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportClaimsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportClaimsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportClaimsCsv>>
+>;
+export type ExportClaimsCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export claims as CSV (all matching rows, respects same filters as list)
+ */
+
+export function useExportClaimsCsv<
+  TData = Awaited<ReturnType<typeof exportClaimsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportClaimsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportClaimsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportClaimsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get claim by ID

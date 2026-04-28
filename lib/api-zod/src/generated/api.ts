@@ -52,13 +52,54 @@ export const listInvoiceGroupsQueryLimitDefault = 50;
 export const listInvoiceGroupsQueryOffsetDefault = 0;
 
 export const ListInvoiceGroupsQueryParams = zod.object({
-  status: zod.coerce.string().optional(),
-  outcome: zod.coerce.string().optional(),
+  status: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of statuses to filter by"),
+  outcome: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of outcomes to filter by"),
   search: zod.coerce.string().optional(),
   errorDetails: zod
     .enum(["empty", "present"])
     .optional()
     .describe("Filter by presence of an error description on the group"),
+  errorTypeId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of error type IDs, use __unassigned__ for groups with no error type",
+    ),
+  createdFrom: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter groups created on or after this date (ISO 8601)"),
+  createdTo: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter groups created on or before this date (ISO 8601)"),
+  amountMin: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter groups with total amount >= this value"),
+  amountMax: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter groups with total amount <= this value"),
+  sort: zod
+    .enum([
+      "invoiceNumber",
+      "rideCount",
+      "clientNumber",
+      "errorTypeName",
+      "totalAmount",
+      "status",
+      "createdAt",
+    ])
+    .optional()
+    .describe("Column to sort by"),
+  dir: zod.enum(["asc", "desc"]).optional().describe("Sort direction"),
   limit: zod.coerce.number().default(listInvoiceGroupsQueryLimitDefault),
   offset: zod.coerce.number().default(listInvoiceGroupsQueryOffsetDefault),
 });
@@ -125,6 +166,27 @@ export const ListInvoiceGroupsResponse = zod.object({
     }),
   ),
   total: zod.number(),
+});
+
+/**
+ * @summary Export invoice groups as CSV (all matching rows, respects same filters as list)
+ */
+export const ExportInvoiceGroupsCsvQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  outcome: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
+  errorDetails: zod.coerce.string().optional(),
+  errorTypeId: zod.coerce.string().optional(),
+  createdFrom: zod.coerce.string().optional(),
+  createdTo: zod.coerce.string().optional(),
+  amountMin: zod.coerce.string().optional(),
+  amountMax: zod.coerce.string().optional(),
+  sort: zod.coerce.string().optional(),
+  dir: zod.coerce.string().optional(),
+  columns: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of column keys to include in export"),
 });
 
 /**
@@ -1002,23 +1064,62 @@ export const listClaimsQueryLimitDefault = 50;
 export const listClaimsQueryOffsetDefault = 0;
 
 export const ListClaimsQueryParams = zod.object({
-  status: zod
-    .enum([
-      "New",
-      "Needs Evidence",
-      "Portal Queued",
-      "Generating Email",
-      "Ready to Review",
-      "Awaiting Response",
-      "On Hold",
-      "Resolved",
-      "Denied",
-    ])
-    .optional(),
-  outcome: zod
-    .enum(["Pending", "Approved", "Denied", "Partially Approved"])
-    .optional(),
+  status: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of statuses to filter by"),
+  outcome: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of outcomes to filter by"),
   search: zod.coerce.string().optional(),
+  errorTypeId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of error type IDs, use __unassigned__ for claims with no error type",
+    ),
+  createdFrom: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter claims created on or after this date (ISO 8601)"),
+  createdTo: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter claims created on or before this date (ISO 8601)"),
+  amountMin: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter claims with amount >= this value"),
+  amountMax: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter claims with amount <= this value"),
+  serviceDateFrom: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter claims with service date on or after this date (YYYY-MM-DD)",
+    ),
+  serviceDateTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter claims with service date on or before this date (YYYY-MM-DD)",
+    ),
+  sort: zod
+    .enum([
+      "confNumber",
+      "date",
+      "clientNumber",
+      "errorTypeName",
+      "claimAmount",
+      "status",
+      "createdAt",
+    ])
+    .optional()
+    .describe("Column to sort by"),
+  dir: zod.enum(["asc", "desc"]).optional().describe("Sort direction"),
   limit: zod.coerce.number().default(listClaimsQueryLimitDefault),
   offset: zod.coerce.number().default(listClaimsQueryOffsetDefault),
 });
@@ -1105,6 +1206,28 @@ export const CreateClaimBody = zod.object({
   errorTypeName: zod.string().optional(),
   claimAmount: zod.string().optional(),
   payorEmail: zod.string().optional(),
+});
+
+/**
+ * @summary Export claims as CSV (all matching rows, respects same filters as list)
+ */
+export const ExportClaimsCsvQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  outcome: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
+  errorTypeId: zod.coerce.string().optional(),
+  createdFrom: zod.coerce.string().optional(),
+  createdTo: zod.coerce.string().optional(),
+  amountMin: zod.coerce.string().optional(),
+  amountMax: zod.coerce.string().optional(),
+  serviceDateFrom: zod.coerce.string().optional(),
+  serviceDateTo: zod.coerce.string().optional(),
+  sort: zod.coerce.string().optional(),
+  dir: zod.coerce.string().optional(),
+  columns: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of column keys to include in export"),
 });
 
 /**

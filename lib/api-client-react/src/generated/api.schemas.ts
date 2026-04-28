@@ -1456,13 +1456,47 @@ export type GetAuthSession200 = {
 };
 
 export type ListInvoiceGroupsParams = {
+  /**
+   * Comma-separated list of statuses to filter by
+   */
   status?: string;
+  /**
+   * Comma-separated list of outcomes to filter by
+   */
   outcome?: string;
   search?: string;
   /**
    * Filter by presence of an error description on the group
    */
   errorDetails?: ListInvoiceGroupsErrorDetails;
+  /**
+   * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
+   */
+  errorTypeId?: string;
+  /**
+   * Filter groups created on or after this date (ISO 8601)
+   */
+  createdFrom?: string;
+  /**
+   * Filter groups created on or before this date (ISO 8601)
+   */
+  createdTo?: string;
+  /**
+   * Filter groups with total amount >= this value
+   */
+  amountMin?: string;
+  /**
+   * Filter groups with total amount <= this value
+   */
+  amountMax?: string;
+  /**
+   * Column to sort by
+   */
+  sort?: ListInvoiceGroupsSort;
+  /**
+   * Sort direction
+   */
+  dir?: ListInvoiceGroupsDir;
   limit?: number;
   offset?: number;
 };
@@ -1474,6 +1508,45 @@ export const ListInvoiceGroupsErrorDetails = {
   empty: "empty",
   present: "present",
 } as const;
+
+export type ListInvoiceGroupsSort =
+  (typeof ListInvoiceGroupsSort)[keyof typeof ListInvoiceGroupsSort];
+
+export const ListInvoiceGroupsSort = {
+  invoiceNumber: "invoiceNumber",
+  rideCount: "rideCount",
+  clientNumber: "clientNumber",
+  errorTypeName: "errorTypeName",
+  totalAmount: "totalAmount",
+  status: "status",
+  createdAt: "createdAt",
+} as const;
+
+export type ListInvoiceGroupsDir =
+  (typeof ListInvoiceGroupsDir)[keyof typeof ListInvoiceGroupsDir];
+
+export const ListInvoiceGroupsDir = {
+  asc: "asc",
+  desc: "desc",
+} as const;
+
+export type ExportInvoiceGroupsCsvParams = {
+  status?: string;
+  outcome?: string;
+  search?: string;
+  errorDetails?: string;
+  errorTypeId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  amountMin?: string;
+  amountMax?: string;
+  sort?: string;
+  dir?: string;
+  /**
+   * Comma-separated list of column keys to include in export
+   */
+  columns?: string;
+};
 
 export type UpdateInvoiceGroupStatusBody = {
   status: string;
@@ -1530,37 +1603,93 @@ export type ListInvoiceGroupEvidence200 = {
 };
 
 export type ListClaimsParams = {
-  status?: ListClaimsStatus;
-  outcome?: ListClaimsOutcome;
+  /**
+   * Comma-separated list of statuses to filter by
+   */
+  status?: string;
+  /**
+   * Comma-separated list of outcomes to filter by
+   */
+  outcome?: string;
   search?: string;
+  /**
+   * Comma-separated list of error type IDs, use __unassigned__ for claims with no error type
+   */
+  errorTypeId?: string;
+  /**
+   * Filter claims created on or after this date (ISO 8601)
+   */
+  createdFrom?: string;
+  /**
+   * Filter claims created on or before this date (ISO 8601)
+   */
+  createdTo?: string;
+  /**
+   * Filter claims with amount >= this value
+   */
+  amountMin?: string;
+  /**
+   * Filter claims with amount <= this value
+   */
+  amountMax?: string;
+  /**
+   * Filter claims with service date on or after this date (YYYY-MM-DD)
+   */
+  serviceDateFrom?: string;
+  /**
+   * Filter claims with service date on or before this date (YYYY-MM-DD)
+   */
+  serviceDateTo?: string;
+  /**
+   * Column to sort by
+   */
+  sort?: ListClaimsSort;
+  /**
+   * Sort direction
+   */
+  dir?: ListClaimsDir;
   limit?: number;
   offset?: number;
 };
 
-export type ListClaimsStatus =
-  (typeof ListClaimsStatus)[keyof typeof ListClaimsStatus];
+export type ListClaimsSort =
+  (typeof ListClaimsSort)[keyof typeof ListClaimsSort];
 
-export const ListClaimsStatus = {
-  New: "New",
-  Needs_Evidence: "Needs Evidence",
-  Portal_Queued: "Portal Queued",
-  Generating_Email: "Generating Email",
-  Ready_to_Review: "Ready to Review",
-  Awaiting_Response: "Awaiting Response",
-  On_Hold: "On Hold",
-  Resolved: "Resolved",
-  Denied: "Denied",
+export const ListClaimsSort = {
+  confNumber: "confNumber",
+  date: "date",
+  clientNumber: "clientNumber",
+  errorTypeName: "errorTypeName",
+  claimAmount: "claimAmount",
+  status: "status",
+  createdAt: "createdAt",
 } as const;
 
-export type ListClaimsOutcome =
-  (typeof ListClaimsOutcome)[keyof typeof ListClaimsOutcome];
+export type ListClaimsDir = (typeof ListClaimsDir)[keyof typeof ListClaimsDir];
 
-export const ListClaimsOutcome = {
-  Pending: "Pending",
-  Approved: "Approved",
-  Denied: "Denied",
-  Partially_Approved: "Partially Approved",
+export const ListClaimsDir = {
+  asc: "asc",
+  desc: "desc",
 } as const;
+
+export type ExportClaimsCsvParams = {
+  status?: string;
+  outcome?: string;
+  search?: string;
+  errorTypeId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  amountMin?: string;
+  amountMax?: string;
+  serviceDateFrom?: string;
+  serviceDateTo?: string;
+  sort?: string;
+  dir?: string;
+  /**
+   * Comma-separated list of column keys to include in export
+   */
+  columns?: string;
+};
 
 export type GetClaimValidTransitions200 = {
   currentStatus?: string;

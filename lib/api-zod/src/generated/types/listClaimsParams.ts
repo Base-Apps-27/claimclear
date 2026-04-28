@@ -5,13 +5,55 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { ListClaimsOutcome } from "./listClaimsOutcome";
-import type { ListClaimsStatus } from "./listClaimsStatus";
+import type { ListClaimsDir } from "./listClaimsDir";
+import type { ListClaimsSort } from "./listClaimsSort";
 
 export type ListClaimsParams = {
-  status?: ListClaimsStatus;
-  outcome?: ListClaimsOutcome;
+  /**
+   * Comma-separated list of statuses to filter by
+   */
+  status?: string;
+  /**
+   * Comma-separated list of outcomes to filter by
+   */
+  outcome?: string;
   search?: string;
+  /**
+   * Comma-separated list of error type IDs, use __unassigned__ for claims with no error type
+   */
+  errorTypeId?: string;
+  /**
+   * Filter claims created on or after this date (ISO 8601)
+   */
+  createdFrom?: string;
+  /**
+   * Filter claims created on or before this date (ISO 8601)
+   */
+  createdTo?: string;
+  /**
+   * Filter claims with amount >= this value
+   */
+  amountMin?: string;
+  /**
+   * Filter claims with amount <= this value
+   */
+  amountMax?: string;
+  /**
+   * Filter claims with service date on or after this date (YYYY-MM-DD)
+   */
+  serviceDateFrom?: string;
+  /**
+   * Filter claims with service date on or before this date (YYYY-MM-DD)
+   */
+  serviceDateTo?: string;
+  /**
+   * Column to sort by
+   */
+  sort?: ListClaimsSort;
+  /**
+   * Sort direction
+   */
+  dir?: ListClaimsDir;
   limit?: number;
   offset?: number;
 };

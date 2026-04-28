@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, getListInvoiceGroupsQueryKey } from "@workspace/api-client-react";
-import type { InvoiceGroupResponse, ErrorTypeResponse } from "@workspace/api-client-react";
+import { useState, useEffect, useMemo } from "react";
+import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,18 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/status-badge";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Link } from "wouter";
-import { Search, Filter, Tag, X, Loader2, CheckCircle2, FolderOpen } from "lucide-react";
+import { Search, Filter, Tag, X, Loader2, CheckCircle2, FolderOpen, Download } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { SortableHeader } from "@/components/list-table/sortable-header";
+import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
+import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
+import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
+import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
+import { useUrlParams } from "@/lib/use-url-params";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -28,88 +30,122 @@ const STATUSES = [
 
 const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
 
+const ALL_COLUMNS: ColumnDef[] = [
+  { key: "invoiceNumber", label: "Invoice #", hideable: false },
+  { key: "rideCount", label: "Rides" },
+  { key: "clientNumber", label: "Client" },
+  { key: "errorDetails", label: "Error Description" },
+  { key: "errorTypeName", label: "Error Type" },
+  { key: "totalAmount", label: "Total Amount" },
+  { key: "status", label: "Status" },
+  { key: "createdAt", label: "Created" },
+  { key: "action", label: "Action", hideable: false },
+];
+
+const STORAGE_KEY_COLS = "ig_visible_cols";
+const STORAGE_KEY_DENSITY = "ig_density";
+
+function getInitialVisibleCols(): Set<string> {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_COLS);
+    if (saved) return new Set(JSON.parse(saved));
+  } catch {}
+  return new Set(ALL_COLUMNS.map(c => c.key));
+}
+
+function getInitialDensity(): Density {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_DENSITY);
+    if (saved === "compact" || saved === "comfortable") return saved;
+  } catch {}
+  return "comfortable";
+}
+
 export default function InvoiceGroupsList() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
+  const { get, getAll, set, searchParams } = useUrlParams();
+
+  const search = get("q");
+  const sortCol = get("sort");
+  const sortDir = (get("dir") || "") as "asc" | "desc" | "";
+  const page = Math.max(1, parseInt(get("page") || "1", 10));
+  const pageSize = (([25, 50, 100, 200].includes(parseInt(get("ps") || "50", 10)) ? parseInt(get("ps") || "50", 10) : 50) as PageSize);
+
+  const filterStatuses = getAll("status");
+  const filterOutcomes = getAll("outcome");
+  const filterErrorTypeIds = getAll("errorTypeId");
+  const filterErrorDetails = get("errorDetails") as "" | "empty" | "present";
+  const filterCreatedFrom = get("createdFrom");
+  const filterCreatedTo = get("createdTo");
+  const filterAmountMin = get("amountMin");
+  const filterAmountMax = get("amountMax");
+
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [bulkErrorTypeId, setBulkErrorTypeId] = useState("");
   const [bulkAssignSuccess, setBulkAssignSuccess] = useState("");
-
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterOutcome, setFilterOutcome] = useState("");
-  const [filterErrorTypeId, setFilterErrorTypeId] = useState("");
-  const [filterErrorDetails, setFilterErrorDetails] = useState<"" | "empty" | "present">("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(getInitialVisibleCols);
+  const [density, setDensity] = useState<Density>(getInitialDensity);
 
-  const activeFilterCount = [filterStatus, filterOutcome, filterErrorTypeId, filterErrorDetails].filter(Boolean).length;
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_COLS, JSON.stringify([...visibleCols]));
+  }, [visibleCols]);
 
-  const { data, isLoading } = useListInvoiceGroups({
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_DENSITY, density);
+  }, [density]);
+
+  const listParams: ListInvoiceGroupsParams = {
     search: search || undefined,
-    status: filterStatus || undefined,
-    outcome: filterOutcome || undefined,
-    errorDetails: filterErrorDetails || undefined,
-    limit: 50,
-  }, {
-    query: {
-      queryKey: getListInvoiceGroupsQueryKey({
-        search: search || undefined,
-        status: filterStatus || undefined,
-        outcome: filterOutcome || undefined,
-        errorDetails: filterErrorDetails || undefined,
-        limit: 50,
-      })
-    }
+    status: filterStatuses.length > 0 ? filterStatuses.join(",") : undefined,
+    outcome: filterOutcomes.length > 0 ? filterOutcomes.join(",") : undefined,
+    errorTypeId: filterErrorTypeIds.length > 0 ? filterErrorTypeIds.join(",") : undefined,
+    errorDetails: (filterErrorDetails || undefined) as "empty" | "present" | undefined,
+    createdFrom: filterCreatedFrom || undefined,
+    createdTo: filterCreatedTo || undefined,
+    amountMin: filterAmountMin || undefined,
+    amountMax: filterAmountMax || undefined,
+    sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
+    dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
+
+  const { data, isLoading, isError } = useListInvoiceGroups(listParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(listParams) }
   });
 
   const { data: errorTypesData } = useListErrorTypes();
   const bulkAssign = useBulkAssignInvoiceGroupErrorType();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
-  let groups: InvoiceGroupResponse[] = data?.groups ?? [];
+  const groups: InvoiceGroupResponse[] = data?.groups ?? [];
+  const total = data?.total ?? 0;
 
-  if (filterErrorTypeId === "__unassigned__") {
-    groups = groups.filter(g => !g.errorTypeId);
-  } else if (filterErrorTypeId) {
-    groups = groups.filter(g => g.errorTypeId === filterErrorTypeId);
-  }
-
-  const allSelected = groups.length > 0 && groups.every((g) => selectedIds.has(g.id));
+  const allSelected = groups.length > 0 && groups.every(g => selectedIds.has(g.id));
   const someSelected = selectedIds.size > 0;
 
   const handleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(groups.map((g) => g.id)));
-    }
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(groups.map(g => g.id)));
   };
 
   const handleToggle = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
   const handleBulkAssign = async () => {
     if (!bulkErrorTypeId || selectedIds.size === 0) return;
-
-    const et = errorTypes.find((t) => String(t.id) === bulkErrorTypeId);
+    const et = errorTypes.find(t => String(t.id) === bulkErrorTypeId);
     if (!et) return;
-
     try {
       const res = await bulkAssign.mutateAsync({
-        data: {
-          groupIds: Array.from(selectedIds),
-          errorTypeId: String(et.id),
-          errorTypeName: et.name,
-        }
+        data: { groupIds: Array.from(selectedIds), errorTypeId: String(et.id), errorTypeName: et.name }
       });
       setBulkAssignSuccess(`Updated ${res.updated} group${res.updated !== 1 ? "s" : ""}`);
       setSelectedIds(new Set());
@@ -117,16 +153,69 @@ export default function InvoiceGroupsList() {
       setBulkErrorTypeId("");
       queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
       setTimeout(() => setBulkAssignSuccess(""), 3000);
-    } catch {
-    }
+    } catch {}
+  };
+
+  const handleSort = (key: string, dir: "asc" | "desc" | "") => {
+    set({ sort: key || null, dir: dir || null, page: null }, false);
   };
 
   const clearFilters = () => {
-    setFilterStatus("");
-    setFilterOutcome("");
-    setFilterErrorTypeId("");
-    setFilterErrorDetails("");
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, page: null }, false);
   };
+
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax;
+
+  const chips = useMemo((): FilterChip[] => {
+    const result: FilterChip[] = [];
+    if (search) {
+      result.push({ key: "q", label: `Search: "${search}"`, onRemove: () => set({ q: null }, false) });
+    }
+    if (filterStatuses.length > 0) {
+      result.push({ key: "status", label: `Status: ${filterStatuses.join(", ")}`, onRemove: () => set({ status: null, page: null }, false) });
+    }
+    if (filterOutcomes.length > 0) {
+      result.push({ key: "outcome", label: `Outcome: ${filterOutcomes.join(", ")}`, onRemove: () => set({ outcome: null, page: null }, false) });
+    }
+    if (filterErrorTypeIds.length > 0) {
+      const labels = filterErrorTypeIds.map(id => id === "__unassigned__" ? "Unassigned" : (errorTypes.find(et => String(et.id) === id)?.name ?? id));
+      result.push({ key: "errorTypeId", label: `Error Type: ${labels.join(", ")}`, onRemove: () => set({ errorTypeId: null, page: null }, false) });
+    }
+    if (filterErrorDetails) {
+      result.push({ key: "errorDetails", label: filterErrorDetails === "empty" ? "No description" : "Has description", onRemove: () => set({ errorDetails: null, page: null }, false) });
+    }
+    if (filterCreatedFrom || filterCreatedTo) {
+      const label = filterCreatedFrom && filterCreatedTo ? `Created: ${filterCreatedFrom} – ${filterCreatedTo}` : filterCreatedFrom ? `Created ≥ ${filterCreatedFrom}` : `Created ≤ ${filterCreatedTo}`;
+      result.push({ key: "created", label, onRemove: () => set({ createdFrom: null, createdTo: null, page: null }, false) });
+    }
+    if (filterAmountMin || filterAmountMax) {
+      const label = filterAmountMin && filterAmountMax ? `Amount: $${filterAmountMin} – $${filterAmountMax}` : filterAmountMin ? `Amount ≥ $${filterAmountMin}` : `Amount ≤ $${filterAmountMax}`;
+      result.push({ key: "amount", label, onRemove: () => set({ amountMin: null, amountMax: null, page: null }, false) });
+    }
+    return result;
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, errorTypes]);
+
+  const toggleCol = (key: string) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const visibleColumnKeys = ALL_COLUMNS.filter(c => visibleCols.has(c.key)).map(c => c.key);
+
+  const colCount = visibleColumnKeys.length + 1;
+
+  const csvParams = {
+    ...listParams,
+    limit: undefined,
+    offset: undefined,
+    columns: visibleColumnKeys.filter(k => k !== "action").join(","),
+  };
+  const csvUrl = getExportInvoiceGroupsCsvUrl(csvParams as Parameters<typeof getExportInvoiceGroupsCsvUrl>[0]);
+
+  const tdPy = density === "compact" ? "py-1.5" : "py-3";
 
   return (
     <div className="space-y-6">
@@ -161,25 +250,15 @@ export default function InvoiceGroupsList() {
                       <SelectValue placeholder="Select error type..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {errorTypes.map((et) => (
+                      {errorTypes.map(et => (
                         <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button
-                    size="sm"
-                    onClick={handleBulkAssign}
-                    disabled={!bulkErrorTypeId || bulkAssign.isPending}
-                  >
-                    {bulkAssign.isPending ? (
-                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Assigning...</>
-                    ) : (
-                      "Apply"
-                    )}
+                  <Button size="sm" onClick={handleBulkAssign} disabled={!bulkErrorTypeId || bulkAssign.isPending}>
+                    {bulkAssign.isPending ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Assigning...</> : "Apply"}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => { setShowBulkAssign(false); setBulkErrorTypeId(""); }}>
-                    Cancel
-                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowBulkAssign(false); setBulkErrorTypeId(""); }}>Cancel</Button>
                 </>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => setShowBulkAssign(true)}>
@@ -192,185 +271,259 @@ export default function InvoiceGroupsList() {
       )}
 
       <Card>
-        <CardHeader className="p-4 border-b flex flex-row items-center justify-between space-y-0">
-          <div className="relative w-72">
+        <CardHeader className="p-4 border-b flex flex-row items-center justify-between space-y-0 gap-3">
+          <div className="relative w-72 flex-shrink-0">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search by Invoice #, Client, Error..." 
+            <Input
+              placeholder="Search by Invoice #, Client, Error..."
               className="pl-9 pr-8"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={e => set({ q: e.target.value || null, page: null }, false)}
             />
             {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
+              <button onClick={() => set({ q: null, page: null }, false)} className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground transition-colors">
                 <X className="h-4 w-4" />
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-muted-foreground gap-1">
-                <X className="h-3 w-3" /> Clear filters
-              </Button>
-            )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
+            <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
             <Popover open={filterOpen} onOpenChange={setFilterOpen}>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={activeFilterCount > 0 ? "border-primary text-primary" : ""}>
+                <Button variant="outline" size="sm" className={hasActiveFilters ? "border-primary text-primary" : ""}>
                   <Filter className="mr-2 h-4 w-4" />
                   Filter
-                  {activeFilterCount > 0 && (
+                  {hasActiveFilters && (
                     <span className="ml-1.5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold h-4 w-4 inline-flex items-center justify-center">
-                      {activeFilterCount}
+                      {chips.filter(c => c.key !== "q").length}
                     </span>
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 p-4 space-y-4" align="end">
+              <PopoverContent className="w-80 p-4 space-y-4 max-h-[80vh] overflow-y-auto" align="end">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">Status</Label>
-                  <Select value={filterStatus || "__all__"} onValueChange={v => setFilterStatus(v === "__all__" ? "" : v)}>
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">All statuses</SelectItem>
-                      {STATUSES.map(s => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">Error Type</Label>
-                  <Select value={filterErrorTypeId || "__all__"} onValueChange={v => setFilterErrorTypeId(v === "__all__" ? "" : v)}>
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="All error types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">All error types</SelectItem>
-                      <SelectItem value="__unassigned__">Unassigned</SelectItem>
-                      {errorTypes.map(et => (
-                        <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {STATUSES.map(s => (
+                      <div key={s} className="flex items-center gap-2 py-0.5">
+                        <Checkbox
+                          id={`ig-status-${s}`}
+                          checked={filterStatuses.includes(s)}
+                          onCheckedChange={checked => {
+                            const next = checked ? [...filterStatuses, s] : filterStatuses.filter(x => x !== s);
+                            set({ status: next.length > 0 ? next.join(",") : null, page: null }, false);
+                          }}
+                        />
+                        <Label htmlFor={`ig-status-${s}`} className="text-sm font-normal cursor-pointer">{s}</Label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">Outcome</Label>
-                  <Select value={filterOutcome || "__all__"} onValueChange={v => setFilterOutcome(v === "__all__" ? "" : v)}>
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="All outcomes" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">All outcomes</SelectItem>
-                      {OUTCOMES.map(o => (
-                        <SelectItem key={o} value={o}>{o}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1">
+                    {OUTCOMES.map(o => (
+                      <div key={o} className="flex items-center gap-2 py-0.5">
+                        <Checkbox
+                          id={`ig-outcome-${o}`}
+                          checked={filterOutcomes.includes(o)}
+                          onCheckedChange={checked => {
+                            const next = checked ? [...filterOutcomes, o] : filterOutcomes.filter(x => x !== o);
+                            set({ outcome: next.length > 0 ? next.join(",") : null, page: null }, false);
+                          }}
+                        />
+                        <Label htmlFor={`ig-outcome-${o}`} className="text-sm font-normal cursor-pointer">{o}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Error Type</Label>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    <div className="flex items-center gap-2 py-0.5">
+                      <Checkbox
+                        id="ig-et-unassigned"
+                        checked={filterErrorTypeIds.includes("__unassigned__")}
+                        onCheckedChange={checked => {
+                          const next = checked ? [...filterErrorTypeIds, "__unassigned__"] : filterErrorTypeIds.filter(x => x !== "__unassigned__");
+                          set({ errorTypeId: next.length > 0 ? next.join(",") : null, page: null }, false);
+                        }}
+                      />
+                      <Label htmlFor="ig-et-unassigned" className="text-sm font-normal cursor-pointer italic text-muted-foreground">Unassigned</Label>
+                    </div>
+                    {errorTypes.map(et => (
+                      <div key={et.id} className="flex items-center gap-2 py-0.5">
+                        <Checkbox
+                          id={`ig-et-${et.id}`}
+                          checked={filterErrorTypeIds.includes(String(et.id))}
+                          onCheckedChange={checked => {
+                            const next = checked ? [...filterErrorTypeIds, String(et.id)] : filterErrorTypeIds.filter(x => x !== String(et.id));
+                            set({ errorTypeId: next.length > 0 ? next.join(",") : null, page: null }, false);
+                          }}
+                        />
+                        <Label htmlFor={`ig-et-${et.id}`} className="text-sm font-normal cursor-pointer">{et.name}</Label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-muted-foreground">Error Description</Label>
-                  <Select value={filterErrorDetails || "__all__"} onValueChange={v => setFilterErrorDetails(v === "__all__" ? "" : (v as "empty" | "present"))}>
+                  <Select value={filterErrorDetails || "__all__"} onValueChange={v => set({ errorDetails: v === "__all__" ? null : v, page: null }, false)}>
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="All groups" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">All groups</SelectItem>
-                      <SelectItem value="empty">No description (no ride has one)</SelectItem>
+                      <SelectItem value="empty">No description</SelectItem>
                       <SelectItem value="present">Has description</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Created Date</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">From</Label>
+                      <Input type="date" className="h-8 text-sm" value={filterCreatedFrom} onChange={e => set({ createdFrom: e.target.value || null, page: null }, false)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">To</Label>
+                      <Input type="date" className="h-8 text-sm" value={filterCreatedTo} onChange={e => set({ createdTo: e.target.value || null, page: null }, false)} />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">Total Amount</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Min ($)</Label>
+                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="h-8 text-sm" value={filterAmountMin} onChange={e => set({ amountMin: e.target.value || null, page: null }, false)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Max ($)</Label>
+                      <Input type="number" min="0" step="0.01" placeholder="Any" className="h-8 text-sm" value={filterAmountMax} onChange={e => set({ amountMax: e.target.value || null, page: null }, false)} />
+                    </div>
+                  </div>
+                </div>
                 <div className="flex justify-between pt-2 border-t">
-                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs">
-                    Clear all
-                  </Button>
-                  <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">
-                    Done
-                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setFilterOpen(false); }} className="text-xs">Clear all</Button>
+                  <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">Done</Button>
                 </div>
               </PopoverContent>
             </Popover>
+            <a href={csvUrl} download>
+              <Button variant="outline" size="sm">
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </a>
           </div>
         </CardHeader>
+
+        <FilterChipStrip
+          chips={chips}
+          onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, page: null }, false); }}
+        />
+
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-22rem)]">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b">
+              <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
                 <tr>
                   <th className="px-4 py-3 w-10">
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={handleSelectAll}
-                      aria-label="Select all"
-                    />
+                    <Checkbox checked={allSelected} onCheckedChange={handleSelectAll} aria-label="Select all" />
                   </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Invoice #
-                      <InfoTooltip content="The invoice number parsed from the Ref # field. Groups rides that belong to the same invoice." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Rides
-                      <InfoTooltip content="Number of individual rides in this invoice group." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Client
-                      <InfoTooltip content="The client/member number associated with this invoice group." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Error Description
-                      <InfoTooltip content="The error/denial reason for this invoice group. Collected from rides that have error details." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Error Type
-                      <InfoTooltip content="The classification of the denial or error for this group." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Total Amount
-                      <InfoTooltip content="Combined dollar amount of all rides in this invoice group." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <span className="flex items-center gap-1">
-                      Status
-                      <InfoTooltip content="Current stage of the invoice group in the dispute workflow." side="bottom" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 font-medium text-right">Action</th>
+                  {visibleCols.has("invoiceNumber") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Invoice #" sortKey="invoiceNumber" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="The invoice number parsed from the Ref # field. Groups rides that belong to the same invoice." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("rideCount") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Rides" sortKey="rideCount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="Number of individual rides in this invoice group." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("clientNumber") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Client" sortKey="clientNumber" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="The client/member number associated with this invoice group." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("errorDetails") && (
+                    <th className="px-4 py-3 font-medium">
+                      <span className="flex items-center gap-1">
+                        Error Description
+                        <InfoTooltip content="The error/denial reason for this invoice group." side="bottom" />
+                      </span>
+                    </th>
+                  )}
+                  {visibleCols.has("errorTypeName") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Error Type" sortKey="errorTypeName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="The classification of the denial or error for this group." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("totalAmount") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Total Amount" sortKey="totalAmount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="Combined dollar amount of all rides in this invoice group." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("status") && (
+                    <th className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-1">
+                        <SortableHeader label="Status" sortKey="status" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                        <InfoTooltip content="Current stage of the invoice group in the dispute workflow." side="bottom" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleCols.has("createdAt") && (
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Created" sortKey="createdAt" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                  )}
+                  {visibleCols.has("action") && (
+                    <th className="px-4 py-3 font-medium text-right">Action</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">Loading invoice groups...</td>
+                    <td colSpan={colCount} className="px-4 py-8 text-center text-muted-foreground">Loading invoice groups...</td>
+                  </tr>
+                ) : isError ? (
+                  <tr>
+                    <td colSpan={colCount} className="px-4 py-8 text-center">
+                      <div className="flex flex-col items-center gap-2 text-destructive">
+                        <span className="font-medium">Failed to load invoice groups</span>
+                        <span className="text-sm text-muted-foreground">Check your connection and try again.</span>
+                        <button className="mt-1 text-sm underline text-primary" onClick={() => window.location.reload()}>Retry</button>
+                      </div>
+                    </td>
                   </tr>
                 ) : groups.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-0">
-                      {(search || activeFilterCount > 0) ? (
+                    <td colSpan={colCount} className="px-4 py-0">
+                      {(search || hasActiveFilters) ? (
                         <EmptyState
                           icon={Filter}
                           title="No invoice groups match your filters"
                           description="Try removing a filter or adjusting your search to see more results."
-                          primaryAction={{
-                            label: "Clear filters",
-                            onClick: () => { clearFilters(); setSearch(""); },
-                          }}
+                          primaryAction={{ label: "Clear filters", onClick: () => { clearFilters(); set({ q: null }, false); } }}
                         />
                       ) : (
                         <EmptyState
@@ -383,47 +536,65 @@ export default function InvoiceGroupsList() {
                     </td>
                   </tr>
                 ) : (
-                  groups.map((group) => (
+                  groups.map(group => (
                     <tr key={group.id} className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${selectedIds.has(group.id) ? "bg-primary/5" : ""}`}>
-                      <td className="px-4 py-3">
-                        <Checkbox
-                          checked={selectedIds.has(group.id)}
-                          onCheckedChange={() => handleToggle(group.id)}
-                          aria-label={`Select group ${group.invoiceNumber}`}
-                        />
+                      <td className={`px-4 ${tdPy}`}>
+                        <Checkbox checked={selectedIds.has(group.id)} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber}`} />
                       </td>
-                      <td className="px-4 py-3 font-medium text-primary">
-                        <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="secondary" className="text-xs">
-                          {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">{group.clientNumber || '-'}</td>
-                      <td className="px-4 py-3 max-w-[250px]">
-                        <span className="text-xs text-muted-foreground line-clamp-2" title={group.errorDetails || ''}>
-                          {group.errorDetails || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 max-w-[160px] truncate" title={group.errorTypeName || ''}>
-                        {group.errorTypeName || <span className="text-muted-foreground italic">Unassigned</span>}
-                      </td>
-                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(group.totalAmount)}</td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={group.status} />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/invoice-groups/${group.id}`}>View</Link>
-                        </Button>
-                      </td>
+                      {visibleCols.has("invoiceNumber") && (
+                        <td className={`px-4 ${tdPy} font-medium text-primary`}>
+                          <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
+                        </td>
+                      )}
+                      {visibleCols.has("rideCount") && (
+                        <td className={`px-4 ${tdPy}`}>
+                          <Badge variant="secondary" className="text-xs">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</Badge>
+                        </td>
+                      )}
+                      {visibleCols.has("clientNumber") && (
+                        <td className={`px-4 ${tdPy}`}>{group.clientNumber || '-'}</td>
+                      )}
+                      {visibleCols.has("errorDetails") && (
+                        <td className={`px-4 ${tdPy} max-w-[250px]`}>
+                          <span className="text-xs text-muted-foreground line-clamp-2" title={group.errorDetails || ''}>
+                            {group.errorDetails || '-'}
+                          </span>
+                        </td>
+                      )}
+                      {visibleCols.has("errorTypeName") && (
+                        <td className={`px-4 ${tdPy} max-w-[160px] truncate`} title={group.errorTypeName || ''}>
+                          {group.errorTypeName || <span className="text-muted-foreground italic">Unassigned</span>}
+                        </td>
+                      )}
+                      {visibleCols.has("totalAmount") && (
+                        <td className={`px-4 ${tdPy} font-medium whitespace-nowrap`}>{formatCurrency(group.totalAmount)}</td>
+                      )}
+                      {visibleCols.has("status") && (
+                        <td className={`px-4 ${tdPy}`}><StatusBadge status={group.status} /></td>
+                      )}
+                      {visibleCols.has("createdAt") && (
+                        <td className={`px-4 ${tdPy} text-muted-foreground whitespace-nowrap`}>{group.createdAt ? formatDate(group.createdAt) : '—'}</td>
+                      )}
+                      {visibleCols.has("action") && (
+                        <td className={`px-4 ${tdPy} text-right`}>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link href={`/invoice-groups/${group.id}`}>View</Link>
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
+          <PaginationFooter
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={p => set({ page: String(p) }, false)}
+            onPageSizeChange={s => set({ ps: String(s), page: null }, false)}
+          />
         </CardContent>
       </Card>
     </div>

@@ -112,10 +112,12 @@ paths:
       parameters:
         - name: status
           in: query
+          description: Comma-separated list of statuses to filter by
           schema:
             type: string
         - name: outcome
           in: query
+          description: Comma-separated list of outcomes to filter by
           schema:
             type: string
         - name: search
@@ -128,6 +130,43 @@ paths:
           schema:
             type: string
             enum: [empty, present]
+        - name: errorTypeId
+          in: query
+          description: Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
+          schema:
+            type: string
+        - name: createdFrom
+          in: query
+          description: Filter groups created on or after this date (ISO 8601)
+          schema:
+            type: string
+        - name: createdTo
+          in: query
+          description: Filter groups created on or before this date (ISO 8601)
+          schema:
+            type: string
+        - name: amountMin
+          in: query
+          description: Filter groups with total amount >= this value
+          schema:
+            type: string
+        - name: amountMax
+          in: query
+          description: Filter groups with total amount <= this value
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Column to sort by
+          schema:
+            type: string
+            enum: [invoiceNumber, rideCount, clientNumber, errorTypeName, totalAmount, status, createdAt]
+        - name: dir
+          in: query
+          description: Sort direction
+          schema:
+            type: string
+            enum: [asc, desc]
         - name: limit
           in: query
           schema:
@@ -145,6 +184,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupsListResponse"
+
+  /invoice-groups/export-csv:
+    get:
+      operationId: exportInvoiceGroupsCsv
+      tags: [invoice-groups]
+      summary: Export invoice groups as CSV (all matching rows, respects same filters as list)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: errorDetails
+          in: query
+          schema:
+            type: string
+        - name: errorTypeId
+          in: query
+          schema:
+            type: string
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+        - name: amountMin
+          in: query
+          schema:
+            type: string
+        - name: amountMax
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: dir
+          in: query
+          schema:
+            type: string
+        - name: columns
+          in: query
+          description: Comma-separated list of column keys to include in export
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
 
   /invoice-groups/{id}:
     get:
@@ -509,18 +611,65 @@ paths:
       parameters:
         - name: status
           in: query
+          description: Comma-separated list of statuses to filter by
           schema:
             type: string
-            enum: ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         - name: outcome
           in: query
+          description: Comma-separated list of outcomes to filter by
           schema:
             type: string
-            enum: ["Pending", "Approved", "Denied", "Partially Approved"]
         - name: search
           in: query
           schema:
             type: string
+        - name: errorTypeId
+          in: query
+          description: Comma-separated list of error type IDs, use __unassigned__ for claims with no error type
+          schema:
+            type: string
+        - name: createdFrom
+          in: query
+          description: Filter claims created on or after this date (ISO 8601)
+          schema:
+            type: string
+        - name: createdTo
+          in: query
+          description: Filter claims created on or before this date (ISO 8601)
+          schema:
+            type: string
+        - name: amountMin
+          in: query
+          description: Filter claims with amount >= this value
+          schema:
+            type: string
+        - name: amountMax
+          in: query
+          description: Filter claims with amount <= this value
+          schema:
+            type: string
+        - name: serviceDateFrom
+          in: query
+          description: Filter claims with service date on or after this date (YYYY-MM-DD)
+          schema:
+            type: string
+        - name: serviceDateTo
+          in: query
+          description: Filter claims with service date on or before this date (YYYY-MM-DD)
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Column to sort by
+          schema:
+            type: string
+            enum: [confNumber, date, clientNumber, errorTypeName, claimAmount, status, createdAt]
+        - name: dir
+          in: query
+          description: Sort direction
+          schema:
+            type: string
+            enum: [asc, desc]
         - name: limit
           in: query
           schema:
@@ -555,6 +704,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/export-csv:
+    get:
+      operationId: exportClaimsCsv
+      tags: [claims]
+      summary: Export claims as CSV (all matching rows, respects same filters as list)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: errorTypeId
+          in: query
+          schema:
+            type: string
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+        - name: amountMin
+          in: query
+          schema:
+            type: string
+        - name: amountMax
+          in: query
+          schema:
+            type: string
+        - name: serviceDateFrom
+          in: query
+          schema:
+            type: string
+        - name: serviceDateTo
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: dir
+          in: query
+          schema:
+            type: string
+        - name: columns
+          in: query
+          description: Comma-separated list of column keys to include in export
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
 
   /claims/{id}:
     get:

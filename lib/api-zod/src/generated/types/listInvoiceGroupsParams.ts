@@ -5,16 +5,52 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
 import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
+import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
 
 export type ListInvoiceGroupsParams = {
+  /**
+   * Comma-separated list of statuses to filter by
+   */
   status?: string;
+  /**
+   * Comma-separated list of outcomes to filter by
+   */
   outcome?: string;
   search?: string;
   /**
    * Filter by presence of an error description on the group
    */
   errorDetails?: ListInvoiceGroupsErrorDetails;
+  /**
+   * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
+   */
+  errorTypeId?: string;
+  /**
+   * Filter groups created on or after this date (ISO 8601)
+   */
+  createdFrom?: string;
+  /**
+   * Filter groups created on or before this date (ISO 8601)
+   */
+  createdTo?: string;
+  /**
+   * Filter groups with total amount >= this value
+   */
+  amountMin?: string;
+  /**
+   * Filter groups with total amount <= this value
+   */
+  amountMax?: string;
+  /**
+   * Column to sort by
+   */
+  sort?: ListInvoiceGroupsSort;
+  /**
+   * Sort direction
+   */
+  dir?: ListInvoiceGroupsDir;
   limit?: number;
   offset?: number;
 };

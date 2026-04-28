@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, and, count, inArray, isNull, isNotNull, ne, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -38,24 +38,65 @@ function emitGroupEvent(invoiceGroupId: number, type: string, req: Request) {
   });
 }
 
-router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
-  const { status, outcome, search, errorDetails: errorDetailsFilter, limit: limitStr, offset: offsetStr } = req.query;
-  const limitVal = parseInt(String(limitStr || "50"), 10);
-  const offsetVal = parseInt(String(offsetStr || "0"), 10);
+const INVOICE_GROUP_SORTABLE_COLUMNS = {
+  invoiceNumber: invoiceGroupsTable.invoiceNumber,
+  rideCount: invoiceGroupsTable.rideCount,
+  clientNumber: invoiceGroupsTable.clientNumber,
+  errorTypeName: invoiceGroupsTable.errorTypeName,
+  totalAmount: sql`${invoiceGroupsTable.totalAmount}::numeric`,
+  status: invoiceGroupsTable.status,
+  createdAt: invoiceGroupsTable.createdAt,
+} as const;
+
+function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined {
+  const { status, outcome, search, errorDetails: errorDetailsFilter, errorTypeId } = query;
+  const createdFrom = query.createdFrom as string | undefined;
+  const createdTo = query.createdTo as string | undefined;
+  const amountMin = query.amountMin as string | undefined;
+  const amountMax = query.amountMax as string | undefined;
 
   const conditions: SQL[] = [];
+
   if (status && typeof status === "string") {
-    if (status.includes(",")) {
-      const statuses = status.split(",") as (typeof invoiceGroupsTable.status.enumValues)[number][];
+    const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof invoiceGroupsTable.status.enumValues)[number][];
+    if (statuses.length === 1) {
+      conditions.push(eq(invoiceGroupsTable.status, statuses[0]));
+    } else if (statuses.length > 1) {
       const statusOr = or(...statuses.map(s => eq(invoiceGroupsTable.status, s)));
       if (statusOr) conditions.push(statusOr);
-    } else {
-      conditions.push(eq(invoiceGroupsTable.status, status as (typeof invoiceGroupsTable.status.enumValues)[number]));
     }
   }
+
   if (outcome && typeof outcome === "string") {
-    conditions.push(eq(invoiceGroupsTable.outcome, outcome as (typeof invoiceGroupsTable.outcome.enumValues)[number]));
+    const outcomes = outcome.split(",").map(o => o.trim()).filter(Boolean) as (typeof invoiceGroupsTable.outcome.enumValues)[number][];
+    if (outcomes.length === 1) {
+      conditions.push(eq(invoiceGroupsTable.outcome, outcomes[0]));
+    } else if (outcomes.length > 1) {
+      const outcomeOr = or(...outcomes.map(o => eq(invoiceGroupsTable.outcome, o)));
+      if (outcomeOr) conditions.push(outcomeOr);
+    }
   }
+
+  if (errorTypeId && typeof errorTypeId === "string") {
+    const parts = errorTypeId.split(",").map(p => p.trim()).filter(Boolean);
+    const hasUnassigned = parts.includes("__unassigned__");
+    const ids = parts.filter(p => p !== "__unassigned__");
+    const orParts: SQL[] = [];
+    if (hasUnassigned) {
+      const unassignedOr = or(isNull(invoiceGroupsTable.errorTypeId), eq(invoiceGroupsTable.errorTypeId, ""));
+      if (unassignedOr) orParts.push(unassignedOr);
+    }
+    if (ids.length > 0) {
+      orParts.push(inArray(invoiceGroupsTable.errorTypeId, ids));
+    }
+    if (orParts.length === 1) {
+      conditions.push(orParts[0]);
+    } else if (orParts.length > 1) {
+      const combined = or(...orParts);
+      if (combined) conditions.push(combined);
+    }
+  }
+
   if (search && typeof search === "string") {
     const searchPattern = `%${search}%`;
     const searchOr = or(
@@ -66,26 +107,100 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     );
     if (searchOr) conditions.push(searchOr);
   }
+
   if (errorDetailsFilter === "empty") {
-    const emptyOr = or(
-      isNull(invoiceGroupsTable.errorDetails),
-      eq(invoiceGroupsTable.errorDetails, ""),
-    );
+    const emptyOr = or(isNull(invoiceGroupsTable.errorDetails), eq(invoiceGroupsTable.errorDetails, ""));
     if (emptyOr) conditions.push(emptyOr);
   } else if (errorDetailsFilter === "present") {
     conditions.push(isNotNull(invoiceGroupsTable.errorDetails));
     conditions.push(ne(invoiceGroupsTable.errorDetails, ""));
   }
 
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  if (createdFrom) {
+    conditions.push(gte(invoiceGroupsTable.createdAt, new Date(createdFrom)));
+  }
+  if (createdTo) {
+    const toDate = new Date(createdTo);
+    toDate.setHours(23, 59, 59, 999);
+    conditions.push(lte(invoiceGroupsTable.createdAt, toDate));
+  }
+  if (amountMin) {
+    conditions.push(gte(sql`${invoiceGroupsTable.totalAmount}::numeric`, sql`${amountMin}::numeric`));
+  }
+  if (amountMax) {
+    conditions.push(lte(sql`${invoiceGroupsTable.totalAmount}::numeric`, sql`${amountMax}::numeric`));
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function buildInvoiceGroupOrderBy(sortCol: string | undefined, sortDir: string | undefined) {
+  const col = sortCol && sortCol in INVOICE_GROUP_SORTABLE_COLUMNS
+    ? INVOICE_GROUP_SORTABLE_COLUMNS[sortCol as keyof typeof INVOICE_GROUP_SORTABLE_COLUMNS]
+    : invoiceGroupsTable.createdAt;
+  const dirFn = sortDir === "asc" ? asc : desc;
+  return dirFn(col);
+}
+
+router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
+  const { limit: limitStr, offset: offsetStr, sort, dir } = req.query;
+  const limitVal = Math.min(parseInt(String(limitStr || "50"), 10), 500);
+  const offsetVal = parseInt(String(offsetStr || "0"), 10);
+
+  const where = buildInvoiceGroupWhere(req.query as Record<string, unknown>);
+  const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
 
   const [totalResult] = await db.select({ count: count() }).from(invoiceGroupsTable).where(where);
   const groups = await db.select().from(invoiceGroupsTable).where(where)
-    .orderBy(desc(invoiceGroupsTable.createdAt))
+    .orderBy(orderBy)
     .limit(limitVal)
     .offset(offsetVal);
 
   res.json({ groups, total: totalResult.count });
+}));
+
+router.get("/invoice-groups/export-csv", asyncHandler(async (req, res): Promise<void> => {
+  const { sort, dir, columns: columnsParam } = req.query;
+  const where = buildInvoiceGroupWhere(req.query as Record<string, unknown>);
+  const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
+
+  const groups = await db.select().from(invoiceGroupsTable).where(where).orderBy(orderBy);
+
+  const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
+
+  const allColumns = [
+    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "rideCount", label: "Rides" },
+    { key: "clientNumber", label: "Client" },
+    { key: "errorDetails", label: "Error Description" },
+    { key: "errorTypeName", label: "Error Type" },
+    { key: "totalAmount", label: "Total Amount" },
+    { key: "status", label: "Status" },
+    { key: "outcome", label: "Outcome" },
+    { key: "createdAt", label: "Created Date" },
+  ];
+
+  const cols = requestedColumns
+    ? allColumns.filter(c => requestedColumns.includes(c.key))
+    : allColumns;
+
+  const csvCell = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const str = String(val);
+    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+
+  const header = cols.map(c => csvCell(c.label)).join(",");
+  const rows = groups.map(g => {
+    const row = cols.map(c => csvCell((g as Record<string, unknown>)[c.key]));
+    return row.join(",");
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="invoice-groups-${today}.csv"`);
+  res.send([header, ...rows].join("\r\n"));
 }));
 
 router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {

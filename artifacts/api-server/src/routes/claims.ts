@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, and, count, inArray, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, asc, and, count, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -50,24 +50,67 @@ function actorFromReq(req: Request) {
   };
 }
 
-router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
-  const { status, outcome, search, limit: limitStr, offset: offsetStr } = req.query;
-  const limitVal = parseInt(String(limitStr || "50"), 10);
-  const offsetVal = parseInt(String(offsetStr || "0"), 10);
+const CLAIMS_SORTABLE_COLUMNS = {
+  confNumber: claimsTable.confNumber,
+  date: claimsTable.date,
+  clientNumber: claimsTable.clientNumber,
+  errorTypeName: claimsTable.errorTypeName,
+  claimAmount: sql`${claimsTable.claimAmount}::numeric`,
+  status: claimsTable.status,
+  createdAt: claimsTable.createdAt,
+} as const;
+
+function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
+  const { status, outcome, search, errorTypeId } = query;
+  const createdFrom = query.createdFrom as string | undefined;
+  const createdTo = query.createdTo as string | undefined;
+  const amountMin = query.amountMin as string | undefined;
+  const amountMax = query.amountMax as string | undefined;
+  const serviceDateFrom = query.serviceDateFrom as string | undefined;
+  const serviceDateTo = query.serviceDateTo as string | undefined;
 
   const conditions: SQL[] = [];
+
   if (status && typeof status === "string") {
-    if (status.includes(",")) {
-      const statuses = status.split(",") as (typeof claimsTable.status.enumValues)[number][];
+    const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof claimsTable.status.enumValues)[number][];
+    if (statuses.length === 1) {
+      conditions.push(eq(claimsTable.status, statuses[0]));
+    } else if (statuses.length > 1) {
       const statusOr = or(...statuses.map(s => eq(claimsTable.status, s)));
       if (statusOr) conditions.push(statusOr);
-    } else {
-      conditions.push(eq(claimsTable.status, status as (typeof claimsTable.status.enumValues)[number]));
     }
   }
+
   if (outcome && typeof outcome === "string") {
-    conditions.push(eq(claimsTable.outcome, outcome as (typeof claimsTable.outcome.enumValues)[number]));
+    const outcomes = outcome.split(",").map(o => o.trim()).filter(Boolean) as (typeof claimsTable.outcome.enumValues)[number][];
+    if (outcomes.length === 1) {
+      conditions.push(eq(claimsTable.outcome, outcomes[0]));
+    } else if (outcomes.length > 1) {
+      const outcomeOr = or(...outcomes.map(o => eq(claimsTable.outcome, o)));
+      if (outcomeOr) conditions.push(outcomeOr);
+    }
   }
+
+  if (errorTypeId && typeof errorTypeId === "string") {
+    const parts = errorTypeId.split(",").map(p => p.trim()).filter(Boolean);
+    const hasUnassigned = parts.includes("__unassigned__");
+    const ids = parts.filter(p => p !== "__unassigned__");
+    const orParts: SQL[] = [];
+    if (hasUnassigned) {
+      const unassignedOr = or(isNull(claimsTable.errorTypeId), eq(claimsTable.errorTypeId, ""));
+      if (unassignedOr) orParts.push(unassignedOr);
+    }
+    if (ids.length > 0) {
+      orParts.push(inArray(claimsTable.errorTypeId, ids));
+    }
+    if (orParts.length === 1) {
+      conditions.push(orParts[0]);
+    } else if (orParts.length > 1) {
+      const combined = or(...orParts);
+      if (combined) conditions.push(combined);
+    }
+  }
+
   if (search && typeof search === "string") {
     const searchPattern = `%${search}%`;
     const searchOr = or(
@@ -79,15 +122,97 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     if (searchOr) conditions.push(searchOr);
   }
 
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  if (createdFrom) {
+    conditions.push(gte(claimsTable.createdAt, new Date(createdFrom)));
+  }
+  if (createdTo) {
+    const toDate = new Date(createdTo);
+    toDate.setHours(23, 59, 59, 999);
+    conditions.push(lte(claimsTable.createdAt, toDate));
+  }
+  if (amountMin) {
+    conditions.push(gte(sql`${claimsTable.claimAmount}::numeric`, sql`${amountMin}::numeric`));
+  }
+  if (amountMax) {
+    conditions.push(lte(sql`${claimsTable.claimAmount}::numeric`, sql`${amountMax}::numeric`));
+  }
+  if (serviceDateFrom) {
+    conditions.push(gte(claimsTable.date, serviceDateFrom));
+  }
+  if (serviceDateTo) {
+    conditions.push(lte(claimsTable.date, serviceDateTo));
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function buildClaimsOrderBy(sortCol: string | undefined, sortDir: string | undefined) {
+  const col = sortCol && sortCol in CLAIMS_SORTABLE_COLUMNS
+    ? CLAIMS_SORTABLE_COLUMNS[sortCol as keyof typeof CLAIMS_SORTABLE_COLUMNS]
+    : claimsTable.createdAt;
+  const dirFn = sortDir === "asc" ? asc : desc;
+  return dirFn(col);
+}
+
+router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
+  const { limit: limitStr, offset: offsetStr, sort, dir } = req.query;
+  const limitVal = Math.min(parseInt(String(limitStr || "50"), 10), 500);
+  const offsetVal = parseInt(String(offsetStr || "0"), 10);
+
+  const where = buildClaimsWhere(req.query as Record<string, unknown>);
+  const orderBy = buildClaimsOrderBy(sort as string, dir as string);
 
   const [totalResult] = await db.select({ count: count() }).from(claimsTable).where(where);
   const claims = await db.select().from(claimsTable).where(where)
-    .orderBy(desc(claimsTable.createdAt))
+    .orderBy(orderBy)
     .limit(limitVal)
     .offset(offsetVal);
 
   res.json({ claims, total: totalResult.count });
+}));
+
+router.get("/claims/export-csv", asyncHandler(async (req, res): Promise<void> => {
+  const { sort, dir, columns: columnsParam } = req.query;
+  const where = buildClaimsWhere(req.query as Record<string, unknown>);
+  const orderBy = buildClaimsOrderBy(sort as string, dir as string);
+
+  const claims = await db.select().from(claimsTable).where(where).orderBy(orderBy);
+
+  const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
+
+  const allColumns = [
+    { key: "confNumber", label: "Conf #" },
+    { key: "date", label: "Service Date" },
+    { key: "clientNumber", label: "Client" },
+    { key: "errorDetails", label: "Error Description" },
+    { key: "errorTypeName", label: "Error Type" },
+    { key: "claimAmount", label: "Amount" },
+    { key: "status", label: "Status" },
+    { key: "outcome", label: "Outcome" },
+    { key: "createdAt", label: "Created Date" },
+  ];
+
+  const cols = requestedColumns
+    ? allColumns.filter(c => requestedColumns.includes(c.key))
+    : allColumns;
+
+  const csvCell = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const str = String(val);
+    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+
+  const header = cols.map(c => csvCell(c.label)).join(",");
+  const rows = claims.map(claim => {
+    const row = cols.map(c => csvCell((claim as Record<string, unknown>)[c.key]));
+    return row.join(",");
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="claims-${today}.csv"`);
+  res.send([header, ...rows].join("\r\n"));
 }));
 
 router.post("/claims", asyncHandler(async (req, res): Promise<void> => {
