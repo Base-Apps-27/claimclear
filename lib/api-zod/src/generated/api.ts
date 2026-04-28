@@ -3320,6 +3320,62 @@ export const GetDashboardSummaryResponse = zod.object({
 });
 
 /**
+ * @summary Daily activity time series for the summary page
+ */
+export const getDashboardTimeseriesQueryDaysDefault = 30;
+export const getDashboardTimeseriesQueryDaysMax = 365;
+
+export const GetDashboardTimeseriesQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardTimeseriesQueryDaysMax)
+    .default(getDashboardTimeseriesQueryDaysDefault),
+});
+
+export const GetDashboardTimeseriesResponse = zod.object({
+  days: zod.number(),
+  points: zod.array(
+    zod.object({
+      date: zod.string().describe("ISO date (YYYY-MM-DD) at UTC midnight"),
+      claimsCreated: zod.number(),
+      claimsResolved: zod.number(),
+      dollarsRecovered: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Per-user productivity counts over a window
+ */
+export const getDashboardUserProductivityQueryDaysDefault = 30;
+export const getDashboardUserProductivityQueryDaysMax = 365;
+
+export const GetDashboardUserProductivityQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardUserProductivityQueryDaysMax)
+    .default(getDashboardUserProductivityQueryDaysDefault),
+});
+
+export const GetDashboardUserProductivityResponse = zod.object({
+  days: zod.number(),
+  users: zod.array(
+    zod.object({
+      userEmail: zod.string(),
+      userName: zod.string(),
+      triaged: zod.number(),
+      resolved: zod.number(),
+      denied: zod.number(),
+      drafts: zod.number(),
+      submissions: zod.number(),
+      total: zod.number(),
+    }),
+  ),
+});
+
+/**
  * @summary Trigger daily brief email
  */
 export const TriggerDailyBriefResponse = zod.object({

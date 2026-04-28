@@ -1054,6 +1054,35 @@ export interface DashboardSummary {
   portalWorker: DashboardSummaryPortalWorker;
 }
 
+export type DashboardTimeseriesPointsItem = {
+  /** ISO date (YYYY-MM-DD) at UTC midnight */
+  date: string;
+  claimsCreated: number;
+  claimsResolved: number;
+  dollarsRecovered: number;
+};
+
+export interface DashboardTimeseries {
+  days: number;
+  points: DashboardTimeseriesPointsItem[];
+}
+
+export type DashboardUserProductivityUsersItem = {
+  userEmail: string;
+  userName: string;
+  triaged: number;
+  resolved: number;
+  denied: number;
+  drafts: number;
+  submissions: number;
+  total: number;
+};
+
+export interface DashboardUserProductivity {
+  days: number;
+  users: DashboardUserProductivityUsersItem[];
+}
+
 export interface NotificationPreferencesResponse {
   userId: string;
   dailyBrief: boolean;
@@ -1731,6 +1760,22 @@ export type ConfirmPortalSubmissionBody = {
 
 export type ConfirmPortalSubmission422 = {
   failures: LintResult[];
+};
+
+export type GetDashboardTimeseriesParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+};
+
+export type GetDashboardUserProductivityParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
 };
 
 export type ListEvidenceTypes200 = {

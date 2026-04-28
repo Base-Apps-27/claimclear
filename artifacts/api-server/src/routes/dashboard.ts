@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, and, or, count, sum, desc, isNull, lte } from "drizzle-orm";
+import { eq, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable, portalSubmissionsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
@@ -11,6 +11,30 @@ const router: IRouter = Router();
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 const VENDOR_PREPAY_RATE = 0.70;
 const OVERDUE_THRESHOLD_MINUTES = 15;
+
+function parseDays(raw: unknown, fallback: number, max = 365): number {
+  const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+function startOfWindow(days: number): Date {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - (days - 1));
+  return d;
+}
+
+function buildDateBuckets(days: number): string[] {
+  const start = startOfWindow(days);
+  const out: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setUTCDate(d.getUTCDate() + i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
 
 router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
   const statusCountsRaw = await db
@@ -160,6 +184,122 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       overdueCount,
     },
   });
+}));
+
+router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void> => {
+  const days = parseDays(req.query.days, 30);
+  const start = startOfWindow(days);
+  const buckets = buildDateBuckets(days);
+
+  const createdRows = await db
+    .select({
+      bucket: sql<string>`to_char((${claimsTable.createdAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: count(),
+    })
+    .from(claimsTable)
+    .where(gte(claimsTable.createdAt, start))
+    .groupBy(sql`1`);
+
+  const resolvedRows = await db
+    .select({
+      bucket: sql<string>`to_char((${auditLogsTable.timestamp}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: count(),
+    })
+    .from(auditLogsTable)
+    .where(and(
+      gte(auditLogsTable.timestamp, start),
+      inArray(auditLogsTable.action, ["group_resolved", "group_denied"]),
+    ))
+    .groupBy(sql`1`);
+
+  const recoveredRows = await db
+    .select({
+      bucket: sql<string>`to_char((${invoiceGroupsTable.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      total: sum(invoiceGroupsTable.approvedAmount),
+    })
+    .from(invoiceGroupsTable)
+    .where(and(
+      gte(invoiceGroupsTable.updatedAt, start),
+      isNotNull(invoiceGroupsTable.approvedAmount),
+      inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
+    ))
+    .groupBy(sql`1`);
+
+  const createdMap = new Map(createdRows.map(r => [r.bucket, r.count]));
+  const resolvedMap = new Map(resolvedRows.map(r => [r.bucket, r.count]));
+  const recoveredMap = new Map(recoveredRows.map(r => [r.bucket, parseFloat(r.total || "0")]));
+
+  const points = buckets.map(date => ({
+    date,
+    claimsCreated: createdMap.get(date) ?? 0,
+    claimsResolved: resolvedMap.get(date) ?? 0,
+    dollarsRecovered: Number((recoveredMap.get(date) ?? 0).toFixed(2)),
+  }));
+
+  res.json({ days, points });
+}));
+
+router.get("/dashboard/user-productivity", asyncHandler(async (req, res): Promise<void> => {
+  const days = parseDays(req.query.days, 30);
+  const start = startOfWindow(days);
+
+  const ACTION_BUCKETS: Record<string, "triaged" | "resolved" | "denied" | "drafts" | "submissions"> = {
+    group_triaged: "triaged",
+    group_resolved: "resolved",
+    group_denied: "denied",
+    portal_draft_edited: "drafts",
+    portal_draft_regenerated: "drafts",
+    portal_submission_submitted: "submissions",
+  };
+
+  const rows = await db
+    .select({
+      userEmail: auditLogsTable.userEmail,
+      userName: auditLogsTable.userName,
+      action: auditLogsTable.action,
+      count: count(),
+    })
+    .from(auditLogsTable)
+    .where(and(
+      gte(auditLogsTable.timestamp, start),
+      isNotNull(auditLogsTable.userEmail),
+      inArray(auditLogsTable.action, Object.keys(ACTION_BUCKETS)),
+    ))
+    .groupBy(auditLogsTable.userEmail, auditLogsTable.userName, auditLogsTable.action);
+
+  const byUser = new Map<string, {
+    userEmail: string;
+    userName: string;
+    triaged: number;
+    resolved: number;
+    denied: number;
+    drafts: number;
+    submissions: number;
+    total: number;
+  }>();
+
+  for (const r of rows) {
+    if (!r.userEmail) continue;
+    const bucket = ACTION_BUCKETS[r.action];
+    if (!bucket) continue;
+    const key = r.userEmail;
+    let agg = byUser.get(key);
+    if (!agg) {
+      agg = {
+        userEmail: r.userEmail,
+        userName: r.userName ?? "",
+        triaged: 0, resolved: 0, denied: 0, drafts: 0, submissions: 0, total: 0,
+      };
+      byUser.set(key, agg);
+    }
+    agg[bucket] += r.count;
+    agg.total += r.count;
+    if (!agg.userName && r.userName) agg.userName = r.userName;
+  }
+
+  const users = Array.from(byUser.values()).sort((a, b) => b.total - a.total);
+
+  res.json({ days, users });
 }));
 
 export default router;

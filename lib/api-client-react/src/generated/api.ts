@@ -50,6 +50,8 @@ import type {
   CronRunsResponse,
   DailyBriefResponse,
   DashboardSummary,
+  DashboardTimeseries,
+  DashboardUserProductivity,
   EmailBouncesResponse,
   EmailCheckResult,
   EmailThreadResponse,
@@ -62,6 +64,8 @@ import type {
   GetAuthSession200,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
+  GetDashboardTimeseriesParams,
+  GetDashboardUserProductivityParams,
   GetSystemHealthBouncesParams,
   HealthStatus,
   HoldInvoiceGroupBody,
@@ -6052,6 +6056,218 @@ export function useGetDashboardSummary<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Daily activity time series for the summary page
+ */
+export const getGetDashboardTimeseriesUrl = (
+  params?: GetDashboardTimeseriesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/timeseries?${stringifiedParams}`
+    : `/api/dashboard/timeseries`;
+};
+
+export const getDashboardTimeseries = async (
+  params?: GetDashboardTimeseriesParams,
+  options?: RequestInit,
+): Promise<DashboardTimeseries> => {
+  return customFetch<DashboardTimeseries>(
+    getGetDashboardTimeseriesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardTimeseriesQueryKey = (
+  params?: GetDashboardTimeseriesParams,
+) => {
+  return [`/api/dashboard/timeseries`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDashboardTimeseriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardTimeseries>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardTimeseriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardTimeseries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardTimeseriesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardTimeseries>>
+  > = ({ signal }) =>
+    getDashboardTimeseries(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardTimeseries>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardTimeseriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardTimeseries>>
+>;
+export type GetDashboardTimeseriesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Daily activity time series for the summary page
+ */
+
+export function useGetDashboardTimeseries<
+  TData = Awaited<ReturnType<typeof getDashboardTimeseries>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardTimeseriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardTimeseries>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardTimeseriesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-user productivity counts over a window
+ */
+export const getGetDashboardUserProductivityUrl = (
+  params?: GetDashboardUserProductivityParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/user-productivity?${stringifiedParams}`
+    : `/api/dashboard/user-productivity`;
+};
+
+export const getDashboardUserProductivity = async (
+  params?: GetDashboardUserProductivityParams,
+  options?: RequestInit,
+): Promise<DashboardUserProductivity> => {
+  return customFetch<DashboardUserProductivity>(
+    getGetDashboardUserProductivityUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardUserProductivityQueryKey = (
+  params?: GetDashboardUserProductivityParams,
+) => {
+  return [
+    `/api/dashboard/user-productivity`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetDashboardUserProductivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardUserProductivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardUserProductivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardUserProductivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardUserProductivityQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardUserProductivity>>
+  > = ({ signal }) =>
+    getDashboardUserProductivity(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardUserProductivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardUserProductivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardUserProductivity>>
+>;
+export type GetDashboardUserProductivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-user productivity counts over a window
+ */
+
+export function useGetDashboardUserProductivity<
+  TData = Awaited<ReturnType<typeof getDashboardUserProductivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardUserProductivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardUserProductivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardUserProductivityQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
