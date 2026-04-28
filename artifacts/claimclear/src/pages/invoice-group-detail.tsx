@@ -1,6 +1,23 @@
 import { useParams, Link } from "wouter";
-import { useGetInvoiceGroup, useUpdateInvoiceGroupStatus, useUpdateInvoiceGroupOutcome, useTriageInvoiceGroup, useHoldInvoiceGroup, useRemoveInvoiceGroupHold, getGetInvoiceGroupQueryKey, useListInvoiceGroupEvidence, getListInvoiceGroupEvidenceQueryKey, useDeleteInvoiceGroupEvidence } from "@workspace/api-client-react";
-import type { ClaimResponse, PortalResponseItem } from "@workspace/api-client-react";
+import {
+  useGetInvoiceGroup,
+  useUpdateInvoiceGroupStatus,
+  useUpdateInvoiceGroupOutcome,
+  useTriageInvoiceGroup,
+  useHoldInvoiceGroup,
+  useRemoveInvoiceGroupHold,
+  getGetInvoiceGroupQueryKey,
+  useListInvoiceGroupEvidence,
+  getListInvoiceGroupEvidenceQueryKey,
+  useDeleteInvoiceGroupEvidence,
+  useProcessResponse,
+  useReassignResponse,
+  useListInvoiceGroups,
+  useListClaims,
+  getListResponsesQueryKey,
+  getGetInvoiceGroupValidTransitionsQueryKey,
+} from "@workspace/api-client-react";
+import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import DOMPurify from "dompurify";
@@ -25,11 +42,20 @@ import {
   Filter,
   Inbox,
   Bot,
+  CheckCircle,
+  X,
+  Eye,
+  ArrowRightLeft,
+  MailQuestion,
+  Search,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   humanizeAuditAction,
   ACTION_CATEGORY_LABELS,
@@ -55,6 +81,8 @@ export default function InvoiceGroupDetail() {
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
   const deleteEvidence = useDeleteInvoiceGroupEvidence();
+  const processResponseMutation = useProcessResponse();
+  const reassignResponseMutation = useReassignResponse();
 
   const [holdReason, setHoldReason] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
@@ -66,6 +94,27 @@ export default function InvoiceGroupDetail() {
       else next.add(responseId);
       return next;
     });
+  };
+
+  const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
+  const [reassignTab, setReassignTab] = useState<"group" | "claim">("group");
+  const [reassignSearch, setReassignSearch] = useState("");
+  const [reassignSelectedGroupId, setReassignSelectedGroupId] = useState<number | null>(null);
+  const [reassignSelectedClaimId, setReassignSelectedClaimId] = useState<number | null>(null);
+
+  const { data: reassignGroupsData } = useListInvoiceGroups(
+    { search: reassignSearch || undefined, limit: 10 },
+    { query: { queryKey: ["reassignGroupSearch", reassignSearch], enabled: !!reassignTarget && reassignTab === "group" && reassignSearch.length >= 2 } },
+  );
+  const { data: reassignClaimsData } = useListClaims(
+    { search: reassignSearch || undefined, limit: 10 },
+    { query: { queryKey: ["reassignClaimSearchFromGroup", reassignSearch], enabled: !!reassignTarget && reassignTab === "claim" && reassignSearch.length >= 2 } },
+  );
+
+  const invalidateAfterResponseChange = () => {
+    queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey() });
   };
 
   const invalidate = () => {
@@ -440,6 +489,59 @@ export default function InvoiceGroupDetail() {
                           )}
                         </div>
                       )}
+
+                      <div className="flex items-center gap-2 pt-1 flex-wrap">
+                        {!resp.processed && (
+                          <>
+                            <Button
+                              size="sm" variant="outline"
+                              className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
+                              disabled={processResponseMutation.isPending}
+                              onClick={async () => {
+                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
+                                invalidateAfterResponseChange();
+                              }}
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              size="sm" variant="outline"
+                              className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                              disabled={processResponseMutation.isPending}
+                              onClick={async () => {
+                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
+                                invalidateAfterResponseChange();
+                              }}
+                            >
+                              <X className="h-3 w-3 mr-1" /> Deny
+                            </Button>
+                            <Button
+                              size="sm" variant="outline"
+                              className="text-xs h-7"
+                              disabled={processResponseMutation.isPending}
+                              onClick={async () => {
+                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as ProcessResponseBodyResponseType } });
+                                invalidateAfterResponseChange();
+                              }}
+                            >
+                              <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          size="sm" variant="ghost"
+                          className="text-xs h-7 px-2 ml-auto opacity-70 hover:opacity-100"
+                          onClick={() => {
+                            setReassignTarget(resp);
+                            setReassignTab("group");
+                            setReassignSearch("");
+                            setReassignSelectedGroupId(null);
+                            setReassignSelectedClaimId(null);
+                          }}
+                        >
+                          <ArrowRightLeft className="h-3 w-3 mr-1" /> Not the right group?
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -639,6 +741,151 @@ export default function InvoiceGroupDetail() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={!!reassignTarget} onOpenChange={(open) => { if (!open) setReassignTarget(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5" /> Reassign response
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Move this response to a different invoice group or claim, or unmatch it so it returns to the unmatched inbox.
+            </p>
+
+            <Tabs
+              value={reassignTab}
+              onValueChange={(v) => {
+                setReassignTab(v as "group" | "claim");
+                setReassignSearch("");
+                setReassignSelectedGroupId(null);
+                setReassignSelectedClaimId(null);
+              }}
+            >
+              <TabsList className="grid grid-cols-2 w-full">
+                <TabsTrigger value="group">Invoice group</TabsTrigger>
+                <TabsTrigger value="claim">Claim</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="group" className="space-y-2 pt-3">
+                <Label className="text-xs">Search for the correct invoice group</Label>
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
+                  <Input
+                    className="pl-8"
+                    placeholder="Search by invoice #, client #, error details …"
+                    value={reassignSearch}
+                    onChange={(e) => { setReassignSearch(e.target.value); setReassignSelectedGroupId(null); }}
+                  />
+                </div>
+                {reassignSearch.length >= 2 && reassignGroupsData?.groups && (
+                  <div className="border rounded-md max-h-56 overflow-y-auto divide-y">
+                    {reassignGroupsData.groups.length === 0 && (
+                      <div className="p-3 text-xs text-muted-foreground">No invoice groups found.</div>
+                    )}
+                    {reassignGroupsData.groups
+                      .filter((g: InvoiceGroupResponse) => g.id !== id)
+                      .map((g: InvoiceGroupResponse) => (
+                        <button
+                          type="button"
+                          key={g.id}
+                          onClick={() => setReassignSelectedGroupId(g.id)}
+                          className={`w-full text-left p-2 text-sm hover:bg-muted ${reassignSelectedGroupId === g.id ? "bg-blue-50" : ""}`}
+                        >
+                          <div className="font-medium">Invoice #{g.invoiceNumber} — {g.clientNumber || "—"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {g.rideCount ?? 0} ride{(g.rideCount ?? 0) !== 1 ? "s" : ""} · {g.status}
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="claim" className="space-y-2 pt-3">
+                <Label className="text-xs">Search for the correct claim</Label>
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
+                  <Input
+                    className="pl-8"
+                    placeholder="Search by ref #, conf #, client #, car # …"
+                    value={reassignSearch}
+                    onChange={(e) => { setReassignSearch(e.target.value); setReassignSelectedClaimId(null); }}
+                  />
+                </div>
+                {reassignSearch.length >= 2 && reassignClaimsData?.claims && (
+                  <div className="border rounded-md max-h-56 overflow-y-auto divide-y">
+                    {reassignClaimsData.claims.length === 0 && (
+                      <div className="p-3 text-xs text-muted-foreground">No claims found.</div>
+                    )}
+                    {reassignClaimsData.claims.map((c: ClaimResponse) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => setReassignSelectedClaimId(c.id)}
+                        className={`w-full text-left p-2 text-sm hover:bg-muted ${reassignSelectedClaimId === c.id ? "bg-blue-50" : ""}`}
+                      >
+                        <div className="font-medium">Ref #{c.refNumber || c.id} — {c.clientNumber || "—"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Conf #{c.confNumber || "—"} · Car #{c.carNumber || "—"} · {c.status}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+
+            <div className="flex gap-2 justify-between pt-2">
+              <Button
+                variant="outline"
+                disabled={reassignResponseMutation.isPending}
+                onClick={async () => {
+                  if (!reassignTarget) return;
+                  await reassignResponseMutation.mutateAsync({
+                    id: reassignTarget.id,
+                    data: { unmatch: true },
+                  });
+                  invalidateAfterResponseChange();
+                  setReassignTarget(null);
+                }}
+              >
+                <MailQuestion className="h-4 w-4 mr-1" /> Unmatch
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => setReassignTarget(null)}>Cancel</Button>
+                <Button
+                  disabled={
+                    reassignResponseMutation.isPending ||
+                    (reassignTab === "group" ? !reassignSelectedGroupId : !reassignSelectedClaimId)
+                  }
+                  onClick={async () => {
+                    if (!reassignTarget) return;
+                    if (reassignTab === "group" && reassignSelectedGroupId) {
+                      await reassignResponseMutation.mutateAsync({
+                        id: reassignTarget.id,
+                        data: { targetGroupId: reassignSelectedGroupId },
+                      });
+                    } else if (reassignTab === "claim" && reassignSelectedClaimId) {
+                      await reassignResponseMutation.mutateAsync({
+                        id: reassignTarget.id,
+                        data: { targetClaimId: reassignSelectedClaimId },
+                      });
+                    } else {
+                      return;
+                    }
+                    invalidateAfterResponseChange();
+                    setReassignTarget(null);
+                  }}
+                >
+                  Reassign
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
