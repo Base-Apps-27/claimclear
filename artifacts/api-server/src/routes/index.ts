@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { requireAuth } from "../middlewares/requireAuth";
-import { requireBotToken, requireAuthOrBot } from "../middlewares/requireBotToken";
+import { requireAuthOrBot } from "../middlewares/requireBotToken";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import claimsRouter from "./claims";
@@ -10,9 +10,6 @@ import errorTypesRouter from "./error-types";
 import importRouter from "./import";
 import errorDetailMappingsRouter from "./error-detail-mappings";
 import portalSubmissionsRouter from "./portal-submissions";
-import botPortalRouter from "./bot-portal";
-import botInstancesRouter from "./bot-instances";
-import botInstancesReadRouter from "./bot-instances-read";
 import presenceRouter from "./presence";
 import claimEventsRouter from "./claim-events";
 import dashboardRouter from "./dashboard";
@@ -35,16 +32,14 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(authRouter);
 
-router.use("/bot/portal-submissions", requireBotToken, botPortalRouter);
-router.use("/bot/instances", requireBotToken, botInstancesRouter);
-
+// requireAuthOrBot is still used by daily-brief / check-email so scheduled
+// cron-driven HTTP calls (which go through localhost with a bot token) work.
 router.use("/daily-brief", requireAuthOrBot, dailyBriefRouter);
 router.use(requireAuthOrBot, checkEmailRouter);
 
 router.use(requireAuth);
 
 router.use(storageRouter);
-router.use("/bot-instances", botInstancesReadRouter);
 router.use(claimEventsRouter);
 router.use(claimEvidenceRouter);
 router.use(claimsRouter);

@@ -1003,6 +1003,34 @@ export type DashboardSummaryPortalStats = {
   successRate: string;
 };
 
+export type WorkerRunSummaryStatus =
+  (typeof WorkerRunSummaryStatus)[keyof typeof WorkerRunSummaryStatus];
+
+export const WorkerRunSummaryStatus = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export interface WorkerRunSummary {
+  batchId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: WorkerRunSummaryStatus;
+  total: number;
+  succeeded: number;
+  failed: number;
+  triggeredBy: string;
+  lastError: string | null;
+}
+
+export type DashboardSummaryPortalWorker = {
+  lastRun: WorkerRunSummary | null;
+  isRunning: boolean;
+  pendingDueCount: number;
+  overdueCount: number;
+};
+
 export interface ExpiringInvoiceGroup {
   id: number;
   invoiceNumber: string;
@@ -1021,7 +1049,7 @@ export interface DashboardSummary {
   expiringGroups: ExpiringInvoiceGroup[];
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
-  botInstances?: BotInstanceResponse[];
+  portalWorker: DashboardSummaryPortalWorker;
 }
 
 export interface NotificationPreferencesResponse {
@@ -1351,16 +1379,70 @@ export interface EmailBouncesResponse {
   bounces: EmailBounceRecord[];
 }
 
-export interface BotAuthStatusResponse {
-  lastBotAuthAt: string | null;
-  activeTokenHashPrefix: string | null;
-  hasGraceToken: boolean;
-  /** Threshold (minutes) after which the absence of bot auth is considered stale. */
-  staleThresholdMinutes: number;
-  /** Minutes since the last successful bot auth, or null if a bot has never authenticated since startup. */
-  minutesSinceLastAuth?: number | null;
-  /** True when no bot has authenticated within the threshold window (or never since startup). */
-  isStale: boolean;
+export interface WorkerSubmissionEvent {
+  submissionId: number;
+  claimId: number;
+  confNumber?: string | null;
+  submittedAt?: string | null;
+  /** ISO-8601 updated_at on the row. */
+  at: string;
+}
+
+export interface WorkerFailedSubmissionEvent {
+  submissionId: number;
+  claimId: number;
+  attempts: number;
+  maxAttempts: number;
+  errorMessage?: string | null;
+  /** ISO-8601 updated_at on the row. */
+  at: string;
+}
+
+export interface WorkerActivityResponse {
+  isRunning: boolean;
+  lastRun: WorkerRunSummary | null;
+  recentRuns: WorkerRunSummary[];
+  pendingDueCount: number;
+  overdueCount: number;
+  overdueThresholdMinutes: number;
+  /** ISO-8601 timestamp of the next scheduled portal_retry_sweeper fire, derived from the cron expression. Null if the cron expression cannot be parsed. */
+  nextSweepAt: string | null;
+  lastSuccessfulSubmission: WorkerSubmissionEvent | null;
+  lastFailedSubmission: WorkerFailedSubmissionEvent | null;
+}
+
+export type SystemHealthRollupComponentStatus =
+  (typeof SystemHealthRollupComponentStatus)[keyof typeof SystemHealthRollupComponentStatus];
+
+export const SystemHealthRollupComponentStatus = {
+  ok: "ok",
+  degraded: "degraded",
+  failed: "failed",
+} as const;
+
+export interface SystemHealthRollupComponent {
+  name: string;
+  status: SystemHealthRollupComponentStatus;
+  detail: string | null;
+}
+
+export type SystemHealthRollupResponseOverall =
+  (typeof SystemHealthRollupResponseOverall)[keyof typeof SystemHealthRollupResponseOverall];
+
+export const SystemHealthRollupResponseOverall = {
+  ok: "ok",
+  degraded: "degraded",
+  failed: "failed",
+} as const;
+
+export interface SystemHealthRollupResponse {
+  overall: SystemHealthRollupResponseOverall;
+  components: SystemHealthRollupComponent[];
+  lastWorkerRun: WorkerRunSummary | null;
+  workerRunning: boolean;
+  overdueCount: number;
+  overdueThresholdMinutes: number;
+  generatedAt: string;
 }
 
 export type GetCurrentAuthUser200 = {

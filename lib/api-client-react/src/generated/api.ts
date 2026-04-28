@@ -31,8 +31,6 @@ import type {
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
   BotActivityLogResponse,
-  BotAuthStatusResponse,
-  BotInstanceResponse,
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorType200,
   BulkAssignInvoiceGroupErrorTypeBody,
@@ -40,10 +38,7 @@ import type {
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
   ClaimResponse,
-  ClaimSubmissionBody,
   ClaimsListResponse,
-  CompleteDryRunBody,
-  CompleteSubmissionBody,
   ConfirmPortalSubmission422,
   ConfirmPortalSubmissionBody,
   ConnectorHealthResponse,
@@ -61,7 +56,6 @@ import type {
   ErrorTypeResponse,
   EvidenceTypeBody,
   EvidenceTypeResponse,
-  FailSubmissionBody,
   GenerateEmailBody,
   GetAuthSession200,
   GetClaimValidTransitions200,
@@ -89,7 +83,6 @@ import type {
   NoteResponse,
   NotificationPreferencesResponse,
   PlaceHoldBody,
-  PollSubmissionsBody,
   PortalResponseItem,
   PortalSubmissionResponse,
   PostResponseActionBody,
@@ -100,7 +93,6 @@ import type {
   ReassignResponseBody,
   RecordPortalResponse200,
   RecordPortalResponseBody,
-  RegisterBotBody,
   ResponseStats,
   RevertPortalSubmissionDescriptionBody,
   SOPAnalysisResult,
@@ -108,6 +100,7 @@ import type {
   SaveMappingsResponse,
   SendAnthropicMessageBody,
   SuccessResponse,
+  SystemHealthRollupResponse,
   TriageClaimBody,
   TriageInvoiceGroupBody,
   UpdateAppSettingsBody,
@@ -125,6 +118,7 @@ import type {
   UploadUrlRequest,
   UploadUrlResponse,
   ValidTransitionsResponse,
+  WorkerActivityResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -5447,454 +5441,6 @@ export const useSandboxRunPortalSubmission = <
 };
 
 /**
- * @summary Bot polls for pending submissions (bot token auth)
- */
-export const getPollPortalSubmissionsUrl = () => {
-  return `/api/bot/portal-submissions/poll`;
-};
-
-export const pollPortalSubmissions = async (
-  pollSubmissionsBody: PollSubmissionsBody,
-  options?: RequestInit,
-): Promise<PortalSubmissionResponse[]> => {
-  return customFetch<PortalSubmissionResponse[]>(
-    getPollPortalSubmissionsUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(pollSubmissionsBody),
-    },
-  );
-};
-
-export const getPollPortalSubmissionsMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof pollPortalSubmissions>>,
-    TError,
-    { data: BodyType<PollSubmissionsBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof pollPortalSubmissions>>,
-  TError,
-  { data: BodyType<PollSubmissionsBody> },
-  TContext
-> => {
-  const mutationKey = ["pollPortalSubmissions"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof pollPortalSubmissions>>,
-    { data: BodyType<PollSubmissionsBody> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return pollPortalSubmissions(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type PollPortalSubmissionsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof pollPortalSubmissions>>
->;
-export type PollPortalSubmissionsMutationBody = BodyType<PollSubmissionsBody>;
-export type PollPortalSubmissionsMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot polls for pending submissions (bot token auth)
- */
-export const usePollPortalSubmissions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof pollPortalSubmissions>>,
-    TError,
-    { data: BodyType<PollSubmissionsBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof pollPortalSubmissions>>,
-  TError,
-  { data: BodyType<PollSubmissionsBody> },
-  TContext
-> => {
-  return useMutation(getPollPortalSubmissionsMutationOptions(options));
-};
-
-/**
- * @summary Bot claims a submission (bot token auth)
- */
-export const getClaimPortalSubmissionUrl = (id: number) => {
-  return `/api/bot/portal-submissions/${id}/claim`;
-};
-
-export const claimPortalSubmission = async (
-  id: number,
-  claimSubmissionBody: ClaimSubmissionBody,
-  options?: RequestInit,
-): Promise<PortalSubmissionResponse> => {
-  return customFetch<PortalSubmissionResponse>(
-    getClaimPortalSubmissionUrl(id),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(claimSubmissionBody),
-    },
-  );
-};
-
-export const getClaimPortalSubmissionMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof claimPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<ClaimSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof claimPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<ClaimSubmissionBody> },
-  TContext
-> => {
-  const mutationKey = ["claimPortalSubmission"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof claimPortalSubmission>>,
-    { id: number; data: BodyType<ClaimSubmissionBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return claimPortalSubmission(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ClaimPortalSubmissionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof claimPortalSubmission>>
->;
-export type ClaimPortalSubmissionMutationBody = BodyType<ClaimSubmissionBody>;
-export type ClaimPortalSubmissionMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot claims a submission (bot token auth)
- */
-export const useClaimPortalSubmission = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof claimPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<ClaimSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof claimPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<ClaimSubmissionBody> },
-  TContext
-> => {
-  return useMutation(getClaimPortalSubmissionMutationOptions(options));
-};
-
-/**
- * @summary Bot reports success (bot token auth)
- */
-export const getCompletePortalSubmissionUrl = (id: number) => {
-  return `/api/bot/portal-submissions/${id}/complete`;
-};
-
-export const completePortalSubmission = async (
-  id: number,
-  completeSubmissionBody: CompleteSubmissionBody,
-  options?: RequestInit,
-): Promise<PortalSubmissionResponse> => {
-  return customFetch<PortalSubmissionResponse>(
-    getCompletePortalSubmissionUrl(id),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(completeSubmissionBody),
-    },
-  );
-};
-
-export const getCompletePortalSubmissionMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof completePortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<CompleteSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof completePortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<CompleteSubmissionBody> },
-  TContext
-> => {
-  const mutationKey = ["completePortalSubmission"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof completePortalSubmission>>,
-    { id: number; data: BodyType<CompleteSubmissionBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return completePortalSubmission(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type CompletePortalSubmissionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof completePortalSubmission>>
->;
-export type CompletePortalSubmissionMutationBody =
-  BodyType<CompleteSubmissionBody>;
-export type CompletePortalSubmissionMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot reports success (bot token auth)
- */
-export const useCompletePortalSubmission = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof completePortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<CompleteSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof completePortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<CompleteSubmissionBody> },
-  TContext
-> => {
-  return useMutation(getCompletePortalSubmissionMutationOptions(options));
-};
-
-/**
- * @summary Bot reports dry-run completion (bot token auth)
- */
-export const getCompleteDryRunPortalSubmissionUrl = (id: number) => {
-  return `/api/bot/portal-submissions/${id}/complete-dry-run`;
-};
-
-export const completeDryRunPortalSubmission = async (
-  id: number,
-  completeDryRunBody: CompleteDryRunBody,
-  options?: RequestInit,
-): Promise<PortalSubmissionResponse> => {
-  return customFetch<PortalSubmissionResponse>(
-    getCompleteDryRunPortalSubmissionUrl(id),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(completeDryRunBody),
-    },
-  );
-};
-
-export const getCompleteDryRunPortalSubmissionMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<CompleteDryRunBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<CompleteDryRunBody> },
-  TContext
-> => {
-  const mutationKey = ["completeDryRunPortalSubmission"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
-    { id: number; data: BodyType<CompleteDryRunBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return completeDryRunPortalSubmission(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type CompleteDryRunPortalSubmissionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>
->;
-export type CompleteDryRunPortalSubmissionMutationBody =
-  BodyType<CompleteDryRunBody>;
-export type CompleteDryRunPortalSubmissionMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot reports dry-run completion (bot token auth)
- */
-export const useCompleteDryRunPortalSubmission = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<CompleteDryRunBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof completeDryRunPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<CompleteDryRunBody> },
-  TContext
-> => {
-  return useMutation(getCompleteDryRunPortalSubmissionMutationOptions(options));
-};
-
-/**
- * @summary Bot reports failure (bot token auth)
- */
-export const getFailPortalSubmissionUrl = (id: number) => {
-  return `/api/bot/portal-submissions/${id}/fail`;
-};
-
-export const failPortalSubmission = async (
-  id: number,
-  failSubmissionBody: FailSubmissionBody,
-  options?: RequestInit,
-): Promise<PortalSubmissionResponse> => {
-  return customFetch<PortalSubmissionResponse>(getFailPortalSubmissionUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(failSubmissionBody),
-  });
-};
-
-export const getFailPortalSubmissionMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof failPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<FailSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof failPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<FailSubmissionBody> },
-  TContext
-> => {
-  const mutationKey = ["failPortalSubmission"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof failPortalSubmission>>,
-    { id: number; data: BodyType<FailSubmissionBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return failPortalSubmission(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type FailPortalSubmissionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof failPortalSubmission>>
->;
-export type FailPortalSubmissionMutationBody = BodyType<FailSubmissionBody>;
-export type FailPortalSubmissionMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot reports failure (bot token auth)
- */
-export const useFailPortalSubmission = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof failPortalSubmission>>,
-    TError,
-    { id: number; data: BodyType<FailSubmissionBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof failPortalSubmission>>,
-  TError,
-  { id: number; data: BodyType<FailSubmissionBody> },
-  TContext
-> => {
-  return useMutation(getFailPortalSubmissionMutationOptions(options));
-};
-
-/**
  * @summary List bot activity for submission
  */
 export const getListBotActivityUrl = (id: number) => {
@@ -5980,335 +5526,6 @@ export function useListBotActivity<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary List active bot instances (authenticated users)
- */
-export const getListBotInstancesUrl = () => {
-  return `/api/bot-instances`;
-};
-
-export const listBotInstances = async (
-  options?: RequestInit,
-): Promise<BotInstanceResponse[]> => {
-  return customFetch<BotInstanceResponse[]>(getListBotInstancesUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getListBotInstancesQueryKey = () => {
-  return [`/api/bot-instances`] as const;
-};
-
-export const getListBotInstancesQueryOptions = <
-  TData = Awaited<ReturnType<typeof listBotInstances>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listBotInstances>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getListBotInstancesQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listBotInstances>>
-  > = ({ signal }) => listBotInstances({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listBotInstances>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type ListBotInstancesQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listBotInstances>>
->;
-export type ListBotInstancesQueryError = ErrorType<unknown>;
-
-/**
- * @summary List active bot instances (authenticated users)
- */
-
-export function useListBotInstances<
-  TData = Awaited<ReturnType<typeof listBotInstances>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listBotInstances>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListBotInstancesQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Register a new bot instance (bot token auth)
- */
-export const getRegisterBotInstanceUrl = () => {
-  return `/api/bot/instances`;
-};
-
-export const registerBotInstance = async (
-  registerBotBody: RegisterBotBody,
-  options?: RequestInit,
-): Promise<BotInstanceResponse> => {
-  return customFetch<BotInstanceResponse>(getRegisterBotInstanceUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(registerBotBody),
-  });
-};
-
-export const getRegisterBotInstanceMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof registerBotInstance>>,
-    TError,
-    { data: BodyType<RegisterBotBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof registerBotInstance>>,
-  TError,
-  { data: BodyType<RegisterBotBody> },
-  TContext
-> => {
-  const mutationKey = ["registerBotInstance"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof registerBotInstance>>,
-    { data: BodyType<RegisterBotBody> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return registerBotInstance(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type RegisterBotInstanceMutationResult = NonNullable<
-  Awaited<ReturnType<typeof registerBotInstance>>
->;
-export type RegisterBotInstanceMutationBody = BodyType<RegisterBotBody>;
-export type RegisterBotInstanceMutationError = ErrorType<unknown>;
-
-/**
- * @summary Register a new bot instance (bot token auth)
- */
-export const useRegisterBotInstance = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof registerBotInstance>>,
-    TError,
-    { data: BodyType<RegisterBotBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof registerBotInstance>>,
-  TError,
-  { data: BodyType<RegisterBotBody> },
-  TContext
-> => {
-  return useMutation(getRegisterBotInstanceMutationOptions(options));
-};
-
-/**
- * @summary Bot heartbeat (bot token auth)
- */
-export const getBotHeartbeatUrl = (id: number) => {
-  return `/api/bot/instances/${id}/heartbeat`;
-};
-
-export const botHeartbeat = async (
-  id: number,
-  options?: RequestInit,
-): Promise<BotInstanceResponse> => {
-  return customFetch<BotInstanceResponse>(getBotHeartbeatUrl(id), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const getBotHeartbeatMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof botHeartbeat>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof botHeartbeat>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["botHeartbeat"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof botHeartbeat>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return botHeartbeat(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type BotHeartbeatMutationResult = NonNullable<
-  Awaited<ReturnType<typeof botHeartbeat>>
->;
-
-export type BotHeartbeatMutationError = ErrorType<unknown>;
-
-/**
- * @summary Bot heartbeat (bot token auth)
- */
-export const useBotHeartbeat = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof botHeartbeat>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof botHeartbeat>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getBotHeartbeatMutationOptions(options));
-};
-
-/**
- * @summary Mark bot as stopped (bot token auth)
- */
-export const getStopBotInstanceUrl = (id: number) => {
-  return `/api/bot/instances/${id}/stop`;
-};
-
-export const stopBotInstance = async (
-  id: number,
-  options?: RequestInit,
-): Promise<BotInstanceResponse> => {
-  return customFetch<BotInstanceResponse>(getStopBotInstanceUrl(id), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const getStopBotInstanceMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof stopBotInstance>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof stopBotInstance>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["stopBotInstance"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof stopBotInstance>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return stopBotInstance(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type StopBotInstanceMutationResult = NonNullable<
-  Awaited<ReturnType<typeof stopBotInstance>>
->;
-
-export type StopBotInstanceMutationError = ErrorType<unknown>;
-
-/**
- * @summary Mark bot as stopped (bot token auth)
- */
-export const useStopBotInstance = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof stopBotInstance>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof stopBotInstance>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getStopBotInstanceMutationOptions(options));
-};
 
 /**
  * @summary Upsert presence heartbeat
@@ -8908,81 +8125,6 @@ export function useAdminExportAuditLogsCsv<
 }
 
 /**
- * @summary Bot service token observability (admin only)
- */
-export const getGetBotAuthStatusUrl = () => {
-  return `/api/admin/bot-auth-status`;
-};
-
-export const getBotAuthStatus = async (
-  options?: RequestInit,
-): Promise<BotAuthStatusResponse> => {
-  return customFetch<BotAuthStatusResponse>(getGetBotAuthStatusUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetBotAuthStatusQueryKey = () => {
-  return [`/api/admin/bot-auth-status`] as const;
-};
-
-export const getGetBotAuthStatusQueryOptions = <
-  TData = Awaited<ReturnType<typeof getBotAuthStatus>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getBotAuthStatus>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetBotAuthStatusQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getBotAuthStatus>>
-  > = ({ signal }) => getBotAuthStatus({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getBotAuthStatus>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetBotAuthStatusQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getBotAuthStatus>>
->;
-export type GetBotAuthStatusQueryError = ErrorType<unknown>;
-
-/**
- * @summary Bot service token observability (admin only)
- */
-
-export function useGetBotAuthStatus<
-  TData = Awaited<ReturnType<typeof getBotAuthStatus>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getBotAuthStatus>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetBotAuthStatusQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
  * @summary Recent cron job runs grouped by job (admin only)
  */
 export const getGetSystemHealthCronRunsUrl = () => {
@@ -9129,6 +8271,165 @@ export function useGetSystemHealthConnectors<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSystemHealthConnectorsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary On-demand portal worker activity (admin only)
+ */
+export const getGetSystemHealthWorkerActivityUrl = () => {
+  return `/api/admin/system-health/worker-activity`;
+};
+
+export const getSystemHealthWorkerActivity = async (
+  options?: RequestInit,
+): Promise<WorkerActivityResponse> => {
+  return customFetch<WorkerActivityResponse>(
+    getGetSystemHealthWorkerActivityUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthWorkerActivityQueryKey = () => {
+  return [`/api/admin/system-health/worker-activity`] as const;
+};
+
+export const getGetSystemHealthWorkerActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthWorkerActivityQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>
+  > = ({ signal }) =>
+    getSystemHealthWorkerActivity({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthWorkerActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>
+>;
+export type GetSystemHealthWorkerActivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary On-demand portal worker activity (admin only)
+ */
+
+export function useGetSystemHealthWorkerActivity<
+  TData = Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthWorkerActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthWorkerActivityQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Overall status plus per-component statuses for the rollup banner. Authenticated read; payload is summary-only.
+ * @summary Rolled-up system health (any authenticated user)
+ */
+export const getGetSystemHealthRollupUrl = () => {
+  return `/api/admin/system-health/rollup`;
+};
+
+export const getSystemHealthRollup = async (
+  options?: RequestInit,
+): Promise<SystemHealthRollupResponse> => {
+  return customFetch<SystemHealthRollupResponse>(
+    getGetSystemHealthRollupUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthRollupQueryKey = () => {
+  return [`/api/admin/system-health/rollup`] as const;
+};
+
+export const getGetSystemHealthRollupQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthRollup>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthRollup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSystemHealthRollupQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthRollup>>
+  > = ({ signal }) => getSystemHealthRollup({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthRollup>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthRollupQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthRollup>>
+>;
+export type GetSystemHealthRollupQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Rolled-up system health (any authenticated user)
+ */
+
+export function useGetSystemHealthRollup<
+  TData = Awaited<ReturnType<typeof getSystemHealthRollup>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthRollup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthRollupQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

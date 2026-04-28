@@ -5,10 +5,10 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { BotInstanceResponse } from "./botInstanceResponse";
 import type { DashboardSummaryAmounts } from "./dashboardSummaryAmounts";
 import type { DashboardSummaryPipeline } from "./dashboardSummaryPipeline";
 import type { DashboardSummaryPortalStats } from "./dashboardSummaryPortalStats";
+import type { DashboardSummaryPortalWorker } from "./dashboardSummaryPortalWorker";
 import type { DashboardSummaryStats } from "./dashboardSummaryStats";
 import type { ExpiringInvoiceGroup } from "./expiringInvoiceGroup";
 import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
@@ -20,5 +20,5 @@ export interface DashboardSummary {
   expiringGroups: ExpiringInvoiceGroup[];
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
-  botInstances?: BotInstanceResponse[];
+  portalWorker: DashboardSummaryPortalWorker;
 }

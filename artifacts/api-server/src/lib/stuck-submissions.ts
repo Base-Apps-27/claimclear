@@ -2,7 +2,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { computeNextRetryDelayMinutes } from "../routes/bot-portal";
+import { computeNextRetryDelayMinutes } from "./submission-retry";
 
 const STUCK_THRESHOLD_MINUTES = parseInt(process.env.PORTAL_STUCK_THRESHOLD_MINUTES || "120", 10);
 

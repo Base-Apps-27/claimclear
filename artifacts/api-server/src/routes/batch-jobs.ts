@@ -1,35 +1,52 @@
 import { Router, type IRouter } from "express";
 import { asyncHandler } from "../lib/asyncHandler";
-import { startBatchJob, getBatchJob, listBatchJobs } from "../lib/batch-processor";
+import {
+  triggerWorkerRun,
+  getBatchJob,
+  listBatchJobs,
+  getLastWorkerRun,
+} from "../lib/batch-processor";
 
 const router: IRouter = Router();
 
+// Admin "Process Pending" trigger. Routes through triggerWorkerRun so the
+// one-worker-at-a-time gate is honored — concurrent admin clicks, sweeper
+// kicks, and midnight cron can never spawn parallel Playwright sessions.
+// We intentionally drop the legacy "submissionIds" array filter: the worker
+// now always processes the full pending queue, and per-submission retry has
+// its own dedicated endpoint in routes/portal-submissions.ts.
 router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): Promise<void> => {
-  const { submissionIds } = req.body;
+  const triggeredBy = req.user?.displayName || req.user?.email || "Admin";
 
-  if (!submissionIds) {
-    res.status(400).json({ error: "submissionIds is required (array of IDs or 'all')" });
+  const outcome = await triggerWorkerRun({ triggeredBy });
+
+  if (outcome.kind === "skipped") {
+    if (outcome.reason === "already_running") {
+      const last = getLastWorkerRun();
+      res.status(202).json({
+        skipped: true,
+        reason: "already_running",
+        message: "A worker run is already in progress; this trigger was coalesced.",
+        lastRun: last,
+      });
+      return;
+    }
+    // no_pending
+    res.status(200).json({
+      skipped: true,
+      reason: "no_pending",
+      message: "No pending submissions to process.",
+    });
     return;
   }
 
-  const triggeredBy = req.user?.displayName || req.user?.email || "Admin";
-
-  try {
-    const job = await startBatchJob(
-      submissionIds === "all" ? "all" : submissionIds as number[],
-      triggeredBy,
-    );
-
-    res.json({
-      batchId: job.id,
-      total: job.total,
-      status: job.status,
-      message: `Batch job started: ${job.total} submission(s) queued for processing`,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(400).json({ error: msg });
-  }
+  const { job } = outcome;
+  res.json({
+    batchId: job.id,
+    total: job.total,
+    status: job.status,
+    message: `Worker run started: ${job.total} submission(s) queued for processing`,
+  });
 }));
 
 router.get("/portal-submissions/batch-status/:batchId", asyncHandler(async (req, res): Promise<void> => {

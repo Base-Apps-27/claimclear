@@ -21,8 +21,6 @@ tags:
     description: Portal submission management
   - name: auditLogs
     description: Audit log viewing
-  - name: botInstances
-    description: Bot instance management
   - name: botActivity
     description: Bot activity logs
   - name: presence
@@ -1456,127 +1454,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
-  /bot/portal-submissions/poll:
-    post:
-      operationId: pollPortalSubmissions
-      tags: [bot]
-      summary: Bot polls for pending submissions (bot token auth)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PollSubmissionsBody"
-      responses:
-        "200":
-          description: Pending submissions
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PortalSubmissionResponse"
-
-  /bot/portal-submissions/{id}/claim:
-    post:
-      operationId: claimPortalSubmission
-      tags: [bot]
-      summary: Bot claims a submission (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ClaimSubmissionBody"
-      responses:
-        "200":
-          description: Claimed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortalSubmissionResponse"
-
-  /bot/portal-submissions/{id}/complete:
-    post:
-      operationId: completePortalSubmission
-      tags: [bot]
-      summary: Bot reports success (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CompleteSubmissionBody"
-      responses:
-        "200":
-          description: Completed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortalSubmissionResponse"
-
-  /bot/portal-submissions/{id}/complete-dry-run:
-    post:
-      operationId: completeDryRunPortalSubmission
-      tags: [bot]
-      summary: Bot reports dry-run completion (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CompleteDryRunBody"
-      responses:
-        "200":
-          description: Dry run completed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortalSubmissionResponse"
-
-  /bot/portal-submissions/{id}/fail:
-    post:
-      operationId: failPortalSubmission
-      tags: [bot]
-      summary: Bot reports failure (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FailSubmissionBody"
-      responses:
-        "200":
-          description: Failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortalSubmissionResponse"
-
   /portal-submissions/{id}/activity:
     get:
       operationId: listBotActivity
@@ -1597,78 +1474,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/BotActivityLogResponse"
-
-  /bot-instances:
-    get:
-      operationId: listBotInstances
-      tags: [botInstances]
-      summary: List active bot instances (authenticated users)
-      responses:
-        "200":
-          description: Bot instances
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/BotInstanceResponse"
-
-  /bot/instances:
-    post:
-      operationId: registerBotInstance
-      tags: [bot]
-      summary: Register a new bot instance (bot token auth)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegisterBotBody"
-      responses:
-        "201":
-          description: Registered
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BotInstanceResponse"
-
-  /bot/instances/{id}/heartbeat:
-    post:
-      operationId: botHeartbeat
-      tags: [bot]
-      summary: Bot heartbeat (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Heartbeat acknowledged
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BotInstanceResponse"
-
-  /bot/instances/{id}/stop:
-    post:
-      operationId: stopBotInstance
-      tags: [bot]
-      summary: Mark bot as stopped (bot token auth)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Stopped
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BotInstanceResponse"
 
   /presence/heartbeat:
     post:
@@ -2375,19 +2180,6 @@ paths:
                 type: string
                 format: binary
 
-  /admin/bot-auth-status:
-    get:
-      operationId: getBotAuthStatus
-      tags: [admin]
-      summary: Bot service token observability (admin only)
-      responses:
-        "200":
-          description: Bot auth status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BotAuthStatusResponse"
-
   /admin/system-health/cron-runs:
     get:
       operationId: getSystemHealthCronRuns
@@ -2413,6 +2205,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConnectorHealthResponse'
+
+  /admin/system-health/worker-activity:
+    get:
+      operationId: getSystemHealthWorkerActivity
+      tags: [systemHealth]
+      summary: On-demand portal worker activity (admin only)
+      responses:
+        '200':
+          description: Worker activity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerActivityResponse'
+
+  /admin/system-health/rollup:
+    get:
+      operationId: getSystemHealthRollup
+      tags: [systemHealth]
+      summary: Rolled-up system health (any authenticated user)
+      description: Overall status plus per-component statuses for the rollup banner. Authenticated read; payload is summary-only.
+      responses:
+        '200':
+          description: Rollup status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthRollupResponse'
 
   /admin/system-health/bounces:
     get:
@@ -3640,10 +3459,24 @@ components:
             - submitted
             - failed
             - successRate
-        botInstances:
-          type: array
-          items:
-            $ref: "#/components/schemas/BotInstanceResponse"
+        portalWorker:
+          type: object
+          properties:
+            lastRun:
+              oneOf:
+                - $ref: "#/components/schemas/WorkerRunSummary"
+                - type: "null"
+            isRunning:
+              type: boolean
+            pendingDueCount:
+              type: integer
+            overdueCount:
+              type: integer
+          required:
+            - lastRun
+            - isRunning
+            - pendingDueCount
+            - overdueCount
       required:
         - pipeline
         - stats
@@ -3651,6 +3484,7 @@ components:
         - expiringGroups
         - recentGroups
         - portalStats
+        - portalWorker
 
     ExpiringInvoiceGroup:
       type: object
@@ -4404,25 +4238,135 @@ components:
           items:
             $ref: '#/components/schemas/EmailBounceRecord'
 
-    BotAuthStatusResponse:
+    WorkerRunSummary:
       type: object
-      required: [lastBotAuthAt, activeTokenHashPrefix, hasGraceToken, staleThresholdMinutes, isStale]
+      required: [batchId, startedAt, finishedAt, status, total, succeeded, failed, triggeredBy, lastError]
       properties:
-        lastBotAuthAt:
+        batchId:
+          type: string
+        startedAt:
+          type: string
+        finishedAt:
           type: string
           nullable: true
-        activeTokenHashPrefix:
+        status:
+          type: string
+          enum: [running, completed, failed]
+        total:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        triggeredBy:
+          type: string
+        lastError:
           type: string
           nullable: true
-        hasGraceToken:
+
+    WorkerActivityResponse:
+      type: object
+      required: [isRunning, lastRun, recentRuns, pendingDueCount, overdueCount, overdueThresholdMinutes, nextSweepAt, lastSuccessfulSubmission, lastFailedSubmission]
+      properties:
+        isRunning:
           type: boolean
-        staleThresholdMinutes:
+        lastRun:
+          oneOf:
+            - $ref: "#/components/schemas/WorkerRunSummary"
+            - type: "null"
+        recentRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerRunSummary"
+        pendingDueCount:
           type: integer
-          description: Threshold (minutes) after which the absence of bot auth is considered stale.
-        minutesSinceLastAuth:
+        overdueCount:
           type: integer
+        overdueThresholdMinutes:
+          type: integer
+        nextSweepAt:
+          type: string
           nullable: true
-          description: Minutes since the last successful bot auth, or null if a bot has never authenticated since startup.
-        isStale:
+          description: ISO-8601 timestamp of the next scheduled portal_retry_sweeper fire, derived from the cron expression. Null if the cron expression cannot be parsed.
+        lastSuccessfulSubmission:
+          oneOf:
+            - $ref: "#/components/schemas/WorkerSubmissionEvent"
+            - type: "null"
+        lastFailedSubmission:
+          oneOf:
+            - $ref: "#/components/schemas/WorkerFailedSubmissionEvent"
+            - type: "null"
+
+    WorkerSubmissionEvent:
+      type: object
+      required: [submissionId, claimId, at]
+      properties:
+        submissionId:
+          type: integer
+        claimId:
+          type: integer
+        confNumber:
+          type: string
+          nullable: true
+        submittedAt:
+          type: string
+          nullable: true
+        at:
+          type: string
+          description: ISO-8601 updated_at on the row.
+
+    WorkerFailedSubmissionEvent:
+      type: object
+      required: [submissionId, claimId, attempts, maxAttempts, at]
+      properties:
+        submissionId:
+          type: integer
+        claimId:
+          type: integer
+        attempts:
+          type: integer
+        maxAttempts:
+          type: integer
+        errorMessage:
+          type: string
+          nullable: true
+        at:
+          type: string
+          description: ISO-8601 updated_at on the row.
+
+    SystemHealthRollupComponent:
+      type: object
+      required: [name, status, detail]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ok, degraded, failed]
+        detail:
+          type: string
+          nullable: true
+
+    SystemHealthRollupResponse:
+      type: object
+      required: [overall, components, lastWorkerRun, workerRunning, overdueCount, overdueThresholdMinutes, generatedAt]
+      properties:
+        overall:
+          type: string
+          enum: [ok, degraded, failed]
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemHealthRollupComponent"
+        lastWorkerRun:
+          oneOf:
+            - $ref: "#/components/schemas/WorkerRunSummary"
+            - type: "null"
+        workerRunning:
           type: boolean
-          description: True when no bot has authenticated within the threshold window (or never since startup).
+        overdueCount:
+          type: integer
+        overdueThresholdMinutes:
+          type: integer
+        generatedAt:
+          type: string

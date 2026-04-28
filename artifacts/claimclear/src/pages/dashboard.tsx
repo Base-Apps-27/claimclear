@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
+import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary({
@@ -40,6 +41,8 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold tracking-tight">Command Center</h1>
         <p className="text-muted-foreground mt-2">Overview of dispute pipeline and recovery performance.</p>
       </div>
+
+      <WorkerHealthBanner />
 
       {(stats.total ?? 0) === 0 ? (
         <Card>
@@ -126,20 +129,32 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1.5">
-              Bot Instances
-              <InfoTooltip content="Number of automated bot instances currently connected and active. Bots handle automated portal submissions by filling out dispute forms on the MAS portal." />
+              Portal Worker
+              <InfoTooltip content="On-demand portal worker. Each run launches a fresh browser to process pending submissions and exits when finished." />
             </CardTitle>
             <Bot className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.botInstances?.length || 0}</div>
+            <div className="text-2xl font-bold">
+              {summary.portalWorker?.isRunning
+                ? "Running"
+                : summary.portalWorker?.lastRun?.status === "failed"
+                  ? "Failed"
+                  : summary.portalWorker?.lastRun
+                    ? "Idle"
+                    : "Never run"}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {(summary.botInstances?.length || 0) > 0 ? (
-                <Badge variant="default" className="text-[10px] bg-green-600">Online</Badge>
+              {summary.portalWorker?.isRunning ? (
+                <Badge variant="default" className="text-[10px] bg-blue-600">In progress</Badge>
+              ) : summary.portalWorker?.overdueCount && summary.portalWorker.overdueCount > 0 ? (
+                <Badge variant="destructive" className="text-[10px]">{summary.portalWorker.overdueCount} overdue</Badge>
+              ) : summary.portalWorker?.lastRun?.status === "failed" ? (
+                <Badge variant="destructive" className="text-[10px]">Last run failed</Badge>
               ) : (
-                <Badge variant="secondary" className="text-[10px]">Offline</Badge>
+                <Badge variant="secondary" className="text-[10px]">Healthy</Badge>
               )}
-              {" "}Active in last 5 min
+              {" "}{summary.portalWorker?.pendingDueCount ?? 0} due
             </p>
           </CardContent>
         </Card>

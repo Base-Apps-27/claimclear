@@ -4,7 +4,6 @@ import {
   useListPortalSubmissions, getListPortalSubmissionsQueryKey,
   useRetryPortalSubmission, useCancelPortalSubmission,
   useListBotActivity, getListBotActivityQueryKey,
-  useListBotInstances,
   useRegeneratePortalSubmissionText,
   useUpdatePortalSubmissionDraft,
   useSandboxRunPortalSubmission,
@@ -23,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
+import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
 const statusColors: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
@@ -104,7 +104,6 @@ export default function PortalSubmissions() {
   const regenerateText = useRegeneratePortalSubmissionText();
   const updateDraft = useUpdatePortalSubmissionDraft();
   const sandboxRun = useSandboxRunPortalSubmission();
-  const { data: botInstances } = useListBotInstances();
   const { data: activityLogs } = useListBotActivity(selectedId || 0, {
     query: { queryKey: getListBotActivityQueryKey(selectedId || 0), enabled: !!selectedId }
   });
@@ -165,18 +164,32 @@ export default function PortalSubmissions() {
     setBatchRunning(true);
     setActiveBatch(null);
     try {
+      // The on-demand worker always processes the full pending queue and is
+      // gated to one run at a time, so we no longer pass submissionIds. Both
+      // "Process Selected" and "Process All Pending" trigger the same worker
+      // run; concurrent clicks are coalesced server-side.
+      void ids;
       const res = await fetch("/api/portal-submissions/batch-process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ submissionIds: ids }),
+        body: JSON.stringify({}),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "Failed to start batch");
       }
-      const { batchId } = await res.json();
-      pollBatchStatus(batchId);
+      const body = await res.json();
+      if (body.skipped) {
+        setBatchRunning(false);
+        if (body.reason === "no_pending") {
+          alert("No pending submissions to process.");
+        } else if (body.reason === "already_running") {
+          alert("A worker run is already in progress; this trigger was coalesced.");
+        }
+        return;
+      }
+      pollBatchStatus(body.batchId);
       setCheckedIds(new Set());
     } catch (err) {
       setBatchRunning(false);
@@ -222,14 +235,6 @@ export default function PortalSubmissions() {
           <p className="text-muted-foreground">MAS portal submission queue and status</p>
         </div>
         <div className="flex items-center gap-4">
-          {botInstances && botInstances.length > 0 && (
-            <WrapTooltip content="Number of automation bots currently connected and processing submissions.">
-              <div className="flex items-center gap-2 cursor-help">
-                <Bot className="h-4 w-4 text-green-500" />
-                <span className="text-sm text-muted-foreground">{botInstances.length} bot(s) active</span>
-              </div>
-            </WrapTooltip>
-          )}
           <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
             <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
@@ -244,6 +249,8 @@ export default function PortalSubmissions() {
           </Select>
         </div>
       </div>
+
+      <WorkerHealthBanner />
 
       {pendingSubmissions.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">

@@ -1,14 +1,16 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, gt, and, or, count, sum, desc } from "drizzle-orm";
+import { eq, sql, and, or, count, sum, desc, isNull, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, botInstancesTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, portalSubmissionsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining } from "../lib/dates";
+import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 const VENDOR_PREPAY_RATE = 0.70;
+const OVERDUE_THRESHOLD_MINUTES = 15;
 
 router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
   const statusCountsRaw = await db
@@ -115,9 +117,34 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const totalSubs = submitted + failed;
   const successRate = totalSubs > 0 ? ((submitted / totalSubs) * 100).toFixed(1) : "0";
 
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const botInstances = await db.select().from(botInstancesTable)
-    .where(gt(botInstancesTable.lastHeartbeat, fiveMinAgo));
+  const now = new Date();
+  const overdueCutoff = new Date(now.getTime() - OVERDUE_THRESHOLD_MINUTES * 60 * 1000);
+
+  const [{ value: pendingDueCount } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.status, "pending"),
+      or(
+        isNull(portalSubmissionsTable.nextRetryAt),
+        lte(portalSubmissionsTable.nextRetryAt, now),
+      ),
+    ));
+
+  // Overdue rule mirrors `isSubmissionOverdue`.
+  const [{ value: overdueCount } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.status, "pending"),
+      or(
+        lte(portalSubmissionsTable.nextRetryAt, overdueCutoff),
+        and(
+          isNull(portalSubmissionsTable.nextRetryAt),
+          lte(portalSubmissionsTable.createdAt, overdueCutoff),
+        ),
+      ),
+    ));
 
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
@@ -126,7 +153,12 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     expiringGroups,
     recentGroups,
     portalStats: { pending, submitted, failed, successRate },
-    botInstances,
+    portalWorker: {
+      lastRun: getLastWorkerRun(),
+      isRunning: isWorkerRunInProgress(),
+      pendingDueCount,
+      overdueCount,
+    },
   });
 }));
 

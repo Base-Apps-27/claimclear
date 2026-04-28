@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
@@ -8,6 +8,7 @@ import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
 import { invoiceGroupsTable } from "@workspace/db";
 import { scheduleRetryOrFail } from "./submission-retry";
+import { createWorkerGate } from "./worker-gate";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -53,6 +54,236 @@ export function listBatchJobs(): BatchJob[] {
   );
 }
 
+// ---------------------------------------------------------------------------
+// On-demand worker tracking
+// ---------------------------------------------------------------------------
+// The portal worker is now triggered on demand (cron, admin batch, submission
+// queueing, retry sweeper) instead of polling continuously. We keep one
+// at-a-time invariant via the in-process gate below so two triggers in close
+// succession don't fight for the same Playwright browser.
+
+export interface WorkerRunSummary {
+  batchId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "completed" | "failed";
+  total: number;
+  succeeded: number;
+  failed: number;
+  triggeredBy: string;
+  lastError: string | null;
+}
+
+const workerGate = createWorkerGate<void>();
+let lastWorkerRun: WorkerRunSummary | null = null;
+const recentWorkerRuns: WorkerRunSummary[] = [];
+const MAX_RECENT_RUNS = 30;
+
+export function isWorkerRunInProgress(): boolean {
+  return workerGate.isInProgress();
+}
+
+export function getLastWorkerRun(): WorkerRunSummary | null {
+  return lastWorkerRun;
+}
+
+export function getRecentWorkerRuns(): WorkerRunSummary[] {
+  return [...recentWorkerRuns];
+}
+
+function snapshotRun(job: BatchJob, lastError: string | null): WorkerRunSummary {
+  return {
+    batchId: job.id,
+    startedAt: job.startedAt,
+    finishedAt: job.completedAt ?? null,
+    status: job.status,
+    total: job.total,
+    succeeded: job.succeeded,
+    failed: job.failed,
+    triggeredBy: job.triggeredBy,
+    lastError,
+  };
+}
+
+export type TriggerWorkerOutcome =
+  | { kind: "started"; job: BatchJob; awaited: "completed" | "timeout" | "not_awaited" }
+  | { kind: "skipped"; reason: "already_running" | "no_pending" };
+
+/**
+ * Trigger an on-demand worker run. Each call launches a fresh Playwright browser
+ * via runBatchWorker, processes pending submissions sequentially, then tears down.
+ * If a run is already in progress, returns { kind: "skipped" } so callers can
+ * coalesce.
+ *
+ * `awaitCompletion: true` blocks until the run finishes (used by crons so the
+ * cron-run row reflects the worker outcome).
+ *
+ * `awaitTimeoutMs` (only honored when awaitCompletion is true) bounds the wait.
+ * If the worker has not finished within the budget the function returns with
+ * `awaited: "timeout"` and the run continues in the background — the cron lane
+ * is freed so the next sweep doesn't pile up behind a hung Playwright. The
+ * stuck-running rollup logic (2x interval grace) will surface the orphaned
+ * "running" cron row if the worker never returns.
+ */
+export async function triggerWorkerRun(opts: {
+  triggeredBy: string;
+  awaitCompletion?: boolean;
+  awaitTimeoutMs?: number;
+}): Promise<TriggerWorkerOutcome> {
+  if (workerGate.isInProgress()) {
+    return { kind: "skipped", reason: "already_running" };
+  }
+
+  // Two-phase pattern: phase 1 (synchronous-ish) claims the queue and either
+  // returns the job or throws "no pending"; phase 2 (the long Playwright run)
+  // happens inside the gate and is awaited only when caller asks. We need
+  // phase 1 to complete *before* we return from this function so callers see
+  // a real job (or a "no_pending" skip), not a half-claimed run.
+  const ctx: { job: BatchJob | null; err: Error | null } = { job: null, err: null };
+
+  // We capture phase 1 completion via an explicit signal so the outer
+  // function can return as soon as the queue is claimed (or "no_pending"
+  // is decided), without waiting for the long Playwright run.
+  const phase1Resolver: { resolve: () => void } = { resolve: () => undefined };
+  const phase1Promise = new Promise<void>((resolve) => {
+    phase1Resolver.resolve = resolve;
+  });
+
+  const gateOutcome = await workerGate.run(async () => {
+    let job: BatchJob;
+    try {
+      job = await startBatchJob("all", opts.triggeredBy);
+      ctx.job = job;
+    } catch (err) {
+      ctx.err = err instanceof Error ? err : new Error(String(err));
+      phase1Resolver.resolve();
+      throw err;
+    }
+    phase1Resolver.resolve();
+
+    await waitForJob(job);
+    const lastFailure = job.results.filter(r => r.status === "failed").slice(-1)[0]?.message ?? null;
+    const summary = snapshotRun(job, lastFailure);
+    lastWorkerRun = summary;
+    recentWorkerRuns.unshift(summary);
+    if (recentWorkerRuns.length > MAX_RECENT_RUNS) recentWorkerRuns.length = MAX_RECENT_RUNS;
+  });
+
+  if (gateOutcome.kind === "skipped") {
+    // Race: someone else grabbed the gate between our pre-check and run().
+    return { kind: "skipped", reason: "already_running" };
+  }
+
+  // Suppress unhandled rejection on the phase-2 promise; we surface errors
+  // via lastWorkerRun.lastError instead.
+  gateOutcome.result.catch((err) => {
+    if (ctx.err && /no pending submissions/i.test(ctx.err.message)) return;
+    logger.error({ err }, "triggerWorkerRun: worker run failed");
+  });
+
+  // Wait for phase 1 to settle so we can report no_pending vs started.
+  await phase1Promise;
+
+  if (ctx.err) {
+    if (/no pending submissions/i.test(ctx.err.message)) {
+      return { kind: "skipped", reason: "no_pending" };
+    }
+    throw ctx.err;
+  }
+
+  let awaited: "completed" | "timeout" | "not_awaited" = "not_awaited";
+  if (opts.awaitCompletion) {
+    if (opts.awaitTimeoutMs && opts.awaitTimeoutMs > 0) {
+      // Race the worker against the watchdog; whichever wins decides whether
+      // we were able to report the per-item outcome to the caller.
+      const watchdog = new Promise<"timeout">((resolve) => {
+        setTimeout(() => resolve("timeout"), opts.awaitTimeoutMs).unref();
+      });
+      const winner = await Promise.race([
+        gateOutcome.result.then(() => "completed" as const).catch(() => "completed" as const),
+        watchdog,
+      ]);
+      awaited = winner;
+    } else {
+      await gateOutcome.result.catch(() => undefined);
+      awaited = "completed";
+    }
+  }
+
+  return { kind: "started", job: ctx.job!, awaited };
+}
+
+async function waitForJob(job: BatchJob): Promise<void> {
+  // Poll the in-memory job state. The batch processor mutates job.status when
+  // it finishes; we just await transitions out of "running".
+  while (job.status === "running") {
+    await new Promise(r => setTimeout(r, 250));
+  }
+}
+
+/**
+ * Pure helper: turn a finished BatchJob into a cron-run severity + message.
+ *
+ * Severity rules (matters for the rollup banner — see system-health-rollup):
+ *  - "throw"     → cron run recorded as "failed" (hard alert).
+ *      Fired when (a) processSequentially itself errored out
+ *      (`job.status === "failed"`) — even if no per-item failures were
+ *      recorded — or (b) the entire processed queue failed
+ *      (`succeeded === 0 && failed > 0`).
+ *  - "degraded"  → some items failed but others succeeded; the queue moved
+ *      forward, but staff still need to look at the failures.
+ *  - "ok"        → all items succeeded (or the run had nothing to process).
+ *
+ * Without rule (a), a fatal error before any item is processed would leave
+ * succeeded=0 + failed=0 and we'd silently report "ok", hiding the outage.
+ */
+export function jobToCronOutcome(
+  job: { status: string; total: number; succeeded: number; failed: number },
+  message: string,
+): { kind: "throw"; message: string } | { kind: "result"; status: "ok" | "degraded"; message: string } {
+  // Rule (a): processSequentially blew up — always a hard failure.
+  if (job.status === "failed") return { kind: "throw", message };
+  // Rule (b): all attempted items failed.
+  if (job.total > 0 && job.succeeded === 0 && job.failed > 0) return { kind: "throw", message };
+  const status: "ok" | "degraded" = job.failed > 0 ? "degraded" : "ok";
+  return { kind: "result", status, message };
+}
+
+/**
+ * Pure predicate: a `pending` submission is eligible for processing when it
+ * has no scheduled retry, or its scheduled retry time is in the past.
+ *
+ * Exported so the eligibility rule has a single source of truth that we can
+ * unit-test independently of Drizzle / the live DB.
+ */
+export function isSubmissionDue(
+  row: { status: string; nextRetryAt: Date | null },
+  now: Date,
+): boolean {
+  if (row.status !== "pending") return false;
+  if (row.nextRetryAt === null) return true;
+  return row.nextRetryAt.getTime() <= now.getTime();
+}
+
+/**
+ * Pure predicate: a pending submission is overdue when it should already have
+ * been processed by `overdueCutoff` but hasn't been. A row is overdue if
+ * either its scheduled `nextRetryAt` is older than the cutoff, or it has no
+ * scheduled retry but its `createdAt` is older than the cutoff. Freshly
+ * queued rows (`nextRetryAt = null`, recent `createdAt`) are not overdue.
+ */
+export function isSubmissionOverdue(
+  row: { status: string; nextRetryAt: Date | null; createdAt: Date },
+  overdueCutoff: Date,
+): boolean {
+  if (row.status !== "pending") return false;
+  if (row.nextRetryAt !== null) {
+    return row.nextRetryAt.getTime() <= overdueCutoff.getTime();
+  }
+  // No scheduled retry → use the row's age.
+  return row.createdAt.getTime() <= overdueCutoff.getTime();
+}
+
 export async function startBatchJob(
   submissionIds: number[] | "all",
   triggeredBy: string,
@@ -60,9 +291,22 @@ export async function startBatchJob(
   let ids: number[];
 
   if (submissionIds === "all") {
+    // Only claim rows that are pending AND due. If next_retry_at is in the
+    // future, the row is on backoff (set by submission-retry.ts) and must be
+    // skipped — otherwise frequent triggers (create/confirm/retry + sweeper +
+    // midnight) would defeat the backoff schedule and bombard the portal.
+    // The DB filter here is the canonical claim; isSubmissionDue() above is
+    // the same rule expressed in code so it can be unit-tested.
+    const now = new Date();
     const pending = await db.select({ id: portalSubmissionsTable.id })
       .from(portalSubmissionsTable)
-      .where(eq(portalSubmissionsTable.status, "pending"));
+      .where(and(
+        eq(portalSubmissionsTable.status, "pending"),
+        or(
+          isNull(portalSubmissionsTable.nextRetryAt),
+          lte(portalSubmissionsTable.nextRetryAt, now),
+        ),
+      ));
     ids = pending.map(s => s.id);
   } else {
     ids = submissionIds;

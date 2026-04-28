@@ -2980,348 +2980,6 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
 });
 
 /**
- * @summary Bot polls for pending submissions (bot token auth)
- */
-export const PollPortalSubmissionsBody = zod.object({
-  botInstanceId: zod.number(),
-});
-
-export const PollPortalSubmissionsResponseItem = zod.object({
-  id: zod.number(),
-  claimId: zod.number(),
-  invoiceGroupId: zod.number().nullish(),
-  status: zod.enum([
-    "draft",
-    "pending",
-    "in_progress",
-    "submitted",
-    "failed",
-    "cancelled",
-    "dry_run",
-  ]),
-  issueType: zod.string().nullish(),
-  subject: zod.string().nullish(),
-  requesterEmail: zod.string().nullish(),
-  transportationProviderName: zod.string().nullish(),
-  phoneNumber: zod.string().nullish(),
-  invoiceNumber: zod.string().nullish(),
-  gpsBreadcrumbsAvailable: zod.string().nullish(),
-  descriptionHtml: zod.string().nullish(),
-  descriptionEditorEmail: zod.string().nullish(),
-  descriptionEditorName: zod.string().nullish(),
-  descriptionHistory: zod
-    .array(
-      zod.object({
-        description: zod.string(),
-        generatedAt: zod.string(),
-        editorEmail: zod.string().nullish(),
-        editorName: zod.string().nullish(),
-      }),
-    )
-    .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
-  confNumber: zod.string().nullish(),
-  serviceDate: zod.string().nullish(),
-  refNumber: zod.string().nullish(),
-  clientNumber: zod.string().nullish(),
-  carNumber: zod.string().nullish(),
-  claimAmount: zod.string().nullish(),
-  errorTypeName: zod.string().nullish(),
-  errorDetails: zod.string().nullish(),
-  disputeReason: zod.string().nullish(),
-  evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
-  workflowHistory: zod.object({}).passthrough().nullish(),
-  portalTicketId: zod.string().nullish(),
-  screenshotUrl: zod.string().nullish(),
-  errorMessage: zod.string().nullish(),
-  submittedAt: zod.string().nullish(),
-  attempts: zod.number(),
-  maxAttempts: zod.number(),
-  nextRetryAt: zod.string().nullish(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-export const PollPortalSubmissionsResponse = zod.array(
-  PollPortalSubmissionsResponseItem,
-);
-
-/**
- * @summary Bot claims a submission (bot token auth)
- */
-export const ClaimPortalSubmissionParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const ClaimPortalSubmissionBody = zod.object({
-  botInstanceId: zod.number(),
-});
-
-export const ClaimPortalSubmissionResponse = zod.object({
-  id: zod.number(),
-  claimId: zod.number(),
-  invoiceGroupId: zod.number().nullish(),
-  status: zod.enum([
-    "draft",
-    "pending",
-    "in_progress",
-    "submitted",
-    "failed",
-    "cancelled",
-    "dry_run",
-  ]),
-  issueType: zod.string().nullish(),
-  subject: zod.string().nullish(),
-  requesterEmail: zod.string().nullish(),
-  transportationProviderName: zod.string().nullish(),
-  phoneNumber: zod.string().nullish(),
-  invoiceNumber: zod.string().nullish(),
-  gpsBreadcrumbsAvailable: zod.string().nullish(),
-  descriptionHtml: zod.string().nullish(),
-  descriptionEditorEmail: zod.string().nullish(),
-  descriptionEditorName: zod.string().nullish(),
-  descriptionHistory: zod
-    .array(
-      zod.object({
-        description: zod.string(),
-        generatedAt: zod.string(),
-        editorEmail: zod.string().nullish(),
-        editorName: zod.string().nullish(),
-      }),
-    )
-    .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
-  confNumber: zod.string().nullish(),
-  serviceDate: zod.string().nullish(),
-  refNumber: zod.string().nullish(),
-  clientNumber: zod.string().nullish(),
-  carNumber: zod.string().nullish(),
-  claimAmount: zod.string().nullish(),
-  errorTypeName: zod.string().nullish(),
-  errorDetails: zod.string().nullish(),
-  disputeReason: zod.string().nullish(),
-  evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
-  workflowHistory: zod.object({}).passthrough().nullish(),
-  portalTicketId: zod.string().nullish(),
-  screenshotUrl: zod.string().nullish(),
-  errorMessage: zod.string().nullish(),
-  submittedAt: zod.string().nullish(),
-  attempts: zod.number(),
-  maxAttempts: zod.number(),
-  nextRetryAt: zod.string().nullish(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-
-/**
- * @summary Bot reports success (bot token auth)
- */
-export const CompletePortalSubmissionParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const CompletePortalSubmissionBody = zod.object({
-  portalTicketId: zod.string().optional(),
-  botInstanceId: zod.number().optional(),
-});
-
-export const CompletePortalSubmissionResponse = zod.object({
-  id: zod.number(),
-  claimId: zod.number(),
-  invoiceGroupId: zod.number().nullish(),
-  status: zod.enum([
-    "draft",
-    "pending",
-    "in_progress",
-    "submitted",
-    "failed",
-    "cancelled",
-    "dry_run",
-  ]),
-  issueType: zod.string().nullish(),
-  subject: zod.string().nullish(),
-  requesterEmail: zod.string().nullish(),
-  transportationProviderName: zod.string().nullish(),
-  phoneNumber: zod.string().nullish(),
-  invoiceNumber: zod.string().nullish(),
-  gpsBreadcrumbsAvailable: zod.string().nullish(),
-  descriptionHtml: zod.string().nullish(),
-  descriptionEditorEmail: zod.string().nullish(),
-  descriptionEditorName: zod.string().nullish(),
-  descriptionHistory: zod
-    .array(
-      zod.object({
-        description: zod.string(),
-        generatedAt: zod.string(),
-        editorEmail: zod.string().nullish(),
-        editorName: zod.string().nullish(),
-      }),
-    )
-    .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
-  confNumber: zod.string().nullish(),
-  serviceDate: zod.string().nullish(),
-  refNumber: zod.string().nullish(),
-  clientNumber: zod.string().nullish(),
-  carNumber: zod.string().nullish(),
-  claimAmount: zod.string().nullish(),
-  errorTypeName: zod.string().nullish(),
-  errorDetails: zod.string().nullish(),
-  disputeReason: zod.string().nullish(),
-  evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
-  workflowHistory: zod.object({}).passthrough().nullish(),
-  portalTicketId: zod.string().nullish(),
-  screenshotUrl: zod.string().nullish(),
-  errorMessage: zod.string().nullish(),
-  submittedAt: zod.string().nullish(),
-  attempts: zod.number(),
-  maxAttempts: zod.number(),
-  nextRetryAt: zod.string().nullish(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-
-/**
- * @summary Bot reports dry-run completion (bot token auth)
- */
-export const CompleteDryRunPortalSubmissionParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const CompleteDryRunPortalSubmissionBody = zod.object({
-  botInstanceId: zod.number().optional(),
-  screenshotPath: zod.string().optional(),
-});
-
-export const CompleteDryRunPortalSubmissionResponse = zod.object({
-  id: zod.number(),
-  claimId: zod.number(),
-  invoiceGroupId: zod.number().nullish(),
-  status: zod.enum([
-    "draft",
-    "pending",
-    "in_progress",
-    "submitted",
-    "failed",
-    "cancelled",
-    "dry_run",
-  ]),
-  issueType: zod.string().nullish(),
-  subject: zod.string().nullish(),
-  requesterEmail: zod.string().nullish(),
-  transportationProviderName: zod.string().nullish(),
-  phoneNumber: zod.string().nullish(),
-  invoiceNumber: zod.string().nullish(),
-  gpsBreadcrumbsAvailable: zod.string().nullish(),
-  descriptionHtml: zod.string().nullish(),
-  descriptionEditorEmail: zod.string().nullish(),
-  descriptionEditorName: zod.string().nullish(),
-  descriptionHistory: zod
-    .array(
-      zod.object({
-        description: zod.string(),
-        generatedAt: zod.string(),
-        editorEmail: zod.string().nullish(),
-        editorName: zod.string().nullish(),
-      }),
-    )
-    .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
-  confNumber: zod.string().nullish(),
-  serviceDate: zod.string().nullish(),
-  refNumber: zod.string().nullish(),
-  clientNumber: zod.string().nullish(),
-  carNumber: zod.string().nullish(),
-  claimAmount: zod.string().nullish(),
-  errorTypeName: zod.string().nullish(),
-  errorDetails: zod.string().nullish(),
-  disputeReason: zod.string().nullish(),
-  evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
-  workflowHistory: zod.object({}).passthrough().nullish(),
-  portalTicketId: zod.string().nullish(),
-  screenshotUrl: zod.string().nullish(),
-  errorMessage: zod.string().nullish(),
-  submittedAt: zod.string().nullish(),
-  attempts: zod.number(),
-  maxAttempts: zod.number(),
-  nextRetryAt: zod.string().nullish(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-
-/**
- * @summary Bot reports failure (bot token auth)
- */
-export const FailPortalSubmissionParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const FailPortalSubmissionBody = zod.object({
-  errorMessage: zod.string(),
-  botInstanceId: zod.number().optional(),
-});
-
-export const FailPortalSubmissionResponse = zod.object({
-  id: zod.number(),
-  claimId: zod.number(),
-  invoiceGroupId: zod.number().nullish(),
-  status: zod.enum([
-    "draft",
-    "pending",
-    "in_progress",
-    "submitted",
-    "failed",
-    "cancelled",
-    "dry_run",
-  ]),
-  issueType: zod.string().nullish(),
-  subject: zod.string().nullish(),
-  requesterEmail: zod.string().nullish(),
-  transportationProviderName: zod.string().nullish(),
-  phoneNumber: zod.string().nullish(),
-  invoiceNumber: zod.string().nullish(),
-  gpsBreadcrumbsAvailable: zod.string().nullish(),
-  descriptionHtml: zod.string().nullish(),
-  descriptionEditorEmail: zod.string().nullish(),
-  descriptionEditorName: zod.string().nullish(),
-  descriptionHistory: zod
-    .array(
-      zod.object({
-        description: zod.string(),
-        generatedAt: zod.string(),
-        editorEmail: zod.string().nullish(),
-        editorName: zod.string().nullish(),
-      }),
-    )
-    .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
-  confNumber: zod.string().nullish(),
-  serviceDate: zod.string().nullish(),
-  refNumber: zod.string().nullish(),
-  clientNumber: zod.string().nullish(),
-  carNumber: zod.string().nullish(),
-  claimAmount: zod.string().nullish(),
-  errorTypeName: zod.string().nullish(),
-  errorDetails: zod.string().nullish(),
-  disputeReason: zod.string().nullish(),
-  evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
-  workflowHistory: zod.object({}).passthrough().nullish(),
-  portalTicketId: zod.string().nullish(),
-  screenshotUrl: zod.string().nullish(),
-  errorMessage: zod.string().nullish(),
-  submittedAt: zod.string().nullish(),
-  attempts: zod.number(),
-  maxAttempts: zod.number(),
-  nextRetryAt: zod.string().nullish(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-
-/**
  * @summary List bot activity for submission
  */
 export const ListBotActivityParams = zod.object({
@@ -3340,73 +2998,6 @@ export const ListBotActivityResponseItem = zod.object({
   createdAt: zod.string().optional(),
 });
 export const ListBotActivityResponse = zod.array(ListBotActivityResponseItem);
-
-/**
- * @summary List active bot instances (authenticated users)
- */
-export const ListBotInstancesResponseItem = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  status: zod.string(),
-  lastHeartbeat: zod.string().optional(),
-  lastPollAt: zod.string().nullish(),
-  submissionsToday: zod.number().optional(),
-  successCount: zod.number().optional(),
-  failCount: zod.number().optional(),
-  sessionValid: zod.boolean().optional(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-export const ListBotInstancesResponse = zod.array(ListBotInstancesResponseItem);
-
-/**
- * @summary Register a new bot instance (bot token auth)
- */
-export const RegisterBotInstanceBody = zod.object({
-  name: zod.string(),
-});
-
-/**
- * @summary Bot heartbeat (bot token auth)
- */
-export const BotHeartbeatParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const BotHeartbeatResponse = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  status: zod.string(),
-  lastHeartbeat: zod.string().optional(),
-  lastPollAt: zod.string().nullish(),
-  submissionsToday: zod.number().optional(),
-  successCount: zod.number().optional(),
-  failCount: zod.number().optional(),
-  sessionValid: zod.boolean().optional(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
-
-/**
- * @summary Mark bot as stopped (bot token auth)
- */
-export const StopBotInstanceParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const StopBotInstanceResponse = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  status: zod.string(),
-  lastHeartbeat: zod.string().optional(),
-  lastPollAt: zod.string().nullish(),
-  submissionsToday: zod.number().optional(),
-  successCount: zod.number().optional(),
-  failCount: zod.number().optional(),
-  sessionValid: zod.boolean().optional(),
-  createdAt: zod.string().optional(),
-  updatedAt: zod.string().optional(),
-});
 
 /**
  * @summary Upsert presence heartbeat
@@ -3578,23 +3169,25 @@ export const GetDashboardSummaryResponse = zod.object({
     failed: zod.number(),
     successRate: zod.string(),
   }),
-  botInstances: zod
-    .array(
+  portalWorker: zod.object({
+    lastRun: zod.union([
       zod.object({
-        id: zod.number(),
-        name: zod.string(),
-        status: zod.string(),
-        lastHeartbeat: zod.string().optional(),
-        lastPollAt: zod.string().nullish(),
-        submissionsToday: zod.number().optional(),
-        successCount: zod.number().optional(),
-        failCount: zod.number().optional(),
-        sessionValid: zod.boolean().optional(),
-        createdAt: zod.string().optional(),
-        updatedAt: zod.string().optional(),
+        batchId: zod.string(),
+        startedAt: zod.string(),
+        finishedAt: zod.string().nullable(),
+        status: zod.enum(["running", "completed", "failed"]),
+        total: zod.number(),
+        succeeded: zod.number(),
+        failed: zod.number(),
+        triggeredBy: zod.string(),
+        lastError: zod.string().nullable(),
       }),
-    )
-    .optional(),
+      zod.null(),
+    ]),
+    isRunning: zod.boolean(),
+    pendingDueCount: zod.number(),
+    overdueCount: zod.number(),
+  }),
 });
 
 /**
@@ -4279,31 +3872,6 @@ export const AdminExportAuditLogsCsvQueryParams = zod.object({
 });
 
 /**
- * @summary Bot service token observability (admin only)
- */
-export const GetBotAuthStatusResponse = zod.object({
-  lastBotAuthAt: zod.string().nullable(),
-  activeTokenHashPrefix: zod.string().nullable(),
-  hasGraceToken: zod.boolean(),
-  staleThresholdMinutes: zod
-    .number()
-    .describe(
-      "Threshold (minutes) after which the absence of bot auth is considered stale.",
-    ),
-  minutesSinceLastAuth: zod
-    .number()
-    .nullish()
-    .describe(
-      "Minutes since the last successful bot auth, or null if a bot has never authenticated since startup.",
-    ),
-  isStale: zod
-    .boolean()
-    .describe(
-      "True when no bot has authenticated within the threshold window (or never since startup).",
-    ),
-});
-
-/**
  * @summary Recent cron job runs grouped by job (admin only)
  */
 export const GetSystemHealthCronRunsResponse = zod.object({
@@ -4352,6 +3920,103 @@ export const GetSystemHealthConnectorsResponse = zod.object({
       lastError: zod.string().nullish(),
     }),
   ),
+});
+
+/**
+ * @summary On-demand portal worker activity (admin only)
+ */
+export const GetSystemHealthWorkerActivityResponse = zod.object({
+  isRunning: zod.boolean(),
+  lastRun: zod.union([
+    zod.object({
+      batchId: zod.string(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullable(),
+      status: zod.enum(["running", "completed", "failed"]),
+      total: zod.number(),
+      succeeded: zod.number(),
+      failed: zod.number(),
+      triggeredBy: zod.string(),
+      lastError: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  recentRuns: zod.array(
+    zod.object({
+      batchId: zod.string(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullable(),
+      status: zod.enum(["running", "completed", "failed"]),
+      total: zod.number(),
+      succeeded: zod.number(),
+      failed: zod.number(),
+      triggeredBy: zod.string(),
+      lastError: zod.string().nullable(),
+    }),
+  ),
+  pendingDueCount: zod.number(),
+  overdueCount: zod.number(),
+  overdueThresholdMinutes: zod.number(),
+  nextSweepAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO-8601 timestamp of the next scheduled portal_retry_sweeper fire, derived from the cron expression. Null if the cron expression cannot be parsed.",
+    ),
+  lastSuccessfulSubmission: zod.union([
+    zod.object({
+      submissionId: zod.number(),
+      claimId: zod.number(),
+      confNumber: zod.string().nullish(),
+      submittedAt: zod.string().nullish(),
+      at: zod.string().describe("ISO-8601 updated_at on the row."),
+    }),
+    zod.null(),
+  ]),
+  lastFailedSubmission: zod.union([
+    zod.object({
+      submissionId: zod.number(),
+      claimId: zod.number(),
+      attempts: zod.number(),
+      maxAttempts: zod.number(),
+      errorMessage: zod.string().nullish(),
+      at: zod.string().describe("ISO-8601 updated_at on the row."),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * Overall status plus per-component statuses for the rollup banner. Authenticated read; payload is summary-only.
+ * @summary Rolled-up system health (any authenticated user)
+ */
+export const GetSystemHealthRollupResponse = zod.object({
+  overall: zod.enum(["ok", "degraded", "failed"]),
+  components: zod.array(
+    zod.object({
+      name: zod.string(),
+      status: zod.enum(["ok", "degraded", "failed"]),
+      detail: zod.string().nullable(),
+    }),
+  ),
+  lastWorkerRun: zod.union([
+    zod.object({
+      batchId: zod.string(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullable(),
+      status: zod.enum(["running", "completed", "failed"]),
+      total: zod.number(),
+      succeeded: zod.number(),
+      failed: zod.number(),
+      triggeredBy: zod.string(),
+      lastError: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  workerRunning: zod.boolean(),
+  overdueCount: zod.number(),
+  overdueThresholdMinutes: zod.number(),
+  generatedAt: zod.string(),
 });
 
 /**

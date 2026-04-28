@@ -36,7 +36,8 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **API Security:** Role-based authentication middleware (`requireAuth`, `requireAdmin`, `requireBotToken`) protects API routes.
 - **Database Indexes:** Key tables are indexed for optimal query performance.
 - **Cron Jobs:** Scheduled jobs for processing portal submissions, sending daily briefs, and scanning for payor responses.
-- **Bot Architecture:** A shared browser worker handles bot execution for both batch processing and standalone polling, managing login, form filling, evidence upload, and session persistence.
+- **Portal Worker (on-demand):** Runs in-process inside the API server. Each invocation launches a fresh Playwright browser, processes pending submissions, and tears down. There is no continuous polling loop, no heartbeat, and no separate bot process to keep alive. Triggers: midnight cron, retry sweeper cron (every 5 minutes), admin batch action, and any submission transition into `pending` (create / confirm / retry). A module-level gate (`triggerWorkerRun` / `isWorkerRunInProgress`) ensures only one run is in flight at a time so concurrent triggers coalesce. Fresh state per run — Playwright login on every invocation — eliminates the staleness bugs the old long-running bot suffered from.
+- **System Health Rollup:** `/admin/system-health/rollup` combines connector probes, cron freshness (last run vs. last expected run), the most recent worker run status, and a count of pending submissions overdue beyond the 15-minute threshold into one `{overall, components, lastWorkerRun, overdueCount}` signal. The frontend `WorkerHealthBanner` reads this rollup and warns on the Command Center, System Health, and Portal Submissions pages whenever overall is `degraded` or `failed`.
 - **MAS Portal Integration:** Playwright bot interacts with the Freshdesk-based MAS portal, using specific form field IDs and leveraging authenticated sessions to bypass CAPTCHA.
 - **UI/UX:** Adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo.
 - **TypeScript Monorepo:** Uses TypeScript composite projects and pnpm workspaces for type safety and dependency management.
@@ -50,16 +51,23 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 - **Replit Auth:** OpenID Connect for user authentication.
 ## Rotating BOT_SERVICE_TOKEN
 
-The bot service token authenticates internal API calls from the Playwright bots and from internal cron jobs (`x-bot-token` header). Rotate it safely with a grace window so bots can be restarted one at a time:
+The bot service token authenticates internal `x-bot-token` calls from the manual `npm run bot:run` developer tool and from internal cron jobs that hit the API over HTTP. The on-demand portal worker runs in-process and does **not** use this token. Rotate safely with a grace window:
 
 1. Generate a new random token (e.g. `openssl rand -hex 32`).
 2. In Replit Secrets, set `BOT_SERVICE_TOKEN_PREVIOUS` to the **current** value of `BOT_SERVICE_TOKEN`, then set `BOT_SERVICE_TOKEN` to the **new** value.
-3. Restart the API server workflow. The middleware reads both env vars per request, so any bot still using the old token continues to authenticate.
-4. Restart each bot one at a time. They pick up the new token at startup.
-5. Verify in Settings → "Bot Service Token" panel that "Last successful bot auth" is recent and the active hash prefix matches what you expect. The grace banner indicates `BOT_SERVICE_TOKEN_PREVIOUS` is still set.
-6. Once all bots are confirmed on the new token, unset `BOT_SERVICE_TOKEN_PREVIOUS` in Replit Secrets and restart the API server one final time. The grace banner should disappear.
+3. Restart the API server workflow. The middleware reads both env vars per request, so any caller still using the old token continues to authenticate.
+4. If you have any external callers (e.g. the manual `bot:run` developer tool, an external automation), restart them with the new token.
+5. Once everything is on the new token, unset `BOT_SERVICE_TOKEN_PREVIOUS` in Replit Secrets and restart the API server one final time.
 
 Notes:
-- Never log or paste the raw token. The admin panel only ever shows the first 8 chars of `sha256(token)`.
+- Never log or paste the raw token.
 - The token comparison is constant-time (`crypto.timingSafeEqual`) to avoid timing leaks.
-- If you skip the grace step, every bot must be restarted simultaneously with the API server or polling will return 401 until they catch up.
+
+## Troubleshooting the on-demand portal worker
+
+- **Submissions sit in `pending` and never run.** Open System Health → Worker Activity. Check the "Pending due" and "Overdue" tiles. If overdue is non-zero, the rollup banner will say "degraded" — click into the Worker Activity card to see the last run's `lastError`. Confirm the `portal_retry_sweeper` cron has fresh runs in the Scheduled Jobs table; if it's failing, the message column will explain why (most often a Playwright login failure or a Neon endpoint cold-start).
+- **Manually kick a run.** Use Portal Submissions → "Process Pending" (the admin batch). Each kick is gated, so if a run is already in flight the new kick is coalesced and the UI shows a polling progress card.
+- **Worker says "Last run failed".** Drill into the most recent batch from the Worker Activity card and inspect `lastError`. Common causes: portal session cookies expired (re-run `pnpm --filter @workspace/api-server run bot:save-session`), MAS portal returning 5xx, or a stuck submission row that the half-hourly `stuck_submission_reset` cron will clear automatically.
+- **Stale Playwright session ("Session expired" / login redirect loop).** The saved storage state lives in `artifacts/api-server/bot-session/state.json`. If the worker keeps failing with auth-redirect or "session expired" errors after a token rotation or upstream MAS-portal session purge, delete (or rename) `artifacts/api-server/bot-session/state.json`, then re-run `pnpm --filter @workspace/api-server run bot:save-session` to capture a fresh login. Restart the API server so the in-process worker picks up the new state on its next run. This is the first thing to try whenever the auth-related `lastError` doesn't go away on its own.
+- **Manual one-shot run from a shell.** `pnpm --filter @workspace/api-server run bot:run` triggers a single in-process worker run via `triggerWorkerRun` (same code path as the cron) and exits with the job result. Useful for local troubleshooting without waiting for the next sweeper tick.
+- **No worker runs since boot.** Expected after a fresh restart with no pending submissions; the sweeper will fire within 5 minutes and the midnight cron will fire at 00:00 ET. Queue any pending submission to trigger an immediate run.

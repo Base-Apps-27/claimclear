@@ -1,13 +1,19 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import cron from "node-cron";
-import { startBatchJob } from "./lib/batch-processor";
+import { triggerWorkerRun, jobToCronOutcome } from "./lib/batch-processor";
 import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql, eq, and, or, isNull, lte, count } from "drizzle-orm";
+import { portalSubmissionsTable } from "@workspace/db";
 import { recordCronRun } from "./lib/cron-runs";
 import { isOutlookConnected, probeOutlook } from "./lib/outlook";
 import { recordConnectorHealth } from "./lib/connector-health";
 import { resetStuckSubmissions } from "./lib/stuck-submissions";
+
+// Cap on how long a cron-triggered worker run blocks its cron lane. On
+// timeout the cron row is recorded as degraded and the worker continues in
+// the background; stuck-running rollup detection escalates if it hangs.
+const WORKER_AWAIT_TIMEOUT_MS = 20 * 60 * 1000;
 
 // Boot-time DB ops have to tolerate a cold Neon serverless endpoint that
 // auto-suspends after inactivity. The first query then fails with
@@ -452,15 +458,41 @@ app.listen(port, (err) => {
 
 cron.schedule("0 0 * * *", async () => {
   await recordCronRun("midnight_portal_processor", async () => {
-    logger.info("Midnight cron: processing all pending portal submissions");
-    try {
-      const job = await startBatchJob("all", "Midnight Auto-Process");
-      logger.info({ batchId: job.id, total: job.total }, "Midnight batch job started");
-      return { message: `Started batch ${job.id} with ${job.total} submissions`, metadata: { batchId: job.id, total: job.total } };
-    } catch (err) {
-      logger.info("Midnight cron: no pending submissions to process");
-      return { message: "No pending submissions to process" };
+    logger.info("Midnight cron: triggering on-demand worker run");
+    const outcome = await triggerWorkerRun({
+      triggeredBy: "Midnight Auto-Process",
+      awaitCompletion: true,
+      awaitTimeoutMs: WORKER_AWAIT_TIMEOUT_MS,
+    });
+    if (outcome.kind === "skipped") {
+      const message = outcome.reason === "no_pending"
+        ? "No pending submissions to process"
+        : "Worker already running — midnight trigger coalesced";
+      logger.info({ reason: outcome.reason }, message);
+      return { message, metadata: { skipped: true, reason: outcome.reason } };
     }
+    const { job, awaited } = outcome;
+    if (awaited === "timeout") {
+      // Watchdog tripped — record degraded so the rollup surfaces the hang
+      // without leaving the cron lane blocked. The worker keeps running in
+      // the background; if it never returns, the stuck-running rollup
+      // detection (2x interval grace) escalates further.
+      const message = `Worker run ${job.id} watchdog: still in progress after ${WORKER_AWAIT_TIMEOUT_MS / 60000}m, releasing cron lane`;
+      logger.warn({ batchId: job.id }, message);
+      return {
+        status: "degraded",
+        message,
+        metadata: { batchId: job.id, watchdogTimeoutMs: WORKER_AWAIT_TIMEOUT_MS, jobStatus: job.status },
+      };
+    }
+    const message = `Worker run ${job.id} completed: ${job.succeeded}/${job.total} succeeded, ${job.failed} failed`;
+    const sev = jobToCronOutcome(job, message);
+    if (sev.kind === "throw") throw new Error(sev.message);
+    return {
+      status: sev.status,
+      message: sev.message,
+      metadata: { batchId: job.id, total: job.total, succeeded: job.succeeded, failed: job.failed, jobStatus: job.status },
+    };
   });
 }, { timezone: "America/New_York" });
 
@@ -529,6 +561,62 @@ cron.schedule("*/30 * * * *", async () => {
         ? "No stuck portal submissions found"
         : `Reset ${result.reset} stuck portal submission${result.reset === 1 ? "" : "s"}`,
       metadata: { reset: result.reset, ids: result.ids },
+    };
+  });
+}, { timezone: "America/New_York" });
+
+// On-demand portal worker sweeper. Runs every 5 minutes; if any pending
+// submissions are due (next_retry_at <= now or NULL), triggers a fresh
+// worker run. The triggerWorkerRun gate ensures only one Playwright instance
+// is in flight at a time, so concurrent sweeps + admin batches coalesce
+// safely.
+cron.schedule("*/5 * * * *", async () => {
+  await recordCronRun("portal_retry_sweeper", async () => {
+    const [{ value: dueCount } = { value: 0 }] = await db
+      .select({ value: count() })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.status, "pending"),
+        or(
+          isNull(portalSubmissionsTable.nextRetryAt),
+          lte(portalSubmissionsTable.nextRetryAt, new Date()),
+        ),
+      ));
+
+    if (dueCount === 0) {
+      return { message: "No pending submissions due", metadata: { dueCount: 0 } };
+    }
+
+    const outcome = await triggerWorkerRun({
+      triggeredBy: "Retry Sweeper",
+      awaitCompletion: true,
+      awaitTimeoutMs: WORKER_AWAIT_TIMEOUT_MS,
+    });
+
+    if (outcome.kind === "skipped") {
+      const message = outcome.reason === "already_running"
+        ? `Worker already running — sweeper coalesced (${dueCount} due)`
+        : "No pending submissions to process";
+      return { message, metadata: { dueCount, skipped: true, reason: outcome.reason } };
+    }
+
+    const { job, awaited } = outcome;
+    if (awaited === "timeout") {
+      const message = `Sweeper worker run ${job.id} watchdog: still in progress after ${WORKER_AWAIT_TIMEOUT_MS / 60000}m, releasing cron lane`;
+      logger.warn({ batchId: job.id, dueCount }, message);
+      return {
+        status: "degraded",
+        message,
+        metadata: { batchId: job.id, dueCount, watchdogTimeoutMs: WORKER_AWAIT_TIMEOUT_MS, jobStatus: job.status },
+      };
+    }
+    const message = `Sweeper worker run ${job.id} completed: ${job.succeeded}/${job.total} succeeded, ${job.failed} failed (${dueCount} were due)`;
+    const sev = jobToCronOutcome(job, message);
+    if (sev.kind === "throw") throw new Error(sev.message);
+    return {
+      status: sev.status,
+      message: sev.message,
+      metadata: { batchId: job.id, total: job.total, succeeded: job.succeeded, failed: job.failed, dueCount, jobStatus: job.status },
     };
   });
 }, { timezone: "America/New_York" });

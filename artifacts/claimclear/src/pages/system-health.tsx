@@ -2,17 +2,18 @@ import {
   useGetSystemHealthCronRuns,
   useGetSystemHealthConnectors,
   useGetSystemHealthBounces,
-  useGetBotAuthStatus,
+  useGetSystemHealthWorkerActivity,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
   getGetSystemHealthBouncesQueryKey,
-  getGetBotAuthStatusQueryKey,
+  getGetSystemHealthWorkerActivityQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
 const REFRESH_MS = 30_000;
 
@@ -55,9 +56,9 @@ export default function SystemHealth() {
       refetchInterval: REFRESH_MS,
     },
   });
-  const { data: botAuthData, isLoading: botAuthLoading } = useGetBotAuthStatus({
+  const { data: workerData, isLoading: workerLoading } = useGetSystemHealthWorkerActivity({
     query: {
-      queryKey: getGetBotAuthStatusQueryKey(),
+      queryKey: getGetSystemHealthWorkerActivityQueryKey(),
       refetchInterval: REFRESH_MS,
     },
   });
@@ -79,6 +80,8 @@ export default function SystemHealth() {
           Background jobs, connector status, and unmatched email bounces. Auto-refreshes every 30 seconds.
         </p>
       </div>
+
+      <WorkerHealthBanner variant="full" />
 
       <Card>
         <CardHeader>
@@ -176,57 +179,154 @@ export default function SystemHealth() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-blue-600" /> Bot Authentication
+            <Bot className="h-5 w-5 text-blue-600" /> Worker Activity
           </CardTitle>
           <CardDescription>
-            Bots authenticate to the API on every poll. We warn if no bot has authenticated within the threshold window.
+            On-demand portal worker. Each run launches a fresh browser to process pending submissions and exits when finished.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {botAuthLoading ? (
-            <Skeleton className="h-20 w-full" />
-          ) : botAuthData ? (
-            <div className="space-y-3">
-              {botAuthData.isStale ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-800 px-3 py-3 text-rose-800 dark:text-rose-300 flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm">
-                    <div className="font-medium">
-                      {botAuthData.lastBotAuthAt
-                        ? `Bots have not authenticated in ${botAuthData.minutesSinceLastAuth} minute${botAuthData.minutesSinceLastAuth === 1 ? "" : "s"}.`
-                        : "No bot has authenticated since the API last started."}
-                    </div>
-                    <div className="text-xs mt-1 opacity-80">
-                      Threshold is {botAuthData.staleThresholdMinutes} minutes. Check that bots are running and that <code>BOT_SERVICE_TOKEN</code> rotation completed successfully.
-                    </div>
+          {workerLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : workerData ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="text-lg font-semibold mt-1">
+                    {workerData.isRunning ? (
+                      <Badge className="bg-blue-500 text-white">Running</Badge>
+                    ) : workerData.lastRun?.status === "failed" ? (
+                      <Badge className="bg-rose-600 text-white">Last run failed</Badge>
+                    ) : (
+                      <Badge className="bg-green-600 text-white">Idle</Badge>
+                    )}
                   </div>
                 </div>
-              ) : botAuthData.lastBotAuthAt ? (
-                <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 px-3 py-2 text-green-800 dark:text-green-300 flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="h-5 w-5" />
-                  <span>
-                    Bots authenticated {relTime(botAuthData.lastBotAuthAt)} (within the {botAuthData.staleThresholdMinutes}-minute threshold).
-                  </span>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Pending due</div>
+                  <div className="text-lg font-semibold mt-1">{workerData.pendingDueCount}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Overdue (&gt;{workerData.overdueThresholdMinutes}m)</div>
+                  <div className={`text-lg font-semibold mt-1 ${workerData.overdueCount > 0 ? "text-amber-600" : ""}`}>
+                    {workerData.overdueCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Next sweep</div>
+                  <div className="text-sm font-semibold mt-1">
+                    {workerData.nextSweepAt ? relTime(workerData.nextSweepAt) : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 border-t pt-3">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-1">Last successful submission</div>
+                  {workerData.lastSuccessfulSubmission ? (
+                    <div className="text-xs space-y-0.5">
+                      <div>
+                        <span className="text-muted-foreground">Submission </span>
+                        <span className="font-mono">#{workerData.lastSuccessfulSubmission.submissionId}</span>
+                        <span className="text-muted-foreground"> · claim </span>
+                        <span className="font-mono">#{workerData.lastSuccessfulSubmission.claimId}</span>
+                      </div>
+                      {workerData.lastSuccessfulSubmission.confNumber ? (
+                        <div><span className="text-muted-foreground">Conf #</span> <span className="font-mono">{workerData.lastSuccessfulSubmission.confNumber}</span></div>
+                      ) : null}
+                      <div className="text-muted-foreground">{relTime(workerData.lastSuccessfulSubmission.at)}</div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">No successful submissions recorded.</div>
+                  )}
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-1">Last failed submission</div>
+                  {workerData.lastFailedSubmission ? (
+                    <div className="text-xs space-y-0.5">
+                      <div>
+                        <span className="text-muted-foreground">Submission </span>
+                        <span className="font-mono">#{workerData.lastFailedSubmission.submissionId}</span>
+                        <span className="text-muted-foreground"> · claim </span>
+                        <span className="font-mono">#{workerData.lastFailedSubmission.claimId}</span>
+                      </div>
+                      <div className="text-muted-foreground">
+                        Attempts {workerData.lastFailedSubmission.attempts}/{workerData.lastFailedSubmission.maxAttempts}
+                        {" · "}{relTime(workerData.lastFailedSubmission.at)}
+                      </div>
+                      {workerData.lastFailedSubmission.errorMessage ? (
+                        <div
+                          className="font-mono text-rose-600 break-all line-clamp-3 max-h-16 overflow-hidden"
+                          title={workerData.lastFailedSubmission.errorMessage}
+                        >
+                          {workerData.lastFailedSubmission.errorMessage.length > 240
+                            ? `${workerData.lastFailedSubmission.errorMessage.slice(0, 240)}…`
+                            : workerData.lastFailedSubmission.errorMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">No failed submissions recorded.</div>
+                  )}
+                </div>
+              </div>
+              {workerData.lastRun ? (
+                <div className="text-sm border-t pt-3">
+                  <div className="font-medium mb-1">Last run</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <span className="text-muted-foreground">Batch ID</span>
+                    <span className="font-mono">{workerData.lastRun.batchId}</span>
+                    <span className="text-muted-foreground">Status</span>
+                    <span>{statusBadge(workerData.lastRun.status)}</span>
+                    <span className="text-muted-foreground">Triggered by</span>
+                    <span>{workerData.lastRun.triggeredBy}</span>
+                    <span className="text-muted-foreground">Started</span>
+                    <span>{relTime(workerData.lastRun.startedAt)}</span>
+                    <span className="text-muted-foreground">Finished</span>
+                    <span>{relTime(workerData.lastRun.finishedAt)}</span>
+                    <span className="text-muted-foreground">Results</span>
+                    <span>{workerData.lastRun.succeeded}/{workerData.lastRun.total} succeeded, {workerData.lastRun.failed} failed</span>
+                    {workerData.lastRun.lastError ? (
+                      <>
+                        <span className="text-muted-foreground">Last error</span>
+                        <span className="font-mono text-rose-600">{workerData.lastRun.lastError}</span>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
-                <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 px-3 py-2 text-blue-800 dark:text-blue-300 flex items-center gap-2 text-sm">
-                  <Clock className="h-5 w-5" />
-                  <span>
-                    Waiting for the first bot poll since the API restarted. We'll warn if none arrives within {botAuthData.staleThresholdMinutes} minutes.
-                  </span>
-                </div>
+                <p className="text-sm text-muted-foreground">No worker runs since the API restarted.</p>
               )}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Last successful bot auth</span>
-                <span>{botAuthData.lastBotAuthAt ? new Date(botAuthData.lastBotAuthAt).toLocaleString() : "never since last API restart"}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Stale threshold</span>
-                <span>{botAuthData.staleThresholdMinutes} min</span>
-              </div>
+              {workerData.recentRuns.length > 1 ? (
+                <div className="border-t pt-3">
+                  <div className="font-medium text-sm mb-2">Recent runs</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="text-muted-foreground uppercase border-b">
+                        <tr>
+                          <th className="text-left px-2 py-1">Started</th>
+                          <th className="text-left px-2 py-1">Trigger</th>
+                          <th className="text-left px-2 py-1">Status</th>
+                          <th className="text-right px-2 py-1">Results</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workerData.recentRuns.slice(0, 10).map((r) => (
+                          <tr key={r.batchId} className="border-b last:border-0">
+                            <td className="px-2 py-1">{relTime(r.startedAt)}</td>
+                            <td className="px-2 py-1">{r.triggeredBy}</td>
+                            <td className="px-2 py-1">{statusBadge(r.status)}</td>
+                            <td className="px-2 py-1 text-right">{r.succeeded}/{r.total} ok, {r.failed} fail</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Bot auth status unavailable.</p>
+            <p className="text-sm text-muted-foreground">Worker activity unavailable.</p>
           )}
         </CardContent>
       </Card>

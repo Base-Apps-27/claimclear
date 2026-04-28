@@ -1,4 +1,4 @@
-import { useTriggerDailyBrief, useListBotInstances, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl, useGetBotAuthStatus, getGetBotAuthStatusQueryKey, useGetUserNotificationPreferences, useUpdateUserNotificationPreferences } from "@workspace/api-client-react";
+import { useTriggerDailyBrief, useGetAppSettings, useUpdateAppSettings, getAdminExportAuditLogsCsvUrl, useGetUserNotificationPreferences, useUpdateUserNotificationPreferences } from "@workspace/api-client-react";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Link } from "wouter";
@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Bot, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download, KeyRound } from "lucide-react";
+import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -68,9 +68,7 @@ function NotificationTogglesRow({ userId }: { userId: string }) {
 export default function Settings() {
   const { user } = useAuth();
   const triggerBrief = useTriggerDailyBrief();
-  const { data: botInstances } = useListBotInstances();
   const { data: appSettings } = useGetAppSettings();
-  const { data: botAuthStatus } = useGetBotAuthStatus({ query: { queryKey: getGetBotAuthStatusQueryKey(), enabled: user?.role === "admin", refetchInterval: 30000 } });
   const updateAppSettings = useUpdateAppSettings();
   const [briefResult, setBriefResult] = useState<string | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -532,81 +530,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {isAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" />
-              Bot Service Token
-              <InfoTooltip content="Shows when bots last successfully authenticated and a hash prefix of the active token. Use this to verify rotation and detect missed bot restarts. The full token is never shown." />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {botAuthStatus?.hasGraceToken && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2 text-amber-800 dark:text-amber-300">
-                A grace token (<code>BOT_SERVICE_TOKEN_PREVIOUS</code>) is currently active. Unset it once all bots have been restarted with the new token.
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Active token hash prefix</span>
-              <code className="font-mono">{botAuthStatus?.activeTokenHashPrefix ?? "not configured"}</code>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Last successful bot auth</span>
-              <span>{botAuthStatus?.lastBotAuthAt ? new Date(botAuthStatus.lastBotAuthAt).toLocaleString() : "never since last API restart"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Grace token configured</span>
-              <span>{botAuthStatus?.hasGraceToken ? "Yes" : "No"}</span>
-            </div>
-            <p className="text-xs text-muted-foreground pt-2 border-t">
-              To rotate safely, see the "Rotating BOT_SERVICE_TOKEN" runbook in <code>replit.md</code>.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            Bot Instances
-            <InfoTooltip content="Automation bots that handle portal submissions. Each bot has its own browser session and processes claims from the queue. A valid session is required for submissions to succeed." />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {botInstances && botInstances.length > 0 ? (
-            <div className="space-y-3">
-              {botInstances.map(bot => (
-                <div key={bot.id} className="flex items-center justify-between p-3 border rounded-md">
-                  <div>
-                    <p className="font-medium text-sm">{bot.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {bot.successCount} success / {bot.failCount} failed / {bot.submissionsToday} today
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <WrapTooltip content={bot.status === "running" ? "Bot is online and processing submissions from the queue." : "Bot is currently offline and not processing submissions."}>
-                      <Badge variant={bot.status === "running" ? "default" : "secondary"} className="cursor-help">{bot.status}</Badge>
-                    </WrapTooltip>
-                    {bot.sessionValid ? (
-                      <WrapTooltip content="The bot's browser session with the MAS portal is active and authenticated. Submissions can proceed.">
-                        <Badge variant="outline" className="text-green-600 cursor-help">Session Valid</Badge>
-                      </WrapTooltip>
-                    ) : (
-                      <WrapTooltip content="The bot's portal session has expired or is invalid. The bot needs to re-authenticate before it can process submissions.">
-                        <Badge variant="outline" className="text-red-600 cursor-help">Session Invalid</Badge>
-                      </WrapTooltip>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No active bot instances.</p>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
