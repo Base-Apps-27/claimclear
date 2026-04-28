@@ -98,6 +98,7 @@ function briefShell(title: string, dateLabel: string, body: string, outlookHealt
 function renderWeeklyDigestSection(d: WeeklyDigest): string {
   const wonDelta = d.thisWeek.won - d.priorWeek.won;
   const lostDelta = d.thisWeek.lost - d.priorWeek.lost;
+  const withdrawnDelta = d.thisWeek.withdrawn - d.priorWeek.withdrawn;
   const fmtDelta = (n: number) => (n === 0 ? "no change" : n > 0 ? `+${n}` : `${n}`);
   const topRows = d.topErrorTypes.length === 0
     ? `<tr><td colspan="2" style="padding:8px;color:#64748b;font-size:13px;">No recoveries this week.</td></tr>`
@@ -119,7 +120,11 @@ function renderWeeklyDigestSection(d: WeeklyDigest): string {
       </div>
       <div style="flex:1;padding:12px;background:#fef2f2;border-radius:8px;">
         <div style="font-size:20px;font-weight:700;color:#dc2626;">${d.thisWeek.lost}</div>
-        <div style="font-size:11px;color:#991b1b;">Lost this week (${fmtDelta(lostDelta)} vs prior)</div>
+        <div style="font-size:11px;color:#991b1b;">Denied by payer this week (${fmtDelta(lostDelta)} vs prior)</div>
+      </div>
+      <div style="flex:1;padding:12px;background:#fef9c3;border-radius:8px;">
+        <div style="font-size:20px;font-weight:700;color:#a16207;">${d.thisWeek.withdrawn}</div>
+        <div style="font-size:11px;color:#854d0e;">Withdrawn this week (${fmtDelta(withdrawnDelta)} vs prior)</div>
       </div>
       <div style="flex:1;padding:12px;background:#EBF0FA;border-radius:8px;">
         <div style="font-size:20px;font-weight:700;color:#1B2A4A;">${d.avgDaysToResolution != null ? d.avgDaysToResolution.toFixed(1) : "—"}</div>

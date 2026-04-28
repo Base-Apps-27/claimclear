@@ -219,6 +219,7 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     canQueueForPortal: !activeSubmissions.length && ["Needs Evidence", "Needs Review", "New"].includes(claim.status),
     postResponseActions,
     latestResponseType,
+    hasResponse: hasResponses,
   });
 }));
 
@@ -251,10 +252,43 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { outcome, approvedAmount, invoiceNumbers, _systemOverride } = req.body;
+  const { outcome, approvedAmount, invoiceNumbers, closureReason, _systemOverride } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
+  if (outcome === "Denied" && closureReason !== undefined && closureReason !== "payer_denied") {
+    res.status(400).json({ error: `Denied outcome implies closureReason=payer_denied; pass Withdrawn for staff-initiated closures.` });
+    return;
+  }
+  if (outcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
+    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
+    return;
+  }
+
+  let newStatus: string | undefined;
+  if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue" || outcome === "Withdrawn") {
+    newStatus = "Resolved";
+  } else if (outcome === "Denied") {
+    newStatus = "Denied";
+  }
+
   try {
+    if (newStatus) {
+      const result = await transitionClaimStatusAndOutcome({
+        claimId: id,
+        newStatus,
+        newOutcome: outcome,
+        source: "manual",
+        reason: `Manual outcome change by user`,
+        actor: actorFromReq(req),
+        extraFields: approvedAmount !== undefined
+          ? { approvedAmount: approvedAmount === "" ? null : String(approvedAmount), ...(invoiceNumbers !== undefined ? { invoiceNumbers } : {}) }
+          : (invoiceNumbers !== undefined ? { invoiceNumbers } : undefined),
+        closureReason,
+      });
+      res.json(result.claim);
+      return;
+    }
+
     const result = await transitionClaimOutcome({
       claimId: id,
       newOutcome: outcome,
@@ -264,6 +298,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
       systemOverride: _systemOverride,
       approvedAmount,
       invoiceNumbers,
+      closureReason,
     });
     res.json(result.claim);
   } catch (err: any) {
@@ -466,11 +501,12 @@ router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): P
       case "accept_loss":
         result = await transitionClaimStatusAndOutcome({
           claimId: id,
-          newStatus: "Denied",
-          newOutcome: "Denied",
+          newStatus: "Resolved",
+          newOutcome: "Withdrawn",
           source: "post_response_action",
           reason: `${actionLabel}${notes ? ` — ${notes}` : ""}`,
           actor: actorFromReq(req),
+          closureReason: "accepted_loss",
         });
         break;
 

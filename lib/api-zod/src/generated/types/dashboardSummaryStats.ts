@@ -5,11 +5,18 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { DashboardSummaryStatsDeniedByReason } from "./dashboardSummaryStatsDeniedByReason";
+import type { DashboardSummaryStatsWithdrawnByReason } from "./dashboardSummaryStatsWithdrawnByReason";
 
 export type DashboardSummaryStats = {
   total: number;
   new: number;
   resolved: number;
   denied: number;
+  withdrawn: number;
   onHold: number;
+  /** Counts of Withdrawn invoice groups broken down by closure_reason. */
+  withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
+  /** Counts of Denied invoice groups broken down by closure_reason. */
+  deniedByReason: DashboardSummaryStatsDeniedByReason;
 };

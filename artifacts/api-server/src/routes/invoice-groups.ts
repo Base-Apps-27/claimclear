@@ -8,6 +8,7 @@ import {
   transitionGroupStatus,
   transitionGroupOutcome,
   transitionGroupStatusAndOutcome,
+  groupHasResponse,
   VALID_GROUP_STATUS_TRANSITIONS,
   VALID_GROUP_OUTCOME_BY_STATUS,
   SYSTEM_CONTROLLED_GROUP_STATUSES,
@@ -177,11 +178,22 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { outcome, approvedAmount } = req.body;
+  const { outcome, approvedAmount, closureReason } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
+  if (outcome === "Denied") {
+    if (closureReason !== undefined && closureReason !== "payer_denied") {
+      res.status(400).json({ error: `Denied outcome implies closureReason=payer_denied; pass Withdrawn for staff-initiated closures.` });
+      return;
+    }
+  }
+  if (outcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
+    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
+    return;
+  }
+
   let newStatus: string | undefined;
-  if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue") {
+  if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue" || outcome === "Withdrawn") {
     newStatus = "Resolved";
   } else if (outcome === "Denied") {
     newStatus = "Denied";
@@ -197,6 +209,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         reason: `Outcome set to ${outcome}`,
         actor: actorFromReq(req),
         extraFields: approvedAmount !== undefined ? { approvedAmount: String(approvedAmount) } : undefined,
+        closureReason,
       });
       res.json(result.group);
     } else {
@@ -207,6 +220,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         reason: `Outcome set to ${outcome}`,
         actor: actorFromReq(req),
         approvedAmount: approvedAmount !== undefined ? String(approvedAmount) : undefined,
+        closureReason,
       });
       res.json(result.group);
     }
@@ -376,12 +390,21 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     group.status === "Needs Evidence" &&
     !!group.errorTypeId;
 
+  const childClaimIds = (await db.select({ id: claimsTable.id })
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, id))).map(c => c.id);
+
+  const latestResponseConditions = [eq(portalResponsesTable.invoiceGroupId, id)];
+  if (childClaimIds.length > 0) {
+    latestResponseConditions.push(inArray(portalResponsesTable.claimId, childClaimIds));
+  }
   const latestResponse = await db.select().from(portalResponsesTable)
-    .where(eq(portalResponsesTable.invoiceGroupId, id))
+    .where(or(...latestResponseConditions))
     .orderBy(desc(portalResponsesTable.receivedAt))
     .limit(1);
 
   const latestResponseType = latestResponse.length > 0 ? latestResponse[0].responseType : null;
+  const hasResponse = await groupHasResponse(id);
 
   let postResponseActions: string[] = [];
   if (group.status === "Needs Review" && latestResponseType) {
@@ -401,6 +424,7 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     hasActiveSubmission,
     postResponseActions,
     latestResponseType,
+    hasResponse,
   });
 }));
 

@@ -5,9 +5,11 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateClaimOutcomeBodyClosureReason } from "./updateClaimOutcomeBodyClosureReason";
 
 export interface UpdateClaimOutcomeBody {
   outcome: string;
+  closureReason?: UpdateClaimOutcomeBodyClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
 }

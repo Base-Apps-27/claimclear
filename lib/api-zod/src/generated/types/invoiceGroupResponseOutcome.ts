@@ -15,4 +15,5 @@ export const InvoiceGroupResponseOutcome = {
   Denied: "Denied",
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
+  Withdrawn: "Withdrawn",
 } as const;

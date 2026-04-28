@@ -15,4 +15,6 @@ export type GetClaimValidTransitions200 = {
   canQueueForPortal?: boolean;
   postResponseActions?: string[];
   latestResponseType?: string | null;
+  /** True if a portal/email response exists for this claim. */
+  hasResponse?: boolean;
 };

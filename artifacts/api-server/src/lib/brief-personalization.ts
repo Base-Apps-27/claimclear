@@ -201,16 +201,24 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
 }
 
 export interface WeeklyDigest {
-  thisWeek: { won: number; lost: number };
-  priorWeek: { won: number; lost: number };
+  thisWeek: { won: number; lost: number; withdrawn: number };
+  priorWeek: { won: number; lost: number; withdrawn: number };
   avgDaysToResolution: number | null;
   topErrorTypes: { errorTypeName: string; recoveredAmount: number }[];
 }
 
 const RESOLVED_OUTCOMES_WON = ["Approved", "Partially Approved"] as const;
 const RESOLVED_OUTCOMES_LOST = ["Denied"] as const;
-type ResolvedOutcome = (typeof RESOLVED_OUTCOMES_WON)[number] | (typeof RESOLVED_OUTCOMES_LOST)[number];
-const ALL_RESOLVED_OUTCOMES: ResolvedOutcome[] = [...RESOLVED_OUTCOMES_WON, ...RESOLVED_OUTCOMES_LOST];
+const RESOLVED_OUTCOMES_WITHDRAWN = ["Withdrawn"] as const;
+type ResolvedOutcome =
+  | (typeof RESOLVED_OUTCOMES_WON)[number]
+  | (typeof RESOLVED_OUTCOMES_LOST)[number]
+  | (typeof RESOLVED_OUTCOMES_WITHDRAWN)[number];
+const ALL_RESOLVED_OUTCOMES: ResolvedOutcome[] = [
+  ...RESOLVED_OUTCOMES_WON,
+  ...RESOLVED_OUTCOMES_LOST,
+  ...RESOLVED_OUTCOMES_WITHDRAWN,
+];
 
 export async function getWeeklyDigest(now: Date): Promise<WeeklyDigest> {
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -230,11 +238,13 @@ export async function getWeeklyDigest(now: Date): Promise<WeeklyDigest> {
       .groupBy(claimsTable.outcome);
     let won = 0;
     let lost = 0;
+    let withdrawn = 0;
     for (const r of rows) {
       if ((RESOLVED_OUTCOMES_WON as readonly string[]).includes(r.outcome)) won += r.count;
       else if ((RESOLVED_OUTCOMES_LOST as readonly string[]).includes(r.outcome)) lost += r.count;
+      else if ((RESOLVED_OUTCOMES_WITHDRAWN as readonly string[]).includes(r.outcome)) withdrawn += r.count;
     }
-    return { won, lost };
+    return { won, lost, withdrawn };
   };
 
   const thisWeek = await countOutcomes(oneWeekAgo, now);

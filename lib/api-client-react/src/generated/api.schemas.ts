@@ -45,6 +45,21 @@ export const ClaimResponseOutcome = {
   Denied: "Denied",
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
+  Withdrawn: "Withdrawn",
+} as const;
+
+/**
+ * @nullable
+ */
+export type ClaimResponseClosureReason =
+  | (typeof ClaimResponseClosureReason)[keyof typeof ClaimResponseClosureReason]
+  | null;
+
+export const ClaimResponseClosureReason = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
 } as const;
 
 /**
@@ -85,6 +100,8 @@ export interface ClaimResponse {
   claimAmount?: string | null;
   status: ClaimResponseStatus;
   outcome: ClaimResponseOutcome;
+  /** @nullable */
+  closureReason?: ClaimResponseClosureReason;
   /** @nullable */
   triageNotes?: string | null;
   /** @nullable */
@@ -132,6 +149,8 @@ export interface ValidTransitionsResponse {
   postResponseActions: string[];
   /** @nullable */
   latestResponseType?: string | null;
+  /** True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims. */
+  hasResponse?: boolean;
 }
 
 export type InvoiceGroupResponseStatus =
@@ -159,6 +178,21 @@ export const InvoiceGroupResponseOutcome = {
   Denied: "Denied",
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
+  Withdrawn: "Withdrawn",
+} as const;
+
+/**
+ * @nullable
+ */
+export type InvoiceGroupResponseClosureReason =
+  | (typeof InvoiceGroupResponseClosureReason)[keyof typeof InvoiceGroupResponseClosureReason]
+  | null;
+
+export const InvoiceGroupResponseClosureReason = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
 } as const;
 
 /**
@@ -195,6 +229,8 @@ export interface InvoiceGroupResponse {
   errorTypeName?: string | null;
   status: InvoiceGroupResponseStatus;
   outcome: InvoiceGroupResponseOutcome;
+  /** @nullable */
+  closureReason?: InvoiceGroupResponseClosureReason;
   /** @nullable */
   approvedAmount?: string | null;
   rideCount: number;
@@ -533,8 +569,18 @@ export interface UpdateClaimStatusBody {
   status: string;
 }
 
+export type UpdateClaimOutcomeBodyClosureReason =
+  (typeof UpdateClaimOutcomeBodyClosureReason)[keyof typeof UpdateClaimOutcomeBodyClosureReason];
+
+export const UpdateClaimOutcomeBodyClosureReason = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+} as const;
+
 export interface UpdateClaimOutcomeBody {
   outcome: string;
+  closureReason?: UpdateClaimOutcomeBodyClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
 }
@@ -911,12 +957,34 @@ export type DashboardSummaryPipeline = {
   awaitingResponse: number;
 };
 
+/**
+ * Counts of Withdrawn invoice groups broken down by closure_reason.
+ */
+export type DashboardSummaryStatsWithdrawnByReason = {
+  not_contestable: number;
+  accepted_loss: number;
+  other: number;
+};
+
+/**
+ * Counts of Denied invoice groups broken down by closure_reason.
+ */
+export type DashboardSummaryStatsDeniedByReason = {
+  payer_denied: number;
+  other: number;
+};
+
 export type DashboardSummaryStats = {
   total: number;
   new: number;
   resolved: number;
   denied: number;
+  withdrawn: number;
   onHold: number;
+  /** Counts of Withdrawn invoice groups broken down by closure_reason. */
+  withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
+  /** Counts of Denied invoice groups broken down by closure_reason. */
+  deniedByReason: DashboardSummaryStatsDeniedByReason;
 };
 
 export type DashboardSummaryAmounts = {
@@ -1328,8 +1396,18 @@ export type UpdateInvoiceGroupStatusBody = {
   reason?: string;
 };
 
+export type UpdateInvoiceGroupOutcomeBodyClosureReason =
+  (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
+
+export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+} as const;
+
 export type UpdateInvoiceGroupOutcomeBody = {
   outcome: string;
+  closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
   approvedAmount?: string;
 };
 
@@ -1409,6 +1487,8 @@ export type GetClaimValidTransitions200 = {
   canQueueForPortal?: boolean;
   postResponseActions?: string[];
   latestResponseType?: string | null;
+  /** True if a portal/email response exists for this claim. */
+  hasResponse?: boolean;
 };
 
 export type ListPortalSubmissionsParams = {

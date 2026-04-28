@@ -1,6 +1,7 @@
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
+import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastGroupEvent } from "./sse";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
@@ -36,16 +37,16 @@ export const VALID_GROUP_STATUS_TRANSITIONS: Record<string, string[]> = {
 export const SYSTEM_CONTROLLED_GROUP_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
 
 export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
-  "New": ["Pending"],
-  "Needs Review": ["Pending"],
-  "Needs Evidence": ["Pending"],
+  "New": ["Pending", "Withdrawn"],
+  "Needs Review": ["Pending", "Withdrawn"],
+  "Needs Evidence": ["Pending", "Withdrawn"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
-  "Awaiting Response": ["Approved", "Partially Approved", "Denied"],
+  "Awaiting Response": ["Approved", "Partially Approved", "Denied", "Withdrawn"],
   "On Hold": [],
-  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue"],
-  "Denied": ["Denied", "Approved", "Partially Approved"],
+  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
+  "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };
 
 const TERMINAL_STATUSES: string[] = ["Resolved", "Denied"];
@@ -172,6 +173,25 @@ export async function transitionGroupStatus(opts: {
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
 }
 
+export async function groupHasResponse(groupId: number): Promise<boolean> {
+  const direct = await db.select({ id: portalResponsesTable.id })
+    .from(portalResponsesTable)
+    .where(eq(portalResponsesTable.invoiceGroupId, groupId))
+    .limit(1);
+  if (direct.length > 0) return true;
+
+  const childClaims = await db.select({ id: claimsTable.id })
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, groupId));
+  if (childClaims.length === 0) return false;
+
+  const linked = await db.select({ id: portalResponsesTable.id })
+    .from(portalResponsesTable)
+    .where(inArray(portalResponsesTable.claimId, childClaims.map(c => c.id)))
+    .limit(1);
+  return linked.length > 0;
+}
+
 export async function transitionGroupOutcome(opts: {
   groupId: number;
   newOutcome: GroupOutcome;
@@ -179,8 +199,11 @@ export async function transitionGroupOutcome(opts: {
   reason: string;
   actor: GroupTransitionActor;
   approvedAmount?: string | null;
+  closureReason?: ClosureReason | null;
+  systemOverride?: boolean;
 }): Promise<GroupTransitionResult> {
-  const { groupId, newOutcome, source, reason, actor, approvedAmount } = opts;
+  const { groupId, newOutcome, source, reason, actor, approvedAmount, systemOverride = false } = opts;
+  let { closureReason } = opts;
 
   const [old] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
   if (!old) throw new Error(`Invoice group ${groupId} not found`);
@@ -192,19 +215,39 @@ export async function transitionGroupOutcome(opts: {
     throw new Error(`Cannot set outcome to "${newOutcome}" when group is in "${old.status}" status. ${allowed.length > 0 ? `Valid outcomes: ${allowed.join(", ")}` : "Outcome changes are not allowed in this status."}`);
   }
 
+  if (newOutcome === "Denied") {
+    if (!systemOverride) {
+      const has = await groupHasResponse(groupId);
+      if (!has) {
+        throw new Error(`Cannot mark this invoice group as Denied because no portal or email response has been recorded. Use "Withdraw — Not Contestable" instead.`);
+      }
+    }
+    closureReason = "payer_denied";
+  } else if (newOutcome === "Withdrawn") {
+    if (closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
+      throw new Error(`Withdrawn outcome requires a closureReason of "not_contestable" or "accepted_loss".`);
+    }
+  } else if (newOutcome === "Non-Issue") {
+    closureReason = "non_issue";
+  } else if (closureReason === undefined) {
+    closureReason = null;
+  }
+
   const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = { outcome: newOutcome };
   if (approvedAmount !== undefined) {
     const cleaned = typeof approvedAmount === "string" ? approvedAmount.trim() : approvedAmount;
     updateData.approvedAmount = cleaned === "" ? null : cleaned ? String(cleaned) : null;
   }
+  updateData.closureReason = closureReason ?? null;
 
   const [group] = await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
+  const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
   await db.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
     action: "group_outcome_changed",
-    details: `Outcome changed from ${old.outcome} to ${newOutcome}`,
-    metadata: { from: old.outcome, to: newOutcome, source, reason, approvedAmount },
+    details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}`,
+    metadata: { from: old.outcome, to: newOutcome, source, reason, approvedAmount, closureReason: closureReason ?? null, closureReasonLabel: closureLabel },
     userEmail: actor.userEmail,
     userName: actor.userName,
   });
@@ -213,7 +256,7 @@ export async function transitionGroupOutcome(opts: {
     claimId: null,
     invoiceGroupId: groupId,
     type: "outcome_recorded",
-    content: `Outcome changed from ${old.outcome} to ${newOutcome}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}`,
+    content: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` — ${closureLabel}` : ""}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}`,
     author: actor.userName || actor.userEmail || source,
   });
 
@@ -238,8 +281,10 @@ export async function transitionGroupStatusAndOutcome(opts: {
   systemOverride?: boolean;
   extraFields?: Partial<typeof invoiceGroupsTable.$inferInsert>;
   childFields?: Partial<typeof claimsTable.$inferInsert>;
+  closureReason?: ClosureReason | null;
 }): Promise<GroupTransitionResult> {
   const { groupId, newStatus, newOutcome, source, reason, actor, systemOverride = false, extraFields, childFields } = opts;
+  let { closureReason } = opts;
 
   const [old] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
   if (!old) throw new Error(`Invoice group ${groupId} not found`);
@@ -263,11 +308,29 @@ export async function transitionGroupStatusAndOutcome(opts: {
     }
   }
 
+  if (newOutcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
+    throw new Error(`Withdrawn outcome requires a closureReason of "not_contestable" or "accepted_loss".`);
+  }
+  if (newOutcome === "Denied") {
+    if (!systemOverride) {
+      const has = await groupHasResponse(groupId);
+      if (!has) {
+        throw new Error(`Cannot mark this invoice group as Denied because no portal or email response has been recorded. Use "Withdraw — Not Contestable" instead.`);
+      }
+    }
+    if (closureReason === undefined) closureReason = "payer_denied";
+  }
+  if (newOutcome === "Non-Issue" && closureReason === undefined) closureReason = "non_issue";
+  if (newOutcome !== "Denied" && newOutcome !== "Withdrawn" && newOutcome !== "Non-Issue") {
+    closureReason = null;
+  }
+
   const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = {
     status: newStatus,
     outcome: newOutcome,
     ...extraFields,
   };
+  if (closureReason !== undefined) updateData.closureReason = closureReason ?? null;
   applyHoldFields(updateData, old.status, newStatus, extraFields?.holdReason);
 
   const [group] = await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
@@ -275,6 +338,8 @@ export async function transitionGroupStatusAndOutcome(opts: {
   const changes: string[] = [];
   if (old.status !== newStatus) changes.push(`status: ${old.status} → ${newStatus}`);
   if (old.outcome !== newOutcome) changes.push(`outcome: ${old.outcome} → ${newOutcome}`);
+  const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
+  if (closureLabel) changes.push(`closure: ${closureLabel}`);
   const changeDesc = changes.length > 0 ? changes.join(", ") : "no change";
 
   await db.insert(auditLogsTable).values({
@@ -285,6 +350,8 @@ export async function transitionGroupStatusAndOutcome(opts: {
       fromStatus: old.status, toStatus: newStatus,
       fromOutcome: old.outcome, toOutcome: newOutcome,
       source, reason,
+      closureReason: closureReason ?? null,
+      closureReasonLabel: closureLabel,
     },
     userEmail: actor.userEmail,
     userName: actor.userName,

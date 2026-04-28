@@ -16,8 +16,11 @@ import {
   useListClaims,
   getListResponsesQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  useGetInvoiceGroupValidTransitions,
 } from "@workspace/api-client-react";
-import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType } from "@workspace/api-client-react";
+import { closureReasonLabel } from "@/lib/closure-reasons";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import DOMPurify from "dompurify";
@@ -77,6 +80,9 @@ export default function InvoiceGroupDetail() {
 
   const updateStatus = useUpdateInvoiceGroupStatus();
   const updateOutcome = useUpdateInvoiceGroupOutcome();
+  const { data: groupValidTransitions } = useGetInvoiceGroupValidTransitions(id, {
+    query: { enabled: id > 0, queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) },
+  });
   const triageGroup = useTriageInvoiceGroup();
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
@@ -164,6 +170,17 @@ export default function InvoiceGroupDetail() {
     invalidate();
   };
 
+  const handleOutcome = async (
+    outcome: string,
+    closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason,
+  ) => {
+    await updateOutcome.mutateAsync({
+      id,
+      data: { outcome, closureReason },
+    });
+    invalidate();
+  };
+
   const handleHold = async () => {
     await holdGroup.mutateAsync({
       id,
@@ -191,6 +208,11 @@ export default function InvoiceGroupDetail() {
             {group.outcome !== "Pending" && (
               <Badge variant={group.outcome === "Approved" ? "default" : group.outcome === "Denied" ? "destructive" : "secondary"}>
                 {group.outcome}
+              </Badge>
+            )}
+            {group.closureReason && (
+              <Badge variant="secondary" data-testid="badge-closure-reason">
+                {closureReasonLabel(group.closureReason)}
               </Badge>
             )}
           </div>
@@ -382,6 +404,14 @@ export default function InvoiceGroupDetail() {
                   Responses Received
                   <Badge variant="secondary">{responses.length}</Badge>
                 </CardTitle>
+                {group.closureReason && (
+                  <CardDescription
+                    data-testid="responses-closure-reason"
+                    className="pt-1"
+                  >
+                    Closure reason: <span className="font-medium">{closureReasonLabel(group.closureReason)}</span>
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 {responses.map((resp) => {
@@ -597,6 +627,91 @@ export default function InvoiceGroupDetail() {
               </CardContent>
             </Card>
           )}
+
+          {(groupValidTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
+            const outcomes = (groupValidTransitions?.validOutcomes || []) as string[];
+            const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
+            const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn" && o !== "Pending");
+            const hasResponse = groupValidTransitions?.hasResponse ?? !!groupValidTransitions?.latestResponseType;
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Record Outcome</CardTitle>
+                  <CardDescription className="text-xs">Set the final outcome for this invoice group.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {nonClosure.map((o) => (
+                    <Button
+                      key={o}
+                      size="sm"
+                      variant={group.outcome === o ? "default" : "outline"}
+                      className="w-full"
+                      onClick={() => handleOutcome(o)}
+                      disabled={updateOutcome.isPending}
+                      data-testid={`button-group-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      {o}
+                    </Button>
+                  ))}
+                  {closureOffered && (
+                    <TooltipProvider>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button
+                                size="sm"
+                                variant={group.outcome === "Denied" ? "default" : "outline"}
+                                className="w-full"
+                                onClick={() => handleOutcome("Denied")}
+                                disabled={!hasResponse || updateOutcome.isPending}
+                                data-testid="button-group-outcome-payer-denied"
+                              >
+                                Payer Denied
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {hasResponse ? "Mark as denied based on the payer's recorded response." : "Disabled because no portal or email response has been recorded yet."}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant={group.outcome === "Withdrawn" && group.closureReason === "not_contestable" ? "default" : "outline"}
+                              className="w-full"
+                              onClick={() => handleOutcome("Withdrawn", "not_contestable")}
+                              disabled={updateOutcome.isPending}
+                              data-testid="button-group-outcome-not-contestable"
+                            >
+                              Withdraw — Not Contestable
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Close because we decided not to dispute (no clear path to recover).</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss" ? "default" : "outline"}
+                              className="w-full"
+                              onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
+                              disabled={updateOutcome.isPending}
+                              data-testid="button-group-outcome-accepted-loss"
+                            >
+                              Withdraw — Accepted Loss
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Close after a denial because we accept the loss and won't re-dispute.</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipProvider>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {group.status !== "On Hold" && group.status !== "Resolved" && group.status !== "Denied" && (
             <Card>

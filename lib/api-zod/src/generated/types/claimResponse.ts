@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
 import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
@@ -34,6 +35,8 @@ export interface ClaimResponse {
   claimAmount?: string | null;
   status: ClaimResponseStatus;
   outcome: ClaimResponseOutcome;
+  /** @nullable */
+  closureReason?: ClaimResponseClosureReason;
   /** @nullable */
   triageNotes?: string | null;
   /** @nullable */

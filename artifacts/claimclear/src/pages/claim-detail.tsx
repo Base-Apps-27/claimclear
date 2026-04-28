@@ -22,12 +22,12 @@ import {
   useGetClaimEmailThread, getGetClaimEmailThreadQueryKey,
   useListClaims,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadMessage } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadMessage, UpdateClaimOutcomeBodyClosureReason } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { HumanPresenceBanner, BotPresenceBanner, PresenceAvatars } from "@/components/presence-banners";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +54,7 @@ import {
   type ActionCategory,
 } from "@/lib/audit-action-meta";
 import { RefNumber } from "@/components/ref-number";
+import { closureReasonLabel } from "@/lib/closure-reasons";
 import { WorkflowPlayer } from "@/components/workflow-player";
 import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
 
@@ -376,9 +377,12 @@ export default function ClaimDetail() {
     invalidate();
   };
 
-  const handleOutcomeChange = async (outcome: string) => {
+  const handleOutcomeChange = async (
+    outcome: string,
+    closureReason?: UpdateClaimOutcomeBodyClosureReason,
+  ) => {
     const approvedAmount = outcome === "Approved" ? claim.claimAmount || "0" : outcome === "Partially Approved" ? "" : undefined;
-    await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount } });
+    await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount, closureReason } });
     invalidate();
   };
 
@@ -416,6 +420,11 @@ export default function ClaimDetail() {
           <h2 className="text-2xl font-bold tracking-tight font-mono">{claim.confNumber}</h2>
           <StatusBadge status={claim.status} />
           <Badge variant="outline">{claim.outcome}</Badge>
+          {claim.closureReason && (
+            <Badge variant="secondary" data-testid="badge-closure-reason">
+              {closureReasonLabel(claim.closureReason)}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <PresenceAvatars viewers={viewers} />
@@ -691,13 +700,54 @@ export default function ClaimDetail() {
                   </WrapTooltip>
                 )}
 
-                {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (
-                  <div className="flex gap-2">
-                    {(validTransitions?.validOutcomes || []).map((o: string) => (
-                      <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)}>{o}</Button>
-                    ))}
-                  </div>
-                )}
+                {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
+                  const outcomes = (validTransitions?.validOutcomes || []) as string[];
+                  const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
+                  const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn");
+                  const hasResponse = validTransitions?.hasResponse ?? !!validTransitions?.latestResponseType;
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {nonClosure.map((o) => (
+                        <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)} data-testid={`button-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}>{o}</Button>
+                      ))}
+                      {closureOffered && (
+                        <>
+                          <WrapTooltip content={hasResponse ? "Mark as denied based on the payer's recorded response." : "Disabled because no portal or email response has been recorded yet."}>
+                            <Button
+                              variant={claim.outcome === "Denied" ? "default" : "outline"}
+                              size="sm"
+                              disabled={!hasResponse}
+                              onClick={() => handleOutcomeChange("Denied")}
+                              data-testid="button-outcome-payer-denied"
+                            >
+                              Payer Denied
+                            </Button>
+                          </WrapTooltip>
+                          <WrapTooltip content="Close this claim because we decided not to dispute it (no clear path to recover the dollars).">
+                            <Button
+                              variant={claim.outcome === "Withdrawn" && claim.closureReason === "not_contestable" ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handleOutcomeChange("Withdrawn", "not_contestable")}
+                              data-testid="button-outcome-not-contestable"
+                            >
+                              Withdraw — Not Contestable
+                            </Button>
+                          </WrapTooltip>
+                          <WrapTooltip content="Close this claim after a denial because we accept the loss and won't re-dispute.">
+                            <Button
+                              variant={claim.outcome === "Withdrawn" && claim.closureReason === "accepted_loss" ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handleOutcomeChange("Withdrawn", "accepted_loss")}
+                              data-testid="button-outcome-accepted-loss"
+                            >
+                              Withdraw — Accepted Loss
+                            </Button>
+                          </WrapTooltip>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <Separator orientation="vertical" className="h-8 mx-2" />
 
@@ -885,6 +935,14 @@ export default function ClaimDetail() {
                   Responses Received
                   <Badge variant="secondary">{claimResponses.length}</Badge>
                 </CardTitle>
+                {claim.closureReason && (
+                  <CardDescription
+                    data-testid="responses-closure-reason"
+                    className="pt-1"
+                  >
+                    Closure reason: <span className="font-medium">{closureReasonLabel(claim.closureReason)}</span>
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 {claimResponses.map((resp: PortalResponseItem) => {

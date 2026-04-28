@@ -9,8 +9,18 @@ export const claimStatusEnum = pgEnum("claim_status", [
 ]);
 
 export const claimOutcomeEnum = pgEnum("claim_outcome", [
-  "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"
+  "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"
 ]);
+
+export const CLOSURE_REASONS = ["payer_denied", "not_contestable", "accepted_loss", "non_issue"] as const;
+export type ClosureReason = typeof CLOSURE_REASONS[number];
+
+export const CLOSURE_REASON_LABELS: Record<ClosureReason, string> = {
+  payer_denied: "Denied by payer",
+  not_contestable: "Withdrawn — not contestable",
+  accepted_loss: "Withdrawn — accepted loss after denial",
+  non_issue: "Resolved — non-issue at triage",
+};
 
 export const claimsTable = pgTable("claims", {
   id: serial("id").primaryKey(),
@@ -44,6 +54,7 @@ export const claimsTable = pgTable("claims", {
   holdPlacedAt: text("hold_placed_at"),
   triageNotes: text("triage_notes"),
   triagedAt: text("triaged_at"),
+  closureReason: text("closure_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

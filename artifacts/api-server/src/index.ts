@@ -190,6 +190,241 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   } catch (err) {
     logger.warn({ err }, "Apr-27 attempts reset: failed");
   }
+
+  // Task #74 closure_reason backfill (production only, idempotent via
+  // audit-log marker). Per-row classification of historical Denied rows
+  // applied in priority order:
+  //   1. Explicit "Accept as Loss" post-response audit -> Withdrawn + accepted_loss + Resolved
+  //   2. response_received audit BEFORE the manual denial event       -> Withdrawn + accepted_loss + Resolved
+  //   3. manual denial event AND no portal_response on file           -> Withdrawn + not_contestable + Resolved
+  //   4. otherwise (auto-denial from response_received / response_reassign,
+  //      i.e. real payer denial)                                       -> stays Denied + payer_denied
+  if (!isProduction) {
+    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Task #74 closure_reason backfill: skipping (not production)");
+  } else try {
+    type ClassifiedRow = { id: number; closureReason: "payer_denied" | "not_contestable" | "accepted_loss"; toWithdrawn: boolean; rationale: string };
+    const BACKFILL_PHASE = "task-74-closure-reason-backfill";
+    const MANUAL_SOURCES = new Set(["manual", "post_response_action", "manual_outcome_change"]);
+    const toDate = (v: string | Date | null | undefined): Date | null => {
+      if (v == null) return null;
+      const d = v instanceof Date ? v : new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    // ---- Claims ----
+    const claimCandidates = await runWithDbWarmupRetry("Task #74 claim candidates", () => db.execute(sql`
+      SELECT c.id
+      FROM claims c
+      WHERE c.outcome = 'Denied' AND c.closure_reason IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM audit_logs al
+          WHERE al.claim_id = c.id
+            AND al.action = 'closure_reason_backfill'
+            AND al.metadata->>'phase' = ${BACKFILL_PHASE}
+        )
+    `));
+    const claimRows: ClassifiedRow[] = [];
+    for (const r of (claimCandidates.rows ?? []) as Array<{ id: number }>) {
+      const claimId = r.id;
+
+      // Rule 1: explicit accept-as-loss action.
+      const acceptLossAudit = await runWithDbWarmupRetry(`Task #74 claim ${claimId} accept_loss check`, () => db.execute(sql`
+        SELECT 1 FROM audit_logs
+        WHERE claim_id = ${claimId}
+          AND metadata->>'source' = 'post_response_action'
+          AND (
+            details ILIKE '%Accept as Loss%'
+            OR metadata->>'action' = 'accept_loss'
+            OR metadata->>'reason' ILIKE '%accept as loss%'
+          )
+        LIMIT 1
+      `));
+      if (((acceptLossAudit.rows ?? []) as unknown[]).length > 0) {
+        claimRows.push({ id: claimId, closureReason: "accepted_loss", toWithdrawn: true, rationale: "audit shows explicit Accept-as-Loss post-response action" });
+        continue;
+      }
+
+      // Most-recent audit entry that established outcome=Denied.
+      const denialEventRes = await runWithDbWarmupRetry(`Task #74 claim ${claimId} denial event`, () => db.execute(sql`
+        SELECT timestamp AS at, metadata->>'source' AS source
+        FROM audit_logs
+        WHERE claim_id = ${claimId}
+          AND action IN ('outcome_changed', 'status_and_outcome_changed')
+          AND (metadata->>'to' = 'Denied' OR metadata->>'toOutcome' = 'Denied')
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `));
+      const denialEvent = (denialEventRes.rows ?? [])[0] as { at?: string | Date; source?: string } | undefined;
+      const denialIsManual = !!denialEvent && MANUAL_SOURCES.has(denialEvent.source ?? "");
+      const denialAt = toDate(denialEvent?.at);
+
+      // First portal/email response on this claim (any).
+      const firstResponseRes = await runWithDbWarmupRetry(`Task #74 claim ${claimId} first response`, () => db.execute(sql`
+        SELECT received_at FROM portal_responses WHERE claim_id = ${claimId}
+        ORDER BY received_at ASC LIMIT 1
+      `));
+      const firstResp = (firstResponseRes.rows ?? [])[0] as { received_at?: string | Date } | undefined;
+      const firstRespAt = toDate(firstResp?.received_at);
+
+      // Rule 2: response received BEFORE a manual denial event => accepted_loss.
+      if (denialIsManual && firstRespAt && denialAt && firstRespAt.getTime() <= denialAt.getTime()) {
+        claimRows.push({ id: claimId, closureReason: "accepted_loss", toWithdrawn: true, rationale: `response received at ${firstRespAt.toISOString()} preceded manual denial at ${denialAt.toISOString()} — staff accepted the loss` });
+        continue;
+      }
+
+      // Rule 3: manual denial AND no response on file => not_contestable.
+      // (Also covers the case where there is no audit at all but no response either.)
+      if ((denialIsManual || !denialEvent) && !firstRespAt) {
+        claimRows.push({ id: claimId, closureReason: "not_contestable", toWithdrawn: true, rationale: "no portal/email response was ever recorded — staff-initiated closure of an uncontestable claim" });
+        continue;
+      }
+
+      // Rule 4: real payer denial.
+      claimRows.push({ id: claimId, closureReason: "payer_denied", toWithdrawn: false, rationale: denialEvent ? `denial recorded by source='${denialEvent.source ?? "unknown"}' with payer response on file` : "payer response on file with no contradicting manual-closure history" });
+    }
+
+    for (const row of claimRows) {
+      if (row.toWithdrawn) {
+        await runWithDbWarmupRetry(`Task #74 claim ${row.id} update`, () => db.execute(sql`
+          UPDATE claims
+          SET outcome = 'Withdrawn', status = 'Resolved', closure_reason = ${row.closureReason}
+          WHERE id = ${row.id}
+        `));
+      } else {
+        await runWithDbWarmupRetry(`Task #74 claim ${row.id} update`, () => db.execute(sql`
+          UPDATE claims SET closure_reason = ${row.closureReason} WHERE id = ${row.id}
+        `));
+      }
+      await runWithDbWarmupRetry(`Task #74 claim ${row.id} audit`, () => db.execute(sql`
+        INSERT INTO audit_logs (claim_id, action, details, metadata, user_email, user_name)
+        VALUES (
+          ${row.id},
+          'closure_reason_backfill',
+          ${`Task #74 backfill: ${row.toWithdrawn ? `outcome Denied → Withdrawn, status → Resolved, closure_reason='${row.closureReason}'` : `closure_reason='${row.closureReason}'`} — ${row.rationale}.`},
+          jsonb_build_object(
+            'phase', ${BACKFILL_PHASE},
+            'task', 74,
+            'closureReason', ${row.closureReason},
+            'reclassifiedToWithdrawn', ${row.toWithdrawn},
+            'rationale', ${row.rationale}
+          ),
+          'system@claimclear',
+          'System (Task #74 backfill)'
+        )
+      `));
+    }
+
+    // ---- Invoice groups ----
+    const groupCandidates = await runWithDbWarmupRetry("Task #74 group candidates", () => db.execute(sql`
+      SELECT g.id
+      FROM invoice_groups g
+      WHERE g.outcome = 'Denied' AND g.closure_reason IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM audit_logs al
+          WHERE al.invoice_group_id = g.id
+            AND al.action = 'closure_reason_backfill'
+            AND al.metadata->>'phase' = ${BACKFILL_PHASE}
+        )
+    `));
+    const groupRows: ClassifiedRow[] = [];
+    for (const r of (groupCandidates.rows ?? []) as Array<{ id: number }>) {
+      const groupId = r.id;
+
+      // Rule 1: explicit accept-as-loss action.
+      const acceptLossAudit = await runWithDbWarmupRetry(`Task #74 group ${groupId} accept_loss check`, () => db.execute(sql`
+        SELECT 1 FROM audit_logs
+        WHERE invoice_group_id = ${groupId}
+          AND metadata->>'source' = 'post_response_action'
+          AND (
+            details ILIKE '%Accept as Loss%'
+            OR metadata->>'action' = 'accept_loss'
+            OR metadata->>'reason' ILIKE '%accept as loss%'
+          )
+        LIMIT 1
+      `));
+      if (((acceptLossAudit.rows ?? []) as unknown[]).length > 0) {
+        groupRows.push({ id: groupId, closureReason: "accepted_loss", toWithdrawn: true, rationale: "audit shows explicit Accept-as-Loss post-response action" });
+        continue;
+      }
+
+      // Most-recent audit entry that established outcome=Denied on this group.
+      const denialEventRes = await runWithDbWarmupRetry(`Task #74 group ${groupId} denial event`, () => db.execute(sql`
+        SELECT timestamp AS at, metadata->>'source' AS source
+        FROM audit_logs
+        WHERE invoice_group_id = ${groupId}
+          AND action IN ('group_outcome_changed', 'group_status_and_outcome_changed')
+          AND (metadata->>'to' = 'Denied' OR metadata->>'toOutcome' = 'Denied')
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `));
+      const denialEvent = (denialEventRes.rows ?? [])[0] as { at?: string | Date; source?: string } | undefined;
+      const denialIsManual = !!denialEvent && MANUAL_SOURCES.has(denialEvent.source ?? "");
+      const denialAt = toDate(denialEvent?.at);
+
+      // First portal/email response on this group (direct or child-claim-linked).
+      const firstResponseRes = await runWithDbWarmupRetry(`Task #74 group ${groupId} first response`, () => db.execute(sql`
+        SELECT received_at FROM portal_responses
+        WHERE invoice_group_id = ${groupId}
+           OR claim_id IN (SELECT id FROM claims WHERE invoice_group_id = ${groupId})
+        ORDER BY received_at ASC LIMIT 1
+      `));
+      const firstResp = (firstResponseRes.rows ?? [])[0] as { received_at?: string | Date } | undefined;
+      const firstRespAt = toDate(firstResp?.received_at);
+
+      // Rule 2: response received BEFORE a manual denial event => accepted_loss.
+      if (denialIsManual && firstRespAt && denialAt && firstRespAt.getTime() <= denialAt.getTime()) {
+        groupRows.push({ id: groupId, closureReason: "accepted_loss", toWithdrawn: true, rationale: `response received at ${firstRespAt.toISOString()} preceded manual denial at ${denialAt.toISOString()} — staff accepted the loss` });
+        continue;
+      }
+
+      // Rule 3: manual denial AND no response on file => not_contestable.
+      if ((denialIsManual || !denialEvent) && !firstRespAt) {
+        groupRows.push({ id: groupId, closureReason: "not_contestable", toWithdrawn: true, rationale: "no portal/email response was ever recorded for this invoice group — staff-initiated closure of an uncontestable group" });
+        continue;
+      }
+
+      // Rule 4: real payer denial.
+      groupRows.push({ id: groupId, closureReason: "payer_denied", toWithdrawn: false, rationale: denialEvent ? `denial recorded by source='${denialEvent.source ?? "unknown"}' with payer response on file` : "payer response on file with no contradicting manual-closure history" });
+    }
+
+    for (const row of groupRows) {
+      if (row.toWithdrawn) {
+        await runWithDbWarmupRetry(`Task #74 group ${row.id} update`, () => db.execute(sql`
+          UPDATE invoice_groups
+          SET outcome = 'Withdrawn', status = 'Resolved', closure_reason = ${row.closureReason}
+          WHERE id = ${row.id}
+        `));
+      } else {
+        await runWithDbWarmupRetry(`Task #74 group ${row.id} update`, () => db.execute(sql`
+          UPDATE invoice_groups SET closure_reason = ${row.closureReason} WHERE id = ${row.id}
+        `));
+      }
+      await runWithDbWarmupRetry(`Task #74 group ${row.id} audit`, () => db.execute(sql`
+        INSERT INTO audit_logs (invoice_group_id, action, details, metadata, user_email, user_name)
+        VALUES (
+          ${row.id},
+          'closure_reason_backfill',
+          ${`Task #74 backfill: ${row.toWithdrawn ? `outcome Denied → Withdrawn, status → Resolved, closure_reason='${row.closureReason}'` : `closure_reason='${row.closureReason}'`} — ${row.rationale}.`},
+          jsonb_build_object(
+            'phase', ${BACKFILL_PHASE},
+            'task', 74,
+            'closureReason', ${row.closureReason},
+            'reclassifiedToWithdrawn', ${row.toWithdrawn},
+            'rationale', ${row.rationale}
+          ),
+          'system@claimclear',
+          'System (Task #74 backfill)'
+        )
+      `));
+    }
+
+    logger.info({
+      claims: claimRows.map((r) => ({ id: r.id, closureReason: r.closureReason, reclassifiedToWithdrawn: r.toWithdrawn })),
+      groups: groupRows.map((r) => ({ id: r.id, closureReason: r.closureReason, reclassifiedToWithdrawn: r.toWithdrawn })),
+    }, "Task #74 closure_reason backfill: classified and reclassified historical Denied rows");
+  } catch (err) {
+    logger.warn({ err }, "Task #74 closure_reason backfill: failed");
+  }
 })();
 
 const rawPort = process.env["PORT"];

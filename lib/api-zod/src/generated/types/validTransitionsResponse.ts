@@ -14,4 +14,6 @@ export interface ValidTransitionsResponse {
   postResponseActions: string[];
   /** @nullable */
   latestResponseType?: string | null;
+  /** True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims. */
+  hasResponse?: boolean;
 }

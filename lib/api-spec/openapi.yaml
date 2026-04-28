@@ -257,6 +257,9 @@ paths:
               properties:
                 outcome:
                   type: string
+                closureReason:
+                  type: string
+                  enum: ["payer_denied", "not_contestable", "accepted_loss"]
                 approvedAmount:
                   type: string
               required:
@@ -654,6 +657,9 @@ paths:
                   latestResponseType:
                     type: string
                     nullable: true
+                  hasResponse:
+                    type: boolean
+                    description: "True if a portal/email response exists for this claim."
 
   /claims/{id}/status:
     patch:
@@ -2563,7 +2569,10 @@ components:
           enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         outcome:
           type: string
-          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"]
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+        closureReason:
+          type: ["string", "null"]
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
         triageNotes:
           type: ["string", "null"]
         triagedAt:
@@ -2632,6 +2641,9 @@ components:
             type: string
         latestResponseType:
           type: ["string", "null"]
+        hasResponse:
+          type: boolean
+          description: "True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims."
       required:
         - validStatuses
         - validOutcomes
@@ -2659,7 +2671,10 @@ components:
           enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         outcome:
           type: string
-          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"]
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+        closureReason:
+          type: ["string", "null"]
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
         approvedAmount:
           type: ["string", "null"]
         rideCount:
@@ -2851,6 +2866,9 @@ components:
       properties:
         outcome:
           type: string
+        closureReason:
+          type: string
+          enum: ["payer_denied", "not_contestable", "accepted_loss"]
         approvedAmount:
           type: string
         invoiceNumbers:
@@ -3542,14 +3560,44 @@ components:
               type: integer
             denied:
               type: integer
+            withdrawn:
+              type: integer
             onHold:
               type: integer
+            withdrawnByReason:
+              type: object
+              description: "Counts of Withdrawn invoice groups broken down by closure_reason."
+              properties:
+                not_contestable:
+                  type: integer
+                accepted_loss:
+                  type: integer
+                other:
+                  type: integer
+              required:
+                - not_contestable
+                - accepted_loss
+                - other
+            deniedByReason:
+              type: object
+              description: "Counts of Denied invoice groups broken down by closure_reason."
+              properties:
+                payer_denied:
+                  type: integer
+                other:
+                  type: integer
+              required:
+                - payer_denied
+                - other
           required:
             - total
             - new
             - resolved
             - denied
+            - withdrawn
             - onHold
+            - withdrawnByReason
+            - deniedByReason
         amounts:
           type: object
           properties:

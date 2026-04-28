@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { Link } from "wouter";
-import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send, Inbox } from "lucide-react";
+import { ArrowRight, AlertTriangle, Clock, CheckCircle2, Bot, Activity, Send, Inbox, XCircle, MinusCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -172,6 +172,48 @@ export default function Dashboard() {
             <div className="text-2xl font-bold">{summary.portalStats?.successRate || 0}%</div>
             <p className="text-xs text-muted-foreground mt-1">
               {summary.portalStats?.submitted || 0} submitted, {summary.portalStats?.failed || 0} failed
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Closure breakdown: Denied vs Withdrawn (with reason split) */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card data-testid="card-closure-denied">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Denied by payer
+              <InfoTooltip content="Invoice groups the payer formally denied. These are real denials based on a recorded portal or email response — the dispute went all the way through and was rejected." />
+            </CardTitle>
+            <XCircle className="h-4 w-4 text-rose-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-rose-600" data-testid="stat-denied-total">{stats.denied ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              <span data-testid="stat-denied-payer-denied">{stats.deniedByReason?.payer_denied ?? 0}</span> payer denied
+              {(stats.deniedByReason?.other ?? 0) > 0 && (
+                <> • <span data-testid="stat-denied-other">{stats.deniedByReason?.other ?? 0}</span> other</>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-closure-withdrawn">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+              Withdrawn (closed by us)
+              <InfoTooltip content="Invoice groups we chose to close internally — either Not Contestable (no clear path to recover the dollars) or Accepted Loss (we got a denial response and decided not to keep fighting it)." />
+            </CardTitle>
+            <MinusCircle className="h-4 w-4 text-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-600" data-testid="stat-withdrawn-total">{stats.withdrawn ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              <span data-testid="stat-withdrawn-not-contestable">{stats.withdrawnByReason?.not_contestable ?? 0}</span> not contestable
+              {" • "}
+              <span data-testid="stat-withdrawn-accepted-loss">{stats.withdrawnByReason?.accepted_loss ?? 0}</span> accepted loss
+              {(stats.withdrawnByReason?.other ?? 0) > 0 && (
+                <> • <span data-testid="stat-withdrawn-other">{stats.withdrawnByReason?.other ?? 0}</span> other</>
+              )}
             </p>
           </CardContent>
         </Card>

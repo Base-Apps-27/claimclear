@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
 import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
@@ -24,6 +25,8 @@ export interface InvoiceGroupResponse {
   errorTypeName?: string | null;
   status: InvoiceGroupResponseStatus;
   outcome: InvoiceGroupResponseOutcome;
+  /** @nullable */
+  closureReason?: InvoiceGroupResponseClosureReason;
   /** @nullable */
   approvedAmount?: string | null;
   rideCount: number;

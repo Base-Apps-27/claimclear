@@ -21,6 +21,7 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   holdPlacedAt: text("hold_placed_at"),
   triageNotes: text("triage_notes"),
   triagedAt: text("triaged_at"),
+  closureReason: text("closure_reason"),
   disputeEmailSent: boolean("dispute_email_sent").notNull().default(false),
   disputeEmailSentAt: text("dispute_email_sent_at"),
   generatedEmailSubject: text("generated_email_subject"),

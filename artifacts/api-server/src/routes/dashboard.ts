@@ -18,12 +18,41 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   const statusCounts = Object.fromEntries(statusCountsRaw.map(r => [r.status, r.count]));
 
+  const withdrawnByReasonRaw = await db
+    .select({ closureReason: invoiceGroupsTable.closureReason, count: count() })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.outcome, "Withdrawn"))
+    .groupBy(invoiceGroupsTable.closureReason);
+  const withdrawnByReason = {
+    not_contestable: 0,
+    accepted_loss: 0,
+    other: 0,
+  };
+  for (const row of withdrawnByReasonRaw) {
+    if (row.closureReason === "not_contestable") withdrawnByReason.not_contestable = row.count;
+    else if (row.closureReason === "accepted_loss") withdrawnByReason.accepted_loss = row.count;
+    else withdrawnByReason.other += row.count;
+  }
+  const withdrawn = withdrawnByReason.not_contestable + withdrawnByReason.accepted_loss + withdrawnByReason.other;
+
+  const deniedByReasonRaw = await db
+    .select({ closureReason: invoiceGroupsTable.closureReason, count: count() })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.outcome, "Denied"))
+    .groupBy(invoiceGroupsTable.closureReason);
+  const deniedByReason = { payer_denied: 0, other: 0 };
+  for (const row of deniedByReasonRaw) {
+    if (row.closureReason === "payer_denied") deniedByReason.payer_denied = row.count;
+    else deniedByReason.other += row.count;
+  }
+
   const needsEvidence = (statusCounts["New"] || 0) + (statusCounts["Needs Evidence"] || 0);
   const portalQueued = (statusCounts["Portal Queued"] || 0) + (statusCounts["Generating Email"] || 0) + (statusCounts["Ready to Review"] || 0);
   const awaitingResponse = statusCounts["Awaiting Response"] || 0;
   const total = statusCountsRaw.reduce((s, r) => s + r.count, 0);
   const newCount = statusCounts["New"] || 0;
-  const resolved = statusCounts["Resolved"] || 0;
+  const resolvedAll = statusCounts["Resolved"] || 0;
+  const resolved = Math.max(0, resolvedAll - withdrawn);
   const denied = statusCounts["Denied"] || 0;
   const onHold = statusCounts["On Hold"] || 0;
 
@@ -92,7 +121,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
-    stats: { total, new: newCount, resolved, denied, onHold },
+    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, withdrawnByReason, deniedByReason },
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
     recentGroups,

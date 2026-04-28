@@ -90,7 +90,17 @@ export const ListInvoiceGroupsResponse = zod.object({
         "Denied",
         "Partially Approved",
         "Non-Issue",
+        "Withdrawn",
       ]),
+      closureReason: zod
+        .union([
+          zod.literal("payer_denied"),
+          zod.literal("not_contestable"),
+          zod.literal("accepted_loss"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
       approvedAmount: zod.string().nullish(),
       rideCount: zod.number(),
       totalAmount: zod.string().nullish(),
@@ -150,7 +160,17 @@ export const GetInvoiceGroupResponse = zod
       "Denied",
       "Partially Approved",
       "Non-Issue",
+      "Withdrawn",
     ]),
+    closureReason: zod
+      .union([
+        zod.literal("payer_denied"),
+        zod.literal("not_contestable"),
+        zod.literal("accepted_loss"),
+        zod.literal("non_issue"),
+        zod.literal(null),
+      ])
+      .nullish(),
     approvedAmount: zod.string().nullish(),
     rideCount: zod.number(),
     totalAmount: zod.string().nullish(),
@@ -207,7 +227,17 @@ export const GetInvoiceGroupResponse = zod
               "Denied",
               "Partially Approved",
               "Non-Issue",
+              "Withdrawn",
             ]),
+            closureReason: zod
+              .union([
+                zod.literal("payer_denied"),
+                zod.literal("not_contestable"),
+                zod.literal("accepted_loss"),
+                zod.literal("non_issue"),
+                zod.literal(null),
+              ])
+              .nullish(),
             triageNotes: zod.string().nullish(),
             triagedAt: zod.string().nullish(),
             approvedAmount: zod.string().nullish(),
@@ -412,7 +442,17 @@ export const UpdateInvoiceGroupResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -480,7 +520,17 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -513,6 +563,9 @@ export const UpdateInvoiceGroupOutcomeParams = zod.object({
 
 export const UpdateInvoiceGroupOutcomeBody = zod.object({
   outcome: zod.string(),
+  closureReason: zod
+    .enum(["payer_denied", "not_contestable", "accepted_loss"])
+    .optional(),
   approvedAmount: zod.string().optional(),
 });
 
@@ -541,7 +594,17 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -604,7 +667,17 @@ export const TriageInvoiceGroupResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -664,7 +737,17 @@ export const HoldInvoiceGroupResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -720,7 +803,17 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -772,6 +865,12 @@ export const GetInvoiceGroupValidTransitionsResponse = zod.object({
   hasActiveSubmission: zod.boolean(),
   postResponseActions: zod.array(zod.string()),
   latestResponseType: zod.string().nullish(),
+  hasResponse: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True if a portal\/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims.",
+    ),
 });
 
 /**
@@ -810,7 +909,17 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -940,7 +1049,17 @@ export const ListClaimsResponse = zod.object({
         "Denied",
         "Partially Approved",
         "Non-Issue",
+        "Withdrawn",
       ]),
+      closureReason: zod
+        .union([
+          zod.literal("payer_denied"),
+          zod.literal("not_contestable"),
+          zod.literal("accepted_loss"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
       triageNotes: zod.string().nullish(),
       triagedAt: zod.string().nullish(),
       approvedAmount: zod.string().nullish(),
@@ -1019,7 +1138,17 @@ export const GetClaimResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1096,7 +1225,17 @@ export const UpdateClaimResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1142,6 +1281,10 @@ export const GetClaimValidTransitionsResponse = zod.object({
   canQueueForPortal: zod.boolean().optional(),
   postResponseActions: zod.array(zod.string()).optional(),
   latestResponseType: zod.string().nullish(),
+  hasResponse: zod
+    .boolean()
+    .optional()
+    .describe("True if a portal\/email response exists for this claim."),
 });
 
 /**
@@ -1185,7 +1328,17 @@ export const UpdateClaimStatusResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1217,6 +1370,9 @@ export const UpdateClaimOutcomeParams = zod.object({
 
 export const UpdateClaimOutcomeBody = zod.object({
   outcome: zod.string(),
+  closureReason: zod
+    .enum(["payer_denied", "not_contestable", "accepted_loss"])
+    .optional(),
   approvedAmount: zod.string().optional(),
   invoiceNumbers: zod.string().optional(),
 });
@@ -1251,7 +1407,17 @@ export const UpdateClaimOutcomeResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1317,7 +1483,17 @@ export const UpdateClaimEvidenceResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1382,7 +1558,17 @@ export const PlaceClaimOnHoldResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1442,7 +1628,17 @@ export const RemoveClaimHoldResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1506,7 +1702,17 @@ export const UpdateClaimWorkflowResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1573,7 +1779,17 @@ export const TriageClaimResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1643,7 +1859,17 @@ export const PostResponseActionResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1726,7 +1952,17 @@ export const GenerateClaimEmailResponse = zod.object({
     "Denied",
     "Partially Approved",
     "Non-Issue",
+    "Withdrawn",
   ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -3233,7 +3469,25 @@ export const GetDashboardSummaryResponse = zod.object({
     new: zod.number(),
     resolved: zod.number(),
     denied: zod.number(),
+    withdrawn: zod.number(),
     onHold: zod.number(),
+    withdrawnByReason: zod
+      .object({
+        not_contestable: zod.number(),
+        accepted_loss: zod.number(),
+        other: zod.number(),
+      })
+      .describe(
+        "Counts of Withdrawn invoice groups broken down by closure_reason.",
+      ),
+    deniedByReason: zod
+      .object({
+        payer_denied: zod.number(),
+        other: zod.number(),
+      })
+      .describe(
+        "Counts of Denied invoice groups broken down by closure_reason.",
+      ),
   }),
   amounts: zod.object({
     totalClaimed: zod.string(),
@@ -3284,7 +3538,17 @@ export const GetDashboardSummaryResponse = zod.object({
         "Denied",
         "Partially Approved",
         "Non-Issue",
+        "Withdrawn",
       ]),
+      closureReason: zod
+        .union([
+          zod.literal("payer_denied"),
+          zod.literal("not_contestable"),
+          zod.literal("accepted_loss"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
       approvedAmount: zod.string().nullish(),
       rideCount: zod.number(),
       totalAmount: zod.string().nullish(),
