@@ -107,18 +107,22 @@ export default function Queue() {
           isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
         }`}
       >
-        <div className="py-3 px-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div>
+        <div className="py-3 px-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0 shrink-0">
+            <div className="whitespace-nowrap">
               <span className="font-mono font-semibold">{group.invoiceNumber}</span>
               <span className="text-muted-foreground ml-3 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
             <StatusBadge status={group.status} />
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            {group.errorTypeName && <span className="text-muted-foreground">{group.errorTypeName}</span>}
-            <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
+            {group.errorTypeName && (
+              <span className="text-muted-foreground truncate min-w-0" title={group.errorTypeName}>
+                {group.errorTypeName}
+              </span>
+            )}
+            <span className="font-medium whitespace-nowrap">{formatCurrency(group.totalAmount)}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
           </div>
         </div>
       </button>
