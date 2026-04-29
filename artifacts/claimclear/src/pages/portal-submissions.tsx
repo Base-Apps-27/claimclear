@@ -1,32 +1,34 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPortalSubmissions, getListPortalSubmissionsQueryKey,
-  useRetryPortalSubmission, useCancelPortalSubmission,
-  useListBotActivity, getListBotActivityQueryKey,
-  useRegeneratePortalSubmissionText,
-  useUpdatePortalSubmissionDraft,
-  useSandboxRunPortalSubmission,
+  useGetSystemHealthRollup, getGetSystemHealthRollupQueryKey,
 } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { PortalSubmissionResponse } from "@workspace/api-client-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock, StopCircle, Ban, History } from "lucide-react";
+import {
+  Play, Loader2, Clock, AlertTriangle, CheckCircle, FlaskConical, Send, Lock, StopCircle, Ban,
+  Search, Tag, Edit2, X, Sparkles, History, Bot, ChevronDown, ChevronRight, MoreVertical,
+  Eye, RefreshCw, XCircle, AlertCircle, ExternalLink,
+} from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { Textarea } from "@/components/ui/textarea";
-import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
-import { EvidenceFileList } from "@/components/evidence-file-list";
-import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
-import { WorkerHealthBanner } from "@/components/worker-health-banner";
+import { WrapTooltip } from "@/components/info-tooltip";
+import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
+import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
 import { usePortalBatchEvents } from "@/hooks/use-portal-batch-events";
 import { useAuth } from "@workspace/replit-auth-web";
+import { useRetryPortalSubmission, useCancelPortalSubmission, useSandboxRunPortalSubmission, useConfirmPortalSubmission } from "@workspace/api-client-react";
 
-const statusColors: Record<string, string> = {
+const statusPillClass: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
   pending: "bg-amber-500/20 text-amber-700 border-amber-300",
   queued: "bg-indigo-500/20 text-indigo-700 border-indigo-300",
@@ -37,16 +39,28 @@ const statusColors: Record<string, string> = {
   dry_run: "bg-purple-500/20 text-purple-700 border-purple-300",
 };
 
-const statusDescriptions: Record<string, string> = {
-  draft: "Preview generated — awaiting review and confirmation before queuing.",
-  pending: "Waiting in the queue for processing.",
-  queued: "Locked by the in-flight batch run — will be processed in turn.",
-  in_progress: "Currently being processed — filling out the dispute form on the MAS portal.",
-  submitted: "Successfully submitted to the portal. A ticket ID should be assigned.",
-  failed: "Encountered an error during submission. Review the error and retry if needed.",
-  cancelled: "This submission was manually cancelled and will not be processed.",
-  dry_run: "Dry run completed — form was filled but not submitted.",
+const statusLabels: Record<string, string> = {
+  draft: "Draft",
+  pending: "Pending",
+  queued: "Queued",
+  in_progress: "In Progress",
+  submitted: "Submitted",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  dry_run: "Dry Run",
 };
+
+const FILTER_TABS: { key: string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "draft", label: "Draft" },
+  { key: "pending", label: "Pending" },
+  { key: "queued", label: "Queued" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "submitted", label: "Submitted" },
+  { key: "failed", label: "Failed" },
+];
+
+const STATUS_GROUP_ORDER = ["draft", "pending", "queued", "in_progress", "submitted", "failed", "cancelled", "dry_run"];
 
 interface BatchJob {
   id: string;
@@ -77,11 +91,11 @@ interface BatchRunHistoryEntry {
   completedAt: string | null;
 }
 
-const runStatusStyles: Record<string, { label: string; badgeClass: string; rowClass: string }> = {
-  running: { label: "Running", badgeClass: "bg-blue-100 text-blue-700 border-blue-300", rowClass: "" },
-  completed: { label: "Success", badgeClass: "bg-green-100 text-green-700 border-green-300", rowClass: "" },
-  failed: { label: "Failed", badgeClass: "bg-red-100 text-red-700 border-red-300", rowClass: "" },
-  aborted: { label: "Stopped", badgeClass: "bg-amber-100 text-amber-700 border-amber-300", rowClass: "" },
+const runStatusStyles: Record<string, { label: string; badgeClass: string }> = {
+  running: { label: "Running", badgeClass: "bg-blue-100 text-blue-700 border-blue-300" },
+  completed: { label: "Success", badgeClass: "bg-green-100 text-green-700 border-green-300" },
+  failed: { label: "Failed", badgeClass: "bg-red-100 text-red-700 border-red-300" },
+  aborted: { label: "Stopped", badgeClass: "bg-amber-100 text-amber-700 border-amber-300" },
 };
 
 function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
@@ -104,19 +118,31 @@ function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
   return <span>retry in {s}s</span>;
 }
 
+function timeAgo(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 export default function PortalSubmissions() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [drawerId, setDrawerId] = useState<number | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
-  // Local "I just clicked the button" guard so the buttons disable instantly,
-  // before the batch_started SSE event arrives back from the server.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(["submitted"]));
+
   const [batchTriggering, setBatchTriggering] = useState(false);
   const [completedJob, setCompletedJob] = useState<BatchJob | null>(null);
   const [recentRuns, setRecentRuns] = useState<BatchRunHistoryEntry[] | null>(null);
   const [recentRunsLoading, setRecentRunsLoading] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshRecentRuns = async () => {
     setRecentRunsLoading(true);
@@ -128,60 +154,88 @@ export default function PortalSubmissions() {
         setRecentRuns(Array.isArray(body.runs) ? body.runs : []);
       }
     } catch {
-      // non-fatal — the panel just won't show updated entries
+      // non-fatal
     } finally {
       setRecentRunsLoading(false);
     }
   };
 
-  // Shared in-flight batch (visible to all viewers via SSE).
+  // SSE-driven shared in-flight batch (visible to all viewers).
   const sharedBatch = usePortalBatchEvents();
   const myDisplayName = user?.displayName || user?.email || "";
   const isAdmin = user?.role === "admin";
-  // The batch is "owned" by the user who clicked Process. Other viewers see
-  // disabled buttons + a tooltip. Match by triggeredBy (display name / email).
-  const isMyBatch = !!sharedBatch && !!myDisplayName &&
-    sharedBatch.triggeredBy === myDisplayName;
-  // The Stop button is visible to the run's owner and to admins (so an admin
-  // can recover from a hung run by another user without restarting the API).
+  const isMyBatch = !!sharedBatch && !!myDisplayName && sharedBatch.triggeredBy === myDisplayName;
   const canStopBatch = !!sharedBatch && (isMyBatch || isAdmin);
   const batchOwnerName = sharedBatch?.triggeredBy ?? "";
   const batchInFlight = !!sharedBatch || batchTriggering;
-  // Local "I just clicked Stop" guard so the button disables instantly,
-  // before the batch_aborted SSE event arrives back from the server.
   const [batchAborting, setBatchAborting] = useState(false);
 
-  const { data: submissions, isLoading } = useListPortalSubmissions(
-    statusFilter ? { status: statusFilter } : undefined
-  );
-  const [editingDisputeText, setEditingDisputeText] = useState(false);
-  const [editedText, setEditedText] = useState("");
-  const [editingFields, setEditingFields] = useState(false);
-  const [fieldEdits, setFieldEdits] = useState<Record<string, string>>({});
-  const [regenerating, setRegenerating] = useState(false);
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [savingFields, setSavingFields] = useState(false);
-  const [saveFieldsError, setSaveFieldsError] = useState("");
-  const [sandboxRunning, setSandboxRunning] = useState<number | null>(null);
-  const [previewId, setPreviewId] = useState<number | null>(null);
+  const { data: submissions, isLoading } = useListPortalSubmissions(undefined);
+
+  // Worker health rollup — collapsed into the one-line status strip.
+  const { data: healthData } = useGetSystemHealthRollup({
+    query: { queryKey: getGetSystemHealthRollupQueryKey(), refetchInterval: 30000, retry: false },
+  });
+
   const retrySubmission = useRetryPortalSubmission();
   const cancelSubmission = useCancelPortalSubmission();
-  const regenerateText = useRegeneratePortalSubmissionText();
-  const updateDraft = useUpdatePortalSubmissionDraft();
   const sandboxRun = useSandboxRunPortalSubmission();
-  const { data: activityLogs } = useListBotActivity(selectedId || 0, {
-    query: { queryKey: getListBotActivityQueryKey(selectedId || 0), enabled: !!selectedId }
-  });
+  const confirmSubmission = useConfirmPortalSubmission();
+  const [queueingDrafts, setQueueingDrafts] = useState(false);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListPortalSubmissionsQueryKey() });
-    if (selectedId) {
-      queryClient.invalidateQueries({ queryKey: ["getPortalSubmission", selectedId] });
-    }
   };
 
-  const pendingSubmissions = (submissions || []).filter(s => s.status === "pending");
-  const allPendingChecked = pendingSubmissions.length > 0 && pendingSubmissions.every(s => checkedIds.has(s.id));
+  // Counts per status (using normalized status — pending+claimedByBatchId => queued).
+  const normalizedSubs = useMemo(() => (submissions || []).map(s => ({
+    ...s,
+    _displayStatus: s.status === "pending" && s.claimedByBatchId ? "queued" : s.status,
+  })), [submissions]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of normalizedSubs) {
+      counts[s._displayStatus] = (counts[s._displayStatus] || 0) + 1;
+    }
+    return counts;
+  }, [normalizedSubs]);
+
+  const totalCount = normalizedSubs.length;
+
+  // Filter (status + search)
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return normalizedSubs.filter(s => {
+      if (statusFilter !== "all" && s._displayStatus !== statusFilter) return false;
+      if (q) {
+        const hay = `${s.confNumber || ""} ${s.subject || ""} ${s.invoiceNumber || ""} ${s.portalTicketId || ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [normalizedSubs, statusFilter, search]);
+
+  // Group by status for the list rendering.
+  const groupedSubs = useMemo(() => {
+    const groups: Record<string, typeof filtered> = {};
+    for (const s of filtered) {
+      const k = s._displayStatus;
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(s);
+    }
+    return groups;
+  }, [filtered]);
+
+  const pendingSubmissions = useMemo(() => normalizedSubs.filter(s => s._displayStatus === "pending"), [normalizedSubs]);
+
+  // Drafts ready to queue: drafts that have all required fields set
+  // (simple heuristic — issueType, subject, requesterEmail).
+  const draftsReadyToQueue = useMemo(() =>
+    normalizedSubs.filter(s =>
+      s.status === "draft" &&
+      !!s.issueType && !!s.subject && !!s.requesterEmail
+    ), [normalizedSubs]);
 
   const handleToggle = (id: number) => {
     setCheckedIds(prev => {
@@ -192,67 +246,43 @@ export default function PortalSubmissions() {
     });
   };
 
-  const handleToggleAll = () => {
-    if (allPendingChecked) {
-      setCheckedIds(new Set());
-    } else {
-      setCheckedIds(new Set(pendingSubmissions.map(s => s.id)));
-    }
+  const checkedCount = checkedIds.size;
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
-  // Track the last batch ID we saw running so we can fetch its final result
-  // list (per-row outcomes) once it completes — SSE delivers events, not the
-  // full results array, so we hydrate it from /batch-status/:id once.
+  // Track in-flight batch for completion summary fetch.
   const lastBatchIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (sharedBatch) {
       lastBatchIdRef.current = sharedBatch.batchId;
-      // A new batch started — clear any old completed-job summary.
       setCompletedJob(null);
-      // Local trigger guard is no longer needed once the SSE stream confirms
-      // the run; clear it so the UI reflects the shared state directly.
       setBatchTriggering(false);
-      // Refresh the history panel so the new "running" row shows up.
       void refreshRecentRuns();
     } else if (lastBatchIdRef.current) {
-      // Batch ended (completed / failed / aborted). Reset the local stop
-      // guard so the next run's button starts enabled.
       setBatchAborting(false);
       const finishedId = lastBatchIdRef.current;
       lastBatchIdRef.current = null;
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
       fetch(`${base}/api/portal-submissions/batch-status/${finishedId}`, { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((job: BatchJob | null) => {
-          if (job) setCompletedJob(job);
-        })
-        .catch(() => {
-          // Best-effort; the row badges already reflect final state.
-        });
+        .then((job: BatchJob | null) => { if (job) setCompletedJob(job); })
+        .catch(() => {});
       invalidate();
-      // Refresh the history panel so the new terminal status (and the
-      // "stopped by" attribution) appears without a manual reload.
       void refreshRecentRuns();
     }
-    // We intentionally only depend on the batch ID + presence transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sharedBatch?.batchId, !!sharedBatch]);
 
-  // Initial load of the history panel.
-  useEffect(() => {
-    void refreshRecentRuns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { void refreshRecentRuns(); /* eslint-disable-next-line */ }, []);
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  // Auto-dismiss the completed/failed batch summary card after 30s so it
-  // doesn't sit on the page indefinitely; the row-level badges still show
-  // the per-submission outcome.
+  // Auto-dismiss completed-job toast strip after 30s.
   useEffect(() => {
     if (!completedJob) return;
     const t = setTimeout(() => setCompletedJob(null), 30000);
@@ -263,10 +293,6 @@ export default function PortalSubmissions() {
     setBatchTriggering(true);
     setCompletedJob(null);
     try {
-      // "Process Selected" forwards the explicit ID list; "Process All
-      // Pending" omits it and lets the worker claim the full pending+due
-      // queue. Both go through the same one-worker-at-a-time gate so
-      // concurrent clicks are coalesced server-side.
       const requestBody = ids === "all" ? {} : { submissionIds: ids };
       const res = await fetch("/api/portal-submissions/batch-process", {
         method: "POST",
@@ -281,15 +307,10 @@ export default function PortalSubmissions() {
       const body = await res.json();
       if (body.skipped) {
         setBatchTriggering(false);
-        if (body.reason === "no_pending") {
-          alert("No pending submissions to process.");
-        } else if (body.reason === "already_running") {
-          alert("A worker run is already in progress; this trigger was coalesced.");
-        }
+        if (body.reason === "no_pending") alert("No pending submissions to process.");
+        else if (body.reason === "already_running") alert("A worker run is already in progress; this trigger was coalesced.");
         return;
       }
-      // SSE delivers batch_started shortly; the local trigger flag will be
-      // cleared by the effect above once sharedBatch becomes non-null.
       setCheckedIds(new Set());
     } catch (err) {
       setBatchTriggering(false);
@@ -300,9 +321,7 @@ export default function PortalSubmissions() {
   const handleAbortBatch = async () => {
     if (!sharedBatch) return;
     const ownerLabel = isMyBatch ? "this run" : `${batchOwnerName}'s run`;
-    if (!confirm(`Stop ${ownerLabel}? The current row will finish, then the worker will exit and any queued rows will go back to Pending.`)) {
-      return;
-    }
+    if (!confirm(`Stop ${ownerLabel}? The current row will finish, then the worker will exit and any queued rows will go back to Pending.`)) return;
     setBatchAborting(true);
     try {
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -314,801 +333,727 @@ export default function PortalSubmissions() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed to stop batch (HTTP ${res.status})`);
       }
-      // Stay disabled until the batch_aborted SSE event clears sharedBatch
-      // and the effect above resets batchAborting.
     } catch (err) {
       setBatchAborting(false);
       alert(err instanceof Error ? err.message : "Failed to stop batch");
     }
   };
 
-  const handleRetry = async (id: number) => {
-    await retrySubmission.mutateAsync({ id });
+  const handleQueueDrafts = async (drafts: PortalSubmissionResponse[]) => {
+    setQueueingDrafts(true);
+    let queued = 0;
+    const failed: { id: number; reason: string }[] = [];
+    for (const d of drafts) {
+      try {
+        await confirmSubmission.mutateAsync({ id: d.id, data: { ack: true } });
+        queued += 1;
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : "Unknown error";
+        failed.push({ id: d.id, reason });
+      }
+    }
     invalidate();
+    setQueueingDrafts(false);
+    if (failed.length === 0) {
+      // Subtle, no alert if all succeeded — the row state will visibly move.
+    } else if (queued === 0) {
+      alert(`Could not queue drafts. First reason: ${failed[0].reason}`);
+    } else {
+      alert(`Queued ${queued} draft${queued === 1 ? "" : "s"}. ${failed.length} could not be queued (open them to fix).`);
+    }
   };
 
-  const handleCancel = async (id: number) => {
-    await cancelSubmission.mutateAsync({ id });
-    invalidate();
-  };
-
-  const handleSandboxRun = async (id: number) => {
-    setSandboxRunning(id);
+  const handleSandboxRow = async (id: number) => {
     try {
-      const result = await sandboxRun.mutateAsync({ id });
-      queryClient.setQueryData(
-        getListPortalSubmissionsQueryKey(statusFilter ? { status: statusFilter } : undefined),
-        (old: typeof submissions) => old?.map(s => s.id === id ? { ...s, ...result } : s)
-      );
+      await sandboxRun.mutateAsync({ id });
       invalidate();
-      queryClient.invalidateQueries({ queryKey: getListBotActivityQueryKey(id) });
     } catch (err) {
-      invalidate();
       alert(err instanceof Error ? err.message : "Sandbox run failed");
     }
-    setSandboxRunning(null);
   };
 
-  const selected = selectedId ? (submissions || []).find(s => s.id === selectedId) : null;
-  const checkedCount = checkedIds.size;
-  // Disable Process / Select / row-level Cancel-Pending controls whenever any
-  // batch is running. The buttons get a tooltip explaining why; if the run
-  // belongs to the current user we just say "Processing..." like before.
-  const buttonsDisabled = batchInFlight;
   const otherUserOwnsBatch = !!sharedBatch && !isMyBatch;
-  const lockedTooltip = otherUserOwnsBatch
-    ? `Batch already running by ${batchOwnerName}`
-    : undefined;
+  const lockedTooltip = otherUserOwnsBatch ? `Batch already running by ${batchOwnerName}` : undefined;
+  const buttonsDisabled = batchInFlight;
+
+  const drawerSubmission = drawerId ? (submissions || []).find(s => s.id === drawerId) ?? null : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Portal Submissions</h2>
-          <p className="text-muted-foreground">MAS portal submission queue and status</p>
+    <div className="space-y-4">
+      {/* Page header + segmented filter strip */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Portal Submissions</h2>
+            <p className="text-sm text-muted-foreground">The MAS portal queue. {totalCount} active item{totalCount === 1 ? "" : "s"}.</p>
+          </div>
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search conf #, subject, ticket…"
+              className="pl-8 w-[260px]"
+              data-testid="input-search-submissions"
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
-            <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="submitted">Submitted</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <WorkerHealthBanner />
-
-      {pendingSubmissions.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
-          <CardContent className="py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Clock className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-medium text-amber-800">
-                  {pendingSubmissions.length} pending submission{pendingSubmissions.length !== 1 ? "s" : ""}
-                </span>
-                {checkedCount > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {checkedCount} selected
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {(() => {
-                  const selectAllBtn = (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleToggleAll}
-                      disabled={buttonsDisabled}
-                    >
-                      <CheckSquare className="h-4 w-4 mr-1" />
-                      {allPendingChecked ? "Deselect All" : "Select All Pending"}
-                    </Button>
-                  );
-                  return lockedTooltip
-                    ? <WrapTooltip content={lockedTooltip}><span>{selectAllBtn}</span></WrapTooltip>
-                    : selectAllBtn;
-                })()}
-                {checkedCount > 0 && (() => {
-                  const btn = (
-                    <Button
-                      size="sm"
-                      onClick={() => handleBatchProcess(Array.from(checkedIds))}
-                      disabled={buttonsDisabled}
-                    >
-                      {otherUserOwnsBatch ? (
-                        <><Lock className="h-4 w-4 mr-1" />Batch already running by {batchOwnerName}</>
-                      ) : batchInFlight ? (
-                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
-                      ) : (
-                        <><Play className="h-4 w-4 mr-1" />Process Selected ({checkedCount})</>
-                      )}
-                    </Button>
-                  );
-                  return lockedTooltip
-                    ? <WrapTooltip content={lockedTooltip}><span>{btn}</span></WrapTooltip>
-                    : btn;
-                })()}
-                {(() => {
-                  const btn = (
-                    <Button
-                      size="sm"
-                      variant="default"
-                      onClick={() => handleBatchProcess("all")}
-                      disabled={buttonsDisabled}
-                    >
-                      {otherUserOwnsBatch ? (
-                        <><Lock className="h-4 w-4 mr-1" />Batch already running by {batchOwnerName}</>
-                      ) : batchInFlight ? (
-                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Processing...</>
-                      ) : (
-                        <><Play className="h-4 w-4 mr-1" />Process All Pending</>
-                      )}
-                    </Button>
-                  );
-                  return lockedTooltip
-                    ? <WrapTooltip content={lockedTooltip}><span>{btn}</span></WrapTooltip>
-                    : btn;
-                })()}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {sharedBatch && (
-        <Card className="border-2 border-blue-300 bg-blue-50/50">
-          <CardContent className="py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                <div>
-                  <p className="text-sm font-semibold">
-                    Batch Processing — In Progress
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Triggered by {sharedBatch.triggeredBy}{isMyBatch ? " (you)" : ""} · {formatDateTime(sharedBatch.startedAt)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-sm">
-                <span>{sharedBatch.processed} / {sharedBatch.total} processed</span>
-                {sharedBatch.succeeded > 0 && <Badge className="bg-green-100 text-green-700">{sharedBatch.succeeded} succeeded</Badge>}
-                {sharedBatch.failed > 0 && <Badge variant="destructive">{sharedBatch.failed} failed</Badge>}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 bg-muted rounded-full h-2">
-                <div
-                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${sharedBatch.total > 0 ? (sharedBatch.processed / sharedBatch.total) * 100 : 0}%` }}
-                />
-              </div>
-              {canStopBatch && (
-                <WrapTooltip
-                  content={
-                    isMyBatch
-                      ? "Stop this batch — the current row will finish, then queued rows go back to Pending."
-                      : `Admin override — stop ${batchOwnerName}'s run. The current row will finish, then queued rows go back to Pending.`
-                  }
-                >
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={handleAbortBatch}
-                    disabled={batchAborting}
-                    data-testid="button-stop-batch"
-                  >
-                    {batchAborting ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Stopping…</>
-                    ) : (
-                      <><StopCircle className="h-4 w-4 mr-1" />Stop this batch</>
-                    )}
-                  </Button>
-                </WrapTooltip>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!sharedBatch && completedJob && (
-        <Card className={`border-2 ${
-          completedJob.status === "completed" ? "border-green-300 bg-green-50/50" :
-          completedJob.status === "aborted" ? "border-amber-300 bg-amber-50/50" :
-          "border-red-300 bg-red-50/50"
-        }`}>
-          <CardContent className="py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {completedJob.status === "completed" ? (
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                ) : completedJob.status === "aborted" ? (
-                  <Ban className="h-5 w-5 text-amber-600" />
-                ) : (
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
-                )}
-                <div>
-                  <p className="text-sm font-semibold">
-                    Batch Processing — {
-                      completedJob.status === "completed" ? "Complete" :
-                      completedJob.status === "aborted" ? "Stopped" :
-                      "Failed"
-                    }
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Triggered by {completedJob.triggeredBy} · {formatDateTime(completedJob.startedAt)}
-                    {completedJob.status === "aborted" && completedJob.abortRequestedBy
-                      ? ` · stopped by ${completedJob.abortRequestedBy}`
-                      : ""}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-sm">
-                <span>{completedJob.processed} / {completedJob.total} processed</span>
-                {completedJob.succeeded > 0 && <Badge className="bg-green-100 text-green-700">{completedJob.succeeded} succeeded</Badge>}
-                {completedJob.failed > 0 && <Badge variant="destructive">{completedJob.failed} failed</Badge>}
-              </div>
-            </div>
-
-            {completedJob.results.length > 0 && (
-              <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                {completedJob.results.map((r, i) => (
-                  <div key={i} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
-                    r.status === "success" ? "bg-green-50 text-green-700" :
-                    r.status === "skipped" ? "bg-gray-50 text-gray-600" :
-                    "bg-red-50 text-red-700"
-                  }`}>
-                    {r.status === "success" ? <CheckCircle className="h-3 w-3" /> :
-                     r.status === "skipped" ? <Clock className="h-3 w-3" /> :
-                     <AlertTriangle className="h-3 w-3" />}
-                    <span>Submission #{r.submissionId}: {r.message}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card data-testid="recent-runs-panel">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Recent runs
-            <span className="text-xs font-normal text-muted-foreground">
-              {isAdmin ? "all triggered runs" : "your triggered runs"}
-              {recentRuns && recentRuns.length > 0 ? ` · last ${recentRuns.length}` : ""}
-            </span>
-            {recentRunsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {recentRuns === null && !recentRunsLoading ? (
-            <p className="text-xs text-muted-foreground py-2">Could not load recent runs.</p>
-          ) : recentRuns && recentRuns.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">No batch runs yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground border-b">
-                    <th className="text-left font-medium py-2 pr-3">Started</th>
-                    <th className="text-left font-medium py-2 pr-3">Triggered by</th>
-                    <th className="text-left font-medium py-2 pr-3">Status</th>
-                    <th className="text-left font-medium py-2 pr-3">Rows</th>
-                    <th className="text-left font-medium py-2">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(recentRuns ?? []).map((run) => {
-                    const style = runStatusStyles[run.status] ?? {
-                      label: run.status,
-                      badgeClass: "bg-gray-100 text-gray-700 border-gray-300",
-                      rowClass: "",
-                    };
-                    return (
-                      <tr key={run.batchId} className="border-b last:border-b-0">
-                        <td className="py-2 pr-3 whitespace-nowrap text-xs text-muted-foreground" data-testid={`run-started-${run.batchId}`}>
-                          {formatDateTime(run.startedAt)}
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap">{run.triggeredBy}</td>
-                        <td className="py-2 pr-3 whitespace-nowrap">
-                          <Badge className={`${style.badgeClass} cursor-default`} variant="outline" data-testid={`run-status-${run.batchId}`}>
-                            {style.label}
-                          </Badge>
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap text-xs">
-                          <span className="text-muted-foreground">{run.processed}/{run.total}</span>
-                          {run.succeeded > 0 && <span className="ml-2 text-green-700">✓ {run.succeeded}</span>}
-                          {run.failed > 0 && <span className="ml-2 text-red-700">✗ {run.failed}</span>}
-                        </td>
-                        <td className="py-2 text-xs text-muted-foreground">
-                          {run.status === "aborted" && run.stoppedBy && (
-                            <span data-testid={`run-stopped-by-${run.batchId}`}>Stopped by {run.stoppedBy}</span>
-                          )}
-                          {run.status === "aborted" && !run.stoppedBy && <span>Stopped by user</span>}
-                          {run.status === "failed" && run.errorMessage && (
-                            <span className="text-red-600 break-words">{run.errorMessage}</span>
-                          )}
-                          {run.status === "running" && <span className="italic">in progress…</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {isLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading...</div>
-      ) : (submissions || []).length === 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            {statusFilter ? (
-              <EmptyState
-                icon={Filter}
-                title="No submissions match this filter"
-                description="Try a different status to see more submissions."
-                primaryAction={{ label: "Clear filter", onClick: () => setStatusFilter("") }}
-              />
-            ) : (
-              <EmptyState
-                icon={Send}
-                title="No submissions yet"
-                description="Drafts you create on a claim show up here, ready to submit to the portal."
-                primaryAction={{ label: "Go to claims", href: "/claims" }}
-              />
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {(submissions || []).map(sub => {
-            // A pending row is "queued" if the in-flight batch has claimed it.
-            const isQueued = sub.status === "pending" && !!sub.claimedByBatchId;
-            const displayStatus = isQueued ? "queued" : sub.status;
-            const queuedTooltip = isQueued && sub.claimedByUserName
-              ? `Queued by ${sub.claimedByUserName} — will be processed by the running batch.`
-              : statusDescriptions[displayStatus] || displayStatus;
+        <div className="inline-flex items-center p-1 gap-1 rounded-md bg-muted border w-fit">
+          {FILTER_TABS.map(tab => {
+            const count = tab.key === "all" ? totalCount : (statusCounts[tab.key] || 0);
+            const active = statusFilter === tab.key;
             return (
-            <Card key={sub.id} className="hover:bg-accent/30 transition-colors">
-              <CardContent className="py-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {sub.status === "pending" && (() => {
-                    const cb = (
-                      <Checkbox
-                        checked={checkedIds.has(sub.id)}
-                        onCheckedChange={() => handleToggle(sub.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={buttonsDisabled}
-                      />
-                    );
-                    return buttonsDisabled
-                      ? <WrapTooltip content={lockedTooltip ?? "Selection is locked while a batch is running."}><span>{cb}</span></WrapTooltip>
-                      : cb;
-                  })()}
-                  <span className="font-mono font-semibold text-sm">{sub.confNumber}</span>
-                  <WrapTooltip content={queuedTooltip}>
-                    <Badge className={`${statusColors[displayStatus] || ""} cursor-help`} variant="outline">{
-                      displayStatus === "dry_run" ? "Dry Run"
-                      : displayStatus === "draft" ? "Draft"
-                      : displayStatus === "in_progress" ? "In Progress"
-                      : displayStatus === "queued" ? "Queued"
-                      : displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
-                    }</Badge>
-                  </WrapTooltip>
-                  {isQueued && sub.claimedByUserName && (
-                    <span className="text-xs text-muted-foreground italic">
-                      claimed by {sub.claimedByUserName}
-                    </span>
-                  )}
-                  {sub.portalTicketId && (
-                    <WrapTooltip content="The ticket ID assigned by the MAS portal after submission.">
-                      <Badge variant="outline" className="cursor-help">Ticket: {sub.portalTicketId}</Badge>
-                    </WrapTooltip>
-                  )}
-                  {sub.errorMessage && (
-                    <WrapTooltip content={sub.errorMessage}>
-                      <AlertTriangle className="h-4 w-4 text-red-500 cursor-help" />
-                    </WrapTooltip>
-                  )}
-                  {(sub.attempts ?? 0) > 0 && (sub.status === "pending" || sub.status === "in_progress" || sub.status === "failed") && (
-                    <WrapTooltip content={`Attempt ${sub.attempts} of ${sub.maxAttempts ?? 4}`}>
-                      <Badge variant="outline" className="cursor-help text-xs">
-                        {sub.attempts}/{sub.maxAttempts ?? 4}
-                      </Badge>
-                    </WrapTooltip>
-                  )}
-                  {sub.status === "pending" && sub.nextRetryAt && (
-                    <WrapTooltip content={`Next retry at ${new Date(sub.nextRetryAt).toLocaleString()}`}>
-                      <Badge variant="outline" className="cursor-help text-xs text-amber-700 border-amber-400">
-                        <RetryCountdown nextRetryAt={sub.nextRetryAt} />
-                      </Badge>
-                    </WrapTooltip>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">{formatCurrency(sub.claimAmount)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {sub.createdAt ? formatDateTime(sub.createdAt) : ""}
-                  </span>
-                  {["draft", "pending", "failed", "dry_run"].includes(sub.status) && (
-                    <WrapTooltip content={
-                      isQueued && lockedTooltip
-                        ? lockedTooltip
-                        : isQueued
-                          ? "This submission is queued in an active batch."
-                          : "Sandbox run — fill out the portal form without submitting, and capture a screenshot."
-                    }>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-purple-600"
-                        disabled={sandboxRunning === sub.id || isQueued}
-                        onClick={(e) => { e.stopPropagation(); handleSandboxRun(sub.id); }}
-                      >
-                        {sandboxRunning === sub.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
-                      </Button>
-                    </WrapTooltip>
-                  )}
-                  {(sub.status === "draft" || sub.status === "pending") && (
-                    <WrapTooltip content="Preview the exact payload (description, attachments, fields) the bot will submit. Read-only — no bot session is used.">
-                      <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setPreviewId(sub.id)}>
-                        <Eye className="h-3.5 w-3.5" /> Preview
-                      </Button>
-                    </WrapTooltip>
-                  )}
-                  <WrapTooltip content="View full submission details and bot activity timeline.">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedId(sub.id)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </WrapTooltip>
-                  {sub.status === "failed" && (
-                    <WrapTooltip content="Reset to pending and retry.">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRetry(sub.id)}>
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                    </WrapTooltip>
-                  )}
-                  {(sub.status === "pending" || sub.status === "draft") && (
-                    <WrapTooltip content={
-                      isQueued && lockedTooltip
-                        ? lockedTooltip
-                        : sub.status === "draft"
-                          ? "Discard this draft."
-                          : "Cancel this submission."
-                    }>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        onClick={() => handleCancel(sub.id)}
-                        disabled={isQueued}
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
-                    </WrapTooltip>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`px-3 py-1.5 text-xs rounded font-medium transition-colors flex items-center gap-1.5 ${active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid={`filter-tab-${tab.key}`}
+              >
+                {tab.label}
+                {count > 0 && (
+                  <span className={`text-[10px] px-1 rounded font-bold min-w-[14px] text-center ${active ? "bg-muted text-foreground" : "text-muted-foreground"}`}>{count}</span>
+                )}
+              </button>
             );
           })}
         </div>
-      )}
+      </div>
 
-      <SubmissionPreviewDialog
-        submissionId={previewId}
-        initialSubmission={previewId ? (submissions || []).find(s => s.id === previewId) ?? null : null}
-        open={!!previewId}
-        onOpenChange={(open) => { if (!open) setPreviewId(null); }}
+      {/* One-line status strip (worker health + last batch + recent runs link) */}
+      <StatusStrip
+        health={healthData}
+        lastRun={recentRuns?.[0]}
+        loading={recentRunsLoading}
       />
 
-      <Dialog open={!!selectedId} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditingDisputeText(false); setEditingFields(false); } }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Submission Details</DialogTitle>
-          </DialogHeader>
-          {selected && (
-            <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
-              {(() => {
-                const isEditable = ["draft", "pending", "failed", "dry_run"].includes(selected.status);
-                const issueTypeOptions = [
-                  "GPS Control Deviation",
-                  "Other Issue or Question",
-                  "Custom Payment Request",
-                  "MAS Trips App Issue",
-                  "Vehicle, Driver, or TPP",
-                  "Zip Code Block",
-                ];
-                return (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Conf #:</span>
-                        <span className="font-mono text-sm">{selected.confNumber}</span>
-                        <WrapTooltip content={statusDescriptions[selected.status] || selected.status}>
-                          <Badge className={`${statusColors[selected.status] || ""} cursor-help`} variant="outline">{selected.status}</Badge>
-                        </WrapTooltip>
-                      </div>
-                      {isEditable && !editingFields && (
-                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                          setFieldEdits({
-                            issueType: selected.issueType || "",
-                            subject: selected.subject || "",
-                            requesterEmail: selected.requesterEmail || "",
-                            transportationProviderName: selected.transportationProviderName || "",
-                            phoneNumber: selected.phoneNumber || "",
-                            invoiceNumber: selected.invoiceNumber || "",
-                            gpsBreadcrumbsAvailable: selected.gpsBreadcrumbsAvailable || "",
-                          });
-                          setEditingFields(true);
-                        }}>
-                          <Pencil className="h-3 w-3" /> Edit Fields
-                        </Button>
-                      )}
-                    </div>
-                    {editingFields ? (
-                      <div className="space-y-3 border rounded-md p-3 bg-muted/30">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Issue Type</label>
-                            <select className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.issueType || ""} onChange={e => setFieldEdits(p => ({ ...p, issueType: e.target.value }))}>
-                              <option value="">Select...</option>
-                              {issueTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Subject</label>
-                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.subject || ""} onChange={e => setFieldEdits(p => ({ ...p, subject: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Email</label>
-                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.requesterEmail || ""} onChange={e => setFieldEdits(p => ({ ...p, requesterEmail: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Provider Name</label>
-                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.transportationProviderName || ""} onChange={e => setFieldEdits(p => ({ ...p, transportationProviderName: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Phone</label>
-                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.phoneNumber || ""} onChange={e => setFieldEdits(p => ({ ...p, phoneNumber: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Invoice #</label>
-                            <input className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.invoiceNumber || ""} onChange={e => setFieldEdits(p => ({ ...p, invoiceNumber: e.target.value }))} />
-                          </div>
-                          {(fieldEdits.issueType === "GPS Control Deviation") && (
-                            <div>
-                              <label className="text-xs text-muted-foreground mb-1 block">GPS Breadcrumbs</label>
-                              <select className="w-full rounded-md border px-2 py-1.5 text-sm bg-background" value={fieldEdits.gpsBreadcrumbsAvailable || ""} onChange={e => setFieldEdits(p => ({ ...p, gpsBreadcrumbsAvailable: e.target.value }))}>
-                                <option value="">Select...</option>
-                                <option value="Yes">Yes</option>
-                                <option value="No">No</option>
-                                <option value="Unknown">Unknown</option>
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                        {saveFieldsError && (
-                          <p className="text-xs text-red-600 text-right">{saveFieldsError}</p>
-                        )}
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditingFields(false); setSaveFieldsError(""); }}>
-                            <X className="h-3 w-3" /> Cancel
-                          </Button>
-                          <Button size="sm" className="h-7 text-xs gap-1" disabled={savingFields} onClick={async () => {
-                            setSavingFields(true);
-                            setSaveFieldsError("");
-                            try {
-                              await updateDraft.mutateAsync({ id: selected.id, data: fieldEdits });
-                              invalidate();
-                              setEditingFields(false);
-                            } catch (err: unknown) {
-                              const msg = err instanceof Error ? err.message : "Failed to save. Please try again.";
-                              setSaveFieldsError(msg);
-                            } finally {
-                              setSavingFields(false);
-                            }
-                          }}>
-                            {savingFields ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3 text-sm min-w-0">
-                        <div className="min-w-0"><span className="text-muted-foreground">Issue Type:</span> {selected.issueType || <span className="text-red-500">Not set</span>}</div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Subject:</span> <span className="break-all">{selected.subject || <span className="text-red-500">Not set</span>}</span></div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Email:</span> <span className="break-all">{selected.requesterEmail || <span className="text-red-500">Not set</span>}</span></div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Provider:</span> <span className="break-all">{selected.transportationProviderName || <span className="text-red-500">Not set</span>}</span></div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Phone:</span> <span className="break-all">{selected.phoneNumber || <span className="text-red-500">Not set</span>}</span></div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Invoice:</span> <span className="break-all">{selected.invoiceNumber || "-"}</span></div>
-                        {selected.issueType === "GPS Control Deviation" && (
-                          <div className="min-w-0"><span className="text-muted-foreground">GPS Breadcrumbs:</span> {selected.gpsBreadcrumbsAvailable || "-"}</div>
-                        )}
-                        <div className="col-span-2 min-w-0">
-                          <span className="text-muted-foreground">Evidence:</span>{" "}
-                          {Array.isArray(selected.attachmentUrls) && selected.attachmentUrls.length > 0 ? (
-                            <div className="mt-1">
-                              <EvidenceFileList urls={selected.attachmentUrls} />
-                            </div>
-                          ) : (
-                            <span className="text-amber-600">None</span>
-                          )}
-                        </div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Amount:</span> {formatCurrency(selected.claimAmount)}</div>
-                        <div className="min-w-0"><span className="text-muted-foreground">Attempts:</span> {selected.attempts}/{selected.maxAttempts ?? 4}</div>
-                        {selected.nextRetryAt && selected.status === "pending" && (
-                          <div className="min-w-0"><span className="text-muted-foreground">Next retry:</span> <RetryCountdown nextRetryAt={selected.nextRetryAt} /></div>
-                        )}
-                        {selected.portalTicketId && <div className="min-w-0"><span className="text-muted-foreground">Ticket ID:</span> {selected.portalTicketId}</div>}
-                        {selected.submittedAt && <div className="min-w-0"><span className="text-muted-foreground">Submitted:</span> {formatDateTime(selected.submittedAt)}</div>}
-                        {selected.errorMessage && <div className="col-span-2 min-w-0"><span className="text-muted-foreground">Error:</span> <span className="text-red-600 break-words">{selected.errorMessage}</span></div>}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+      {/* Completed-job summary toast — auto-dismisses */}
+      {!sharedBatch && completedJob && (
+        <CompletedJobStrip job={completedJob} onDismiss={() => setCompletedJob(null)} />
+      )}
 
-              {selected.disputeReason && (
-                <div className="min-w-0">
-                  <span className="text-sm text-muted-foreground">Dispute Reason:</span>
-                  <p className="text-sm mt-1 break-words">{selected.disputeReason}</p>
+      {/* Two-column layout: list left, sticky rail right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="lg:col-span-8 space-y-3">
+          {/* Recommendation banner */}
+          {draftsReadyToQueue.length > 0 && !batchInFlight && (
+            <Card className="border-blue-200 bg-blue-50/60 dark:bg-blue-950/20">
+              <CardContent className="py-3 px-4 flex items-center gap-3">
+                <Sparkles className="h-4 w-4 text-blue-700 dark:text-blue-300 flex-shrink-0" />
+                <div className="flex-1 text-sm">
+                  <span className="font-medium text-blue-900 dark:text-blue-100">{draftsReadyToQueue.length} draft{draftsReadyToQueue.length === 1 ? "" : "s"} ready to queue.</span>
+                  <span className="text-blue-800/80 dark:text-blue-200/80"> Queue them so the bot picks them up on the next run.</span>
                 </div>
-              )}
+                <Button size="sm" onClick={() => handleQueueDrafts(draftsReadyToQueue)} disabled={queueingDrafts} className="gap-1.5" data-testid="button-queue-drafts">
+                  {queueingDrafts ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Queue {draftsReadyToQueue.length} draft{draftsReadyToQueue.length === 1 ? "" : "s"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
-              {selected.descriptionHtml && (
-                <div className="min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-muted-foreground">Dispute Text</span>
-                    {["draft", "pending", "failed"].includes(selected.status) && !editingDisputeText && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          disabled={regenerating}
-                          onClick={async () => {
-                            setRegenerating(true);
-                            try {
-                              await regenerateText.mutateAsync({ id: selected.id });
-                              invalidate();
-                            } catch {}
-                            setRegenerating(false);
-                          }}
-                        >
-                          {regenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                          Regenerate
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => { setEditedText(selected.descriptionHtml || ""); setEditingDisputeText(true); }}
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </Button>
-                      </div>
+          {isLoading ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">Loading…</CardContent></Card>
+          ) : filtered.length === 0 ? (
+            <Card>
+              <CardContent className="p-0">
+                {statusFilter !== "all" || search ? (
+                  <EmptyState
+                    icon={Search}
+                    title="No submissions match this filter"
+                    description={search ? "Try a different search term, or change the status filter above." : "Try a different status to see more submissions."}
+                    primaryAction={{ label: "Clear filter", onClick: () => { setStatusFilter("all"); setSearch(""); } }}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={Send}
+                    title="No submissions yet"
+                    description="Drafts you create on a claim show up here, ready to submit to the portal."
+                    primaryAction={{ label: "Go to claims", href: "/claims" }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            STATUS_GROUP_ORDER
+              .filter(k => groupedSubs[k] && groupedSubs[k].length > 0)
+              .map(groupKey => (
+                <StatusGroupCard
+                  key={groupKey}
+                  status={groupKey}
+                  rows={groupedSubs[groupKey]}
+                  collapsed={collapsedGroups.has(groupKey)}
+                  onToggleCollapsed={() => toggleGroup(groupKey)}
+                  checkedIds={checkedIds}
+                  onToggle={handleToggle}
+                  buttonsDisabled={buttonsDisabled}
+                  lockedTooltip={lockedTooltip}
+                  onOpenRow={(id) => setDrawerId(id)}
+                  onSandbox={handleSandboxRow}
+                  onRetry={async (id) => { await retrySubmission.mutateAsync({ id }); invalidate(); }}
+                  onCancel={async (id) => { await cancelSubmission.mutateAsync({ id }); invalidate(); }}
+                />
+              ))
+          )}
+        </div>
+
+        {/* Right rail */}
+        <aside className="lg:col-span-4 space-y-4">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            {sharedBatch ? (
+              <InFlightRail
+                sharedBatch={sharedBatch}
+                isMyBatch={isMyBatch}
+                canStop={canStopBatch}
+                aborting={batchAborting}
+                onAbort={handleAbortBatch}
+              />
+            ) : (
+              <RunQueueRail
+                pendingCount={pendingSubmissions.length}
+                checkedCount={checkedCount}
+                buttonsDisabled={buttonsDisabled}
+                lockedTooltip={lockedTooltip}
+                otherUserOwnsBatch={otherUserOwnsBatch}
+                batchOwnerName={batchOwnerName}
+                batchInFlight={batchInFlight}
+                onProcessAll={() => handleBatchProcess("all")}
+                onProcessSelected={() => handleBatchProcess(Array.from(checkedIds))}
+                onSandboxSelected={async () => {
+                  for (const id of Array.from(checkedIds)) { await sandboxRun.mutateAsync({ id }); }
+                  invalidate();
+                }}
+                onCancelSelected={async () => {
+                  if (!confirm(`Cancel ${checkedCount} submission${checkedCount === 1 ? "" : "s"}?`)) return;
+                  for (const id of Array.from(checkedIds)) { await cancelSubmission.mutateAsync({ id }); }
+                  setCheckedIds(new Set());
+                  invalidate();
+                }}
+                onClearSelection={() => setCheckedIds(new Set())}
+              />
+            )}
+
+            <RecentRunsCard runs={recentRuns} loading={recentRunsLoading} isAdmin={isAdmin} />
+
+            <Card className="bg-muted/30">
+              <CardContent className="p-3 text-xs text-muted-foreground flex items-start gap-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>Need to reorder the queue? Cancel and recreate the draft on the claim page.</span>
+              </CardContent>
+            </Card>
+          </div>
+        </aside>
+      </div>
+
+      {/* Unified drawer */}
+      <PortalSubmissionDrawer
+        submissionId={drawerId}
+        initialSubmission={drawerSubmission}
+        open={drawerId !== null}
+        onOpenChange={(o) => { if (!o) setDrawerId(null); }}
+        onProcessNow={(id) => { handleBatchProcess([id]); setDrawerId(null); }}
+        processNowDisabled={batchInFlight}
+        processNowDisabledReason={batchInFlight ? lockedTooltip ?? "A batch is already running." : undefined}
+      />
+    </div>
+  );
+}
+
+// =====================================================================
+// Status strip — collapses worker health + last batch + recent runs link
+// =====================================================================
+function StatusStrip({ health, lastRun, loading }: { health?: { overall: string; overdueCount: number; overdueThresholdMinutes: number; components: Array<{ name: string; status: string; detail?: string | null }> } | null; lastRun?: BatchRunHistoryEntry; loading?: boolean }) {
+  const isHealthy = !health || health.overall === "ok";
+  const isFailed = health?.overall === "failed";
+  const dotClass = isFailed ? "bg-red-500" : isHealthy ? "bg-green-500" : "bg-amber-500";
+  const healthLabel = isFailed ? "Worker failed" : isHealthy ? "Worker healthy" : "Worker degraded";
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-4 py-2 rounded-md border bg-card">
+      <a href="/system-health" className="flex items-center gap-1.5 hover:underline" title="Open system health">
+        <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+        <span className="font-medium">{healthLabel}</span>
+      </a>
+      {!isHealthy && health && (
+        <span className="text-amber-700 dark:text-amber-300">
+          {health.overdueCount > 0 ? `${health.overdueCount} overdue` : ""}
+          {health.overdueCount > 0 ? " · " : ""}
+          {health.components.filter(c => c.status !== "ok").length} component{health.components.filter(c => c.status !== "ok").length === 1 ? "" : "s"} need attention
+        </span>
+      )}
+      {lastRun && (
+        <>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">
+            Last batch <span className="text-foreground">{timeAgo(lastRun.startedAt)}</span> by <span className="text-foreground">{lastRun.triggeredBy}</span>
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className={lastRun.failed > 0 ? "text-amber-700" : "text-green-700"}>
+            {lastRun.succeeded}/{lastRun.total} succeeded
+            {lastRun.failed > 0 ? `, ${lastRun.failed} failed` : ""}
+          </span>
+        </>
+      )}
+      {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      <a href="#recent-runs" className="ml-auto text-primary hover:underline font-medium" data-testid="link-view-recent-runs">View recent runs →</a>
+    </div>
+  );
+}
+
+// =====================================================================
+// In-flight batch rail (replaces "Run the queue" header during batch)
+// =====================================================================
+function InFlightRail({ sharedBatch, isMyBatch, canStop, aborting, onAbort }: {
+  sharedBatch: NonNullable<ReturnType<typeof usePortalBatchEvents>>;
+  isMyBatch: boolean;
+  canStop: boolean;
+  aborting: boolean;
+  onAbort: () => void;
+}) {
+  const pct = sharedBatch.total > 0 ? (sharedBatch.processed / sharedBatch.total) * 100 : 0;
+  return (
+    <Card className="border-2 border-blue-300 bg-blue-50/60 dark:bg-blue-950/20" data-testid="in-flight-batch-card">
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-5 w-5 text-blue-600 animate-spin flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Batch processing — in progress</p>
+            <p className="text-xs text-muted-foreground truncate">
+              Triggered by {sharedBatch.triggeredBy}{isMyBatch ? " (you)" : ""} · {formatDateTime(sharedBatch.startedAt)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="font-medium">{sharedBatch.processed} / {sharedBatch.total}</span>
+          {sharedBatch.succeeded > 0 && <Badge className="bg-green-100 text-green-700 border-0">{sharedBatch.succeeded} ok</Badge>}
+          {sharedBatch.failed > 0 && <Badge variant="destructive">{sharedBatch.failed} failed</Badge>}
+        </div>
+        <div className="bg-muted rounded-full h-2 overflow-hidden">
+          <div className="bg-blue-500 h-2 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+        </div>
+        {canStop && (
+          <WrapTooltip content={isMyBatch ? "Stop this batch — the current row will finish, then queued rows go back to Pending." : "Admin override — stop this run."}>
+            <Button size="sm" variant="destructive" onClick={onAbort} disabled={aborting} data-testid="button-stop-batch" className="w-full gap-1.5">
+              {aborting ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Stopping…</> : <><StopCircle className="h-3.5 w-3.5" /> Stop this batch</>}
+            </Button>
+          </WrapTooltip>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// =====================================================================
+// Run-the-queue rail (resting state)
+// =====================================================================
+function RunQueueRail({
+  pendingCount, checkedCount, buttonsDisabled, lockedTooltip, otherUserOwnsBatch,
+  batchOwnerName, batchInFlight,
+  onProcessAll, onProcessSelected, onSandboxSelected, onCancelSelected, onClearSelection,
+}: {
+  pendingCount: number;
+  checkedCount: number;
+  buttonsDisabled: boolean;
+  lockedTooltip?: string;
+  otherUserOwnsBatch: boolean;
+  batchOwnerName: string;
+  batchInFlight: boolean;
+  onProcessAll: () => void;
+  onProcessSelected: () => void;
+  onSandboxSelected: () => void;
+  onCancelSelected: () => void;
+  onClearSelection: () => void;
+}) {
+  const meta = checkedCount > 0 ? `${checkedCount} selected` : `${pendingCount} pending`;
+  const recommendedNode = pendingCount > 0 ? (
+    <ActionsRailRecommended
+      label="Recommended"
+      description="Estimated 4–6 minutes. One worker processes the queue at a time."
+    >
+      {(() => {
+        const btn = (
+          <Button
+            size="sm"
+            className="w-full gap-1.5"
+            onClick={onProcessAll}
+            disabled={buttonsDisabled}
+            data-testid="button-process-all"
+          >
+            {otherUserOwnsBatch ? (
+              <><Lock className="h-3.5 w-3.5" /> Locked by {batchOwnerName}</>
+            ) : batchInFlight ? (
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…</>
+            ) : (
+              <><Play className="h-3.5 w-3.5" /> Process all pending ({pendingCount})</>
+            )}
+          </Button>
+        );
+        return lockedTooltip ? <WrapTooltip content={lockedTooltip}><span>{btn}</span></WrapTooltip> : btn;
+      })()}
+    </ActionsRailRecommended>
+  ) : null;
+
+  return (
+    <ActionsRail title="Run the queue" meta={meta}>
+      {recommendedNode}
+
+      <ActionGroup label="On selection">
+        <ActionRow
+          icon={<Play className="h-4 w-4" />}
+          label={`Process selected${checkedCount > 0 ? ` (${checkedCount})` : ""}`}
+          sub="Bot fills the form and submits"
+          disabled={checkedCount === 0 || buttonsDisabled}
+          disabledReason={checkedCount === 0 ? "Select one or more pending submissions to enable." : lockedTooltip}
+          onClick={onProcessSelected}
+          testId="action-process-selected"
+        />
+        <ActionRow
+          icon={<FlaskConical className="h-4 w-4" />}
+          label="Sandbox-run selected"
+          sub="Dry run — fills the form, captures a screenshot, doesn't submit"
+          disabled={checkedCount === 0 || buttonsDisabled}
+          disabledReason={checkedCount === 0 ? "Select one or more submissions to enable." : lockedTooltip}
+          onClick={onSandboxSelected}
+          testId="action-sandbox-selected"
+        />
+        <ActionRow
+          icon={<X className="h-4 w-4" />}
+          label="Cancel selected"
+          muted
+          disabled={checkedCount === 0}
+          disabledReason={checkedCount === 0 ? "Select one or more submissions to enable." : undefined}
+          onClick={onCancelSelected}
+          testId="action-cancel-selected"
+        />
+      </ActionGroup>
+
+      <ActionGroup label="Bulk edit">
+        <ActionRow
+          icon={<Tag className="h-4 w-4" />}
+          label="Apply error type to selected…"
+          disabled
+          disabledReason="Coming soon — apply an error type across multiple selected submissions in one go."
+        />
+        <ActionRow
+          icon={<Edit2 className="h-4 w-4" />}
+          label="Edit subject for selected…"
+          disabled
+          disabledReason="Coming soon — set a common subject across multiple selected submissions."
+        />
+      </ActionGroup>
+
+      <ActionGroup label="Selection">
+        <ActionRow
+          icon={<X className="h-4 w-4" />}
+          label="Clear selection"
+          muted
+          disabled={checkedCount === 0}
+          onClick={onClearSelection}
+        />
+      </ActionGroup>
+    </ActionsRail>
+  );
+}
+
+// =====================================================================
+// Status group card (collapsible)
+// =====================================================================
+function StatusGroupCard({
+  status, rows, collapsed, onToggleCollapsed, checkedIds, onToggle,
+  buttonsDisabled, lockedTooltip, onOpenRow, onSandbox, onRetry, onCancel,
+}: {
+  status: string;
+  rows: (PortalSubmissionResponse & { _displayStatus: string })[];
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  checkedIds: Set<number>;
+  onToggle: (id: number) => void;
+  buttonsDisabled: boolean;
+  lockedTooltip?: string;
+  onOpenRow: (id: number) => void;
+  onSandbox: (id: number) => void;
+  onRetry: (id: number) => void;
+  onCancel: (id: number) => void;
+}) {
+  const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.id));
+  const partiallyChecked = !allChecked && rows.some(r => checkedIds.has(r.id));
+  const canBulkSelect = status === "draft" || status === "pending";
+
+  return (
+    <Card className="overflow-hidden" data-testid={`status-group-${status}`}>
+      <div className="px-3 py-2 flex items-center gap-2 bg-muted/50 border-b">
+        {canBulkSelect && (
+          <WrapTooltip content={lockedTooltip ?? `Select all ${statusLabels[status].toLowerCase()} submissions in this group.`}>
+            <Checkbox
+              checked={allChecked || (partiallyChecked && "indeterminate")}
+              onCheckedChange={() => {
+                if (allChecked) {
+                  rows.forEach(r => { if (checkedIds.has(r.id)) onToggle(r.id); });
+                } else {
+                  rows.forEach(r => { if (!checkedIds.has(r.id)) onToggle(r.id); });
+                }
+              }}
+              disabled={buttonsDisabled}
+              data-testid={`checkbox-group-${status}`}
+            />
+          </WrapTooltip>
+        )}
+        <Badge variant="outline" className={statusPillClass[status] || ""}>
+          {statusLabels[status] || status}
+        </Badge>
+        <span className="text-xs font-medium text-muted-foreground">{rows.length} {rows.length === 1 ? "item" : "items"}</span>
+        <button
+          className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+          onClick={onToggleCollapsed}
+          data-testid={`toggle-group-${status}`}
+        >
+          {collapsed ? <><ChevronRight className="h-3 w-3" /> Expand</> : <><ChevronDown className="h-3 w-3" /> Collapse</>}
+        </button>
+      </div>
+      {!collapsed && rows.map(row => (
+        <SubmissionRow
+          key={row.id}
+          sub={row}
+          checked={checkedIds.has(row.id)}
+          onToggle={() => onToggle(row.id)}
+          buttonsDisabled={buttonsDisabled}
+          lockedTooltip={lockedTooltip}
+          onOpen={() => onOpenRow(row.id)}
+          onSandbox={() => onSandbox(row.id)}
+          onRetry={() => onRetry(row.id)}
+          onCancel={() => onCancel(row.id)}
+        />
+      ))}
+    </Card>
+  );
+}
+
+// =====================================================================
+// One-line submission row
+// =====================================================================
+function SubmissionRow({
+  sub, checked, onToggle, buttonsDisabled, lockedTooltip, onOpen, onSandbox, onRetry, onCancel,
+}: {
+  sub: PortalSubmissionResponse & { _displayStatus: string };
+  checked: boolean;
+  onToggle: () => void;
+  buttonsDisabled: boolean;
+  lockedTooltip?: string;
+  onOpen: () => void;
+  onSandbox: () => void;
+  onRetry: () => void;
+  onCancel: () => void;
+}) {
+  const isQueued = sub._displayStatus === "queued";
+  const showCheckbox = sub.status === "pending" || sub.status === "draft";
+  const canSandbox = ["draft", "pending", "failed", "dry_run"].includes(sub.status) && !isQueued;
+  const canRetry = sub.status === "failed";
+  const canCancel = (sub.status === "draft" || sub.status === "pending") && !isQueued;
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0 hover:bg-accent/30 transition-colors cursor-pointer"
+      onClick={onOpen}
+      data-testid={`row-submission-${sub.id}`}
+    >
+      <div onClick={e => e.stopPropagation()}>
+        {showCheckbox ? (
+          buttonsDisabled ? (
+            <WrapTooltip content={lockedTooltip ?? "Selection is locked while a batch is running."}>
+              <span><Checkbox checked={checked} onCheckedChange={onToggle} disabled /></span>
+            </WrapTooltip>
+          ) : (
+            <Checkbox checked={checked} onCheckedChange={onToggle} data-testid={`checkbox-row-${sub.id}`} />
+          )
+        ) : (
+          <div style={{ width: 16 }} />
+        )}
+      </div>
+
+      <span className="font-mono font-semibold text-xs text-primary min-w-[112px] truncate" data-testid={`row-conf-${sub.id}`}>
+        {sub.confNumber || `#${sub.id}`}
+      </span>
+
+      <Badge variant="outline" className={`${statusPillClass[sub._displayStatus] || ""} text-[10px] h-5 px-1.5 flex-shrink-0`} data-testid={`row-status-${sub.id}`}>
+        {statusLabels[sub._displayStatus] || sub._displayStatus}
+      </Badge>
+
+      <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
+        {(sub.attempts ?? 0) > 0 && (sub.status === "pending" || sub.status === "in_progress" || sub.status === "failed") && (
+          <WrapTooltip content={`Attempt ${sub.attempts} of ${sub.maxAttempts ?? 4}`}>
+            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5">
+              {sub.attempts}/{sub.maxAttempts ?? 4}
+            </Badge>
+          </WrapTooltip>
+        )}
+        {sub.status === "pending" && sub.nextRetryAt && (
+          <WrapTooltip content={`Next retry at ${new Date(sub.nextRetryAt).toLocaleString()}`}>
+            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 text-amber-700 border-amber-400">
+              <Clock className="h-2.5 w-2.5 mr-1" /><RetryCountdown nextRetryAt={sub.nextRetryAt} />
+            </Badge>
+          </WrapTooltip>
+        )}
+        {sub.portalTicketId && (
+          <WrapTooltip content="Ticket ID assigned by the MAS portal after submission.">
+            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 font-mono bg-green-50 text-green-700 border-green-300">
+              <CheckCircle className="h-2.5 w-2.5 mr-1" />{sub.portalTicketId}
+            </Badge>
+          </WrapTooltip>
+        )}
+        {sub.errorMessage && (
+          <WrapTooltip content={sub.errorMessage}>
+            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 bg-red-50 text-red-700 border-red-300 max-w-[200px]">
+              <AlertTriangle className="h-2.5 w-2.5 mr-1 flex-shrink-0" /><span className="truncate">{sub.errorMessage}</span>
+            </Badge>
+          </WrapTooltip>
+        )}
+        {isQueued && sub.claimedByUserName && (
+          <span className="text-[11px] italic text-muted-foreground">claimed by {sub.claimedByUserName}</span>
+        )}
+        {sub.status === "in_progress" && (
+          <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+        )}
+        {sub.screenshotUrl && (
+          <WrapTooltip content="Sandbox dry-run screenshot available.">
+            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 bg-purple-50 text-purple-700 border-purple-300">
+              <FlaskConical className="h-2.5 w-2.5 mr-1" />sandbox verified
+            </Badge>
+          </WrapTooltip>
+        )}
+      </div>
+
+      <span className="text-xs text-muted-foreground truncate max-w-[180px] hidden md:inline" title={sub.issueType || ""}>
+        {sub.issueType || "—"}
+      </span>
+      <span className="text-sm font-medium font-mono min-w-[64px] text-right">{formatCurrency(sub.claimAmount || "0")}</span>
+      <span className="text-[11px] text-muted-foreground min-w-[56px] text-right">{timeAgo(sub.createdAt)}</span>
+
+      <div onClick={e => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`row-menu-${sub.id}`}>
+              <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem onSelect={onOpen}>
+              <Eye className="h-3.5 w-3.5" /> Open details
+            </DropdownMenuItem>
+            {canSandbox && (
+              <DropdownMenuItem onSelect={onSandbox} disabled={buttonsDisabled}>
+                <FlaskConical className="h-3.5 w-3.5" /> {sub.screenshotUrl ? "Re-run sandbox" : "Run sandbox"}
+              </DropdownMenuItem>
+            )}
+            {canRetry && (
+              <DropdownMenuItem onSelect={onRetry}>
+                <RefreshCw className="h-3.5 w-3.5" /> Retry
+              </DropdownMenuItem>
+            )}
+            {(canSandbox || canRetry) && canCancel && <DropdownMenuSeparator />}
+            {canCancel && (
+              <DropdownMenuItem onSelect={onCancel} className="text-destructive focus:text-destructive">
+                <XCircle className="h-3.5 w-3.5" /> {sub.status === "draft" ? "Discard draft" : "Cancel submission"}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// Recent runs card (right rail)
+// =====================================================================
+function RecentRunsCard({ runs, loading, isAdmin }: { runs: BatchRunHistoryEntry[] | null; loading: boolean; isAdmin: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? (runs ?? []) : (runs ?? []).slice(0, 6);
+  const hasMore = (runs?.length ?? 0) > 6;
+  return (
+    <div id="recent-runs" className="rounded-md border bg-card overflow-hidden scroll-mt-4" data-testid="recent-runs-panel">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <History className="h-4 w-4" /> Recent runs
+          <span className="text-xs font-normal text-muted-foreground">{isAdmin ? "all" : "yours"}</span>
+        </div>
+        {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </div>
+      {runs === null && !loading ? (
+        <p className="text-xs text-muted-foreground p-4">Could not load recent runs.</p>
+      ) : !runs || runs.length === 0 ? (
+        <p className="text-xs text-muted-foreground p-4">No batch runs yet.</p>
+      ) : (
+        <div>
+          {visible.map(run => {
+            const style = runStatusStyles[run.status] ?? { label: run.status, badgeClass: "bg-gray-100 text-gray-700 border-gray-300" };
+            return (
+              <div key={run.batchId} className="px-4 py-2.5 border-b last:border-b-0 flex items-start gap-2" data-testid={`run-row-${run.batchId}`}>
+                <Badge variant="outline" className={`${style.badgeClass} text-[10px] flex-shrink-0`} data-testid={`run-status-${run.batchId}`}>
+                  {style.label}
+                </Badge>
+                <div className="flex-1 min-w-0 text-xs">
+                  <div className="truncate">
+                    <span className="font-mono">{run.processed}/{run.total}</span>
+                    {run.succeeded > 0 && <span className="text-green-700 ml-1.5">✓ {run.succeeded}</span>}
+                    {run.failed > 0 && <span className="text-red-700 ml-1.5">✗ {run.failed}</span>}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate" data-testid={`run-meta-${run.batchId}`}>
+                    {timeAgo(run.startedAt)} · {run.triggeredBy}
+                    {run.status === "aborted" && run.stoppedBy && (
+                      <span data-testid={`run-stopped-by-${run.batchId}`}> · stopped by {run.stoppedBy}</span>
                     )}
                   </div>
-                  {editingDisputeText ? (
-                    <div className="space-y-2">
-                      <Textarea
-                        value={editedText}
-                        onChange={(e) => setEditedText(e.target.value)}
-                        className="min-h-[200px] text-sm font-mono"
-                      />
-                      <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => setEditingDisputeText(false)}
-                        >
-                          <X className="h-3 w-3" />
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          disabled={savingEdit}
-                          onClick={async () => {
-                            setSavingEdit(true);
-                            try {
-                              await updateDraft.mutateAsync({ id: selected.id, data: { descriptionHtml: editedText } });
-                              invalidate();
-                              setEditingDisputeText(false);
-                            } catch {}
-                            setSavingEdit(false);
-                          }}
-                        >
-                          {savingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                          Save
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border break-words overflow-x-hidden">
-                      {selected.descriptionHtml}
-                    </div>
+                  {run.status === "failed" && run.errorMessage && (
+                    <div className="text-[11px] text-red-600 mt-0.5 break-words">{run.errorMessage}</div>
                   )}
                 </div>
-              )}
-
-              {selected.screenshotUrl && (
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Image className="h-4 w-4 text-purple-600" />
-                    <span className="text-sm font-medium">Sandbox Screenshot</span>
-                    <Badge className="bg-purple-500/20 text-purple-700 border-purple-300 text-[10px]" variant="outline">Dry Run</Badge>
-                    {selected.submittedAt && (
-                      <span className="text-[10px] text-muted-foreground ml-1">
-                        {formatDateTime(selected.submittedAt)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="border rounded-md overflow-hidden bg-muted/30">
-                    <img
-                      key={selected.screenshotUrl + (selected.updatedAt || "")}
-                      src={`/api/storage${selected.screenshotUrl}?t=${new Date(selected.updatedAt || selected.submittedAt || "").getTime() || Date.now()}`}
-                      alt="Sandbox run screenshot of the filled portal form"
-                      className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
-                      onClick={() => window.open(`/api/storage${selected.screenshotUrl}`, "_blank")}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">Click to open full-size in a new tab.</p>
-                </div>
-              )}
-
-              <Separator />
-
-              <div>
-                <h4 className="font-medium mb-2 flex items-center gap-1.5">
-                  Bot Activity
-                  <InfoTooltip content="Timeline of actions taken for this submission. Green entries are successful steps, red entries indicate errors." />
-                </h4>
-                {activityLogs && activityLogs.length > 0 ? (
-                  <div className="space-y-2">
-                    {activityLogs.map(log => (
-                      <div key={log.id} className="text-sm border-l-2 pl-3 py-1" style={{ borderColor: log.success ? 'var(--color-primary)' : 'var(--color-destructive)' }}>
-                        <p className="font-medium break-words">{log.action}</p>
-                        {log.message && <p className="text-muted-foreground text-xs break-words">{log.message}</p>}
-                        {log.screenshotPath && log.screenshotPath.startsWith("/objects/") && (
-                          <a
-                            href={`/api/storage${log.screenshotPath}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-0.5"
-                          >
-                            <Image className="h-3 w-3" /> View screenshot
-                          </a>
-                        )}
-                        <p className="text-muted-foreground/70 text-xs">{formatDateTime(log.createdAt)}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
-                )}
               </div>
-            </div>
+            );
+          })}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setExpanded(e => !e)}
+              className="w-full px-4 py-2 text-xs text-primary hover:bg-accent/40 border-t font-medium text-left flex items-center gap-1"
+              data-testid="button-recent-runs-toggle"
+            >
+              {expanded ? "Show fewer" : `See all (${runs?.length})`} <ChevronRight className="h-3 w-3" />
+            </button>
           )}
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
+  );
+}
+
+// =====================================================================
+// Completed-job toast strip (auto-dismisses)
+// =====================================================================
+function CompletedJobStrip({ job, onDismiss }: { job: BatchJob; onDismiss: () => void }) {
+  const Icon = job.status === "completed" ? CheckCircle : job.status === "aborted" ? Ban : AlertTriangle;
+  const wrapClass = job.status === "completed"
+    ? "border-green-300 bg-green-50/60 dark:bg-green-950/20"
+    : job.status === "aborted"
+      ? "border-amber-300 bg-amber-50/60 dark:bg-amber-950/20"
+      : "border-red-300 bg-red-50/60 dark:bg-red-950/20";
+  const iconColor = job.status === "completed" ? "text-green-600" : job.status === "aborted" ? "text-amber-600" : "text-red-600";
+
+  return (
+    <Card className={`border ${wrapClass}`}>
+      <CardContent className="py-3 px-4 flex items-center gap-3">
+        <Icon className={`h-4 w-4 flex-shrink-0 ${iconColor}`} />
+        <div className="flex-1 text-sm min-w-0">
+          <span className="font-semibold">
+            Batch {job.status === "completed" ? "complete" : job.status === "aborted" ? "stopped" : "failed"} — {job.succeeded}/{job.total} succeeded
+          </span>
+          {job.failed > 0 && <span className="text-red-600 ml-2">{job.failed} failed</span>}
+          <span className="text-muted-foreground ml-2 text-xs">
+            by {job.triggeredBy}{job.abortRequestedBy ? ` · stopped by ${job.abortRequestedBy}` : ""}
+          </span>
+        </div>
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onDismiss}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

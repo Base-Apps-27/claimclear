@@ -52,7 +52,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { RefNumber } from "@/components/ref-number";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { WorkflowPlayer } from "@/components/workflow-player";
-import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
+import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
 
@@ -150,7 +150,7 @@ function SubmissionCard({ submission: sub }: { submission: PortalSubmissionRespo
         </div>
       )}
 
-      <SubmissionPreviewDialog
+      <PortalSubmissionDrawer
         submissionId={sub.id}
         initialSubmission={sub}
         open={previewOpen}
