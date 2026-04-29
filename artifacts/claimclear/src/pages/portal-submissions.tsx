@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock, StopCircle, Ban } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock, StopCircle, Ban, History } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
@@ -62,6 +62,28 @@ interface BatchJob {
   abortRequestedBy?: string;
 }
 
+interface BatchRunHistoryEntry {
+  batchId: string;
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  triggeredBy: string;
+  triggeredByEmail: string | null;
+  stoppedBy: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+const runStatusStyles: Record<string, { label: string; badgeClass: string; rowClass: string }> = {
+  running: { label: "Running", badgeClass: "bg-blue-100 text-blue-700 border-blue-300", rowClass: "" },
+  completed: { label: "Success", badgeClass: "bg-green-100 text-green-700 border-green-300", rowClass: "" },
+  failed: { label: "Failed", badgeClass: "bg-red-100 text-red-700 border-red-300", rowClass: "" },
+  aborted: { label: "Stopped", badgeClass: "bg-amber-100 text-amber-700 border-amber-300", rowClass: "" },
+};
+
 function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -92,7 +114,25 @@ export default function PortalSubmissions() {
   // before the batch_started SSE event arrives back from the server.
   const [batchTriggering, setBatchTriggering] = useState(false);
   const [completedJob, setCompletedJob] = useState<BatchJob | null>(null);
+  const [recentRuns, setRecentRuns] = useState<BatchRunHistoryEntry[] | null>(null);
+  const [recentRunsLoading, setRecentRunsLoading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const refreshRecentRuns = async () => {
+    setRecentRunsLoading(true);
+    try {
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+      const res = await fetch(`${base}/api/portal-submissions/batch-history?limit=10`, { credentials: "include" });
+      if (res.ok) {
+        const body = await res.json();
+        setRecentRuns(Array.isArray(body.runs) ? body.runs : []);
+      }
+    } catch {
+      // non-fatal — the panel just won't show updated entries
+    } finally {
+      setRecentRunsLoading(false);
+    }
+  };
 
   // Shared in-flight batch (visible to all viewers via SSE).
   const sharedBatch = usePortalBatchEvents();
@@ -172,6 +212,8 @@ export default function PortalSubmissions() {
       // Local trigger guard is no longer needed once the SSE stream confirms
       // the run; clear it so the UI reflects the shared state directly.
       setBatchTriggering(false);
+      // Refresh the history panel so the new "running" row shows up.
+      void refreshRecentRuns();
     } else if (lastBatchIdRef.current) {
       // Batch ended (completed / failed / aborted). Reset the local stop
       // guard so the next run's button starts enabled.
@@ -188,10 +230,19 @@ export default function PortalSubmissions() {
           // Best-effort; the row badges already reflect final state.
         });
       invalidate();
+      // Refresh the history panel so the new terminal status (and the
+      // "stopped by" attribution) appears without a manual reload.
+      void refreshRecentRuns();
     }
     // We intentionally only depend on the batch ID + presence transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sharedBatch?.batchId, !!sharedBatch]);
+
+  // Initial load of the history panel.
+  useEffect(() => {
+    void refreshRecentRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -528,6 +579,78 @@ export default function PortalSubmissions() {
           </CardContent>
         </Card>
       )}
+
+      <Card data-testid="recent-runs-panel">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Recent runs
+            <span className="text-xs font-normal text-muted-foreground">
+              {isAdmin ? "all triggered runs" : "your triggered runs"}
+              {recentRuns && recentRuns.length > 0 ? ` · last ${recentRuns.length}` : ""}
+            </span>
+            {recentRunsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {recentRuns === null && !recentRunsLoading ? (
+            <p className="text-xs text-muted-foreground py-2">Could not load recent runs.</p>
+          ) : recentRuns && recentRuns.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No batch runs yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted-foreground border-b">
+                    <th className="text-left font-medium py-2 pr-3">Started</th>
+                    <th className="text-left font-medium py-2 pr-3">Triggered by</th>
+                    <th className="text-left font-medium py-2 pr-3">Status</th>
+                    <th className="text-left font-medium py-2 pr-3">Rows</th>
+                    <th className="text-left font-medium py-2">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(recentRuns ?? []).map((run) => {
+                    const style = runStatusStyles[run.status] ?? {
+                      label: run.status,
+                      badgeClass: "bg-gray-100 text-gray-700 border-gray-300",
+                      rowClass: "",
+                    };
+                    return (
+                      <tr key={run.batchId} className="border-b last:border-b-0">
+                        <td className="py-2 pr-3 whitespace-nowrap text-xs text-muted-foreground" data-testid={`run-started-${run.batchId}`}>
+                          {formatDateTime(run.startedAt)}
+                        </td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{run.triggeredBy}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">
+                          <Badge className={`${style.badgeClass} cursor-default`} variant="outline" data-testid={`run-status-${run.batchId}`}>
+                            {style.label}
+                          </Badge>
+                        </td>
+                        <td className="py-2 pr-3 whitespace-nowrap text-xs">
+                          <span className="text-muted-foreground">{run.processed}/{run.total}</span>
+                          {run.succeeded > 0 && <span className="ml-2 text-green-700">✓ {run.succeeded}</span>}
+                          {run.failed > 0 && <span className="ml-2 text-red-700">✗ {run.failed}</span>}
+                        </td>
+                        <td className="py-2 text-xs text-muted-foreground">
+                          {run.status === "aborted" && run.stoppedBy && (
+                            <span data-testid={`run-stopped-by-${run.batchId}`}>Stopped by {run.stoppedBy}</span>
+                          )}
+                          {run.status === "aborted" && !run.stoppedBy && <span>Stopped by user</span>}
+                          {run.status === "failed" && run.errorMessage && (
+                            <span className="text-red-600 break-words">{run.errorMessage}</span>
+                          )}
+                          {run.status === "running" && <span className="italic">in progress…</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Loading...</div>

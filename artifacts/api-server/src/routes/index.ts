@@ -48,13 +48,15 @@ router.use(auditLogsRouter);
 router.use(errorTypesRouter);
 router.use(importRouter);
 router.use(errorDetailMappingsRouter);
+// Mount batch-jobs BEFORE portal-submissions so the more-specific
+// /portal-submissions/batch-* routes win over /portal-submissions/:id.
+router.use(batchJobsRouter);
 router.use(portalSubmissionsRouter);
 router.use(presenceRouter);
 router.use(dashboardRouter);
 router.use(aiEmailRouter);
 router.use(sopAnalyzerRouter);
 router.use(appSettingsRouter);
-router.use(batchJobsRouter);
 router.use(responseTrackerRouter);
 router.use(invoiceGroupsRouter);
 router.use(adminRouter);

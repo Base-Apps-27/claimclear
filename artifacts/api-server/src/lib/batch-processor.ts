@@ -1,6 +1,6 @@
-import { eq, and, or, isNull, isNotNull, lte, inArray } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lte, inArray, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable } from "@workspace/db";
+import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable, portalBatchRunsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { broadcastPresenceEvent, broadcastBatchEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
@@ -40,8 +40,56 @@ export interface BatchJob {
   startedAt: string;
   completedAt?: string;
   triggeredBy: string;
+  /** Email of the user who triggered this run (for per-user history filtering). */
+  triggeredByEmail?: string | null;
   /** Display name of the user who requested an abort, set once requestBatchAbort succeeds. */
   abortRequestedBy?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Batch run history (DB-backed)
+// ---------------------------------------------------------------------------
+// Every batch run inserts a row in `portal_batch_runs` at start and updates it
+// at terminal transition (completed/failed/aborted). Persisted so the Portal
+// Submissions page can show a "Recent runs" panel that survives restarts and
+// long after the in-memory `activeBatches` entry has been GC'd.
+
+async function recordBatchRunStarted(job: BatchJob): Promise<void> {
+  try {
+    await db.insert(portalBatchRunsTable).values({
+      batchId: job.id,
+      status: "running",
+      total: job.total,
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      triggeredBy: job.triggeredBy,
+      triggeredByEmail: job.triggeredByEmail ?? null,
+      startedAt: new Date(job.startedAt),
+    }).onConflictDoNothing({ target: portalBatchRunsTable.batchId });
+  } catch (err) {
+    logger.error({ err, batchId: job.id }, "Failed to record batch run start");
+  }
+}
+
+async function recordBatchRunFinished(
+  job: BatchJob,
+  extras: { stoppedBy?: string | null; errorMessage?: string | null } = {},
+): Promise<void> {
+  try {
+    await db.update(portalBatchRunsTable).set({
+      status: job.status,
+      total: job.total,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      completedAt: job.completedAt ? new Date(job.completedAt) : new Date(),
+      stoppedBy: extras.stoppedBy ?? job.abortRequestedBy ?? null,
+      errorMessage: extras.errorMessage ?? null,
+    }).where(eq(portalBatchRunsTable.batchId, job.id));
+  } catch (err) {
+    logger.error({ err, batchId: job.id }, "Failed to record batch run completion");
+  }
 }
 
 const activeBatches = new Map<string, BatchJob>();
@@ -181,6 +229,8 @@ export type TriggerWorkerOutcome =
  */
 export async function triggerWorkerRun(opts: {
   triggeredBy: string;
+  /** Email of the triggering user; persisted to batch run history so non-admins can see their own runs. */
+  triggeredByEmail?: string | null;
   awaitCompletion?: boolean;
   awaitTimeoutMs?: number;
   /**
@@ -212,7 +262,7 @@ export async function triggerWorkerRun(opts: {
   const gateOutcome = await workerGate.run(async () => {
     let job: BatchJob;
     try {
-      job = await startBatchJob(opts.submissionIds ?? "all", opts.triggeredBy);
+      job = await startBatchJob(opts.submissionIds ?? "all", opts.triggeredBy, opts.triggeredByEmail ?? null);
       ctx.job = job;
     } catch (err) {
       ctx.err = err instanceof Error ? err : new Error(String(err));
@@ -350,6 +400,7 @@ export function isSubmissionOverdue(
 export async function startBatchJob(
   submissionIds: number[] | "all",
   triggeredBy: string,
+  triggeredByEmail: string | null = null,
 ): Promise<BatchJob> {
   let ids: number[];
 
@@ -404,9 +455,15 @@ export async function startBatchJob(
     results: [],
     startedAt: new Date().toISOString(),
     triggeredBy,
+    triggeredByEmail,
   };
 
   activeBatches.set(batchId, job);
+
+  // Persist a "running" row to history immediately so the Recent Runs panel
+  // sees the run while it's in flight (and so we have somewhere to UPDATE
+  // when it finishes, even if the process restarts mid-run).
+  await recordBatchRunStarted(job);
 
   // Mark every selected row as Queued under the triggering user so other
   // viewers of the Portal Submissions page see the row as locked to this
@@ -441,11 +498,13 @@ export async function startBatchJob(
 
   processSequentially(job).catch(err => {
     logger.error({ err, batchId }, "Batch processing fatal error");
+    const errMsg = err instanceof Error ? err.message : String(err);
     job.status = "failed";
     job.completedAt = new Date().toISOString();
     void releaseClaimedRows(batchId).catch((releaseErr) => {
       logger.error({ err: releaseErr, batchId }, "Failed to release claimed rows after fatal error");
     });
+    void recordBatchRunFinished(job, { errorMessage: errMsg });
     broadcastBatchEvent({
       type: "batch_failed",
       batchId,
@@ -454,7 +513,7 @@ export async function startBatchJob(
       succeeded: job.succeeded,
       failed: job.failed,
       total: job.total,
-      message: err instanceof Error ? err.message : String(err),
+      message: errMsg,
     });
   });
 
@@ -490,6 +549,76 @@ async function releaseClaimedRows(batchId: string): Promise<number[]> {
     }
   }
   return released.map((r) => r.id);
+}
+
+/**
+ * Boot-time cleanup for the persisted batch run history. Any row still marked
+ * "running" in `portal_batch_runs` belonged to a prior process whose
+ * in-memory job is gone, so it can never transition cleanly to completed.
+ * Mark it as "failed" with a server-restart note so the Recent Runs panel
+ * surfaces the outage instead of showing a stuck "Running" entry forever.
+ */
+export async function markOrphanedRunningBatchesAsFailed(): Promise<number> {
+  const cleared = await db.update(portalBatchRunsTable).set({
+    status: "failed",
+    completedAt: new Date(),
+    errorMessage: "Server restarted while batch was in flight",
+  }).where(eq(portalBatchRunsTable.status, "running"))
+    .returning({ batchId: portalBatchRunsTable.batchId });
+  if (cleared.length > 0) {
+    logger.info({ count: cleared.length, batchIds: cleared.map((r) => r.batchId) }, "Boot cleanup: marked orphaned running batch runs as failed");
+  }
+  return cleared.length;
+}
+
+export interface BatchRunHistoryEntry {
+  batchId: string;
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  triggeredBy: string;
+  triggeredByEmail: string | null;
+  stoppedBy: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+/**
+ * List the most recent batch runs from history. Admins see every run; regular
+ * users only see runs they triggered (matched by triggered_by_email — display
+ * names are not unique, but emails are).
+ */
+export async function listBatchRunHistory(opts: {
+  filterByEmail?: string | null;
+  limit?: number;
+}): Promise<BatchRunHistoryEntry[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
+  const baseQuery = db.select().from(portalBatchRunsTable);
+  const rows = opts.filterByEmail
+    ? await baseQuery
+        .where(eq(portalBatchRunsTable.triggeredByEmail, opts.filterByEmail))
+        .orderBy(desc(portalBatchRunsTable.id))
+        .limit(limit)
+    : await baseQuery
+        .orderBy(desc(portalBatchRunsTable.id))
+        .limit(limit);
+  return rows.map((r) => ({
+    batchId: r.batchId,
+    status: r.status,
+    total: r.total,
+    processed: r.processed,
+    succeeded: r.succeeded,
+    failed: r.failed,
+    triggeredBy: r.triggeredBy,
+    triggeredByEmail: r.triggeredByEmail,
+    stoppedBy: r.stoppedBy,
+    errorMessage: r.errorMessage,
+    startedAt: r.startedAt.toISOString(),
+    completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+  }));
 }
 
 /**
@@ -695,6 +824,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
       total: job.total,
       abortRequestedBy: job.abortRequestedBy,
     }, "Batch processing aborted by user");
+    await recordBatchRunFinished(job, { stoppedBy: job.abortRequestedBy ?? null });
     broadcastBatchEvent({
       type: "batch_aborted",
       batchId: job.id,
@@ -717,6 +847,8 @@ async function processSequentially(job: BatchJob): Promise<void> {
     succeeded: job.succeeded,
     failed: job.failed,
   }, "Batch processing completed");
+
+  await recordBatchRunFinished(job);
 
   broadcastBatchEvent({
     type: "batch_completed",

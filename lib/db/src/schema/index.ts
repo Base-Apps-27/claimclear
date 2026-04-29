@@ -18,3 +18,4 @@ export * from "./portal-responses";
 export * from "./outbound-emails";
 export * from "./system-health";
 export * from "./notification-preferences";
+export * from "./portal-batch-runs";

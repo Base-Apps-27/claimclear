@@ -7,6 +7,7 @@ import {
   getLastWorkerRun,
   getActiveBatchJob,
   requestBatchAbort,
+  listBatchRunHistory,
 } from "../lib/batch-processor";
 import { addGlobalBatchClient } from "../lib/sse";
 
@@ -51,6 +52,7 @@ router.get("/portal-submissions/active-batch", asyncHandler(async (_req, res): P
 // the full pending queue is processed.
 router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): Promise<void> => {
   const triggeredBy = req.user?.displayName || req.user?.email || "Admin";
+  const triggeredByEmail = req.user?.email ?? null;
 
   const rawIds = (req.body && Array.isArray(req.body.submissionIds))
     ? req.body.submissionIds
@@ -59,7 +61,7 @@ router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): 
     ? rawIds.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
     : "all";
 
-  const outcome = await triggerWorkerRun({ triggeredBy, submissionIds });
+  const outcome = await triggerWorkerRun({ triggeredBy, triggeredByEmail, submissionIds });
 
   if (outcome.kind === "skipped") {
     if (outcome.reason === "already_running") {
@@ -133,6 +135,30 @@ router.get("/portal-submissions/batch-status/:batchId", asyncHandler(async (req,
 
 router.get("/portal-submissions/batch-jobs", asyncHandler(async (_req, res): Promise<void> => {
   res.json(listBatchJobs());
+}));
+
+// Recent batch run history (DB-backed). Admins see every run, regular users
+// only see runs they themselves triggered (matched by their email). Default
+// limit 10, capped at 50 inside the helper.
+router.get("/portal-submissions/batch-history", asyncHandler(async (req, res): Promise<void> => {
+  const isAdmin = req.user?.role === "admin";
+  const userEmail = req.user?.email ?? null;
+  const limitParam = Number(req.query.limit);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 10;
+
+  // Non-admins must have an email so we can scope to their own runs.
+  // Without an email there is no safe way to filter, so return empty
+  // rather than silently exposing every run.
+  if (!isAdmin && !userEmail) {
+    res.json({ runs: [] });
+    return;
+  }
+
+  const runs = await listBatchRunHistory({
+    filterByEmail: isAdmin ? null : userEmail,
+    limit,
+  });
+  res.json({ runs });
 }));
 
 export default router;
