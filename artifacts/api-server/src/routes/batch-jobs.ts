@@ -1,5 +1,10 @@
 import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import { portalSubmissionsTable } from "@workspace/db";
+import { eq, and, or, isNull, lte, count } from "drizzle-orm";
+import { CronExpressionParser } from "cron-parser";
 import { asyncHandler } from "../lib/asyncHandler";
+import { logger } from "../lib/logger";
 import {
   triggerWorkerRun,
   getBatchJob,
@@ -8,8 +13,15 @@ import {
   getActiveBatchJob,
   requestBatchAbort,
   listBatchRunHistory,
+  isWorkerRunInProgress,
 } from "../lib/batch-processor";
 import { addGlobalBatchClient } from "../lib/sse";
+
+// Cron expression mirrors `portal_batch_sweeper` in system-health.ts. If the
+// scheduler changes there, update this too — the header pill and the admin
+// system-health endpoint must agree on when the next batch fires.
+const PORTAL_BATCH_CRON = "0 8,11,14,18 * * 1-5";
+const PORTAL_BATCH_TZ = "America/New_York";
 
 const router: IRouter = Router();
 
@@ -159,6 +171,79 @@ router.get("/portal-submissions/batch-history", asyncHandler(async (req, res): P
     limit,
   });
   res.json({ runs });
+}));
+
+// Slim batch-status snapshot for the persistent header pill. Available to any
+// authenticated user (not just admins). Returns just enough state for the
+// pill + popover: queue counts, next/previous batch fire times, today's
+// schedule, and whether a batch is currently running. Polled every ~10s by
+// the client and invalidated by SSE batch lifecycle events.
+router.get("/portal-submissions/queue-status", asyncHandler(async (_req, res): Promise<void> => {
+  const now = new Date();
+
+  // Compute counts in parallel.
+  const [queuedCountResult, runningCountResult] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.status, "pending"),
+        or(
+          isNull(portalSubmissionsTable.nextRetryAt),
+          lte(portalSubmissionsTable.nextRetryAt, now),
+        ),
+      )),
+    db
+      .select({ value: count() })
+      .from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.status, "in_progress")),
+  ]);
+  const queuedCount = queuedCountResult[0]?.value ?? 0;
+  const runningCount = runningCountResult[0]?.value ?? 0;
+
+  // Compute next + previous cron firings, plus today's full schedule.
+  let nextBatchAt: string | null = null;
+  let prevBatchAt: string | null = null;
+  type ScheduleEntry = { at: string; isPast: boolean; isNext: boolean };
+  const schedule: ScheduleEntry[] = [];
+  try {
+    const it = CronExpressionParser.parse(PORTAL_BATCH_CRON, { tz: PORTAL_BATCH_TZ, currentDate: now });
+    nextBatchAt = it.next().toDate().toISOString();
+    const itPrev = CronExpressionParser.parse(PORTAL_BATCH_CRON, { tz: PORTAL_BATCH_TZ, currentDate: now });
+    prevBatchAt = itPrev.prev().toDate().toISOString();
+
+    // Today's schedule: walk forward from local-midnight in the cron timezone
+    // so we get every firing scheduled for "today" (in ET). Stop once we
+    // cross the next day.
+    const todayStartLocal = new Date(now.toLocaleString("en-US", { timeZone: PORTAL_BATCH_TZ }));
+    todayStartLocal.setHours(0, 0, 0, 0);
+    const itDay = CronExpressionParser.parse(PORTAL_BATCH_CRON, {
+      tz: PORTAL_BATCH_TZ,
+      currentDate: todayStartLocal,
+    });
+    const todayDateStr = now.toLocaleDateString("en-US", { timeZone: PORTAL_BATCH_TZ });
+    for (let i = 0; i < 6; i += 1) {
+      const fire = itDay.next().toDate();
+      const fireDateStr = fire.toLocaleDateString("en-US", { timeZone: PORTAL_BATCH_TZ });
+      if (fireDateStr !== todayDateStr) break;
+      schedule.push({
+        at: fire.toISOString(),
+        isPast: fire <= now,
+        isNext: nextBatchAt !== null && fire.toISOString() === nextBatchAt,
+      });
+    }
+  } catch (err) {
+    logger.warn({ err }, "queue-status: failed to compute cron firings");
+  }
+
+  res.json({
+    isRunning: isWorkerRunInProgress(),
+    nextBatchAt,
+    prevBatchAt,
+    queuedCount,
+    runningCount,
+    schedule,
+  });
 }));
 
 export default router;

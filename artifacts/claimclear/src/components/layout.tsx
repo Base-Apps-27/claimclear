@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
+import { BatchStatusPill } from "@/components/batch-status-pill";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -289,6 +290,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <header className="h-14 border-b bg-card flex items-center px-4 sticky top-0 z-10 shrink-0">
             <SidebarTrigger className="mr-4" />
             <h1 className="font-semibold text-sm text-muted-foreground">NEMT Claims Dispute Command Center</h1>
+            <div className="ml-auto flex items-center gap-3">
+              <BatchStatusPill />
+            </div>
           </header>
           <main className="flex-1 overflow-auto p-6 md:p-8">
             <div className="max-w-7xl mx-auto h-full">
