@@ -958,12 +958,25 @@ export interface BotInstanceResponse {
   updatedAt?: string;
 }
 
+/**
+ * The kind of resource a viewer is currently looking at.
+ */
+export type PresenceResourceType =
+  (typeof PresenceResourceType)[keyof typeof PresenceResourceType];
+
+export const PresenceResourceType = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;
+
 export interface PresenceHeartbeatBody {
-  claimId: number;
+  resourceType: PresenceResourceType;
+  resourceId: number;
 }
 
 export interface PresenceLeaveBody {
-  claimId: number;
+  resourceType: PresenceResourceType;
+  resourceId: number;
 }
 
 export interface PresenceViewer {

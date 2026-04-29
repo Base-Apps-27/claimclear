@@ -126,7 +126,7 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
   registerBotProcess("email_generation", id);
   broadcastPresenceEvent({
     type: "bot_started",
-    claimId: id,
+    resourceType: "claim", resourceId: id,
     userName: "AI Email Generator",
     userEmail: null,
     botProcess: "email_generation",
@@ -168,7 +168,7 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
     unregisterBotProcess("email_generation", id);
     broadcastPresenceEvent({
       type: "bot_completed",
-      claimId: id,
+      resourceType: "claim", resourceId: id,
       userName: "AI Email Generator",
       userEmail: null,
       botProcess: "email_generation",

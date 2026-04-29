@@ -693,7 +693,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
 
       broadcastPresenceEvent({
         type: "bot_started",
-        claimId: sub.claimId,
+        resourceType: "claim", resourceId: sub.claimId,
         userName: "Batch Processor",
         userEmail: null,
         botProcess: "portal_submission",
@@ -704,7 +704,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
 
       broadcastPresenceEvent({
         type: "bot_completed",
-        claimId: sub.claimId,
+        resourceType: "claim", resourceId: sub.claimId,
         userName: "Batch Processor",
         userEmail: null,
         botProcess: "portal_submission",
@@ -765,7 +765,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
       if (subClaimId) {
         broadcastPresenceEvent({
           type: "bot_completed",
-          claimId: subClaimId,
+          resourceType: "claim", resourceId: subClaimId,
           userName: "Batch Processor",
           userEmail: null,
           botProcess: "portal_submission",
@@ -1002,7 +1002,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
   broadcastPresenceEvent({
     type: "bot_started",
-    claimId: sub.claimId,
+    resourceType: "claim", resourceId: sub.claimId,
     userName: "Sandbox Runner",
     userEmail: null,
     botProcess: "portal_sandbox",
@@ -1074,7 +1074,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     broadcastPresenceEvent({
       type: "bot_completed",
-      claimId: sub.claimId,
+      resourceType: "claim", resourceId: sub.claimId,
       userName: "Sandbox Runner",
       userEmail: null,
       botProcess: "portal_sandbox",
@@ -1130,7 +1130,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     broadcastPresenceEvent({
       type: "bot_completed",
-      claimId: sub.claimId,
+      resourceType: "claim", resourceId: sub.claimId,
       userName: "Sandbox Runner",
       userEmail: null,
       botProcess: "portal_sandbox",

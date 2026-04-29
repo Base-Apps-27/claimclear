@@ -210,7 +210,7 @@ export default function ClaimDetail() {
     },
   });
 
-  const { viewers, botActivity: botPresenceActivity } = usePresence(claimId);
+  const { viewers, botActivity: botPresenceActivity } = usePresence("claim", claimId);
   useClaimEvents(claimId);
 
   const { data: collectedEvidence } = useListClaimEvidence(claimId, {

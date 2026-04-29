@@ -38,6 +38,7 @@ import {
 import { WrapTooltip } from "@/components/info-tooltip";
 import { toast } from "@/hooks/use-toast";
 import { QualityCheckPanel } from "@/components/quality-check-panel";
+import { PresenceLockWrapper } from "@/components/presence-lock";
 import { LintGateDialog } from "@/components/lint-gate-dialog";
 import type { LintResult } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
@@ -53,6 +54,13 @@ interface WorkflowPlayerGroupProps {
   onComplete: () => void;
   showGroupContext?: boolean;
   showDetailsLink?: boolean;
+  /**
+   * When set, action buttons that mutate group state (Save Changes, Confirm
+   * & Queue, Place on Hold, Resume, Generate Preview, Save & Conclude) are
+   * disabled and the reason is shown as a tooltip. Used by the queue side
+   * panel to lock the workflow when another viewer is on the group.
+   */
+  presenceLockReason?: string | null;
 }
 
 export function WorkflowPlayerGroup({
@@ -60,7 +68,9 @@ export function WorkflowPlayerGroup({
   onComplete,
   showGroupContext = false,
   showDetailsLink = true,
+  presenceLockReason = null,
 }: WorkflowPlayerGroupProps) {
+  const presenceLocked = !!presenceLockReason;
   const queryClient = useQueryClient();
   const updateStatus = useUpdateInvoiceGroupStatus();
   const updateWorkflow = useUpdateInvoiceGroupWorkflow();
@@ -446,9 +456,11 @@ export function WorkflowPlayerGroup({
               </div>
             </div>
             <div className="flex gap-2 ml-8">
-              <Button size="sm" onClick={handleResumeFromHold}>
-                <ArrowRight className="h-4 w-4 mr-1" />Resume Workflow
-              </Button>
+              <PresenceLockWrapper reason={presenceLockReason}>
+                <Button size="sm" onClick={handleResumeFromHold} disabled={presenceLocked}>
+                  <ArrowRight className="h-4 w-4 mr-1" />Resume Workflow
+                </Button>
+              </PresenceLockWrapper>
               {showDetailsLink && (
                 <Link href={`/invoice-groups/${group.id}`}>
                   <Button size="sm" variant="outline">Full Details</Button>
@@ -526,9 +538,11 @@ export function WorkflowPlayerGroup({
                       <TreeDeciduous className="h-4 w-4 mr-1" />
                       Follow Workflow <ArrowRight className="h-4 w-4 ml-1" />
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => setShowHoldDialog(true)}>
-                      <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
-                    </Button>
+                    <PresenceLockWrapper reason={presenceLockReason}>
+                      <Button size="sm" variant="outline" onClick={() => setShowHoldDialog(true)} disabled={presenceLocked}>
+                        <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
+                      </Button>
+                    </PresenceLockWrapper>
                   </div>
                 ) : (
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-sm space-y-2">
@@ -550,9 +564,11 @@ export function WorkflowPlayerGroup({
                           <Button size="sm" variant="outline">Go to Group Details</Button>
                         </Link>
                       )}
-                      <Button size="sm" variant="outline" onClick={() => setShowHoldDialog(true)}>
-                        <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
-                      </Button>
+                      <PresenceLockWrapper reason={presenceLockReason}>
+                        <Button size="sm" variant="outline" onClick={() => setShowHoldDialog(true)} disabled={presenceLocked}>
+                          <PauseCircle className="h-4 w-4 mr-1" /> Place on Hold
+                        </Button>
+                      </PresenceLockWrapper>
                     </div>
                   </div>
                 )}
@@ -586,6 +602,7 @@ export function WorkflowPlayerGroup({
                     onQueueForPortal={() => advanceStep("submit")}
                     onConclude={() => setShowConcludeDialog(true)}
                     onPlaceHold={() => setShowHoldDialog(true)}
+                    actionsDisabledReason={presenceLockReason}
                   />
                 </div>
               </CardContent>
@@ -630,13 +647,15 @@ export function WorkflowPlayerGroup({
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
-                  <Button size="sm" onClick={handleGeneratePreview} disabled={generatePreview.isPending}>
-                    {generatePreview.isPending ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
-                    ) : (
-                      <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
-                    )}
-                  </Button>
+                  <PresenceLockWrapper reason={presenceLockReason}>
+                    <Button size="sm" onClick={handleGeneratePreview} disabled={generatePreview.isPending || presenceLocked}>
+                      {generatePreview.isPending ? (
+                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
+                      ) : (
+                        <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
+                      )}
+                    </Button>
+                  </PresenceLockWrapper>
                 </div>
               </CardContent>
             </Card>
@@ -726,19 +745,21 @@ export function WorkflowPlayerGroup({
                           {historyOpen ? "Hide History" : `History (${draftSubmission.descriptionHistory.length})`}
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs gap-1"
-                        onClick={handleRegenerateText}
-                        disabled={regenerateText.isPending || revertDescription.isPending}
-                      >
-                        {regenerateText.isPending ? (
-                          <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>
-                        ) : (
-                          <><Sparkles className="h-3 w-3" />Regenerate Text</>
-                        )}
-                      </Button>
+                      <PresenceLockWrapper reason={presenceLockReason ?? null}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs gap-1"
+                          onClick={handleRegenerateText}
+                          disabled={regenerateText.isPending || revertDescription.isPending || !!presenceLockReason}
+                        >
+                          {regenerateText.isPending ? (
+                            <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>
+                          ) : (
+                            <><Sparkles className="h-3 w-3" />Regenerate Text</>
+                          )}
+                        </Button>
+                      </PresenceLockWrapper>
                     </div>
                   </div>
                   <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap border max-h-64 overflow-y-auto">
@@ -783,15 +804,17 @@ export function WorkflowPlayerGroup({
                                 >
                                   <Eye className="h-3 w-3" />{isExpanded ? "Hide" : "Preview"}
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs gap-1"
-                                  onClick={() => handleRevertToVersion(idx)}
-                                  disabled={revertDescription.isPending || regenerateText.isPending}
-                                >
-                                  <Undo2 className="h-3 w-3" />Revert to this
-                                </Button>
+                                <PresenceLockWrapper reason={presenceLockReason ?? null}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs gap-1"
+                                    onClick={() => handleRevertToVersion(idx)}
+                                    disabled={revertDescription.isPending || regenerateText.isPending || !!presenceLockReason}
+                                  >
+                                    <Undo2 className="h-3 w-3" />Revert to this
+                                  </Button>
+                                </PresenceLockWrapper>
                               </div>
                             </div>
                             {isExpanded && (
@@ -822,14 +845,16 @@ export function WorkflowPlayerGroup({
                       <Button size="sm" variant="outline" onClick={handleEditDraft}>
                         <Edit3 className="h-4 w-4 mr-1" />Edit
                       </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleConfirmSubmit}
-                        disabled={confirmSubmission.isPending || hasMissing}
-                      >
-                        <Send className="h-4 w-4 mr-1" />
-                        {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
-                      </Button>
+                      <PresenceLockWrapper reason={presenceLockReason}>
+                        <Button
+                          size="sm"
+                          onClick={handleConfirmSubmit}
+                          disabled={confirmSubmission.isPending || hasMissing || presenceLocked}
+                        >
+                          <Send className="h-4 w-4 mr-1" />
+                          {confirmSubmission.isPending ? "Queuing..." : "Confirm & Queue"}
+                        </Button>
+                      </PresenceLockWrapper>
                     </div>
                   )}
 
@@ -921,9 +946,11 @@ export function WorkflowPlayerGroup({
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setDraftEditing(false)}>Cancel</Button>
-                  <Button size="sm" onClick={handleSaveDraft} disabled={updateDraft.isPending}>
-                    {updateDraft.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
+                  <PresenceLockWrapper reason={presenceLockReason}>
+                    <Button size="sm" onClick={handleSaveDraft} disabled={updateDraft.isPending || presenceLocked}>
+                      {updateDraft.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </PresenceLockWrapper>
                 </div>
               </CardContent>
             </Card>
@@ -957,7 +984,9 @@ export function WorkflowPlayerGroup({
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowHoldDialog(false)}>Cancel</Button>
-              <Button onClick={handlePlaceHold} disabled={!holdReason.trim()}>Place on Hold</Button>
+              <PresenceLockWrapper reason={presenceLockReason}>
+                <Button onClick={handlePlaceHold} disabled={!holdReason.trim() || presenceLocked}>Place on Hold</Button>
+              </PresenceLockWrapper>
             </div>
           </div>
         </DialogContent>
@@ -984,7 +1013,9 @@ export function WorkflowPlayerGroup({
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowConcludeDialog(false)}>Cancel</Button>
-              <Button onClick={handleConclude} disabled={!concludeNotes.trim()}>Save & Conclude</Button>
+              <PresenceLockWrapper reason={presenceLockReason}>
+                <Button onClick={handleConclude} disabled={!concludeNotes.trim() || presenceLocked}>Save & Conclude</Button>
+              </PresenceLockWrapper>
             </div>
           </div>
         </DialogContent>

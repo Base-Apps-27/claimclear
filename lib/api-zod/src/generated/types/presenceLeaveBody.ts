@@ -5,7 +5,9 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PresenceResourceType } from "./presenceResourceType";
 
 export interface PresenceLeaveBody {
-  claimId: number;
+  resourceType: PresenceResourceType;
+  resourceId: number;
 }

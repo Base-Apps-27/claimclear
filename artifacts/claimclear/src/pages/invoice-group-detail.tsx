@@ -21,6 +21,10 @@ import {
   useRemoveClaimHold,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { usePresence } from "@/hooks/use-presence";
+import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
+import { HumanPresenceBanner } from "@/components/presence-banners";
+import { PresenceLockWrapper, formatViewerNames } from "@/components/presence-lock";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -109,6 +113,12 @@ export default function InvoiceGroupDetail() {
       return next;
     });
   };
+
+  const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", id > 0 ? id : undefined);
+  useInvoiceGroupEvents(id > 0 ? id : undefined);
+  const lockReason = othersPresent
+    ? `Disabled — ${formatViewerNames(otherViewers)} ${otherViewers.length === 1 ? "is" : "are"} currently working on this group. Wait for them to leave or coordinate directly.`
+    : null;
 
   const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
   const [reassignTab, setReassignTab] = useState<"group" | "claim">("group");
@@ -249,6 +259,7 @@ export default function InvoiceGroupDetail() {
 
   return (
     <div className="space-y-6">
+      <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
           <Link href="/invoice-groups"><ArrowLeft className="h-4 w-4 mr-2" /> Back</Link>
@@ -366,16 +377,18 @@ export default function InvoiceGroupDetail() {
                                 {ev.collectedBy && `by ${ev.collectedBy} · `}
                                 {formatDateTime(ev.collectedAt)}
                               </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-destructive"
-                                onClick={() => handleDeleteEvidence(ev.id)}
-                                disabled={deleteEvidence.isPending}
-                                title="Delete evidence"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                              <PresenceLockWrapper reason={lockReason}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive"
+                                  onClick={() => handleDeleteEvidence(ev.id)}
+                                  disabled={deleteEvidence.isPending || othersPresent}
+                                  title="Delete evidence"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </PresenceLockWrapper>
                             </div>
                           </div>
                           {ev.imageUrl && (
@@ -466,26 +479,29 @@ export default function InvoiceGroupDetail() {
                               <td className="px-4 py-3 font-medium whitespace-nowrap">{formatCurrency(ride.claimAmount)}</td>
                               <td className="px-4 py-3"><StatusBadge status={ride.status} /></td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">
-                                {isHeld ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleRemoveLegHold(ride.id)}
-                                    disabled={removeLegHold.isPending}
-                                    data-testid={`btn-remove-leg-hold-${ride.id}`}
-                                  >
-                                    <Play className="h-3.5 w-3.5 mr-1" />Remove Hold
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => openLegHoldDialog(ride.id)}
-                                    data-testid={`btn-hold-leg-${ride.id}`}
-                                  >
-                                    <PauseCircle className="h-3.5 w-3.5 mr-1" />Hold
-                                  </Button>
-                                )}
+                                <PresenceLockWrapper reason={lockReason}>
+                                  {isHeld ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRemoveLegHold(ride.id)}
+                                      disabled={removeLegHold.isPending || othersPresent}
+                                      data-testid={`btn-remove-leg-hold-${ride.id}`}
+                                    >
+                                      <Play className="h-3.5 w-3.5 mr-1" />Remove Hold
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openLegHoldDialog(ride.id)}
+                                      disabled={othersPresent}
+                                      data-testid={`btn-hold-leg-${ride.id}`}
+                                    >
+                                      <PauseCircle className="h-3.5 w-3.5 mr-1" />Hold
+                                    </Button>
+                                  )}
+                                </PresenceLockWrapper>
                               </td>
                             </tr>
                             {isHeld && ride.holdReason && (
@@ -554,14 +570,16 @@ export default function InvoiceGroupDetail() {
                 )}
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="ghost" onClick={closeLegHoldDialog}>Cancel</Button>
-                  <Button
-                    onClick={handlePlaceLegHold}
-                    disabled={!legHoldReason.trim() || placeLegHold.isPending}
-                    data-testid="btn-confirm-leg-hold"
-                  >
-                    {placeLegHold.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <PauseCircle className="h-4 w-4 mr-1" />}
-                    Place on Hold
-                  </Button>
+                  <PresenceLockWrapper reason={lockReason}>
+                    <Button
+                      onClick={handlePlaceLegHold}
+                      disabled={!legHoldReason.trim() || placeLegHold.isPending || othersPresent}
+                      data-testid="btn-confirm-leg-hold"
+                    >
+                      {placeLegHold.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <PauseCircle className="h-4 w-4 mr-1" />}
+                      Place on Hold
+                    </Button>
+                  </PresenceLockWrapper>
                 </div>
               </div>
             </DialogContent>
@@ -693,55 +711,60 @@ export default function InvoiceGroupDetail() {
 
                       <div className="flex items-center gap-2 pt-1 flex-wrap">
                         {!resp.processed && (
-                          <>
-                            <Button
-                              size="sm" variant="outline"
-                              className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
-                              disabled={processResponseMutation.isPending}
-                              onClick={async () => {
-                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
-                                invalidateAfterResponseChange();
-                              }}
-                            >
-                              <CheckCircle className="h-3 w-3 mr-1" /> Approve
-                            </Button>
-                            <Button
-                              size="sm" variant="outline"
-                              className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
-                              disabled={processResponseMutation.isPending}
-                              onClick={async () => {
-                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
-                                invalidateAfterResponseChange();
-                              }}
-                            >
-                              <X className="h-3 w-3 mr-1" /> Deny
-                            </Button>
-                            <Button
-                              size="sm" variant="outline"
-                              className="text-xs h-7"
-                              disabled={processResponseMutation.isPending}
-                              onClick={async () => {
-                                await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as ProcessResponseBodyResponseType } });
-                                invalidateAfterResponseChange();
-                              }}
-                            >
-                              <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
-                            </Button>
-                          </>
+                          <PresenceLockWrapper reason={lockReason}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Button
+                                size="sm" variant="outline"
+                                className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
+                                disabled={processResponseMutation.isPending || othersPresent}
+                                onClick={async () => {
+                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
+                                  invalidateAfterResponseChange();
+                                }}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                              </Button>
+                              <Button
+                                size="sm" variant="outline"
+                                className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                                disabled={processResponseMutation.isPending || othersPresent}
+                                onClick={async () => {
+                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
+                                  invalidateAfterResponseChange();
+                                }}
+                              >
+                                <X className="h-3 w-3 mr-1" /> Deny
+                              </Button>
+                              <Button
+                                size="sm" variant="outline"
+                                className="text-xs h-7"
+                                disabled={processResponseMutation.isPending || othersPresent}
+                                onClick={async () => {
+                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as ProcessResponseBodyResponseType } });
+                                  invalidateAfterResponseChange();
+                                }}
+                              >
+                                <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
+                              </Button>
+                            </div>
+                          </PresenceLockWrapper>
                         )}
-                        <Button
-                          size="sm" variant="ghost"
-                          className="text-xs h-7 px-2 ml-auto opacity-70 hover:opacity-100"
-                          onClick={() => {
-                            setReassignTarget(resp);
-                            setReassignTab("group");
-                            setReassignSearch("");
-                            setReassignSelectedGroupId(null);
-                            setReassignSelectedClaimId(null);
-                          }}
-                        >
-                          <ArrowRightLeft className="h-3 w-3 mr-1" /> Not the right group?
-                        </Button>
+                        <PresenceLockWrapper reason={lockReason} className="ml-auto">
+                          <Button
+                            size="sm" variant="ghost"
+                            className="text-xs h-7 px-2 opacity-70 hover:opacity-100"
+                            disabled={othersPresent}
+                            onClick={() => {
+                              setReassignTarget(resp);
+                              setReassignTab("group");
+                              setReassignSearch("");
+                              setReassignSelectedGroupId(null);
+                              setReassignSelectedClaimId(null);
+                            }}
+                          >
+                            <ArrowRightLeft className="h-3 w-3 mr-1" /> Not the right group?
+                          </Button>
+                        </PresenceLockWrapper>
                       </div>
                     </div>
                   );
@@ -759,23 +782,27 @@ export default function InvoiceGroupDetail() {
                 <CardDescription className="text-xs">This group has no error details — review on the portal and classify.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleTriage("non_issue")}
-                  disabled={triageGroup.isPending}
-                >
-                  Non-Issue (Resolve)
-                </Button>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => handleTriage("issue_found")}
-                  disabled={triageGroup.isPending}
-                >
-                  Issue Found
-                </Button>
+                <PresenceLockWrapper reason={lockReason} className="w-full">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleTriage("non_issue")}
+                    disabled={triageGroup.isPending || othersPresent}
+                  >
+                    Non-Issue (Resolve)
+                  </Button>
+                </PresenceLockWrapper>
+                <PresenceLockWrapper reason={lockReason} className="w-full">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={() => handleTriage("issue_found")}
+                    disabled={triageGroup.isPending || othersPresent}
+                  >
+                    Issue Found
+                  </Button>
+                </PresenceLockWrapper>
               </CardContent>
             </Card>
           )}
@@ -787,14 +814,16 @@ export default function InvoiceGroupDetail() {
                 <CardDescription className="text-xs">{group.holdReason || "No reason provided"}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={handleRemoveHold}
-                  disabled={removeHold.isPending}
-                >
-                  Remove Hold
-                </Button>
+                <PresenceLockWrapper reason={lockReason} className="w-full">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={handleRemoveHold}
+                    disabled={removeHold.isPending || othersPresent}
+                  >
+                    Remove Hold
+                  </Button>
+                </PresenceLockWrapper>
               </CardContent>
             </Card>
           )}
@@ -812,17 +841,18 @@ export default function InvoiceGroupDetail() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {nonClosure.map((o) => (
-                    <Button
-                      key={o}
-                      size="sm"
-                      variant={group.outcome === o ? "default" : "outline"}
-                      className="w-full"
-                      onClick={() => handleOutcome(o)}
-                      disabled={updateOutcome.isPending}
-                      data-testid={`button-group-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      {o}
-                    </Button>
+                    <PresenceLockWrapper key={o} reason={lockReason} className="w-full">
+                      <Button
+                        size="sm"
+                        variant={group.outcome === o ? "default" : "outline"}
+                        className="w-full"
+                        onClick={() => handleOutcome(o)}
+                        disabled={updateOutcome.isPending || othersPresent}
+                        data-testid={`button-group-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
+                        {o}
+                      </Button>
+                    </PresenceLockWrapper>
                   ))}
                   {closureOffered && (
                     <TooltipProvider>
@@ -830,16 +860,18 @@ export default function InvoiceGroupDetail() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="block">
-                              <Button
-                                size="sm"
-                                variant={group.outcome === "Denied" ? "default" : "outline"}
-                                className="w-full"
-                                onClick={() => handleOutcome("Denied")}
-                                disabled={!hasResponse || updateOutcome.isPending}
-                                data-testid="button-group-outcome-payer-denied"
-                              >
-                                Payer Denied
-                              </Button>
+                              <PresenceLockWrapper reason={lockReason} className="w-full">
+                                <Button
+                                  size="sm"
+                                  variant={group.outcome === "Denied" ? "default" : "outline"}
+                                  className="w-full"
+                                  onClick={() => handleOutcome("Denied")}
+                                  disabled={!hasResponse || updateOutcome.isPending || othersPresent}
+                                  data-testid="button-group-outcome-payer-denied"
+                                >
+                                  Payer Denied
+                                </Button>
+                              </PresenceLockWrapper>
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -848,31 +880,39 @@ export default function InvoiceGroupDetail() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant={group.outcome === "Withdrawn" && group.closureReason === "not_contestable" ? "default" : "outline"}
-                              className="w-full"
-                              onClick={() => handleOutcome("Withdrawn", "not_contestable")}
-                              disabled={updateOutcome.isPending}
-                              data-testid="button-group-outcome-not-contestable"
-                            >
-                              Withdraw — Not Contestable
-                            </Button>
+                            <span className="block">
+                              <PresenceLockWrapper reason={lockReason} className="w-full">
+                                <Button
+                                  size="sm"
+                                  variant={group.outcome === "Withdrawn" && group.closureReason === "not_contestable" ? "default" : "outline"}
+                                  className="w-full"
+                                  onClick={() => handleOutcome("Withdrawn", "not_contestable")}
+                                  disabled={updateOutcome.isPending || othersPresent}
+                                  data-testid="button-group-outcome-not-contestable"
+                                >
+                                  Withdraw — Not Contestable
+                                </Button>
+                              </PresenceLockWrapper>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>Close because we decided not to dispute (no clear path to recover).</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss" ? "default" : "outline"}
-                              className="w-full"
-                              onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
-                              disabled={updateOutcome.isPending}
-                              data-testid="button-group-outcome-accepted-loss"
-                            >
-                              Withdraw — Accepted Loss
-                            </Button>
+                            <span className="block">
+                              <PresenceLockWrapper reason={lockReason} className="w-full">
+                                <Button
+                                  size="sm"
+                                  variant={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss" ? "default" : "outline"}
+                                  className="w-full"
+                                  onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
+                                  disabled={updateOutcome.isPending || othersPresent}
+                                  data-testid="button-group-outcome-accepted-loss"
+                                >
+                                  Withdraw — Accepted Loss
+                                </Button>
+                              </PresenceLockWrapper>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>Close after a denial because we accept the loss and won't re-dispute.</TooltipContent>
                         </Tooltip>
@@ -896,15 +936,17 @@ export default function InvoiceGroupDetail() {
                   onChange={(e) => setHoldReason(e.target.value)}
                   rows={2}
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleHold}
-                  disabled={holdGroup.isPending || !holdReason.trim()}
-                >
-                  Place on Hold
-                </Button>
+                <PresenceLockWrapper reason={lockReason} className="w-full">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleHold}
+                    disabled={holdGroup.isPending || !holdReason.trim() || othersPresent}
+                  >
+                    Place on Hold
+                  </Button>
+                </PresenceLockWrapper>
               </CardContent>
             </Card>
           )}
@@ -1015,49 +1057,54 @@ export default function InvoiceGroupDetail() {
             </Tabs>
 
             <div className="flex gap-2 justify-between pt-2">
-              <Button
-                variant="outline"
-                disabled={reassignResponseMutation.isPending}
-                onClick={async () => {
-                  if (!reassignTarget) return;
-                  await reassignResponseMutation.mutateAsync({
-                    id: reassignTarget.id,
-                    data: { unmatch: true },
-                  });
-                  invalidateAfterResponseChange();
-                  setReassignTarget(null);
-                }}
-              >
-                <MailQuestion className="h-4 w-4 mr-1" /> Unmatch
-              </Button>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setReassignTarget(null)}>Cancel</Button>
+              <PresenceLockWrapper reason={lockReason}>
                 <Button
-                  disabled={
-                    reassignResponseMutation.isPending ||
-                    (reassignTab === "group" ? !reassignSelectedGroupId : !reassignSelectedClaimId)
-                  }
+                  variant="outline"
+                  disabled={reassignResponseMutation.isPending || othersPresent}
                   onClick={async () => {
                     if (!reassignTarget) return;
-                    if (reassignTab === "group" && reassignSelectedGroupId) {
-                      await reassignResponseMutation.mutateAsync({
-                        id: reassignTarget.id,
-                        data: { targetGroupId: reassignSelectedGroupId },
-                      });
-                    } else if (reassignTab === "claim" && reassignSelectedClaimId) {
-                      await reassignResponseMutation.mutateAsync({
-                        id: reassignTarget.id,
-                        data: { targetClaimId: reassignSelectedClaimId },
-                      });
-                    } else {
-                      return;
-                    }
+                    await reassignResponseMutation.mutateAsync({
+                      id: reassignTarget.id,
+                      data: { unmatch: true },
+                    });
                     invalidateAfterResponseChange();
                     setReassignTarget(null);
                   }}
                 >
-                  Reassign
+                  <MailQuestion className="h-4 w-4 mr-1" /> Unmatch
                 </Button>
+              </PresenceLockWrapper>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => setReassignTarget(null)}>Cancel</Button>
+                <PresenceLockWrapper reason={lockReason}>
+                  <Button
+                    disabled={
+                      reassignResponseMutation.isPending ||
+                      othersPresent ||
+                      (reassignTab === "group" ? !reassignSelectedGroupId : !reassignSelectedClaimId)
+                    }
+                    onClick={async () => {
+                      if (!reassignTarget) return;
+                      if (reassignTab === "group" && reassignSelectedGroupId) {
+                        await reassignResponseMutation.mutateAsync({
+                          id: reassignTarget.id,
+                          data: { targetGroupId: reassignSelectedGroupId },
+                        });
+                      } else if (reassignTab === "claim" && reassignSelectedClaimId) {
+                        await reassignResponseMutation.mutateAsync({
+                          id: reassignTarget.id,
+                          data: { targetClaimId: reassignSelectedClaimId },
+                        });
+                      } else {
+                        return;
+                      }
+                      invalidateAfterResponseChange();
+                      setReassignTarget(null);
+                    }}
+                  >
+                    Reassign
+                  </Button>
+                </PresenceLockWrapper>
               </div>
             </div>
           </div>

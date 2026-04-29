@@ -16,9 +16,12 @@ export interface GroupEvent {
   timestamp: string;
 }
 
+export type PresenceResourceType = "claim" | "invoice_group";
+
 export interface PresenceEvent {
   type: "viewer_joined" | "viewer_left" | "bot_started" | "bot_completed";
-  claimId: number;
+  resourceType: PresenceResourceType;
+  resourceId: number;
   userName: string | null;
   userEmail: string | null;
   botProcess?: string;
@@ -221,9 +224,13 @@ export function broadcastGroupEvent(event: GroupEvent): void {
 }
 
 export function broadcastPresenceEvent(event: PresenceEvent): void {
-  const clients = claimClients.get(event.claimId);
-  if (clients) {
-    for (const client of clients) {
+  // Route presence updates to whichever SSE channel the resource lives on so
+  // viewers of the matching claim or invoice group see the banner update.
+  const targetClients = event.resourceType === "invoice_group"
+    ? groupClients.get(event.resourceId)
+    : claimClients.get(event.resourceId);
+  if (targetClients) {
+    for (const client of targetClients) {
       sendPresenceEvent(client, event);
     }
   }

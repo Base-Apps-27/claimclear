@@ -22,7 +22,8 @@ interface ClaimEvent {
 
 interface PresenceSSEEvent {
   type: "viewer_joined" | "viewer_left" | "bot_started" | "bot_completed";
-  claimId: number;
+  resourceType: "claim" | "invoice_group";
+  resourceId: number;
   userName: string | null;
   userEmail: string | null;
   botProcess?: string;
@@ -77,7 +78,9 @@ export function useClaimEvents(claimId: number | undefined) {
     (event: MessageEvent) => {
       try {
         const data: PresenceSSEEvent = JSON.parse(event.data);
-        queryClient.invalidateQueries({ queryKey: getGetPresenceQueryKey(data.claimId) });
+        queryClient.invalidateQueries({
+          queryKey: getGetPresenceQueryKey(data.resourceType, data.resourceId),
+        });
       } catch {
         // ignore malformed events
       }
@@ -181,6 +184,16 @@ export function useInvoiceGroupEvents(groupId: number | undefined) {
         withCredentials: true,
       });
       es.addEventListener("group_update", handleEvent);
+      es.addEventListener("presence_update", (event: MessageEvent) => {
+        try {
+          const data: PresenceSSEEvent = JSON.parse(event.data);
+          queryClient.invalidateQueries({
+            queryKey: getGetPresenceQueryKey(data.resourceType, data.resourceId),
+          });
+        } catch {
+          // ignore malformed events
+        }
+      });
       es.onopen = () => { retryCount.current = 0; };
       es.onerror = () => {
         es?.close();

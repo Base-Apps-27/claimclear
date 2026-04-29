@@ -1729,13 +1729,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
 
-  /presence/{claimId}:
+  /presence/{resourceType}/{resourceId}:
     get:
       operationId: getPresence
       tags: [presence]
-      summary: Get active viewers for a claim
+      summary: Get active viewers for a resource (claim or invoice group)
       parameters:
-        - name: claimId
+        - name: resourceType
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/PresenceResourceType"
+        - name: resourceId
           in: path
           required: true
           schema:
@@ -3586,21 +3591,32 @@ components:
         - name
         - status
 
+    PresenceResourceType:
+      type: string
+      enum: [claim, invoice_group]
+      description: The kind of resource a viewer is currently looking at.
+
     PresenceHeartbeatBody:
       type: object
       properties:
-        claimId:
+        resourceType:
+          $ref: "#/components/schemas/PresenceResourceType"
+        resourceId:
           type: integer
       required:
-        - claimId
+        - resourceType
+        - resourceId
 
     PresenceLeaveBody:
       type: object
       properties:
-        claimId:
+        resourceType:
+          $ref: "#/components/schemas/PresenceResourceType"
+        resourceId:
           type: integer
       required:
-        - claimId
+        - resourceType
+        - resourceId
 
     PresenceViewer:
       type: object

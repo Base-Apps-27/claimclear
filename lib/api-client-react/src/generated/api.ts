@@ -94,6 +94,7 @@ import type {
   PostResponseActionBody,
   PresenceHeartbeatBody,
   PresenceLeaveBody,
+  PresenceResourceType,
   PresenceResponse,
   ProcessResponseBody,
   ReassignResponseBody,
@@ -5903,31 +5904,42 @@ export const usePresenceLeave = <
 };
 
 /**
- * @summary Get active viewers for a claim
+ * @summary Get active viewers for a resource (claim or invoice group)
  */
-export const getGetPresenceUrl = (claimId: number) => {
-  return `/api/presence/${claimId}`;
+export const getGetPresenceUrl = (
+  resourceType: PresenceResourceType,
+  resourceId: number,
+) => {
+  return `/api/presence/${resourceType}/${resourceId}`;
 };
 
 export const getPresence = async (
-  claimId: number,
+  resourceType: PresenceResourceType,
+  resourceId: number,
   options?: RequestInit,
 ): Promise<PresenceResponse> => {
-  return customFetch<PresenceResponse>(getGetPresenceUrl(claimId), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<PresenceResponse>(
+    getGetPresenceUrl(resourceType, resourceId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getGetPresenceQueryKey = (claimId: number) => {
-  return [`/api/presence/${claimId}`] as const;
+export const getGetPresenceQueryKey = (
+  resourceType: PresenceResourceType,
+  resourceId: number,
+) => {
+  return [`/api/presence/${resourceType}/${resourceId}`] as const;
 };
 
 export const getGetPresenceQueryOptions = <
   TData = Awaited<ReturnType<typeof getPresence>>,
   TError = ErrorType<unknown>,
 >(
-  claimId: number,
+  resourceType: PresenceResourceType,
+  resourceId: number,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getPresence>>,
@@ -5939,16 +5951,17 @@ export const getGetPresenceQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetPresenceQueryKey(claimId);
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPresenceQueryKey(resourceType, resourceId);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getPresence>>> = ({
     signal,
-  }) => getPresence(claimId, { signal, ...requestOptions });
+  }) => getPresence(resourceType, resourceId, { signal, ...requestOptions });
 
   return {
     queryKey,
     queryFn,
-    enabled: !!claimId,
+    enabled: !!(resourceType && resourceId),
     ...queryOptions,
   } as UseQueryOptions<
     Awaited<ReturnType<typeof getPresence>>,
@@ -5963,14 +5976,15 @@ export type GetPresenceQueryResult = NonNullable<
 export type GetPresenceQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get active viewers for a claim
+ * @summary Get active viewers for a resource (claim or invoice group)
  */
 
 export function useGetPresence<
   TData = Awaited<ReturnType<typeof getPresence>>,
   TError = ErrorType<unknown>,
 >(
-  claimId: number,
+  resourceType: PresenceResourceType,
+  resourceId: number,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getPresence>>,
@@ -5980,7 +5994,11 @@ export function useGetPresence<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetPresenceQueryOptions(claimId, options);
+  const queryOptions = getGetPresenceQueryOptions(
+    resourceType,
+    resourceId,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

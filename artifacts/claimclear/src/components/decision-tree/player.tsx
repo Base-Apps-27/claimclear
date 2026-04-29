@@ -10,6 +10,7 @@ import {
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PresenceLockWrapper } from "@/components/presence-lock";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
@@ -84,6 +85,10 @@ interface PlayerProps {
   onConclude?: () => void;
   onQueueForPortal?: () => void;
   onPlaceHold?: () => void;
+  /** When set, action triggers (Continue to Portal, Conclude, Place on Hold) are
+   * disabled and the supplied reason is shown as a tooltip. Tree navigation is
+   * NOT disabled — only state-changing handoffs to the parent. */
+  actionsDisabledReason?: string | null;
 }
 
 let __evIdCounter = 0;
@@ -131,9 +136,10 @@ function normalizeNodeEvidence(saved: unknown): Record<string, Record<string, No
 }
 
 export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function TreePlayer(
-  { tree, onOutcome, isTestMode, claimId, initialState, legs, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold },
+  { tree, onOutcome, isTestMode, claimId, initialState, legs, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold, actionsDisabledReason },
   ref
 ) {
+  const actionsDisabled = !!actionsDisabledReason;
   const restoredNodeExists = initialState?.currentNodeId
     ? tree.nodes.some(n => n.id === initialState.currentNodeId)
     : false;
@@ -300,19 +306,25 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
               ) : (
                 <>
                   {(outcome.type === "portal_dispute" || outcome.type === "dispute") && onQueueForPortal && (
-                    <Button size="sm" onClick={onQueueForPortal} className="gap-1">
-                      <Send className="h-3 w-3" />Continue to Portal Submission
-                    </Button>
+                    <PresenceLockWrapper reason={actionsDisabledReason ?? null}>
+                      <Button size="sm" onClick={onQueueForPortal} disabled={actionsDisabled} className="gap-1">
+                        <Send className="h-3 w-3" />Continue to Portal Submission
+                      </Button>
+                    </PresenceLockWrapper>
                   )}
                   {outcome.type === "internal" && onConclude && (
-                    <Button size="sm" onClick={onConclude} className="gap-1">
-                      <CheckCircle2 className="h-3 w-3" />Conclude
-                    </Button>
+                    <PresenceLockWrapper reason={actionsDisabledReason ?? null}>
+                      <Button size="sm" onClick={onConclude} disabled={actionsDisabled} className="gap-1">
+                        <CheckCircle2 className="h-3 w-3" />Conclude
+                      </Button>
+                    </PresenceLockWrapper>
                   )}
                   {onPlaceHold && (
-                    <Button variant="outline" size="sm" onClick={onPlaceHold} className="gap-1">
-                      <PauseCircle className="h-3 w-3" />Place on Hold
-                    </Button>
+                    <PresenceLockWrapper reason={actionsDisabledReason ?? null}>
+                      <Button variant="outline" size="sm" onClick={onPlaceHold} disabled={actionsDisabled} className="gap-1">
+                        <PauseCircle className="h-3 w-3" />Place on Hold
+                      </Button>
+                    </PresenceLockWrapper>
                   )}
                 </>
               )}

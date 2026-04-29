@@ -3351,7 +3351,10 @@ export const ListBotActivityResponse = zod.array(ListBotActivityResponseItem);
  * @summary Upsert presence heartbeat
  */
 export const PresenceHeartbeatBody = zod.object({
-  claimId: zod.number(),
+  resourceType: zod
+    .enum(["claim", "invoice_group"])
+    .describe("The kind of resource a viewer is currently looking at."),
+  resourceId: zod.number(),
 });
 
 export const PresenceHeartbeatResponse = zod.object({
@@ -3362,7 +3365,10 @@ export const PresenceHeartbeatResponse = zod.object({
  * @summary Remove presence
  */
 export const PresenceLeaveBody = zod.object({
-  claimId: zod.number(),
+  resourceType: zod
+    .enum(["claim", "invoice_group"])
+    .describe("The kind of resource a viewer is currently looking at."),
+  resourceId: zod.number(),
 });
 
 export const PresenceLeaveResponse = zod.object({
@@ -3370,10 +3376,11 @@ export const PresenceLeaveResponse = zod.object({
 });
 
 /**
- * @summary Get active viewers for a claim
+ * @summary Get active viewers for a resource (claim or invoice group)
  */
 export const GetPresenceParams = zod.object({
-  claimId: zod.coerce.number(),
+  resourceType: zod.enum(["claim", "invoice_group"]),
+  resourceId: zod.coerce.number(),
 });
 
 export const GetPresenceResponse = zod.object({

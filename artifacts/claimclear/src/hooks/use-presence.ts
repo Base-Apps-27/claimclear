@@ -1,35 +1,45 @@
 import { useEffect } from "react";
+import { useAuth } from "@workspace/replit-auth-web";
 import { usePresenceHeartbeat, usePresenceLeave, useGetPresence, getGetPresenceQueryKey } from "@workspace/api-client-react";
 
-export function usePresence(claimId: number | undefined) {
+export type PresenceResourceType = "claim" | "invoice_group";
+
+export function usePresence(resourceType: PresenceResourceType, resourceId: number | undefined) {
   const heartbeat = usePresenceHeartbeat();
   const leave = usePresenceLeave();
-  
-  const { data } = useGetPresence(claimId || 0, {
+  const { user } = useAuth();
+
+  const safeId = resourceId || 0;
+
+  const { data } = useGetPresence(resourceType, safeId, {
     query: {
-      queryKey: getGetPresenceQueryKey(claimId || 0),
-      enabled: !!claimId,
+      queryKey: getGetPresenceQueryKey(resourceType, safeId),
+      enabled: !!resourceId,
       refetchInterval: 10000,
     }
   });
 
   const viewers = data?.viewers ?? [];
   const botActivity = data?.botActivity ?? [];
+  const otherViewers = user?.email
+    ? viewers.filter(v => v.userEmail !== user.email)
+    : viewers;
+  const othersPresent = otherViewers.length > 0;
 
   useEffect(() => {
-    if (!claimId) return;
+    if (!resourceId) return;
 
-    heartbeat.mutate({ data: { claimId } });
+    heartbeat.mutate({ data: { resourceType, resourceId } });
 
     const interval = setInterval(() => {
-      heartbeat.mutate({ data: { claimId } });
+      heartbeat.mutate({ data: { resourceType, resourceId } });
     }, 15000);
 
     return () => {
       clearInterval(interval);
-      leave.mutate({ data: { claimId } });
+      leave.mutate({ data: { resourceType, resourceId } });
     };
-  }, [claimId, heartbeat.mutate, leave.mutate]);
+  }, [resourceType, resourceId, heartbeat.mutate, leave.mutate]);
 
-  return { viewers, botActivity };
+  return { viewers, botActivity, otherViewers, othersPresent };
 }

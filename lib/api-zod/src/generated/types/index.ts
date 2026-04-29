@@ -157,6 +157,7 @@ export * from "./postResponseActionBody";
 export * from "./postResponseActionBodyAction";
 export * from "./presenceHeartbeatBody";
 export * from "./presenceLeaveBody";
+export * from "./presenceResourceType";
 export * from "./presenceResponse";
 export * from "./presenceViewer";
 export * from "./processResponseBody";

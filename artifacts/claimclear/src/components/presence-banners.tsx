@@ -68,7 +68,13 @@ function ViewerAvatar({ viewer, isNew }: { viewer: PresenceViewer; isNew: boolea
   );
 }
 
-export function HumanPresenceBanner({ viewers }: { viewers: PresenceViewer[] }) {
+export function HumanPresenceBanner({
+  viewers,
+  resourceLabel = "claim",
+}: {
+  viewers: PresenceViewer[];
+  resourceLabel?: "claim" | "group";
+}) {
   const { user } = useAuth();
   const prevViewersRef = useRef<Set<string>>(new Set());
   const [newViewers, setNewViewers] = useState<Set<string>>(new Set());
@@ -109,12 +115,12 @@ export function HumanPresenceBanner({ viewers }: { viewers: PresenceViewer[] }) 
       <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-          {nameList} {otherViewers.length === 1 ? "is" : "are"} also viewing this claim
+          {nameList} {otherViewers.length === 1 ? "is" : "are"} also viewing this {resourceLabel}
         </p>
         <p className="text-xs text-blue-600 dark:text-blue-400">
           {otherViewers.length === 1 && otherViewers[0].lastHeartbeat
-            ? `Viewing since ${timeAgo(otherViewers[0].lastHeartbeat)} — coordinate before making changes`
-            : "Also viewing this claim — coordinate before making changes"}
+            ? `Viewing since ${timeAgo(otherViewers[0].lastHeartbeat)} — actions disabled to prevent conflicts`
+            : `Also viewing this ${resourceLabel} — actions disabled to prevent conflicts`}
         </p>
       </div>
       <div className="flex -space-x-2 shrink-0">

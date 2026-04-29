@@ -15,12 +15,19 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { ChevronRight, FileText } from "lucide-react";
 import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
+import { usePresence } from "@/hooks/use-presence";
+import { HumanPresenceBanner } from "@/components/presence-banners";
+import { formatViewerNames } from "@/components/presence-lock";
 
 export default function Queue() {
   useInvoiceGroupsListEvents();
   const queryClient = useQueryClient();
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   useInvoiceGroupEvents(selectedGroupId ?? undefined);
+  const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedGroupId ?? undefined);
+  const lockReason = othersPresent
+    ? `Disabled — ${formatViewerNames(otherViewers)} ${otherViewers.length === 1 ? "is" : "are"} currently working on this group. Wait for them to leave or coordinate directly.`
+    : null;
   const panelRef = useRef<HTMLDivElement>(null);
 
   const selectGroup = (id: number) => {
@@ -165,10 +172,12 @@ export default function Queue() {
                   </Button>
                 </Link>
               </div>
+              <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
               <WorkflowPlayerGroup
                 group={selectedGroup}
                 showGroupContext={true}
                 showDetailsLink={true}
+                presenceLockReason={lockReason}
                 onComplete={() => {
                   setSelectedGroupId(null);
                   invalidate();
