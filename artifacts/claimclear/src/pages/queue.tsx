@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useRef, useState } from "react";
+import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import {
   useListInvoiceGroups,
@@ -19,9 +19,16 @@ import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
 export default function Queue() {
   useInvoiceGroupsListEvents();
   const queryClient = useQueryClient();
-  const [, navigate] = useLocation();
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   useInvoiceGroupEvents(selectedGroupId ?? undefined);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const selectGroup = (id: number) => {
+    setSelectedGroupId(id);
+    window.requestAnimationFrame(() => {
+      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const newQuery = useListInvoiceGroups({ status: "New" });
   const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence" });
@@ -42,13 +49,14 @@ export default function Queue() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
 
-  const renderGroupRow = (group: InvoiceGroupResponse, showWorkflow = false) => (
+  const renderGroupRow = (group: InvoiceGroupResponse) => (
     <Card
       key={group.id}
+      data-testid={`queue-row-${group.invoiceNumber}`}
       className={`cursor-pointer transition-colors ${
         selectedGroupId === group.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
       }`}
-      onClick={() => showWorkflow ? setSelectedGroupId(group.id) : navigate(`/invoice-groups/${group.id}`)}
+      onClick={() => selectGroup(group.id)}
     >
       <CardContent className="py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -61,7 +69,7 @@ export default function Queue() {
         <div className="flex items-center gap-4 text-sm">
           {group.errorTypeName && <span className="text-muted-foreground">{group.errorTypeName}</span>}
           <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
-          {showWorkflow && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </div>
       </CardContent>
     </Card>
@@ -109,7 +117,7 @@ export default function Queue() {
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups need action right now.</CardContent></Card>
               ) : (
                 <div className="space-y-2">
-                  {actionableGroups.map((g) => renderGroupRow(g, true))}
+                  {actionableGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
             </TabsContent>
@@ -139,16 +147,16 @@ export default function Queue() {
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups on hold.</CardContent></Card>
               ) : (
                 <div className="space-y-2">
-                  {onHoldGroups.map((g) => renderGroupRow(g, true))}
+                  {onHoldGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
             </TabsContent>
           </Tabs>
         </div>
 
-        <div>
+        <div ref={panelRef} className="scroll-mt-4">
           {selectedGroup ? (
-            <div className="sticky top-4 space-y-3">
+            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Process Invoice Group</h3>
                 <Link href={`/invoice-groups/${selectedGroup.id}`}>
