@@ -753,6 +753,12 @@ export interface ErrorTypeResponse {
   emailTemplate?: string | null;
   /** @nullable */
   disputeInstructions?: string | null;
+  /** When true, portal submissions for claims with this error type are
+routed to the MAS "GPS Control Deviation" Freshdesk form (which
+requires the GPS Breadcrumbs Available field). When false, they
+are routed to the generic "Other Issue or Question" form.
+ */
+  useGpsControlDeviation: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -778,6 +784,7 @@ export interface CreateErrorTypeBody {
   decisionTree?: CreateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
   disputeInstructions?: string;
+  useGpsControlDeviation?: boolean;
 }
 
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
@@ -801,6 +808,7 @@ export interface UpdateErrorTypeBody {
   decisionTree?: UpdateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
   disputeInstructions?: string;
+  useGpsControlDeviation?: boolean;
 }
 
 export interface AppSettingsResponse {

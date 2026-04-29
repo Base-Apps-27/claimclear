@@ -15,10 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
   X, Sparkles, Loader2, Type,
-  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle
+  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle, MapPin
 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -294,6 +295,7 @@ interface ErrorTypeFormState {
   description: string;
   disputeInstructions: string;
   decisionTree: DecisionTree | null;
+  useGpsControlDeviation: boolean;
 }
 
 export default function ErrorTypes() {
@@ -316,6 +318,7 @@ export default function ErrorTypes() {
   const emptyForm: ErrorTypeFormState = {
     name: "", category: "", description: "", disputeInstructions: "",
     decisionTree: null,
+    useGpsControlDeviation: false,
   };
 
   const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
@@ -343,6 +346,7 @@ export default function ErrorTypes() {
         description: result.description || "",
         disputeInstructions: form.disputeInstructions,
         decisionTree: convertedTree,
+        useGpsControlDeviation: form.useGpsControlDeviation,
       });
     } catch (err: unknown) {
       setSopError(err instanceof Error ? err.message : "Analysis failed");
@@ -369,6 +373,7 @@ export default function ErrorTypes() {
       description: et.description || "",
       disputeInstructions: et.disputeInstructions || "",
       decisionTree: convertedTree,
+      useGpsControlDeviation: et.useGpsControlDeviation === true,
     });
     setEditingId(et.id);
   };
@@ -382,6 +387,7 @@ export default function ErrorTypes() {
       decisionTree: form.decisionTree
         ? (JSON.parse(JSON.stringify(form.decisionTree)) as unknown as Record<string, unknown>)
         : undefined,
+      useGpsControlDeviation: form.useGpsControlDeviation,
     };
 
     if (editingId) {
@@ -458,6 +464,9 @@ export default function ErrorTypes() {
                   ) : (
                     <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />No Workflow</Badge>
                   )}
+                  {et.useGpsControlDeviation ? (
+                    <Badge variant="secondary" className="text-blue-700"><MapPin className="h-3 w-3 mr-1" />GPS Control Deviation</Badge>
+                  ) : null}
                   {et.disputeInstructions ? (
                     <Badge variant="secondary"><FileText className="h-3 w-3 mr-1" />Custom Dispute Instructions</Badge>
                   ) : defaultDisputeInstructions ? (
@@ -575,6 +584,28 @@ export default function ErrorTypes() {
                   <InfoTooltip content="Explain when this error type applies and what circumstances trigger it. This description is shown to staff when reviewing claims." />
                 </Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Describe when this error type applies..." />
+              </div>
+              <Separator />
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="use-gps-control-deviation" className="flex items-center gap-1 cursor-pointer">
+                      <MapPin className="h-3.5 w-3.5" />
+                      Submit via GPS Control Deviation form
+                      <InfoTooltip content="When ON, portal submissions for claims with this error type are filed under the MAS 'GPS Control Deviation' form (which requires the GPS Breadcrumbs Available field). When OFF, they go to the generic 'Other Issue or Question' form. Turn this ON for location/GPS-based denials only." />
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {form.useGpsControlDeviation
+                        ? "Routes to: GPS Control Deviation (requires GPS Breadcrumbs)"
+                        : "Routes to: Other Issue or Question (default)"}
+                    </p>
+                  </div>
+                  <Switch
+                    id="use-gps-control-deviation"
+                    checked={form.useGpsControlDeviation}
+                    onCheckedChange={(checked) => setForm({ ...form, useGpsControlDeviation: checked })}
+                  />
+                </div>
               </div>
               <Separator />
               <div>

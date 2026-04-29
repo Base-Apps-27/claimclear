@@ -168,8 +168,20 @@ async function getPortalSettings(): Promise<PortalSettings> {
   };
 }
 
-function determineIssueType(_errorTypeName: string | null): string {
-  return "Other Issue or Question";
+/**
+ * Pick the Freshdesk ticket form for a portal submission. The mapping lives
+ * on the error_types row as the `useGpsControlDeviation` toggle so admins
+ * can re-route a plan from the error-types admin page without a code change.
+ *
+ * - `useGpsControlDeviation = true`  → "GPS Control Deviation" form (the
+ *   only form that has the GPS Breadcrumbs Available field).
+ * - everything else                   → "Other Issue or Question" (safe
+ *   default; also used when no error type is set on the claim/group).
+ */
+export function determineIssueType(errorType: typeof errorTypesTable.$inferSelect | null): string {
+  return errorType?.useGpsControlDeviation
+    ? "GPS Control Deviation"
+    : "Other Issue or Question";
 }
 
 function joinNonEmpty(items: (string | null | undefined)[], sep = ", "): string {
@@ -468,7 +480,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
   const reason = disputeReason || "";
-  const issueType = determineIssueType(ctx.group?.errorTypeName || ctx.primaryClaim.errorTypeName);
+  const issueType = determineIssueType(errorType);
   const snap = buildSnapshot(ctx);
 
   let generatedDescription = "";
@@ -826,7 +838,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     generatedDescription = buildFallbackDescription(ctx, reason);
   }
 
-  const resolvedIssueType = issueType || determineIssueType(snap.errorTypeName);
+  const resolvedIssueType = issueType || determineIssueType(errorType);
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = gpsBreadcrumbsAvailable || resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
 

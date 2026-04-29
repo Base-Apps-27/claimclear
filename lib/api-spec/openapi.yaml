@@ -3163,6 +3163,13 @@ components:
           type: ["string", "null"]
         disputeInstructions:
           type: ["string", "null"]
+        useGpsControlDeviation:
+          type: boolean
+          description: |
+            When true, portal submissions for claims with this error type are
+            routed to the MAS "GPS Control Deviation" Freshdesk form (which
+            requires the GPS Breadcrumbs Available field). When false, they
+            are routed to the generic "Other Issue or Question" form.
         createdAt:
           type: string
         updatedAt:
@@ -3170,6 +3177,7 @@ components:
       required:
         - id
         - name
+        - useGpsControlDeviation
 
     CreateErrorTypeBody:
       type: object
@@ -3194,6 +3202,8 @@ components:
           type: string
         disputeInstructions:
           type: string
+        useGpsControlDeviation:
+          type: boolean
       required:
         - name
 
@@ -3220,6 +3230,8 @@ components:
           type: string
         disputeInstructions:
           type: string
+        useGpsControlDeviation:
+          type: boolean
 
     AppSettingsResponse:
       type: object

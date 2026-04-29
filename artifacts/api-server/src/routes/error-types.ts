@@ -31,6 +31,7 @@ router.post("/error-types", asyncHandler(async (req, res): Promise<void> => {
     decisionTree: body.decisionTree || null,
     emailTemplate: body.emailTemplate || null,
     disputeInstructions: body.disputeInstructions || null,
+    useGpsControlDeviation: body.useGpsControlDeviation === true,
   }).returning();
 
   res.status(201).json(errorType);
@@ -57,6 +58,9 @@ router.patch("/error-types/:id", asyncHandler(async (req, res): Promise<void> =>
     if (req.body[f] !== undefined) {
       (updateData as Record<string, unknown>)[f] = req.body[f];
     }
+  }
+  if (req.body.useGpsControlDeviation !== undefined) {
+    updateData.useGpsControlDeviation = req.body.useGpsControlDeviation === true;
   }
 
   const [errorType] = await db.update(errorTypesTable).set(updateData).where(eq(errorTypesTable.id, id)).returning();

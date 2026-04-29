@@ -2215,6 +2215,11 @@ export const ListErrorTypesResponseItem = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  useGpsControlDeviation: zod
+    .boolean()
+    .describe(
+      'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2234,6 +2239,7 @@ export const CreateErrorTypeBody = zod.object({
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
+  useGpsControlDeviation: zod.boolean().optional(),
 });
 
 /**
@@ -2255,6 +2261,11 @@ export const GetErrorTypeResponse = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  useGpsControlDeviation: zod
+    .boolean()
+    .describe(
+      'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2277,6 +2288,7 @@ export const UpdateErrorTypeBody = zod.object({
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
+  useGpsControlDeviation: zod.boolean().optional(),
 });
 
 export const UpdateErrorTypeResponse = zod.object({
@@ -2291,6 +2303,11 @@ export const UpdateErrorTypeResponse = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  useGpsControlDeviation: zod
+    .boolean()
+    .describe(
+      'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });

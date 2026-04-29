@@ -20,4 +20,5 @@ export interface CreateErrorTypeBody {
   decisionTree?: CreateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
   disputeInstructions?: string;
+  useGpsControlDeviation?: boolean;
 }
