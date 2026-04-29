@@ -116,7 +116,7 @@ export default function Queue() {
               {actionableGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups need action right now.</CardContent></Card>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
                   {actionableGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
@@ -126,7 +126,7 @@ export default function Queue() {
               {portalQueuedGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups queued for portal submission.</CardContent></Card>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
                   {portalQueuedGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
@@ -136,7 +136,7 @@ export default function Queue() {
               {awaitingGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups awaiting response.</CardContent></Card>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-awaiting">
                   {awaitingGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
@@ -146,7 +146,7 @@ export default function Queue() {
               {onHoldGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups on hold.</CardContent></Card>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
                   {onHoldGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}

@@ -316,7 +316,7 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[26rem] pr-1" data-testid="recent-activity-list">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b">
                   <tr>

@@ -356,7 +356,7 @@ export default function InvoiceGroupDetail() {
                 return (
                   <div className="space-y-3">
                     <Label className="text-xs text-muted-foreground">Collected Evidence ({evidenceItems.length} items)</Label>
-                    <div className="grid gap-3">
+                    <div className="grid gap-3 max-h-[28rem] overflow-y-auto pr-1" data-testid="evidence-list">
                       {evidenceItems.map((ev) => (
                         <div key={ev.id} className="border rounded-lg p-3 space-y-2 bg-muted/30">
                           <div className="flex items-start justify-between">
@@ -417,7 +417,7 @@ export default function InvoiceGroupDetail() {
               <CardDescription>Individual rides in this invoice group.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto overflow-y-auto max-h-[32rem]" data-testid="rides-table">
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b">
                     <tr>
@@ -591,7 +591,7 @@ export default function InvoiceGroupDetail() {
                   </CardDescription>
                 )}
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-3 max-h-[40rem] overflow-y-auto pr-1" data-testid="responses-list">
                 {responses.map((resp) => {
                   const typeColors: Record<string, string> = {
                     approval: "bg-green-50 border-green-200 text-green-800",
