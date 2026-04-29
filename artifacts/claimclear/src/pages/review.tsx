@@ -173,41 +173,47 @@ export default function Review() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {filteredGroups.map((group) => (
-                <Card
-                  key={group.id}
-                  className={`cursor-pointer transition-colors ${
-                    selectedGroupId === group.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
-                  }`}
-                  onClick={() => handleSelectGroup(group)}
-                >
-                  <CardContent className="py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-mono font-semibold">Invoice #{group.invoiceNumber}</span>
+              {filteredGroups.map((group) => {
+                const isSelected = selectedGroupId === group.id;
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    data-testid={`review-row-${group.invoiceNumber}`}
+                    onClick={() => handleSelectGroup(group)}
+                    className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
+                    }`}
+                  >
+                    <div className="py-3 px-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-mono font-semibold">Invoice #{group.invoiceNumber}</span>
+                            </div>
+                            <span className="text-muted-foreground text-xs ml-6">
+                              {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}
+                            </span>
                           </div>
-                          <span className="text-muted-foreground text-xs ml-6">
-                            {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}
-                          </span>
+                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                            Needs Review
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                          Needs Review
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        {group.clientNumber && (
-                          <span className="text-muted-foreground">Client: {group.clientNumber}</span>
-                        )}
-                        <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex items-center gap-4 text-sm">
+                          {group.clientNumber && (
+                            <span className="text-muted-foreground">Client: {group.clientNumber}</span>
+                          )}
+                          <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

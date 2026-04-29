@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link } from "wouter";
-import { Search, Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download } from "lucide-react";
+import { Search, Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download, MoreHorizontal } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -522,7 +523,7 @@ export default function ClaimsList() {
                       <div className="flex flex-col items-center gap-2 text-destructive">
                         <span className="font-medium">Failed to load claims</span>
                         <span className="text-sm text-muted-foreground">Check your connection and try again.</span>
-                        <button className="mt-1 text-sm underline text-primary" onClick={() => window.location.reload()}>Retry</button>
+                        <Button variant="ghost" size="sm" className="mt-1" onClick={() => window.location.reload()}>Retry</Button>
                       </div>
                     </td>
                   </tr>
@@ -587,9 +588,26 @@ export default function ClaimsList() {
                       )}
                       {visibleCols.has("action") && (
                         <td className={`px-4 ${tdPy} text-right`}>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/claims/${claim.id}`}>View</Link>
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Open claim actions" data-testid={`button-claim-actions-${claim.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link href={`/claims/${claim.id}`}>View details</Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  window.open(`/claims/${claim.id}`, "_blank", "noopener,noreferrer");
+                                }}
+                              >
+                                Open in new tab
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       )}
                     </tr>

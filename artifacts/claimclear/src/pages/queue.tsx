@@ -56,31 +56,36 @@ export default function Queue() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
 
-  const renderGroupRow = (group: InvoiceGroupResponse) => (
-    <Card
-      key={group.id}
-      data-testid={`queue-row-${group.invoiceNumber}`}
-      className={`cursor-pointer transition-colors ${
-        selectedGroupId === group.id ? "ring-2 ring-primary" : "hover:bg-accent/50"
-      }`}
-      onClick={() => selectGroup(group.id)}
-    >
-      <CardContent className="py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div>
-            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
-            <span className="text-muted-foreground ml-3 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
+  const renderGroupRow = (group: InvoiceGroupResponse) => {
+    const isSelected = selectedGroupId === group.id;
+    return (
+      <button
+        key={group.id}
+        type="button"
+        data-testid={`queue-row-${group.invoiceNumber}`}
+        aria-pressed={isSelected}
+        onClick={() => selectGroup(group.id)}
+        className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
+        }`}
+      >
+        <div className="py-3 px-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div>
+              <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+              <span className="text-muted-foreground ml-3 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
+            </div>
+            <StatusBadge status={group.status} />
           </div>
-          <StatusBadge status={group.status} />
+          <div className="flex items-center gap-4 text-sm">
+            {group.errorTypeName && <span className="text-muted-foreground">{group.errorTypeName}</span>}
+            <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          {group.errorTypeName && <span className="text-muted-foreground">{group.errorTypeName}</span>}
-          <span className="font-medium">{formatCurrency(group.totalAmount)}</span>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </CardContent>
-    </Card>
-  );
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-6">

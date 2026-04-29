@@ -57,6 +57,7 @@ import {
   Search,
   PauseCircle,
   Play,
+  Send,
   SplitSquareHorizontal,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,8 +65,71 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WrapTooltip } from "@/components/info-tooltip";
 import { type ActionCategory } from "@/lib/audit-action-meta";
 import { ActivityFeed } from "@/components/activity-feed";
+import { StageStepper, type Stage } from "@/components/stage-stepper";
+import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
+
+const GROUP_STAGE_KEYS = ["triage", "build", "submit", "await", "resolve"] as const;
+type GroupStageKey = (typeof GROUP_STAGE_KEYS)[number];
+
+function getRideStageKey(status: string): GroupStageKey {
+  switch (status) {
+    case "New":
+    case "Needs Review":
+      return "triage";
+    case "Needs Evidence":
+      return "build";
+    case "Portal Queued":
+    case "Generating Email":
+      return "submit";
+    case "Awaiting Response":
+    case "Ready to Review":
+      return "await";
+    case "Resolved":
+    case "Denied":
+      return "resolve";
+    case "On Hold":
+      return "build";
+    default:
+      return "triage";
+  }
+}
+
+function buildGroupStages(rides: Array<{ status: string }>): Stage[] {
+  const total = rides.length;
+  const stageIndex = (key: GroupStageKey) => GROUP_STAGE_KEYS.indexOf(key);
+  const counts = GROUP_STAGE_KEYS.map((key) => {
+    const idx = stageIndex(key);
+    return rides.filter((r) => stageIndex(getRideStageKey(r.status)) >= idx).length;
+  });
+  const labels: Record<GroupStageKey, string> = {
+    triage: "Triage",
+    build: "Build Case",
+    submit: "Submit",
+    await: "Await Response",
+    resolve: "Resolve",
+  };
+  return GROUP_STAGE_KEYS.map((key, i) => ({
+    key,
+    label: labels[key],
+    done: counts[i],
+    total,
+  }));
+}
+
+function getGroupCurrentStageKey(groupStatus: string, rides: Array<{ status: string }>): GroupStageKey {
+  if (groupStatus === "Resolved" || groupStatus === "Denied") return "resolve";
+  if (rides.length === 0) return getRideStageKey(groupStatus);
+  let earliest: GroupStageKey = "resolve";
+  for (const r of rides) {
+    const k = getRideStageKey(r.status);
+    if (GROUP_STAGE_KEYS.indexOf(k) < GROUP_STAGE_KEYS.indexOf(earliest)) earliest = k;
+  }
+  return earliest;
+}
 
 export default function InvoiceGroupDetail() {
   const params = useParams<{ id: string }>();
@@ -219,6 +283,15 @@ export default function InvoiceGroupDetail() {
     invalidate();
   };
 
+  const handleStatusChange = async (newStatus: string) => {
+    await updateStatus.mutateAsync({
+      id,
+      data: { status: newStatus },
+    });
+    invalidate();
+    queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) });
+  };
+
   const openLegHoldDialog = (legId: number) => {
     setLegHoldDialogFor(legId);
     setLegHoldReason("");
@@ -304,8 +377,14 @@ export default function InvoiceGroupDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <StageStepper
+        stages={buildGroupStages(rides)}
+        currentKey={getGroupCurrentStageKey(group.status, rides)}
+        variant="group"
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Group Details</CardTitle>
@@ -774,182 +853,183 @@ export default function InvoiceGroupDetail() {
           )}
         </div>
 
-        <div className="space-y-6">
-          {group.status === "Needs Review" && (
-            <Card className="border-blue-200 bg-blue-50/50">
-              <CardHeader>
-                <CardTitle className="text-sm">Triage Required</CardTitle>
-                <CardDescription className="text-xs">This group has no error details — review on the portal and classify.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <PresenceLockWrapper reason={lockReason} className="w-full">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => handleTriage("non_issue")}
-                    disabled={triageGroup.isPending || othersPresent}
-                  >
-                    Non-Issue (Resolve)
-                  </Button>
-                </PresenceLockWrapper>
-                <PresenceLockWrapper reason={lockReason} className="w-full">
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={() => handleTriage("issue_found")}
-                    disabled={triageGroup.isPending || othersPresent}
-                  >
-                    Issue Found
-                  </Button>
-                </PresenceLockWrapper>
-              </CardContent>
-            </Card>
-          )}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            <ActionsRail
+              variant="group"
+              title="Take action"
+              meta={`Step ${GROUP_STAGE_KEYS.indexOf(getGroupCurrentStageKey(group.status, rides)) + 1} of ${GROUP_STAGE_KEYS.length}`}
+            >
+              {(() => {
+                let recommended: { label: string; description: string } | null = null;
+                if (group.status === "Needs Review") {
+                  recommended = { label: "Triage this group", description: "Classify it as a real issue or non-issue." };
+                } else if (group.status === "On Hold") {
+                  recommended = { label: "Resume when ready", description: "Remove the hold to continue processing." };
+                } else if (group.status === "Needs Evidence") {
+                  recommended = { label: "Add evidence", description: "Gather supporting documents for this group." };
+                } else if (group.status === "Ready to Review") {
+                  recommended = { label: "Record outcome", description: "Process the payer response below." };
+                }
+                return recommended ? (
+                  <ActionsRailRecommended variant="group" label="Recommended next" description={recommended.description}>
+                    <div className="text-sm font-semibold">{recommended.label}</div>
+                  </ActionsRailRecommended>
+                ) : null;
+              })()}
 
-          {group.status === "On Hold" && (
-            <Card className="border-yellow-200 bg-yellow-50/50">
-              <CardHeader>
-                <CardTitle className="text-sm">On Hold</CardTitle>
-                <CardDescription className="text-xs">{group.holdReason || "No reason provided"}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <PresenceLockWrapper reason={lockReason} className="w-full">
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={handleRemoveHold}
-                    disabled={removeHold.isPending || othersPresent}
-                  >
-                    Remove Hold
-                  </Button>
-                </PresenceLockWrapper>
-              </CardContent>
-            </Card>
-          )}
-
-          {(groupValidTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
-            const outcomes = (groupValidTransitions?.validOutcomes || []) as string[];
-            const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
-            const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn" && o !== "Pending");
-            const hasResponse = groupValidTransitions?.hasResponse ?? !!groupValidTransitions?.latestResponseType;
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Record Outcome</CardTitle>
-                  <CardDescription className="text-xs">Set the final outcome for this invoice group.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {nonClosure.map((o) => (
-                    <PresenceLockWrapper key={o} reason={lockReason} className="w-full">
-                      <Button
-                        size="sm"
-                        variant={group.outcome === o ? "default" : "outline"}
-                        className="w-full"
-                        onClick={() => handleOutcome(o)}
-                        disabled={updateOutcome.isPending || othersPresent}
-                        data-testid={`button-group-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+              <ActionGroup label="Workflow">
+                <div className="px-2 py-1.5">
+                  {(groupValidTransitions?.validStatuses?.length ?? 0) > 0 ? (
+                    <PresenceLockWrapper reason={lockReason} className="w-full">
+                      <Select
+                        onValueChange={handleStatusChange}
+                        disabled={updateStatus.isPending || othersPresent}
                       >
-                        {o}
-                      </Button>
+                        <SelectTrigger className="w-full" data-testid="select-group-status">
+                          <SelectValue placeholder="Change status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(groupValidTransitions?.validStatuses || []).map((s: string) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </PresenceLockWrapper>
-                  ))}
-                  {closureOffered && (
-                    <TooltipProvider>
-                      <div className="space-y-2 pt-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="block">
-                              <PresenceLockWrapper reason={lockReason} className="w-full">
-                                <Button
-                                  size="sm"
-                                  variant={group.outcome === "Denied" ? "default" : "outline"}
-                                  className="w-full"
-                                  onClick={() => handleOutcome("Denied")}
-                                  disabled={!hasResponse || updateOutcome.isPending || othersPresent}
-                                  data-testid="button-group-outcome-payer-denied"
-                                >
-                                  Payer Denied
-                                </Button>
-                              </PresenceLockWrapper>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {hasResponse ? "Mark as denied based on the payer's recorded response." : "Disabled because no portal or email response has been recorded yet."}
-                          </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="block">
-                              <PresenceLockWrapper reason={lockReason} className="w-full">
-                                <Button
-                                  size="sm"
-                                  variant={group.outcome === "Withdrawn" && group.closureReason === "not_contestable" ? "default" : "outline"}
-                                  className="w-full"
-                                  onClick={() => handleOutcome("Withdrawn", "not_contestable")}
-                                  disabled={updateOutcome.isPending || othersPresent}
-                                  data-testid="button-group-outcome-not-contestable"
-                                >
-                                  Withdraw — Not Contestable
-                                </Button>
-                              </PresenceLockWrapper>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>Close because we decided not to dispute (no clear path to recover).</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="block">
-                              <PresenceLockWrapper reason={lockReason} className="w-full">
-                                <Button
-                                  size="sm"
-                                  variant={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss" ? "default" : "outline"}
-                                  className="w-full"
-                                  onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
-                                  disabled={updateOutcome.isPending || othersPresent}
-                                  data-testid="button-group-outcome-accepted-loss"
-                                >
-                                  Withdraw — Accepted Loss
-                                </Button>
-                              </PresenceLockWrapper>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>Close after a denial because we accept the loss and won't re-dispute.</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TooltipProvider>
+                  ) : (
+                    <WrapTooltip content={groupValidTransitions?.hasActiveSubmission ? "Status changes are locked while a portal submission is active." : "No status transitions available from the current state."}>
+                      <span tabIndex={0} className="block w-full rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <Select disabled>
+                          <SelectTrigger className="w-full cursor-not-allowed"><SelectValue placeholder="Change status" /></SelectTrigger>
+                          <SelectContent />
+                        </Select>
+                      </span>
+                    </WrapTooltip>
                   )}
-                </CardContent>
-              </Card>
-            );
-          })()}
+                </div>
+              </ActionGroup>
 
-          {group.status !== "On Hold" && group.status !== "Resolved" && group.status !== "Denied" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Place on Hold</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Textarea
-                  placeholder="Reason for hold..."
-                  value={holdReason}
-                  onChange={(e) => setHoldReason(e.target.value)}
-                  rows={2}
-                />
-                <PresenceLockWrapper reason={lockReason} className="w-full">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleHold}
-                    disabled={holdGroup.isPending || !holdReason.trim() || othersPresent}
-                  >
-                    Place on Hold
-                  </Button>
-                </PresenceLockWrapper>
-              </CardContent>
-            </Card>
-          )}
+              {group.status === "Needs Review" && (
+                <ActionGroup label="Triage">
+                  <PresenceLockWrapper reason={lockReason} className="w-full">
+                    <ActionRow
+                      label="Non-Issue (Resolve)"
+                      sub="Mark as non-issue and resolve"
+                      disabled={triageGroup.isPending || othersPresent}
+                      onClick={() => handleTriage("non_issue")}
+                      testId="action-group-triage-non-issue"
+                    />
+                  </PresenceLockWrapper>
+                  <PresenceLockWrapper reason={lockReason} className="w-full">
+                    <ActionRow
+                      label="Issue Found"
+                      sub="Continue dispute workflow"
+                      disabled={triageGroup.isPending || othersPresent}
+                      onClick={() => handleTriage("issue_found")}
+                      testId="action-group-triage-issue-found"
+                    />
+                  </PresenceLockWrapper>
+                </ActionGroup>
+              )}
+
+              {(groupValidTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
+                const outcomes = (groupValidTransitions?.validOutcomes || []) as string[];
+                const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
+                const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn" && o !== "Pending");
+                const hasResponse = groupValidTransitions?.hasResponse ?? !!groupValidTransitions?.latestResponseType;
+                return (
+                  <ActionGroup label="Resolve">
+                    {nonClosure.map((o) => (
+                      <PresenceLockWrapper key={o} reason={lockReason} className="w-full">
+                        <ActionRow
+                          label={o}
+                          selected={group.outcome === o}
+                          disabled={updateOutcome.isPending || othersPresent}
+                          onClick={() => handleOutcome(o)}
+                          testId={`action-group-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                        />
+                      </PresenceLockWrapper>
+                    ))}
+                    {closureOffered && (
+                      <>
+                        <PresenceLockWrapper reason={lockReason} className="w-full">
+                          <ActionRow
+                            label="Payer Denied"
+                            selected={group.outcome === "Denied"}
+                            disabled={!hasResponse || updateOutcome.isPending || othersPresent}
+                            disabledReason={hasResponse ? undefined : "Disabled because no portal or email response has been recorded yet."}
+                            onClick={() => handleOutcome("Denied")}
+                            testId="action-group-outcome-payer-denied"
+                          />
+                        </PresenceLockWrapper>
+                        <PresenceLockWrapper reason={lockReason} className="w-full">
+                          <ActionRow
+                            label="Withdraw — Not Contestable"
+                            sub="No clear path to recover"
+                            selected={group.outcome === "Withdrawn" && group.closureReason === "not_contestable"}
+                            disabled={updateOutcome.isPending || othersPresent}
+                            disabledReason="Close because we decided not to dispute (no clear path to recover)."
+                            onClick={() => handleOutcome("Withdrawn", "not_contestable")}
+                            testId="action-group-outcome-not-contestable"
+                          />
+                        </PresenceLockWrapper>
+                        <PresenceLockWrapper reason={lockReason} className="w-full">
+                          <ActionRow
+                            label="Withdraw — Accepted Loss"
+                            sub="Accept the loss after a denial"
+                            selected={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss"}
+                            disabled={updateOutcome.isPending || othersPresent}
+                            disabledReason="Close after a denial because we accept the loss and won't re-dispute."
+                            onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
+                            testId="action-group-outcome-accepted-loss"
+                          />
+                        </PresenceLockWrapper>
+                      </>
+                    )}
+                  </ActionGroup>
+                );
+              })()}
+
+              <ActionGroup label="Pause / Change">
+                {group.status === "On Hold" ? (
+                  <PresenceLockWrapper reason={lockReason} className="w-full">
+                    <ActionRow
+                      icon={<Play className="h-4 w-4" />}
+                      label="Remove hold"
+                      sub={group.holdReason || "Resume processing"}
+                      disabled={removeHold.isPending || othersPresent}
+                      onClick={handleRemoveHold}
+                      testId="action-group-remove-hold"
+                    />
+                  </PresenceLockWrapper>
+                ) : group.status !== "Resolved" && group.status !== "Denied" ? (
+                  <div className="px-2 py-1.5 space-y-2">
+                    <Textarea
+                      placeholder="Reason for hold..."
+                      value={holdReason}
+                      onChange={(e) => setHoldReason(e.target.value)}
+                      rows={2}
+                      className="text-sm"
+                    />
+                    <PresenceLockWrapper reason={lockReason} className="w-full">
+                      <ActionRow
+                        icon={<PauseCircle className="h-4 w-4" />}
+                        label="Place on hold"
+                        sub="Pause processing for this group"
+                        disabled={holdGroup.isPending || !holdReason.trim() || othersPresent}
+                        onClick={handleHold}
+                        testId="action-group-place-hold"
+                      />
+                    </PresenceLockWrapper>
+                  </div>
+                ) : (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No further actions — group is {group.status.toLowerCase()}.
+                  </div>
+                )}
+              </ActionGroup>
+            </ActionsRail>
+          </div>
 
           <ActivityFeed
             auditLogs={auditLogs}

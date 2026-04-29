@@ -53,6 +53,39 @@ import { RefNumber } from "@/components/ref-number";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { WorkflowPlayer } from "@/components/workflow-player";
 import { SubmissionPreviewDialog } from "@/components/submission-preview-dialog";
+import { StageStepper, type Stage } from "@/components/stage-stepper";
+import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
+
+const CLAIM_STAGES: Stage[] = [
+  { key: "triage", label: "Triage", desc: "Identify the error" },
+  { key: "build", label: "Build Case", desc: "Gather evidence" },
+  { key: "submit", label: "Submit", desc: "Send to payer" },
+  { key: "await", label: "Await Response", desc: "Track payer reply" },
+  { key: "resolve", label: "Resolve", desc: "Close the loop" },
+];
+
+function getClaimStageKey(status: string): string {
+  switch (status) {
+    case "New":
+    case "Needs Review":
+      return "triage";
+    case "Needs Evidence":
+      return "build";
+    case "Portal Queued":
+    case "Generating Email":
+      return "submit";
+    case "Awaiting Response":
+    case "Ready to Review":
+      return "await";
+    case "Resolved":
+    case "Denied":
+      return "resolve";
+    case "On Hold":
+      return "build";
+    default:
+      return "triage";
+  }
+}
 
 function SubmissionCard({ submission: sub }: { submission: PortalSubmissionResponse }) {
   const [showDescription, setShowDescription] = useState(false);
@@ -478,8 +511,10 @@ export default function ClaimDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <StageStepper stages={CLAIM_STAGES} currentKey={getClaimStageKey(claim.status)} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 space-y-6">
           <Card>
             <CardHeader><CardTitle>Claim Details</CardTitle></CardHeader>
             <CardContent>
@@ -710,138 +745,21 @@ export default function ClaimDetail() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
-            <CardContent>
-              {hasActivePortalSubmission && (
-                <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
-                  Portal submission in progress — status and outcome changes are locked until it completes or is cancelled.
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {(validTransitions?.validStatuses?.length ?? 0) > 0 ? (
-                  <Select onValueChange={handleStatusChange}>
-                    <SelectTrigger className="w-[180px]"><SelectValue placeholder="Change Status" /></SelectTrigger>
-                    <SelectContent>
-                      {(validTransitions?.validStatuses || []).map((s: string) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <WrapTooltip content={hasActivePortalSubmission ? "Status changes are locked while a portal submission is active." : "No status transitions available from the current state."}>
-                    <Select disabled>
-                      <SelectTrigger className="w-[180px] cursor-not-allowed"><SelectValue placeholder="Change Status" /></SelectTrigger>
-                      <SelectContent />
-                    </Select>
-                  </WrapTooltip>
-                )}
+          {claim.holdReason && (
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-md border border-purple-200 dark:border-purple-800">
+              <p className="text-sm font-medium text-purple-800 dark:text-purple-300">On Hold: {claim.holdReason}</p>
+              {claim.holdPendingFrom && <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Pending from: {claim.holdPendingFrom}</p>}
+              {claim.holdPlacedAt && <p className="text-xs text-muted-foreground mt-1">Since {formatDate(claim.holdPlacedAt)}</p>}
+              <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">Workflow progress is saved — removing the hold will resume from where you left off in the Work Queue.</p>
+            </div>
+          )}
 
-                {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
-                  const outcomes = (validTransitions?.validOutcomes || []) as string[];
-                  const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
-                  const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn");
-                  const hasResponse = validTransitions?.hasResponse ?? !!validTransitions?.latestResponseType;
-                  return (
-                    <div className="flex flex-wrap gap-2">
-                      {nonClosure.map((o) => (
-                        <Button key={o} variant={claim.outcome === o ? "default" : "outline"} size="sm" onClick={() => handleOutcomeChange(o)} data-testid={`button-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}>{o}</Button>
-                      ))}
-                      {closureOffered && (
-                        <>
-                          <WrapTooltip content={hasResponse ? "Mark as denied based on the payer's recorded response." : "Disabled because no portal or email response has been recorded yet."}>
-                            <Button
-                              variant={claim.outcome === "Denied" ? "default" : "outline"}
-                              size="sm"
-                              disabled={!hasResponse}
-                              onClick={() => handleOutcomeChange("Denied")}
-                              data-testid="button-outcome-payer-denied"
-                            >
-                              Payer Denied
-                            </Button>
-                          </WrapTooltip>
-                          <WrapTooltip content="Close this claim because we decided not to dispute it (no clear path to recover the dollars).">
-                            <Button
-                              variant={claim.outcome === "Withdrawn" && claim.closureReason === "not_contestable" ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => handleOutcomeChange("Withdrawn", "not_contestable")}
-                              data-testid="button-outcome-not-contestable"
-                            >
-                              Withdraw — Not Contestable
-                            </Button>
-                          </WrapTooltip>
-                          <WrapTooltip content="Close this claim after a denial because we accept the loss and won't re-dispute.">
-                            <Button
-                              variant={claim.outcome === "Withdrawn" && claim.closureReason === "accepted_loss" ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => handleOutcomeChange("Withdrawn", "accepted_loss")}
-                              data-testid="button-outcome-accepted-loss"
-                            >
-                              Withdraw — Accepted Loss
-                            </Button>
-                          </WrapTooltip>
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                <Separator orientation="vertical" className="h-8 mx-2" />
-
-                <WrapTooltip content={validTransitions?.canQueueForPortal ? "Add this claim to the automated portal submission queue. The bot will fill out the MAS dispute form with claim details and evidence." : "Claims can only be queued for portal when in New, Needs Review, or Needs Evidence status and have no active submissions."}>
-                  <Button variant="outline" size="sm" onClick={handleQueueForPortal} disabled={!validTransitions?.canQueueForPortal}>
-                    <Send className="h-4 w-4 mr-1" />Queue for Portal
-                  </Button>
-                </WrapTooltip>
-
-                {claim.status === "On Hold" ? (
-                  <WrapTooltip content="Remove the hold and return this claim to active processing. The claim will go back to its previous workflow step.">
-                    <Button variant="outline" size="sm" onClick={handleRemoveHold}>
-                      <Play className="h-4 w-4 mr-1" />Remove Hold
-                    </Button>
-                  </WrapTooltip>
-                ) : (
-                  <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>
-                    <DialogTrigger asChild>
-                      <WrapTooltip content="Pause processing of this claim. Use when waiting for additional information, documents, or a response from another party.">
-                        <Button variant="outline" size="sm"><PauseCircle className="h-4 w-4 mr-1" />Place on Hold</Button>
-                      </WrapTooltip>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle></DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Reason</Label>
-                          <Textarea value={holdReason} onChange={e => setHoldReason(e.target.value)} />
-                        </div>
-                        <div>
-                          <Label>Pending From</Label>
-                          <Input value={holdPending} onChange={e => setHoldPending(e.target.value)} placeholder="Person or dept" />
-                        </div>
-                        <Button onClick={handlePlaceHold} disabled={!holdReason}>Place on Hold</Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                )}
-              </div>
-
-              {claim.holdReason && (
-                <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-md border border-purple-200 dark:border-purple-800">
-                  <p className="text-sm font-medium text-purple-800 dark:text-purple-300">On Hold: {claim.holdReason}</p>
-                  {claim.holdPendingFrom && <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Pending from: {claim.holdPendingFrom}</p>}
-                  {claim.holdPlacedAt && <p className="text-xs text-muted-foreground mt-1">Since {formatDate(claim.holdPlacedAt)}</p>}
-                  <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">Workflow progress is saved — removing the hold will resume from where you left off in the Work Queue.</p>
-                </div>
-              )}
-
-              {claim.approvedAmount && (
-                <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
-                  <p className="text-sm">Approved Amount: <span className="font-semibold">{formatCurrency(claim.approvedAmount)}</span></p>
-                  {claim.invoiceNumbers && <p className="text-xs text-muted-foreground mt-1">Invoice: {claim.invoiceNumbers}</p>}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {claim.approvedAmount && (
+            <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
+              <p className="text-sm">Approved Amount: <span className="font-semibold">{formatCurrency(claim.approvedAmount)}</span></p>
+              {claim.invoiceNumbers && <p className="text-xs text-muted-foreground mt-1">Invoice: {claim.invoiceNumbers}</p>}
+            </div>
+          )}
 
           <Card>
             <CardHeader><CardTitle>Evidence</CardTitle></CardHeader>
@@ -1333,7 +1251,157 @@ export default function ClaimDetail() {
 
         </div>
 
-        <div className="space-y-6">
+        <div className="lg:col-span-4 space-y-6">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            <ActionsRail
+              title="Take action"
+              meta={`Step ${CLAIM_STAGES.findIndex((s) => s.key === getClaimStageKey(claim.status)) + 1} of ${CLAIM_STAGES.length}`}
+            >
+              {hasActivePortalSubmission && (
+                <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-border text-xs text-amber-800 dark:text-amber-300">
+                  Portal submission in progress — status and outcome changes are locked until it completes or is cancelled.
+                </div>
+              )}
+
+              {(() => {
+                const status = claim.status;
+                let recommended: { label: string; description: string } | null = null;
+                if (status === "Needs Review" || status === "New") {
+                  recommended = { label: "Triage this claim", description: "Confirm the dispute reason and prepare the case." };
+                } else if (status === "Needs Evidence") {
+                  recommended = { label: "Gather evidence", description: "Add supporting documents, then queue for portal." };
+                } else if (status === "Ready to Review") {
+                  recommended = { label: "Review payer response", description: "Process the response and choose an outcome below." };
+                } else if (status === "On Hold") {
+                  recommended = { label: "Resume when ready", description: "Remove the hold to continue processing this claim." };
+                }
+                return recommended ? (
+                  <ActionsRailRecommended label="Recommended next" description={recommended.description}>
+                    <div className="text-sm font-semibold">{recommended.label}</div>
+                  </ActionsRailRecommended>
+                ) : null;
+              })()}
+
+              <ActionGroup label="Workflow">
+                <div className="px-2 py-1.5">
+                  {(validTransitions?.validStatuses?.length ?? 0) > 0 ? (
+                    <Select onValueChange={handleStatusChange}>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Change status" /></SelectTrigger>
+                      <SelectContent>
+                        {(validTransitions?.validStatuses || []).map((s: string) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <WrapTooltip content={hasActivePortalSubmission ? "Status changes are locked while a portal submission is active." : "No status transitions available from the current state."}>
+                      <Select disabled>
+                        <SelectTrigger className="w-full cursor-not-allowed"><SelectValue placeholder="Change status" /></SelectTrigger>
+                        <SelectContent />
+                      </Select>
+                    </WrapTooltip>
+                  )}
+                </div>
+                <ActionRow
+                  icon={<Send className="h-4 w-4" />}
+                  label="Queue for portal"
+                  sub="Automated MAS dispute submission"
+                  disabled={!validTransitions?.canQueueForPortal}
+                  disabledReason={validTransitions?.canQueueForPortal ? undefined : "Claims can only be queued for portal when in New, Needs Review, or Needs Evidence status and have no active submissions."}
+                  onClick={handleQueueForPortal}
+                  testId="action-queue-for-portal"
+                />
+              </ActionGroup>
+
+              {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
+                const outcomes = (validTransitions?.validOutcomes || []) as string[];
+                const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
+                const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn");
+                const hasResponse = validTransitions?.hasResponse ?? !!validTransitions?.latestResponseType;
+                return (
+                  <ActionGroup label="Resolve">
+                    {nonClosure.map((o) => (
+                      <ActionRow
+                        key={o}
+                        label={o}
+                        selected={claim.outcome === o}
+                        onClick={() => handleOutcomeChange(o)}
+                        testId={`action-outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                      />
+                    ))}
+                    {closureOffered && (
+                      <>
+                        <ActionRow
+                          label="Payer Denied"
+                          selected={claim.outcome === "Denied"}
+                          disabled={!hasResponse}
+                          disabledReason={hasResponse ? undefined : "Disabled because no portal or email response has been recorded yet."}
+                          onClick={() => handleOutcomeChange("Denied")}
+                          testId="action-outcome-payer-denied"
+                        />
+                        <ActionRow
+                          label="Withdraw — Not Contestable"
+                          sub="No clear path to recover the dollars"
+                          selected={claim.outcome === "Withdrawn" && claim.closureReason === "not_contestable"}
+                          disabledReason="Close this claim because we decided not to dispute it (no clear path to recover the dollars)."
+                          onClick={() => handleOutcomeChange("Withdrawn", "not_contestable")}
+                          testId="action-outcome-not-contestable"
+                        />
+                        <ActionRow
+                          label="Withdraw — Accepted Loss"
+                          sub="Accept the loss after a denial"
+                          selected={claim.outcome === "Withdrawn" && claim.closureReason === "accepted_loss"}
+                          disabledReason="Close this claim after a denial because we accept the loss and won't re-dispute."
+                          onClick={() => handleOutcomeChange("Withdrawn", "accepted_loss")}
+                          testId="action-outcome-accepted-loss"
+                        />
+                      </>
+                    )}
+                  </ActionGroup>
+                );
+              })()}
+
+              <ActionGroup label="Pause / Change">
+                {claim.status === "On Hold" ? (
+                  <ActionRow
+                    icon={<Play className="h-4 w-4" />}
+                    label="Remove hold"
+                    sub="Resume from where you left off"
+                    disabledReason="Remove the hold and return this claim to active processing."
+                    onClick={handleRemoveHold}
+                    testId="action-remove-hold"
+                  />
+                ) : (
+                  <ActionRow
+                    icon={<PauseCircle className="h-4 w-4" />}
+                    label="Place on hold"
+                    sub="Pause processing"
+                    disabledReason="Pause processing of this claim. Use when waiting for additional information, documents, or a response from another party."
+                    onClick={() => setShowHoldDialog(true)}
+                    testId="action-place-hold"
+                  />
+                )}
+              </ActionGroup>
+            </ActionsRail>
+
+            <Dialog open={showHoldDialog} onOpenChange={setShowHoldDialog}>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Place Claim on Hold</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Reason</Label>
+                    <Textarea value={holdReason} onChange={e => setHoldReason(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Pending From</Label>
+                    <Input value={holdPending} onChange={e => setHoldPending(e.target.value)} placeholder="Person or dept" />
+                  </div>
+                  <Button onClick={handlePlaceHold} disabled={!holdReason}>Place on Hold</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-1 text-sm">
