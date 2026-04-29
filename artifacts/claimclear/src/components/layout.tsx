@@ -7,6 +7,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -31,15 +32,24 @@ import {
   LogIn,
   Clock,
   ShieldX,
-  Search,
   FolderOpen,
   HeartPulse
 } from "lucide-react";
 
+type NavItem = {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+};
+
+type NavSection = {
+  label: string;
+  items: NavItem[];
+};
+
 const navDescriptions: Record<string, string> = {
   "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring claims.",
   "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
-  "Review": "Claims imported with no details — check the portal and classify each as non-issue or define the error type.",
   "Invoice Groups": "View and manage rides grouped by invoice number — the primary unit for disputes.",
   "All Claims": "Browse, search, and filter the complete claims database.",
   "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
@@ -55,18 +65,45 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, sessionExpiry, login, logout } = useAuth();
 
   const isAdmin = user?.role === "admin";
-  const navItems = [
-    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { label: "Queue", href: "/queue", icon: ListTodo },
-    { label: "Review", href: "/review", icon: Search },
-    { label: "Invoice Groups", href: "/invoice-groups", icon: FolderOpen },
-    { label: "All Claims", href: "/claims", icon: Files },
-    { label: "Import", href: "/import", icon: Upload },
-    { label: "Error Types", href: "/error-types", icon: AlertCircle },
-    { label: "Portal Submissions", href: "/portal-submissions", icon: Send },
+
+  const adminItems: NavItem[] = [
     { label: "Summary", href: "/summary", icon: BarChart3 },
-    { label: "Settings", href: "/settings", icon: Settings },
     ...(isAdmin ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }] : []),
+  ];
+
+  const navSections: NavSection[] = [
+    {
+      label: "Today",
+      items: [
+        { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { label: "Queue", href: "/queue", icon: ListTodo },
+      ],
+    },
+    {
+      label: "Browse",
+      items: [
+        { label: "Invoice Groups", href: "/invoice-groups", icon: FolderOpen },
+        { label: "All Claims", href: "/claims", icon: Files },
+      ],
+    },
+    {
+      label: "Submissions",
+      items: [
+        { label: "Portal Submissions", href: "/portal-submissions", icon: Send },
+      ],
+    },
+    {
+      label: "Setup",
+      items: [
+        { label: "Import", href: "/import", icon: Upload },
+        { label: "Error Types", href: "/error-types", icon: AlertCircle },
+        { label: "Settings", href: "/settings", icon: Settings },
+      ],
+    },
+    {
+      label: "Admin",
+      items: adminItems,
+    },
   ];
 
   if (!isAuthenticated || !user) {
@@ -193,28 +230,36 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {navItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <WrapTooltip content={navDescriptions[item.label] || item.label} side="right">
-                        <SidebarMenuButton 
-                          asChild 
-                          isActive={location === item.href || location.startsWith(`${item.href}/`)}
-                          tooltip={item.label}
-                        >
-                          <Link href={item.href} className="flex items-center gap-3">
-                            <item.icon className="w-5 h-5" />
-                            <span>{item.label}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </WrapTooltip>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            {navSections.map((section) => {
+              if (section.items.length === 0) return null;
+              return (
+                <SidebarGroup key={section.label}>
+                  <SidebarGroupLabel className="uppercase tracking-wider text-[10px] text-sidebar-foreground/50">
+                    {section.label}
+                  </SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {section.items.map((item) => (
+                        <SidebarMenuItem key={item.href}>
+                          <WrapTooltip content={navDescriptions[item.label] || item.label} side="right">
+                            <SidebarMenuButton
+                              asChild
+                              isActive={location === item.href || location.startsWith(`${item.href}/`)}
+                              tooltip={item.label}
+                            >
+                              <Link href={item.href} className="flex items-center gap-3">
+                                <item.icon className="w-5 h-5" />
+                                <span>{item.label}</span>
+                              </Link>
+                            </SidebarMenuButton>
+                          </WrapTooltip>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              );
+            })}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border p-4">
             <div className="flex items-center justify-between w-full">

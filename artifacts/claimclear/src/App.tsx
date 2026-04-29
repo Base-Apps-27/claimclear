@@ -15,7 +15,6 @@ import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
 import Summary from "@/pages/summary";
-import Review from "@/pages/review";
 import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Settings from "@/pages/settings";
@@ -47,7 +46,7 @@ function Router() {
         <Route path="/" component={() => <Redirect to="/dashboard" />} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={Queue} />
-        <Route path="/review" component={Review} />
+        <Route path="/review" component={() => <Redirect to="/queue?tab=needs-review" />} />
         <Route path="/invoice-groups" component={InvoiceGroupsList} />
         <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />
         <Route path="/claims" component={ClaimsList} />

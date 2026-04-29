@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import {
@@ -13,16 +13,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
-import { ChevronRight, FileText } from "lucide-react";
+import { CheckCircle2, ChevronRight, Eye, FileText } from "lucide-react";
 import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
+import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatViewerNames } from "@/components/presence-lock";
+import { useUrlParams } from "@/lib/use-url-params";
+
+const VALID_TABS = ["actionable", "needs-review", "portal-queued", "awaiting", "on-hold"] as const;
+type QueueTab = typeof VALID_TABS[number];
+const DEFAULT_TAB: QueueTab = "actionable";
 
 export default function Queue() {
   useInvoiceGroupsListEvents();
   const queryClient = useQueryClient();
+  const { get, set } = useUrlParams();
+
+  const tabParam = get("tab");
+  const activeTab: QueueTab = (VALID_TABS as readonly string[]).includes(tabParam)
+    ? (tabParam as QueueTab)
+    : DEFAULT_TAB;
+
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [successMessage, setSuccessMessage] = useState("");
   useInvoiceGroupEvents(selectedGroupId ?? undefined);
   const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedGroupId ?? undefined);
   const lockReason = othersPresent
@@ -37,22 +51,46 @@ export default function Queue() {
     });
   };
 
+  const handleTabChange = (value: string) => {
+    setSelectedGroupId(null);
+    setSuccessMessage("");
+    if (value === DEFAULT_TAB) {
+      set({ tab: null }, false);
+    } else {
+      set({ tab: value }, false);
+    }
+  };
+
   const newQuery = useListInvoiceGroups({ status: "New" });
   const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence" });
+  const needsReviewQuery = useListInvoiceGroups({ status: "Needs Review", limit: 100 });
   const portalQueuedQuery = useListInvoiceGroups({ status: "Portal Queued" });
   const awaitingQuery = useListInvoiceGroups({ status: "Awaiting Response" });
   const onHoldQuery = useListInvoiceGroups({ status: "On Hold" });
 
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
+  const needsReviewGroups = needsReviewQuery.data?.groups || [];
   const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
   const awaitingGroups = awaitingQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
 
   const actionableGroups = [...newGroups, ...needsGroups];
 
-  const allGroups = [...actionableGroups, ...portalQueuedGroups, ...awaitingGroups, ...onHoldGroups];
+  const allGroups = [
+    ...actionableGroups,
+    ...needsReviewGroups,
+    ...portalQueuedGroups,
+    ...awaitingGroups,
+    ...onHoldGroups,
+  ];
   const selectedGroup = selectedGroupId ? allGroups.find(g => g.id === selectedGroupId) || null : null;
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const t = setTimeout(() => setSuccessMessage(""), 4000);
+    return () => clearTimeout(t);
+  }, [successMessage]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
 
@@ -87,6 +125,8 @@ export default function Queue() {
     );
   };
 
+  const isNeedsReviewTab = activeTab === "needs-review";
+
   return (
     <div className="space-y-6">
       <div>
@@ -94,14 +134,27 @@ export default function Queue() {
         <p className="text-muted-foreground">Invoice groups requiring attention — select a group to process</p>
       </div>
 
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 rounded-md px-4 py-3 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <span className="text-sm text-green-800">{successMessage}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <Tabs defaultValue="actionable">
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList>
               <TabsTrigger value="actionable">
                 Action Required
                 {actionableGroups.length > 0 && (
                   <Badge variant="secondary" className="ml-2">{actionableGroups.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="needs-review" data-testid="queue-tab-needs-review">
+                Needs Review
+                {needsReviewGroups.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{needsReviewGroups.length}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="portal-queued">
@@ -130,6 +183,16 @@ export default function Queue() {
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
                   {actionableGroups.map((g) => renderGroupRow(g))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="needs-review" className="mt-4">
+              {needsReviewGroups.length === 0 ? (
+                <Card><CardContent className="py-12 text-center text-muted-foreground">All caught up — no responses to review.</CardContent></Card>
+              ) : (
+                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-needs-review">
+                  {needsReviewGroups.map((g) => renderGroupRow(g))}
                 </div>
               )}
             </TabsContent>
@@ -168,35 +231,60 @@ export default function Queue() {
 
         <div ref={panelRef} className="scroll-mt-4">
           {selectedGroup ? (
-            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Process Invoice Group</h3>
-                <Link href={`/invoice-groups/${selectedGroup.id}`}>
-                  <Button variant="ghost" size="sm">
-                    Full Details <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </Link>
+            isNeedsReviewTab ? (
+              <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
+                <QueueNeedsReviewPanel
+                  group={selectedGroup}
+                  onCompleted={(message) => {
+                    setSuccessMessage(message);
+                    setSelectedGroupId(null);
+                    invalidate();
+                  }}
+                />
               </div>
-              <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
-              <WorkflowPlayerGroup
-                group={selectedGroup}
-                showGroupContext={true}
-                showDetailsLink={true}
-                presenceLockReason={lockReason}
-                onComplete={() => {
-                  setSelectedGroupId(null);
-                  invalidate();
-                }}
-              />
-            </div>
+            ) : (
+              <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Process Invoice Group</h3>
+                  <Link href={`/invoice-groups/${selectedGroup.id}`}>
+                    <Button variant="ghost" size="sm">
+                      Full Details <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+                <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
+                <WorkflowPlayerGroup
+                  group={selectedGroup}
+                  showGroupContext={true}
+                  showDetailsLink={true}
+                  presenceLockReason={lockReason}
+                  onComplete={() => {
+                    setSelectedGroupId(null);
+                    invalidate();
+                  }}
+                />
+              </div>
+            )
           ) : (
             <Card>
               <CardContent className="py-16 text-center text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="font-medium">Select an invoice group to process</p>
-                <p className="text-sm mt-1">
-                  Click on a group from the Action Required tab to start the dispute workflow
-                </p>
+                {isNeedsReviewTab ? (
+                  <>
+                    <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="font-medium">Select an invoice group to review</p>
+                    <p className="text-sm mt-1">
+                      Click on a group from the list to check it on the portal and classify it
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="font-medium">Select an invoice group to process</p>
+                    <p className="text-sm mt-1">
+                      Click on a group from the Action Required tab to start the dispute workflow
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
