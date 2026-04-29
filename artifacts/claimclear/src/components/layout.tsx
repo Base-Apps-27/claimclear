@@ -55,7 +55,7 @@ const navDescriptions: Record<string, string> = {
   "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
   "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
-  "Summary": "Analytics dashboard with recovery rates, exposure, and claim breakdowns.",
+  "Insights": "Recovery analytics and pattern detection — trend lines, repeat-offender drivers and members, error-type breakdowns, and team performance.",
   "Settings": "Account settings, user management, daily brief triggers, and bot instance health.",
   "System Health": "Admin-only view of cron job runs, connector probes, and unmatched email bounces.",
 };
@@ -67,7 +67,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "admin";
 
   const adminItems: NavItem[] = [
-    { label: "Summary", href: "/summary", icon: BarChart3 },
+    { label: "Insights", href: "/insights", icon: BarChart3 },
     ...(isAdmin ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }] : []),
   ];
 

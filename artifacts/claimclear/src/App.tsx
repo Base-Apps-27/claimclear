@@ -14,7 +14,7 @@ import Queue from "@/pages/queue";
 import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
-import Summary from "@/pages/summary";
+import Insights from "@/pages/insights";
 import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Settings from "@/pages/settings";
@@ -55,7 +55,8 @@ function Router() {
         <Route path="/import" component={Import} />
         <Route path="/error-types" component={ErrorTypes} />
         <Route path="/portal-submissions" component={PortalSubmissions} />
-        <Route path="/summary" component={Summary} />
+        <Route path="/insights" component={Insights} />
+        <Route path="/summary" component={() => <Redirect to="/insights" />} />
         <Route path="/settings" component={Settings} />
         <Route path="/admin/users/activity" component={AdminUserActivity} />
         <Route path="/system-health" component={SystemHealth} />

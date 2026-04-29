@@ -114,6 +114,8 @@ export default function ClaimsList() {
   const filterAmountMax = get("amountMax");
   const filterServiceDateFrom = get("serviceDateFrom");
   const filterServiceDateTo = get("serviceDateTo");
+  const filterCarNumber = get("carNumber");
+  const filterClientNumber = get("clientNumber");
 
   const activeTab: ClaimsTabKey = deriveActiveTab(filterStatuses);
 
@@ -144,6 +146,8 @@ export default function ClaimsList() {
     amountMax: filterAmountMax || undefined,
     serviceDateFrom: filterServiceDateFrom || undefined,
     serviceDateTo: filterServiceDateTo || undefined,
+    carNumber: filterCarNumber || undefined,
+    clientNumber: filterClientNumber || undefined,
     sort: (sortCol || undefined) as typeof ListClaimsSort[keyof typeof ListClaimsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListClaimsDir[keyof typeof ListClaimsDir] | undefined,
     limit: pageSize,
@@ -206,10 +210,10 @@ export default function ClaimsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, clientNumber: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterServiceDateFrom || !!filterServiceDateTo;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterServiceDateFrom || !!filterServiceDateTo || !!filterCarNumber || !!filterClientNumber;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -238,8 +242,14 @@ export default function ClaimsList() {
       const label = filterServiceDateFrom && filterServiceDateTo ? `Service date: ${filterServiceDateFrom} – ${filterServiceDateTo}` : filterServiceDateFrom ? `Service date ≥ ${filterServiceDateFrom}` : `Service date ≤ ${filterServiceDateTo}`;
       result.push({ key: "serviceDate", label, onRemove: () => set({ serviceDateFrom: null, serviceDateTo: null, page: null }, false) });
     }
+    if (filterCarNumber) {
+      result.push({ key: "carNumber", label: `Vehicle: ${filterCarNumber}`, onRemove: () => set({ carNumber: null, page: null }, false) });
+    }
+    if (filterClientNumber) {
+      result.push({ key: "clientNumber", label: `Member: ${filterClientNumber}`, onRemove: () => set({ clientNumber: null, page: null }, false) });
+    }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterServiceDateFrom, filterServiceDateTo, errorTypes, activeTab]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterServiceDateFrom, filterServiceDateTo, filterCarNumber, filterClientNumber, errorTypes, activeTab, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -309,8 +319,8 @@ export default function ClaimsList() {
         <span className="text-muted-foreground">
           {total.toLocaleString()} matching · {hasActiveFilters || search ? "filters active" : "no filters"}
         </span>
-        <Link href="/summary" className="ml-auto text-xs font-medium" style={{ color: TONE_STYLE.blue.fg }}>
-          Open Summary →
+        <Link href="/insights" className="ml-auto text-xs font-medium" style={{ color: TONE_STYLE.blue.fg }}>
+          Open Insights →
         </Link>
       </StatusStrip>
 

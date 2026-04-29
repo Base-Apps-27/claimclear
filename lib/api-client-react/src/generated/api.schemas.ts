@@ -1136,6 +1136,83 @@ export interface DashboardUserProductivity {
   users: DashboardUserProductivityUsersItem[];
 }
 
+export type RepeatOffenderDriverTrend =
+  (typeof RepeatOffenderDriverTrend)[keyof typeof RepeatOffenderDriverTrend];
+
+export const RepeatOffenderDriverTrend = {
+  up: "up",
+  down: "down",
+  flat: "flat",
+} as const;
+
+export interface RepeatOffenderDriver {
+  carNumber: string;
+  /**
+   * Most recent invoiceNumber filed for this carNumber in the window. (No per-driver name is stored on claims today, so this is what we surface as the driver descriptor.)
+   * @nullable
+   */
+  lastInvoiceNumber: string | null;
+  /** Count of claims with outcome=Denied for this carNumber in the window. */
+  rejectionCount: number;
+  /** Same as rejectionCount but for the prior equal-length window, used to compute trend. */
+  previousRejectionCount: number;
+  /** Sum of claim amounts of Denied claims in the window for this carNumber. */
+  atRiskAmount: string;
+  /**
+   * Most common errorTypeName among Denied claims in the window.
+   * @nullable
+   */
+  topErrorTypeName: string | null;
+  /**
+   * Approved / (Approved + Denied) across all resolved claims (any outcome) for this carNumber in the window. Null when there are no resolved claims yet.
+   * @nullable
+   */
+  winRate: number | null;
+  trend: RepeatOffenderDriverTrend;
+  /**
+   * ISO date (YYYY-MM-DD) of the most recent service date among Denied claims in the window.
+   * @nullable
+   */
+  lastRejectionDate: string | null;
+}
+
+export type RepeatOffenderMemberTrend =
+  (typeof RepeatOffenderMemberTrend)[keyof typeof RepeatOffenderMemberTrend];
+
+export const RepeatOffenderMemberTrend = {
+  up: "up",
+  down: "down",
+  flat: "flat",
+} as const;
+
+export interface RepeatOffenderMember {
+  clientNumber: string;
+  rejectionCount: number;
+  previousRejectionCount: number;
+  atRiskAmount: string;
+  /** @nullable */
+  topErrorTypeName: string | null;
+  /** @nullable */
+  winRate: number | null;
+  trend: RepeatOffenderMemberTrend;
+  /** @nullable */
+  lastRejectionDate: string | null;
+}
+
+export interface DashboardRepeatOffenders {
+  days: number;
+  /** Length of the comparison window used for trend (mirrors `days`). */
+  previousPeriodDays: number;
+  /** Top vehicles/drivers by rejected-claim count, ordered by `rejectionCount` desc. */
+  drivers: RepeatOffenderDriver[];
+  /** Top members (clientNumber) by rejected-claim count, ordered by `rejectionCount` desc. */
+  members: RepeatOffenderMember[];
+  /** Total distinct vehicles with at least one rejection in the window. */
+  driverGroupsTotal: number;
+  /** Total distinct members with at least one rejection in the window. */
+  memberGroupsTotal: number;
+}
+
 export interface NotificationPreferencesResponse {
   userId: string;
   dailyBrief: boolean;
@@ -1723,6 +1800,14 @@ export type ListClaimsParams = {
    */
   serviceDateTo?: string;
   /**
+   * Filter claims to a specific car/vehicle number (exact match).
+   */
+  carNumber?: string;
+  /**
+   * Filter claims to a specific client/member number (exact match).
+   */
+  clientNumber?: string;
+  /**
    * Column to sort by
    */
   sort?: ListClaimsSort;
@@ -1765,6 +1850,8 @@ export type ExportClaimsCsvParams = {
   amountMax?: string;
   serviceDateFrom?: string;
   serviceDateTo?: string;
+  carNumber?: string;
+  clientNumber?: string;
   sort?: string;
   dir?: string;
   /**
@@ -1829,6 +1916,19 @@ export type GetDashboardUserProductivityParams = {
    * @maximum 365
    */
   days?: number;
+};
+
+export type GetDashboardRepeatOffendersParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  limit?: number;
 };
 
 export type ListEvidenceTypes200 = {

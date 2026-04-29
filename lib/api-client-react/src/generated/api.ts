@@ -49,6 +49,7 @@ import type {
   CreatePortalSubmissionBody,
   CronRunsResponse,
   DailyBriefResponse,
+  DashboardRepeatOffenders,
   DashboardSummary,
   DashboardTimeseries,
   DashboardUserProductivity,
@@ -64,6 +65,7 @@ import type {
   GetAuthSession200,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
+  GetDashboardRepeatOffendersParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
   GetSystemHealthBouncesParams,
@@ -6283,6 +6285,115 @@ export function useGetDashboardUserProductivity<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardUserProductivityQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
+ */
+export const getGetDashboardRepeatOffendersUrl = (
+  params?: GetDashboardRepeatOffendersParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/repeat-offenders?${stringifiedParams}`
+    : `/api/dashboard/repeat-offenders`;
+};
+
+export const getDashboardRepeatOffenders = async (
+  params?: GetDashboardRepeatOffendersParams,
+  options?: RequestInit,
+): Promise<DashboardRepeatOffenders> => {
+  return customFetch<DashboardRepeatOffenders>(
+    getGetDashboardRepeatOffendersUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardRepeatOffendersQueryKey = (
+  params?: GetDashboardRepeatOffendersParams,
+) => {
+  return [
+    `/api/dashboard/repeat-offenders`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetDashboardRepeatOffendersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardRepeatOffenders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardRepeatOffendersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardRepeatOffenders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardRepeatOffendersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardRepeatOffenders>>
+  > = ({ signal }) =>
+    getDashboardRepeatOffenders(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardRepeatOffenders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardRepeatOffendersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardRepeatOffenders>>
+>;
+export type GetDashboardRepeatOffendersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
+ */
+
+export function useGetDashboardRepeatOffenders<
+  TData = Awaited<ReturnType<typeof getDashboardRepeatOffenders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardRepeatOffendersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardRepeatOffenders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardRepeatOffendersQueryOptions(
     params,
     options,
   );

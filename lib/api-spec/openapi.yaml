@@ -658,6 +658,16 @@ paths:
           description: Filter claims with service date on or before this date (YYYY-MM-DD)
           schema:
             type: string
+        - name: carNumber
+          in: query
+          description: Filter claims to a specific car/vehicle number (exact match).
+          schema:
+            type: string
+        - name: clientNumber
+          in: query
+          description: Filter claims to a specific client/member number (exact match).
+          schema:
+            type: string
         - name: sort
           in: query
           description: Column to sort by
@@ -748,6 +758,14 @@ paths:
           schema:
             type: string
         - name: serviceDateTo
+          in: query
+          schema:
+            type: string
+        - name: carNumber
+          in: query
+          schema:
+            type: string
+        - name: clientNumber
           in: query
           schema:
             type: string
@@ -1809,6 +1827,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardUserProductivity"
+
+  /dashboard/repeat-offenders:
+    get:
+      operationId: getDashboardRepeatOffenders
+      tags: [dashboard]
+      summary: Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: Repeat-offender aggregates with trend vs prior period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardRepeatOffenders"
 
   /daily-brief:
     post:
@@ -3865,6 +3913,108 @@ components:
       required:
         - days
         - users
+
+    DashboardRepeatOffenders:
+      type: object
+      properties:
+        days:
+          type: integer
+        previousPeriodDays:
+          type: integer
+          description: "Length of the comparison window used for trend (mirrors `days`)."
+        drivers:
+          type: array
+          description: "Top vehicles/drivers by rejected-claim count, ordered by `rejectionCount` desc."
+          items:
+            $ref: "#/components/schemas/RepeatOffenderDriver"
+        members:
+          type: array
+          description: "Top members (clientNumber) by rejected-claim count, ordered by `rejectionCount` desc."
+          items:
+            $ref: "#/components/schemas/RepeatOffenderMember"
+        driverGroupsTotal:
+          type: integer
+          description: "Total distinct vehicles with at least one rejection in the window."
+        memberGroupsTotal:
+          type: integer
+          description: "Total distinct members with at least one rejection in the window."
+      required:
+        - days
+        - previousPeriodDays
+        - drivers
+        - members
+        - driverGroupsTotal
+        - memberGroupsTotal
+
+    RepeatOffenderDriver:
+      type: object
+      properties:
+        carNumber:
+          type: string
+        lastInvoiceNumber:
+          type: ["string", "null"]
+          description: "Most recent invoiceNumber filed for this carNumber in the window. (No per-driver name is stored on claims today, so this is what we surface as the driver descriptor.)"
+        rejectionCount:
+          type: integer
+          description: "Count of claims with outcome=Denied for this carNumber in the window."
+        previousRejectionCount:
+          type: integer
+          description: "Same as rejectionCount but for the prior equal-length window, used to compute trend."
+        atRiskAmount:
+          type: string
+          description: "Sum of claim amounts of Denied claims in the window for this carNumber."
+        topErrorTypeName:
+          type: ["string", "null"]
+          description: "Most common errorTypeName among Denied claims in the window."
+        winRate:
+          type: ["number", "null"]
+          description: "Approved / (Approved + Denied) across all resolved claims (any outcome) for this carNumber in the window. Null when there are no resolved claims yet."
+        trend:
+          type: string
+          enum: [up, down, flat]
+        lastRejectionDate:
+          type: ["string", "null"]
+          description: "ISO date (YYYY-MM-DD) of the most recent service date among Denied claims in the window."
+      required:
+        - carNumber
+        - lastInvoiceNumber
+        - rejectionCount
+        - previousRejectionCount
+        - atRiskAmount
+        - topErrorTypeName
+        - winRate
+        - trend
+        - lastRejectionDate
+
+    RepeatOffenderMember:
+      type: object
+      properties:
+        clientNumber:
+          type: string
+        rejectionCount:
+          type: integer
+        previousRejectionCount:
+          type: integer
+        atRiskAmount:
+          type: string
+        topErrorTypeName:
+          type: ["string", "null"]
+        winRate:
+          type: ["number", "null"]
+        trend:
+          type: string
+          enum: [up, down, flat]
+        lastRejectionDate:
+          type: ["string", "null"]
+      required:
+        - clientNumber
+        - rejectionCount
+        - previousRejectionCount
+        - atRiskAmount
+        - topErrorTypeName
+        - winRate
+        - trend
+        - lastRejectionDate
 
     ExpiringInvoiceGroup:
       type: object

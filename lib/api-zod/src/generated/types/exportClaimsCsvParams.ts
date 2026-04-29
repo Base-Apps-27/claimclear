@@ -17,6 +17,8 @@ export type ExportClaimsCsvParams = {
   amountMax?: string;
   serviceDateFrom?: string;
   serviceDateTo?: string;
+  carNumber?: string;
+  clientNumber?: string;
   sort?: string;
   dir?: string;
   /**

@@ -260,6 +260,194 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   res.json({ days, points });
 }));
 
+function parseLimit(raw: unknown, fallback: number, max = 50): number {
+  const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+type RepeatOffenderTrend = "up" | "down" | "flat";
+
+function trendFromCounts(current: number, previous: number): RepeatOffenderTrend {
+  if (current > previous) return "up";
+  if (current < previous) return "down";
+  return "flat";
+}
+
+router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise<void> => {
+  const days = parseDays(req.query.days, 30);
+  const limit = parseLimit(req.query.limit, 10);
+  const start = startOfWindow(days);
+  const priorStart = new Date(start);
+  priorStart.setUTCDate(priorStart.getUTCDate() - days);
+
+  type AggRow = {
+    key: string;
+    rejectionCount: number;       // Only outcome=Denied
+    atRiskAmount: number;         // Sum of claimAmount for Denied claims
+    approvedCount: number;        // For winRate (across all resolved)
+    deniedCount: number;          // For winRate (across all resolved)
+    lastRejectionDate: string | null;
+    errorTypeCounts: Map<string, number>; // Only counted from Denied claims
+    mostRecentInvoice: { date: string | null; invoiceNumber: string | null };
+  };
+
+  type GroupingKey = "carNumber" | "clientNumber";
+
+  function aggregate(rows: Array<{
+    key: string | null;
+    claimAmount: string | null;
+    outcome: string;
+    date: string | null;
+    errorTypeName: string | null;
+    invoiceNumber: string | null;
+  }>): Map<string, AggRow> {
+    const map = new Map<string, AggRow>();
+    for (const row of rows) {
+      if (!row.key) continue;
+      let agg = map.get(row.key);
+      if (!agg) {
+        agg = {
+          key: row.key,
+          rejectionCount: 0,
+          atRiskAmount: 0,
+          approvedCount: 0,
+          deniedCount: 0,
+          lastRejectionDate: null,
+          errorTypeCounts: new Map(),
+          mostRecentInvoice: { date: null, invoiceNumber: null },
+        };
+        map.set(row.key, agg);
+      }
+      const isDenied = row.outcome === "Denied";
+      const isApproved = row.outcome === "Approved" || row.outcome === "Partially Approved";
+      if (isApproved) agg.approvedCount += 1;
+      if (isDenied) {
+        agg.deniedCount += 1;
+        agg.rejectionCount += 1;
+        const amt = parseFloat(row.claimAmount || "0");
+        if (Number.isFinite(amt)) agg.atRiskAmount += amt;
+        if (row.date) {
+          if (!agg.lastRejectionDate || row.date > agg.lastRejectionDate) {
+            agg.lastRejectionDate = row.date;
+          }
+        }
+        if (row.errorTypeName) {
+          agg.errorTypeCounts.set(row.errorTypeName, (agg.errorTypeCounts.get(row.errorTypeName) ?? 0) + 1);
+        }
+      }
+      // Track most-recent invoice across ALL claims for this key (used as
+      // "last invoice / driver descriptor"), not just Denied ones.
+      if (
+        row.date &&
+        row.invoiceNumber &&
+        (!agg.mostRecentInvoice.date || row.date >= agg.mostRecentInvoice.date)
+      ) {
+        agg.mostRecentInvoice = { date: row.date, invoiceNumber: row.invoiceNumber };
+      }
+    }
+    return map;
+  }
+
+  function topErrorType(counts: Map<string, number>): string | null {
+    let best: { name: string; count: number } | null = null;
+    for (const [name, count] of counts) {
+      if (!best || count > best.count) best = { name, count };
+    }
+    return best?.name ?? null;
+  }
+
+  // Pull both periods in one query, partition by key.
+  const allRows = await db
+    .select({
+      carNumber: claimsTable.carNumber,
+      clientNumber: claimsTable.clientNumber,
+      claimAmount: claimsTable.claimAmount,
+      outcome: claimsTable.outcome,
+      date: claimsTable.date,
+      errorTypeName: claimsTable.errorTypeName,
+      createdAt: claimsTable.createdAt,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
+    })
+    .from(claimsTable)
+    .leftJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(gte(claimsTable.createdAt, priorStart));
+
+  const currentDriverRows: Parameters<typeof aggregate>[0] = [];
+  const priorDriverRows: Parameters<typeof aggregate>[0] = [];
+  const currentMemberRows: Parameters<typeof aggregate>[0] = [];
+  const priorMemberRows: Parameters<typeof aggregate>[0] = [];
+
+  for (const r of allRows) {
+    const inCurrent = r.createdAt && r.createdAt >= start;
+    const driverPayload = {
+      key: r.carNumber,
+      claimAmount: r.claimAmount,
+      outcome: r.outcome,
+      date: r.date,
+      errorTypeName: r.errorTypeName,
+      invoiceNumber: r.invoiceNumber,
+    };
+    const memberPayload = { ...driverPayload, key: r.clientNumber };
+    if (inCurrent) {
+      currentDriverRows.push(driverPayload);
+      currentMemberRows.push(memberPayload);
+    } else {
+      priorDriverRows.push(driverPayload);
+      priorMemberRows.push(memberPayload);
+    }
+  }
+
+  const currentDrivers = aggregate(currentDriverRows);
+  const priorDrivers = aggregate(priorDriverRows);
+  const currentMembers = aggregate(currentMemberRows);
+  const priorMembers = aggregate(priorMemberRows);
+
+  function shape(
+    map: Map<string, AggRow>,
+    priorMap: Map<string, AggRow>,
+    keyName: GroupingKey,
+  ) {
+    const list = Array.from(map.values())
+      .sort((a, b) => b.rejectionCount - a.rejectionCount || b.atRiskAmount - a.atRiskAmount)
+      .slice(0, limit);
+    return list.map(agg => {
+      const priorCount = priorMap.get(agg.key)?.rejectionCount ?? 0;
+      const resolved = agg.approvedCount + agg.deniedCount;
+      const winRate = resolved > 0 ? Number((agg.approvedCount / resolved).toFixed(4)) : null;
+      const base = {
+        rejectionCount: agg.rejectionCount,
+        previousRejectionCount: priorCount,
+        atRiskAmount: agg.atRiskAmount.toFixed(2),
+        topErrorTypeName: topErrorType(agg.errorTypeCounts),
+        winRate,
+        trend: trendFromCounts(agg.rejectionCount, priorCount),
+        lastRejectionDate: agg.lastRejectionDate,
+      };
+      if (keyName === "carNumber") {
+        return {
+          ...base,
+          carNumber: agg.key,
+          lastInvoiceNumber: agg.mostRecentInvoice.invoiceNumber,
+        };
+      }
+      return {
+        ...base,
+        clientNumber: agg.key,
+      };
+    });
+  }
+
+  res.json({
+    days,
+    previousPeriodDays: days,
+    drivers: shape(currentDrivers, priorDrivers, "carNumber"),
+    members: shape(currentMembers, priorMembers, "clientNumber"),
+    driverGroupsTotal: currentDrivers.size,
+    memberGroupsTotal: currentMembers.size,
+  });
+}));
+
 router.get("/dashboard/user-productivity", asyncHandler(async (req, res): Promise<void> => {
   const days = parseDays(req.query.days, 30);
   const start = startOfWindow(days);

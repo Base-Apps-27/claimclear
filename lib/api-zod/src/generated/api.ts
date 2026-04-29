@@ -1137,6 +1137,16 @@ export const ListClaimsQueryParams = zod.object({
     .describe(
       "Filter claims with service date on or before this date (YYYY-MM-DD)",
     ),
+  carNumber: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter claims to a specific car\/vehicle number (exact match)."),
+  clientNumber: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter claims to a specific client\/member number (exact match).",
+    ),
   sort: zod
     .enum([
       "confNumber",
@@ -1252,6 +1262,8 @@ export const ExportClaimsCsvQueryParams = zod.object({
   amountMax: zod.coerce.string().optional(),
   serviceDateFrom: zod.coerce.string().optional(),
   serviceDateTo: zod.coerce.string().optional(),
+  carNumber: zod.coerce.string().optional(),
+  clientNumber: zod.coerce.string().optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -3616,6 +3628,112 @@ export const GetDashboardUserProductivityResponse = zod.object({
       total: zod.number(),
     }),
   ),
+});
+
+/**
+ * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
+ */
+export const getDashboardRepeatOffendersQueryDaysDefault = 30;
+export const getDashboardRepeatOffendersQueryDaysMax = 365;
+
+export const getDashboardRepeatOffendersQueryLimitDefault = 10;
+export const getDashboardRepeatOffendersQueryLimitMax = 50;
+
+export const GetDashboardRepeatOffendersQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardRepeatOffendersQueryDaysMax)
+    .default(getDashboardRepeatOffendersQueryDaysDefault),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardRepeatOffendersQueryLimitMax)
+    .default(getDashboardRepeatOffendersQueryLimitDefault),
+});
+
+export const GetDashboardRepeatOffendersResponse = zod.object({
+  days: zod.number(),
+  previousPeriodDays: zod
+    .number()
+    .describe(
+      "Length of the comparison window used for trend (mirrors `days`).",
+    ),
+  drivers: zod
+    .array(
+      zod.object({
+        carNumber: zod.string(),
+        lastInvoiceNumber: zod
+          .string()
+          .nullable()
+          .describe(
+            "Most recent invoiceNumber filed for this carNumber in the window. (No per-driver name is stored on claims today, so this is what we surface as the driver descriptor.)",
+          ),
+        rejectionCount: zod
+          .number()
+          .describe(
+            "Count of claims with outcome=Denied for this carNumber in the window.",
+          ),
+        previousRejectionCount: zod
+          .number()
+          .describe(
+            "Same as rejectionCount but for the prior equal-length window, used to compute trend.",
+          ),
+        atRiskAmount: zod
+          .string()
+          .describe(
+            "Sum of claim amounts of Denied claims in the window for this carNumber.",
+          ),
+        topErrorTypeName: zod
+          .string()
+          .nullable()
+          .describe(
+            "Most common errorTypeName among Denied claims in the window.",
+          ),
+        winRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "Approved \/ (Approved + Denied) across all resolved claims (any outcome) for this carNumber in the window. Null when there are no resolved claims yet.",
+          ),
+        trend: zod.enum(["up", "down", "flat"]),
+        lastRejectionDate: zod
+          .string()
+          .nullable()
+          .describe(
+            "ISO date (YYYY-MM-DD) of the most recent service date among Denied claims in the window.",
+          ),
+      }),
+    )
+    .describe(
+      "Top vehicles\/drivers by rejected-claim count, ordered by `rejectionCount` desc.",
+    ),
+  members: zod
+    .array(
+      zod.object({
+        clientNumber: zod.string(),
+        rejectionCount: zod.number(),
+        previousRejectionCount: zod.number(),
+        atRiskAmount: zod.string(),
+        topErrorTypeName: zod.string().nullable(),
+        winRate: zod.number().nullable(),
+        trend: zod.enum(["up", "down", "flat"]),
+        lastRejectionDate: zod.string().nullable(),
+      }),
+    )
+    .describe(
+      "Top members (clientNumber) by rejected-claim count, ordered by `rejectionCount` desc.",
+    ),
+  driverGroupsTotal: zod
+    .number()
+    .describe(
+      "Total distinct vehicles with at least one rejection in the window.",
+    ),
+  memberGroupsTotal: zod
+    .number()
+    .describe(
+      "Total distinct members with at least one rejection in the window.",
+    ),
 });
 
 /**

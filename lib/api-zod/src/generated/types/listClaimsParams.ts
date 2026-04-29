@@ -47,6 +47,14 @@ export type ListClaimsParams = {
    */
   serviceDateTo?: string;
   /**
+   * Filter claims to a specific car/vehicle number (exact match).
+   */
+  carNumber?: string;
+  /**
+   * Filter claims to a specific client/member number (exact match).
+   */
+  clientNumber?: string;
+  /**
    * Column to sort by
    */
   sort?: ListClaimsSort;

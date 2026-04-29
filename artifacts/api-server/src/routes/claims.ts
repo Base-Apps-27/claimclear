@@ -68,6 +68,8 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   const amountMax = query.amountMax as string | undefined;
   const serviceDateFrom = query.serviceDateFrom as string | undefined;
   const serviceDateTo = query.serviceDateTo as string | undefined;
+  const carNumber = query.carNumber as string | undefined;
+  const clientNumber = query.clientNumber as string | undefined;
 
   const conditions: SQL[] = [];
 
@@ -141,6 +143,12 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   }
   if (serviceDateTo) {
     conditions.push(lte(claimsTable.date, serviceDateTo));
+  }
+  if (carNumber && typeof carNumber === "string") {
+    conditions.push(eq(claimsTable.carNumber, carNumber));
+  }
+  if (clientNumber && typeof clientNumber === "string") {
+    conditions.push(eq(claimsTable.clientNumber, clientNumber));
   }
 
   return conditions.length > 0 ? and(...conditions) : undefined;
