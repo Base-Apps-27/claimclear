@@ -43,6 +43,25 @@ export function htmlToText(html: string | null | undefined): string {
 const CONF_RE = /\b\d{6,}\b/;
 const DOLLAR_RE = /\$\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
+function splitConfNumbers(raw: string): string[] {
+  const matches = raw.match(/\d+/g);
+  if (!matches) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matches) {
+    if (!seen.has(m)) {
+      seen.add(m);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function descriptionContainsNumber(text: string, num: string): boolean {
+  const re = new RegExp(`(?<!\\d)${num}(?!\\d)`);
+  return re.test(text);
+}
+
 interface EvidenceKeywordRule {
   keyword: RegExp;
   matches: (name: string) => boolean;
@@ -112,12 +131,25 @@ export function lintDraft(
 
   const conf = (submission.confNumber || claim.confNumber || "").trim();
   if (conf) {
-    if (!text.includes(conf)) {
-      results.push({
-        ruleKey: "missing_conf_number",
-        severity: "fail",
-        message: `Confirmation number ${conf} is not mentioned in the description.`,
-      });
+    const expected = splitConfNumbers(conf);
+    if (expected.length === 0) {
+      if (!text.includes(conf)) {
+        results.push({
+          ruleKey: "missing_conf_number",
+          severity: "fail",
+          message: `Confirmation number ${conf} is not mentioned in the description.`,
+        });
+      }
+    } else {
+      const missing = expected.filter((n) => !descriptionContainsNumber(text, n));
+      if (missing.length > 0) {
+        const label = missing.length === 1 ? "Confirmation number" : "Confirmation numbers";
+        results.push({
+          ruleKey: "missing_conf_number",
+          severity: "fail",
+          message: `${label} ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not mentioned in the description.`,
+        });
+      }
     }
   } else if (!CONF_RE.test(text)) {
     results.push({
