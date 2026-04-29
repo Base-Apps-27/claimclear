@@ -277,12 +277,19 @@ export function trendFromCounts(current: number, previous: number): RepeatOffend
 
 export type RepeatOffenderAggRow = {
   key: string;
-  rejectionCount: number;       // Only outcome=Denied
-  atRiskAmount: number;         // Sum of claimAmount for Denied claims
-  approvedCount: number;        // For winRate (across all resolved)
-  deniedCount: number;          // For winRate (across all resolved)
-  lastRejectionDate: string | null;
-  errorTypeCounts: Map<string, number>; // Only counted from Denied claims
+  // Raw count of rejected claims for this driver/member in the window. EVERY
+  // imported claim represents a payor rejection (this is a claims-DISPUTE
+  // tool — claims only land here because the payor rejected them); we count
+  // them all except outcome=Non-Issue (which means "actually wasn't a
+  // rejection" and should not appear in repeat-offender stats). This means
+  // freshly-imported Pending claims show up here, not just downstream
+  // Denied resolutions.
+  rejectionCount: number;
+  atRiskAmount: number;         // Sum of claimAmount across all rejection rows.
+  approvedCount: number;        // For winRate — counts Approved + Partially Approved.
+  deniedCount: number;          // For winRate — counts outcome=Denied only.
+  lastRejectionDate: string | null;     // Max date across all rejection rows.
+  errorTypeCounts: Map<string, number>; // Tally across all rejection rows.
   mostRecentInvoice: { date: string | null; invoiceNumber: string | null };
 };
 
@@ -317,16 +324,21 @@ export function aggregateRepeatOffenders(rows: RepeatOffenderInputRow[]): Map<st
     }
     const isDenied = row.outcome === "Denied";
     const isApproved = row.outcome === "Approved" || row.outcome === "Partially Approved";
+    const isNonIssue = row.outcome === "Non-Issue";
     if (isApproved) agg.approvedCount += 1;
-    if (isDenied) {
-      agg.deniedCount += 1;
+    if (isDenied) agg.deniedCount += 1;
+    // Repeat-offender stats roll up EVERY claim a driver/member appears on
+    // (except outcome=Non-Issue, which is the explicit "actually wasn't a
+    // rejection" escape hatch). Counting only outcome=Denied would ignore
+    // freshly-imported (Pending) claims and Withdrawn losses — but the
+    // operator needs the full picture of how often this driver/member
+    // generates rejected claims, not just resolved denials.
+    if (!isNonIssue) {
       agg.rejectionCount += 1;
       const amt = parseFloat(row.claimAmount || "0");
       if (Number.isFinite(amt)) agg.atRiskAmount += amt;
-      if (row.date) {
-        if (!agg.lastRejectionDate || row.date > agg.lastRejectionDate) {
-          agg.lastRejectionDate = row.date;
-        }
+      if (row.date && (!agg.lastRejectionDate || row.date > agg.lastRejectionDate)) {
+        agg.lastRejectionDate = row.date;
       }
       if (row.errorTypeName) {
         agg.errorTypeCounts.set(row.errorTypeName, (agg.errorTypeCounts.get(row.errorTypeName) ?? 0) + 1);

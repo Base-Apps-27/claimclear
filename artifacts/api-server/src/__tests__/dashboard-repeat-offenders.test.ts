@@ -114,6 +114,11 @@ test("aggregate groups multiple claims by their key (carNumber/clientNumber)", (
   // The handler partitions rows into driver vs member payloads with a
   // different key; aggregate is key-agnostic, so the same logic covers
   // both groupings. We assert two distinct keys roll up to two entries.
+  //
+  // Repeat-offender stats roll up EVERY claim a driver/member appears on
+  // (except outcome=Non-Issue): in this dispute tool, every imported claim
+  // represents a payor rejection, so Pending/Approved/Denied/Withdrawn
+  // claims all count toward rejectionCount and atRiskAmount.
   const map = aggregateRepeatOffenders([
     row({ key: "CAR-A", outcome: "Denied", claimAmount: "100.00", date: "2026-01-01", errorTypeName: "Missing Auth", invoiceNumber: "INV-1" }),
     row({ key: "CAR-A", outcome: "Denied", claimAmount: "50.50", date: "2026-01-05", errorTypeName: "Missing Auth", invoiceNumber: "INV-2" }),
@@ -124,11 +129,11 @@ test("aggregate groups multiple claims by their key (carNumber/clientNumber)", (
   assert.equal(map.size, 2, "two distinct keys should produce two aggregate entries");
 
   const a = map.get("CAR-A")!;
-  assert.equal(a.rejectionCount, 2, "CAR-A has 2 Denied claims");
-  assert.equal(a.deniedCount, 2);
-  assert.equal(a.approvedCount, 1, "Approved counted separately for win rate");
-  assert.equal(a.atRiskAmount, 150.5, "atRiskAmount sums Denied claim amounts only");
-  assert.equal(a.lastRejectionDate, "2026-01-05", "lastRejectionDate is the max date among Denied claims");
+  assert.equal(a.rejectionCount, 3, "CAR-A has 3 rejection rows total (2 Denied + 1 Approved); only Non-Issue is excluded");
+  assert.equal(a.deniedCount, 2, "deniedCount counts outcome=Denied only — used for win rate");
+  assert.equal(a.approvedCount, 1, "approvedCount counts Approved + Partially Approved — used for win rate");
+  assert.equal(a.atRiskAmount, 350.5, "atRiskAmount sums every rejection row's claimAmount (100+50.50+200)");
+  assert.equal(a.lastRejectionDate, "2026-01-10", "lastRejectionDate is the max date across all rejection rows");
   assert.equal(a.mostRecentInvoice.invoiceNumber, "INV-3", "mostRecentInvoice tracks the newest claim regardless of outcome");
   assert.equal(topErrorType(a.errorTypeCounts), "Missing Auth");
 
@@ -147,38 +152,59 @@ test("aggregate ignores rows with a null key", () => {
   assert.ok(map.has("CAR-X"));
 });
 
-test("aggregate counts 'Partially Approved' as approved (not as a rejection)", () => {
+test("aggregate: 'Partially Approved' counts as both an approval (for winRate) and a rejection (for offender stats)", () => {
+  // The original payor rejection is what got the claim into the system; a
+  // Partially Approved disposition is a partial WIN of the dispute, but
+  // the claim itself was still a rejection that the driver/member is
+  // responsible for. So it counts in both buckets.
   const a = aggregateRepeatOffenders([
     row({ key: "CAR-P", outcome: "Partially Approved", claimAmount: "100", date: "2026-01-01" }),
   ]).get("CAR-P")!;
-  assert.equal(a.approvedCount, 1);
+  assert.equal(a.approvedCount, 1, "Partially Approved feeds the winRate numerator");
   assert.equal(a.deniedCount, 0);
-  assert.equal(a.rejectionCount, 0);
-  assert.equal(a.atRiskAmount, 0, "atRiskAmount excludes non-Denied amounts");
+  assert.equal(a.rejectionCount, 1, "Partially Approved is still a rejection in the offender stats");
+  assert.equal(a.atRiskAmount, 100, "atRiskAmount includes the Partially Approved amount");
 });
 
-test("aggregate ignores Pending/Withdrawn/Non-Issue for both buckets", () => {
+test("aggregate: only outcome=Non-Issue is excluded from rejection counts; Pending/Withdrawn count", () => {
+  // Non-Issue is the explicit "actually wasn't a rejection" escape hatch
+  // and is the ONLY outcome that drops out of rejection rollups. Pending
+  // (freshly imported, not yet disputed) and Withdrawn (we accepted the
+  // loss) both still represent payor rejections that the driver/member
+  // generated.
   const a = aggregateRepeatOffenders([
     row({ key: "CAR-N", outcome: "Pending", claimAmount: "100", date: "2026-01-01" }),
     row({ key: "CAR-N", outcome: "Withdrawn", claimAmount: "100", date: "2026-01-02" }),
     row({ key: "CAR-N", outcome: "Non-Issue", claimAmount: "100", date: "2026-01-03" }),
   ]).get("CAR-N")!;
-  assert.equal(a.approvedCount, 0);
-  assert.equal(a.deniedCount, 0);
-  assert.equal(a.rejectionCount, 0);
+  assert.equal(a.approvedCount, 0, "none of the three are approvals");
+  assert.equal(a.deniedCount, 0, "none of the three are explicit Denied resolutions");
+  assert.equal(a.rejectionCount, 2, "Pending + Withdrawn count as rejections; Non-Issue is excluded");
+  assert.equal(a.atRiskAmount, 200, "atRiskAmount sums Pending + Withdrawn amounts; Non-Issue is excluded");
+  assert.equal(a.lastRejectionDate, "2026-01-02", "lastRejectionDate is the max date across rejection rows (excludes Non-Issue)");
 });
 
-test("aggregate's topErrorType picks the most-frequent denial error", () => {
+test("aggregate's topErrorType is computed across all rejection rows (every outcome except Non-Issue)", () => {
+  // The 'top error type' surfaces WHY a driver/member keeps generating
+  // rejected claims. That diagnostic question is independent of whether
+  // we successfully disputed the rejection — an Approved-after-dispute
+  // claim was still rejected for a reason, and that reason should count.
   const a = aggregateRepeatOffenders([
     row({ key: "CAR-E", outcome: "Denied", errorTypeName: "AlphaErr" }),
     row({ key: "CAR-E", outcome: "Denied", errorTypeName: "BetaErr" }),
     row({ key: "CAR-E", outcome: "Denied", errorTypeName: "BetaErr" }),
-    // Approved error types should NOT count toward topErrorType.
     row({ key: "CAR-E", outcome: "Approved", errorTypeName: "AlphaErr" }),
     row({ key: "CAR-E", outcome: "Approved", errorTypeName: "AlphaErr" }),
     row({ key: "CAR-E", outcome: "Approved", errorTypeName: "AlphaErr" }),
+    // Non-Issue rows do NOT contribute to errorTypeCounts.
+    row({ key: "CAR-E", outcome: "Non-Issue", errorTypeName: "GammaErr" }),
+    row({ key: "CAR-E", outcome: "Non-Issue", errorTypeName: "GammaErr" }),
+    row({ key: "CAR-E", outcome: "Non-Issue", errorTypeName: "GammaErr" }),
+    row({ key: "CAR-E", outcome: "Non-Issue", errorTypeName: "GammaErr" }),
+    row({ key: "CAR-E", outcome: "Non-Issue", errorTypeName: "GammaErr" }),
   ]).get("CAR-E")!;
-  assert.equal(topErrorType(a.errorTypeCounts), "BetaErr");
+  // Counts: AlphaErr=4 (1 Denied + 3 Approved), BetaErr=2 (Denied), GammaErr=0 (Non-Issue excluded).
+  assert.equal(topErrorType(a.errorTypeCounts), "AlphaErr", "AlphaErr wins (4) over BetaErr (2); Non-Issue rows excluded");
 });
 
 test("topErrorType returns null on an empty count map", () => {
