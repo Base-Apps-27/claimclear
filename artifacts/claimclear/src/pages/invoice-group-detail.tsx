@@ -833,10 +833,10 @@ export default function InvoiceGroupDetail() {
                   ))}
                   {closureOffered && (
                     <TooltipProvider>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <div className="space-y-2 pt-1">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span>
+                            <span className="block">
                               <Button
                                 size="sm"
                                 variant={group.outcome === "Denied" ? "default" : "outline"}
