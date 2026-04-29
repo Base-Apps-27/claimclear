@@ -3711,6 +3711,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExpiringInvoiceGroup"
+        urgentCount:
+          type: integer
+          description: "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday)."
         recentGroups:
           type: array
           items:
@@ -3754,6 +3757,7 @@ components:
         - stats
         - amounts
         - expiringGroups
+        - urgentCount
         - recentGroups
         - portalStats
         - portalWorker
@@ -3842,6 +3846,13 @@ components:
           type: integer
         daysLeft:
           type: integer
+          description: "Calendar days until the dispute window closes."
+        effectiveDaysLeft:
+          type: integer
+          description: "Calendar days until the dispute window closes, with weekend deadlines shifted back to the prior Friday."
+        isUrgent:
+          type: boolean
+          description: "True when the deadline lands on today or the next business day after weekend shifting."
       required:
         - id
         - invoiceNumber
@@ -3849,6 +3860,8 @@ components:
         - status
         - rideCount
         - daysLeft
+        - effectiveDaysLeft
+        - isUrgent
 
     NotificationPreferencesResponse:
       type: object

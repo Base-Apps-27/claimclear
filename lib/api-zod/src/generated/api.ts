@@ -3407,9 +3407,26 @@ export const GetDashboardSummaryResponse = zod.object({
       totalAmount: zod.string().nullish(),
       status: zod.string(),
       rideCount: zod.number(),
-      daysLeft: zod.number(),
+      daysLeft: zod
+        .number()
+        .describe("Calendar days until the dispute window closes."),
+      effectiveDaysLeft: zod
+        .number()
+        .describe(
+          "Calendar days until the dispute window closes, with weekend deadlines shifted back to the prior Friday.",
+        ),
+      isUrgent: zod
+        .boolean()
+        .describe(
+          "True when the deadline lands on today or the next business day after weekend shifting.",
+        ),
     }),
   ),
+  urgentCount: zod
+    .number()
+    .describe(
+      "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday).",
+    ),
   recentGroups: zod.array(
     zod.object({
       id: zod.number(),

@@ -1056,7 +1056,12 @@ export interface ExpiringInvoiceGroup {
   totalAmount?: string | null;
   status: string;
   rideCount: number;
+  /** Calendar days until the dispute window closes. */
   daysLeft: number;
+  /** Calendar days until the dispute window closes, with weekend deadlines shifted back to the prior Friday. */
+  effectiveDaysLeft: number;
+  /** True when the deadline lands on today or the next business day after weekend shifting. */
+  isUrgent: boolean;
 }
 
 export interface DashboardSummary {
@@ -1064,6 +1069,8 @@ export interface DashboardSummary {
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
   expiringGroups: ExpiringInvoiceGroup[];
+  /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). */
+  urgentCount: number;
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   portalWorker: DashboardSummaryPortalWorker;

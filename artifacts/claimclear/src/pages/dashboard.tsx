@@ -236,28 +236,58 @@ export default function Dashboard() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Expiring Claims */}
-        <Card className="col-span-1 border-red-200">
+        <Card className="col-span-1 border-red-200" data-testid="card-expiring-soon">
           <CardHeader>
             <CardTitle className="text-red-700 flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
               Expiring Soon
-              <InfoTooltip content="Invoice groups whose dispute filing window closes within 10 days. These must be acted on urgently or the opportunity to dispute will be lost." iconClassName="text-red-400" />
+              <InfoTooltip
+                content="Invoice groups awaiting action from our team whose dispute filing window closes within 10 days. Excludes groups already submitted to the payor or on hold. The office is closed on weekends, so deadlines that fall on Saturday or Sunday are treated as Friday."
+                iconClassName="text-red-400"
+              />
             </CardTitle>
-            <CardDescription>Dispute window closing in {'<'} 10 days</CardDescription>
+            <CardDescription>Dispute window closing in {'<'} 10 days (weekends count as Friday)</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div
+              className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2"
+              data-testid="urgent-count-tile"
+            >
+              <div className="text-3xl font-bold text-red-600 leading-none" data-testid="urgent-count-value">
+                {summary.urgentCount ?? 0}
+              </div>
+              <p className="text-xs text-red-700 mt-1">
+                Urgent — due today or next business day
+              </p>
+            </div>
+            <div
+              className="space-y-4 max-h-[22rem] overflow-y-auto pr-1"
+              data-testid="expiring-list"
+            >
               {summary.expiringGroups.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No invoice groups expiring soon.</p>
               ) : (
                 summary.expiringGroups.map(group => (
-                  <div key={group.id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
+                  <div
+                    key={group.id}
+                    className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0"
+                    data-testid={`expiring-row-${group.id}`}
+                    data-urgent={group.isUrgent ? "true" : "false"}
+                  >
                     <div>
                       <div className="font-medium flex items-center gap-2">
                         <Link href={`/invoice-groups/${group.id}`} className="hover:underline hover:text-primary">
                           {group.invoiceNumber}
                         </Link>
-                        <span className="text-xs text-red-600 font-semibold">{group.daysLeft} days left</span>
+                        <span
+                          className={
+                            group.isUrgent
+                              ? "text-xs text-red-600 font-semibold"
+                              : "text-xs text-muted-foreground font-medium"
+                          }
+                        >
+                          {group.effectiveDaysLeft} days left
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {formatDate(group.earliestDate)} • {group.rideCount} ride{group.rideCount === 1 ? '' : 's'} • {formatCurrency(group.totalAmount)}

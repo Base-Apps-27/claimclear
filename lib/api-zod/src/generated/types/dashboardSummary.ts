@@ -18,6 +18,8 @@ export interface DashboardSummary {
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
   expiringGroups: ExpiringInvoiceGroup[];
+  /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). */
+  urgentCount: number;
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   portalWorker: DashboardSummaryPortalWorker;

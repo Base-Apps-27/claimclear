@@ -3,12 +3,21 @@ import { eq, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNul
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { daysRemaining } from "../lib/dates";
+import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
+// Statuses where the next action is on our team. Excludes "Awaiting Response"
+// (ball is in the payor's court) and "On Hold" (we've intentionally paused).
+export const EXPIRING_ACTIONABLE_STATUSES = [
+  "New",
+  "Needs Evidence",
+  "Portal Queued",
+  "Generating Email",
+  "Ready to Review",
+] as const;
 const VENDOR_PREPAY_RATE = 0.70;
 const OVERDUE_THRESHOLD_MINUTES = 15;
 
@@ -95,6 +104,10 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
+  const expiringStatusFilter = or(
+    ...EXPIRING_ACTIONABLE_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
+  );
+
   const openGroupsWithDates = await db
     .select({
       id: invoiceGroupsTable.id,
@@ -106,12 +119,15 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     })
     .from(invoiceGroupsTable)
     .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
+    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
     .groupBy(invoiceGroupsTable.id);
 
+  const expiringNow = new Date();
   const expiringGroups = openGroupsWithDates
     .map(g => {
       const dl = daysRemaining(g.earliestDate);
+      const eff = effectiveDaysRemaining(g.earliestDate, expiringNow);
+      const urgent = isUrgentDeadline(g.earliestDate, expiringNow);
       return {
         id: g.id,
         invoiceNumber: g.invoiceNumber,
@@ -120,10 +136,14 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
         status: g.status,
         rideCount: g.rideCount,
         daysLeft: dl!,
+        effectiveDaysLeft: eff!,
+        isUrgent: urgent,
       };
     })
-    .filter(g => g.daysLeft !== null && g.daysLeft <= 10)
-    .sort((a, b) => a.daysLeft - b.daysLeft);
+    .filter(g => g.effectiveDaysLeft !== null && g.effectiveDaysLeft <= 10)
+    .sort((a, b) => a.effectiveDaysLeft - b.effectiveDaysLeft);
+
+  const urgentCount = expiringGroups.filter(g => g.isUrgent).length;
 
   const recentGroups = await db.select().from(invoiceGroupsTable)
     .orderBy(desc(invoiceGroupsTable.updatedAt))
@@ -175,6 +195,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     stats: { total, new: newCount, resolved, denied, withdrawn, onHold, withdrawnByReason, deniedByReason },
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
+    urgentCount,
     recentGroups,
     portalStats: { pending, submitted, failed, successRate },
     portalWorker: {
