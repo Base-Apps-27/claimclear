@@ -316,7 +316,7 @@ async function fillChoicesDropdown(page: any, selectSelector: string, value: str
   return false;
 }
 
-const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
+export const FRESHDESK_ISSUE_TYPE_MAP: Record<string, string> = {
   "GPS Control Deviation": "gps_control_deviation",
   "Other Issue or Question": "other_issue_or_question",
   "Custom Payment Request": "custom_payment_request",

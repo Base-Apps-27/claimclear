@@ -34,4 +34,10 @@ title = "MAS portal dry run — Other Issue or Question form (filled, same submi
 id = "KkP8h8_6tCxP7J57kHhuK"
 uri = "file://attached_assets/gps_breadcrumbs_fix_verified.png"
 type = "image"
-title = "GPS Breadcrumbs dropdown filled with 'Yes' — fix verified on live MAS portal"
+title = "Toggle ON (from prior run): bot lands on the GPS Control Deviation form with GPS Breadcrumbs = Yes"
+
+[[outputs]]
+id = "65Oe4Kx8Drg2cG1DKkcew"
+uri = "file://attached_assets/dryrun_other_issue_form_toggle_off.png"
+type = "image"
+title = "Toggle OFF: bot lands on the Other Issue or Question form (no GPS Breadcrumbs field)"
