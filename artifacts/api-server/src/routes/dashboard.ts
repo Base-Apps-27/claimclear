@@ -21,7 +21,7 @@ export const EXPIRING_ACTIONABLE_STATUSES = [
 const VENDOR_PREPAY_RATE = 0.70;
 const OVERDUE_THRESHOLD_MINUTES = 15;
 
-function parseDays(raw: unknown, fallback: number, max = 365): number {
+export function parseDays(raw: unknown, fallback: number, max = 365): number {
   const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), max);
@@ -260,18 +260,145 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   res.json({ days, points });
 }));
 
-function parseLimit(raw: unknown, fallback: number, max = 50): number {
+export function parseLimit(raw: unknown, fallback: number, max = 50): number {
   const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), max);
 }
 
-type RepeatOffenderTrend = "up" | "down" | "flat";
+export type RepeatOffenderTrend = "up" | "down" | "flat";
 
-function trendFromCounts(current: number, previous: number): RepeatOffenderTrend {
+export function trendFromCounts(current: number, previous: number): RepeatOffenderTrend {
   if (current > previous) return "up";
   if (current < previous) return "down";
   return "flat";
+}
+
+export type RepeatOffenderAggRow = {
+  key: string;
+  rejectionCount: number;       // Only outcome=Denied
+  atRiskAmount: number;         // Sum of claimAmount for Denied claims
+  approvedCount: number;        // For winRate (across all resolved)
+  deniedCount: number;          // For winRate (across all resolved)
+  lastRejectionDate: string | null;
+  errorTypeCounts: Map<string, number>; // Only counted from Denied claims
+  mostRecentInvoice: { date: string | null; invoiceNumber: string | null };
+};
+
+export type RepeatOffenderGroupingKey = "carNumber" | "clientNumber";
+
+export type RepeatOffenderInputRow = {
+  key: string | null;
+  claimAmount: string | null;
+  outcome: string;
+  date: string | null;
+  errorTypeName: string | null;
+  invoiceNumber: string | null;
+};
+
+export function aggregateRepeatOffenders(rows: RepeatOffenderInputRow[]): Map<string, RepeatOffenderAggRow> {
+  const map = new Map<string, RepeatOffenderAggRow>();
+  for (const row of rows) {
+    if (!row.key) continue;
+    let agg = map.get(row.key);
+    if (!agg) {
+      agg = {
+        key: row.key,
+        rejectionCount: 0,
+        atRiskAmount: 0,
+        approvedCount: 0,
+        deniedCount: 0,
+        lastRejectionDate: null,
+        errorTypeCounts: new Map(),
+        mostRecentInvoice: { date: null, invoiceNumber: null },
+      };
+      map.set(row.key, agg);
+    }
+    const isDenied = row.outcome === "Denied";
+    const isApproved = row.outcome === "Approved" || row.outcome === "Partially Approved";
+    if (isApproved) agg.approvedCount += 1;
+    if (isDenied) {
+      agg.deniedCount += 1;
+      agg.rejectionCount += 1;
+      const amt = parseFloat(row.claimAmount || "0");
+      if (Number.isFinite(amt)) agg.atRiskAmount += amt;
+      if (row.date) {
+        if (!agg.lastRejectionDate || row.date > agg.lastRejectionDate) {
+          agg.lastRejectionDate = row.date;
+        }
+      }
+      if (row.errorTypeName) {
+        agg.errorTypeCounts.set(row.errorTypeName, (agg.errorTypeCounts.get(row.errorTypeName) ?? 0) + 1);
+      }
+    }
+    // Track most-recent invoice across ALL claims for this key (used as
+    // "last invoice / driver descriptor"), not just Denied ones.
+    if (
+      row.date &&
+      row.invoiceNumber &&
+      (!agg.mostRecentInvoice.date || row.date >= agg.mostRecentInvoice.date)
+    ) {
+      agg.mostRecentInvoice = { date: row.date, invoiceNumber: row.invoiceNumber };
+    }
+  }
+  return map;
+}
+
+export function topErrorType(counts: Map<string, number>): string | null {
+  let best: { name: string; count: number } | null = null;
+  for (const [name, count] of counts) {
+    if (!best || count > best.count) best = { name, count };
+  }
+  return best?.name ?? null;
+}
+
+export type RepeatOffenderShapedRow = {
+  rejectionCount: number;
+  previousRejectionCount: number;
+  atRiskAmount: string;
+  topErrorTypeName: string | null;
+  winRate: number | null;
+  trend: RepeatOffenderTrend;
+  lastRejectionDate: string | null;
+  carNumber?: string;
+  lastInvoiceNumber?: string | null;
+  clientNumber?: string;
+};
+
+export function shapeRepeatOffenders(
+  map: Map<string, RepeatOffenderAggRow>,
+  priorMap: Map<string, RepeatOffenderAggRow>,
+  keyName: RepeatOffenderGroupingKey,
+  limit: number,
+): RepeatOffenderShapedRow[] {
+  const list = Array.from(map.values())
+    .sort((a, b) => b.rejectionCount - a.rejectionCount || b.atRiskAmount - a.atRiskAmount)
+    .slice(0, limit);
+  return list.map(agg => {
+    const priorCount = priorMap.get(agg.key)?.rejectionCount ?? 0;
+    const resolved = agg.approvedCount + agg.deniedCount;
+    const winRate = resolved > 0 ? Number((agg.approvedCount / resolved).toFixed(4)) : null;
+    const base = {
+      rejectionCount: agg.rejectionCount,
+      previousRejectionCount: priorCount,
+      atRiskAmount: agg.atRiskAmount.toFixed(2),
+      topErrorTypeName: topErrorType(agg.errorTypeCounts),
+      winRate,
+      trend: trendFromCounts(agg.rejectionCount, priorCount),
+      lastRejectionDate: agg.lastRejectionDate,
+    };
+    if (keyName === "carNumber") {
+      return {
+        ...base,
+        carNumber: agg.key,
+        lastInvoiceNumber: agg.mostRecentInvoice.invoiceNumber,
+      };
+    }
+    return {
+      ...base,
+      clientNumber: agg.key,
+    };
+  });
 }
 
 router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise<void> => {
@@ -280,82 +407,6 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
   const start = startOfWindow(days);
   const priorStart = new Date(start);
   priorStart.setUTCDate(priorStart.getUTCDate() - days);
-
-  type AggRow = {
-    key: string;
-    rejectionCount: number;       // Only outcome=Denied
-    atRiskAmount: number;         // Sum of claimAmount for Denied claims
-    approvedCount: number;        // For winRate (across all resolved)
-    deniedCount: number;          // For winRate (across all resolved)
-    lastRejectionDate: string | null;
-    errorTypeCounts: Map<string, number>; // Only counted from Denied claims
-    mostRecentInvoice: { date: string | null; invoiceNumber: string | null };
-  };
-
-  type GroupingKey = "carNumber" | "clientNumber";
-
-  function aggregate(rows: Array<{
-    key: string | null;
-    claimAmount: string | null;
-    outcome: string;
-    date: string | null;
-    errorTypeName: string | null;
-    invoiceNumber: string | null;
-  }>): Map<string, AggRow> {
-    const map = new Map<string, AggRow>();
-    for (const row of rows) {
-      if (!row.key) continue;
-      let agg = map.get(row.key);
-      if (!agg) {
-        agg = {
-          key: row.key,
-          rejectionCount: 0,
-          atRiskAmount: 0,
-          approvedCount: 0,
-          deniedCount: 0,
-          lastRejectionDate: null,
-          errorTypeCounts: new Map(),
-          mostRecentInvoice: { date: null, invoiceNumber: null },
-        };
-        map.set(row.key, agg);
-      }
-      const isDenied = row.outcome === "Denied";
-      const isApproved = row.outcome === "Approved" || row.outcome === "Partially Approved";
-      if (isApproved) agg.approvedCount += 1;
-      if (isDenied) {
-        agg.deniedCount += 1;
-        agg.rejectionCount += 1;
-        const amt = parseFloat(row.claimAmount || "0");
-        if (Number.isFinite(amt)) agg.atRiskAmount += amt;
-        if (row.date) {
-          if (!agg.lastRejectionDate || row.date > agg.lastRejectionDate) {
-            agg.lastRejectionDate = row.date;
-          }
-        }
-        if (row.errorTypeName) {
-          agg.errorTypeCounts.set(row.errorTypeName, (agg.errorTypeCounts.get(row.errorTypeName) ?? 0) + 1);
-        }
-      }
-      // Track most-recent invoice across ALL claims for this key (used as
-      // "last invoice / driver descriptor"), not just Denied ones.
-      if (
-        row.date &&
-        row.invoiceNumber &&
-        (!agg.mostRecentInvoice.date || row.date >= agg.mostRecentInvoice.date)
-      ) {
-        agg.mostRecentInvoice = { date: row.date, invoiceNumber: row.invoiceNumber };
-      }
-    }
-    return map;
-  }
-
-  function topErrorType(counts: Map<string, number>): string | null {
-    let best: { name: string; count: number } | null = null;
-    for (const [name, count] of counts) {
-      if (!best || count > best.count) best = { name, count };
-    }
-    return best?.name ?? null;
-  }
 
   // Pull both periods in one query, partition by key.
   const allRows = await db
@@ -373,14 +424,14 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
     .leftJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
     .where(gte(claimsTable.createdAt, priorStart));
 
-  const currentDriverRows: Parameters<typeof aggregate>[0] = [];
-  const priorDriverRows: Parameters<typeof aggregate>[0] = [];
-  const currentMemberRows: Parameters<typeof aggregate>[0] = [];
-  const priorMemberRows: Parameters<typeof aggregate>[0] = [];
+  const currentDriverRows: RepeatOffenderInputRow[] = [];
+  const priorDriverRows: RepeatOffenderInputRow[] = [];
+  const currentMemberRows: RepeatOffenderInputRow[] = [];
+  const priorMemberRows: RepeatOffenderInputRow[] = [];
 
   for (const r of allRows) {
     const inCurrent = r.createdAt && r.createdAt >= start;
-    const driverPayload = {
+    const driverPayload: RepeatOffenderInputRow = {
       key: r.carNumber,
       claimAmount: r.claimAmount,
       outcome: r.outcome,
@@ -388,7 +439,7 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
       errorTypeName: r.errorTypeName,
       invoiceNumber: r.invoiceNumber,
     };
-    const memberPayload = { ...driverPayload, key: r.clientNumber };
+    const memberPayload: RepeatOffenderInputRow = { ...driverPayload, key: r.clientNumber };
     if (inCurrent) {
       currentDriverRows.push(driverPayload);
       currentMemberRows.push(memberPayload);
@@ -398,51 +449,16 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
     }
   }
 
-  const currentDrivers = aggregate(currentDriverRows);
-  const priorDrivers = aggregate(priorDriverRows);
-  const currentMembers = aggregate(currentMemberRows);
-  const priorMembers = aggregate(priorMemberRows);
-
-  function shape(
-    map: Map<string, AggRow>,
-    priorMap: Map<string, AggRow>,
-    keyName: GroupingKey,
-  ) {
-    const list = Array.from(map.values())
-      .sort((a, b) => b.rejectionCount - a.rejectionCount || b.atRiskAmount - a.atRiskAmount)
-      .slice(0, limit);
-    return list.map(agg => {
-      const priorCount = priorMap.get(agg.key)?.rejectionCount ?? 0;
-      const resolved = agg.approvedCount + agg.deniedCount;
-      const winRate = resolved > 0 ? Number((agg.approvedCount / resolved).toFixed(4)) : null;
-      const base = {
-        rejectionCount: agg.rejectionCount,
-        previousRejectionCount: priorCount,
-        atRiskAmount: agg.atRiskAmount.toFixed(2),
-        topErrorTypeName: topErrorType(agg.errorTypeCounts),
-        winRate,
-        trend: trendFromCounts(agg.rejectionCount, priorCount),
-        lastRejectionDate: agg.lastRejectionDate,
-      };
-      if (keyName === "carNumber") {
-        return {
-          ...base,
-          carNumber: agg.key,
-          lastInvoiceNumber: agg.mostRecentInvoice.invoiceNumber,
-        };
-      }
-      return {
-        ...base,
-        clientNumber: agg.key,
-      };
-    });
-  }
+  const currentDrivers = aggregateRepeatOffenders(currentDriverRows);
+  const priorDrivers = aggregateRepeatOffenders(priorDriverRows);
+  const currentMembers = aggregateRepeatOffenders(currentMemberRows);
+  const priorMembers = aggregateRepeatOffenders(priorMemberRows);
 
   res.json({
     days,
     previousPeriodDays: days,
-    drivers: shape(currentDrivers, priorDrivers, "carNumber"),
-    members: shape(currentMembers, priorMembers, "clientNumber"),
+    drivers: shapeRepeatOffenders(currentDrivers, priorDrivers, "carNumber", limit),
+    members: shapeRepeatOffenders(currentMembers, priorMembers, "clientNumber", limit),
     driverGroupsTotal: currentDrivers.size,
     memberGroupsTotal: currentMembers.size,
   });
