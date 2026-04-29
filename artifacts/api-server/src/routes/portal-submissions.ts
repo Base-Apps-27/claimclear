@@ -13,9 +13,10 @@ import { lintDraft, type LintResult } from "../lib/draft-lint";
 // submission only moves the row to status="pending". The Playwright worker is
 // no longer kicked here — pending rows are picked up either (a) by an admin
 // clicking "Process Pending" / "Process Selected" on the Portal Submissions
-// page, or (b) by the scheduled portal_batch_sweeper cron that runs every
-// 4 hours. This is intentional: admins want to batch submissions rather
-// than have the bot fire one row at a time the instant it's queued.
+// page, or (b) by the scheduled portal_batch_sweeper cron that runs at
+// 8am / 11am / 2pm / 6pm ET on weekdays. This is intentional: admins want
+// to batch submissions rather than have the bot fire one row at a time
+// the instant it's queued.
 
 async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, submission.claimId));

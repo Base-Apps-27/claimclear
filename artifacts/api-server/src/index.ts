@@ -539,14 +539,14 @@ cron.schedule("*/30 * * * *", async () => {
   });
 }, { timezone: "America/New_York" });
 
-// Scheduled portal batch sweeper. Runs every 4 hours (12am, 4am, 8am, 12pm,
-// 4pm, 8pm America/New_York); if any pending submissions are due
-// (next_retry_at <= now or NULL), triggers a worker run that drains the
-// queue. Admins can also fire a batch on demand from the Portal Submissions
-// page via "Process Pending" / "Process Selected" — that path uses the same
-// triggerWorkerRun gate, so concurrent sweeps + admin batches coalesce into
-// one in-flight Playwright session.
-cron.schedule("0 */4 * * *", async () => {
+// Scheduled portal batch sweeper. Runs four times each business day at
+// 8am, 11am, 2pm, and 6pm America/New_York, Monday through Friday; if any
+// pending submissions are due (next_retry_at <= now or NULL), triggers a
+// worker run that drains the queue. Admins can also fire a batch on demand
+// from the Portal Submissions page via "Process Pending" / "Process
+// Selected" — that path uses the same triggerWorkerRun gate, so concurrent
+// sweeps + admin batches coalesce into one in-flight Playwright session.
+cron.schedule("0 8,11,14,18 * * 1-5", async () => {
   await recordCronRun("portal_batch_sweeper", async () => {
     const [{ value: dueCount } = { value: 0 }] = await db
       .select({ value: count() })

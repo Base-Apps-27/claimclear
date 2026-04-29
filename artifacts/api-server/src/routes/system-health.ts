@@ -18,7 +18,7 @@ const router: IRouter = Router();
 
 // Cron job names + their cron expressions, kept in sync with index.ts
 const KNOWN_JOBS: { name: string; cron: string; tz: string }[] = [
-  { name: "portal_batch_sweeper", cron: "0 */4 * * *", tz: "America/New_York" },
+  { name: "portal_batch_sweeper", cron: "0 8,11,14,18 * * 1-5", tz: "America/New_York" },
   { name: "daily_brief", cron: "0 7 * * 1-5", tz: "America/New_York" },
   { name: "response_tracker", cron: "*/30 8-18 * * 1-5", tz: "America/New_York" },
   { name: "outlook_heartbeat", cron: "*/15 * * * *", tz: "America/New_York" },
