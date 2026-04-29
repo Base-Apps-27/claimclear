@@ -3062,7 +3062,9 @@ components:
         id:
           type: integer
         claimId:
-          type: integer
+          type: ["integer", "null"]
+        invoiceGroupId:
+          type: ["integer", "null"]
         action:
           type: string
         details:
@@ -3075,11 +3077,18 @@ components:
           type: ["string", "null"]
         timestamp:
           type: string
+        viaGroup:
+          type: boolean
+          description: True when this audit row originated at the parent invoice group level rather than directly on the claim. Surfaced on claim history feeds so users can see group-level actions that affected this claim.
+        invoiceNumber:
+          type: ["string", "null"]
+          description: Parent invoice number, populated when viaGroup is true so the UI can render a "via INV-####" link.
       required:
         - id
-        - claimId
         - action
         - details
+        - timestamp
+        - viaGroup
 
     AdminAuditLogItem:
       type: object

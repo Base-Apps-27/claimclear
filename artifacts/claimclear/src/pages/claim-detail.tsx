@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import {
@@ -7,7 +7,7 @@ import {
   useUpdateClaim, useUpdateClaimStatus, useUpdateClaimOutcome,
   useUpdateClaimEvidence, usePlaceClaimOnHold, useRemoveClaimHold,
   useUpdateClaimWorkflow, useGenerateClaimEmail,
-  useListClaimNotes, getListClaimNotesQueryKey, useCreateClaimNote, useDeleteNote,
+  useListClaimNotes, getListClaimNotesQueryKey, useCreateClaimNote,
   useListClaimAuditLogs, getListClaimAuditLogsQueryKey,
   useCreatePortalSubmission,
   useListPortalSubmissions, getListPortalSubmissionsQueryKey,
@@ -21,6 +21,7 @@ import {
   useReassignResponse,
   useGetClaimEmailThread, getGetClaimEmailThreadQueryKey,
   useListClaims,
+  useGetInvoiceGroup, getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadMessage, UpdateClaimOutcomeBodyClosureReason } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
@@ -42,17 +43,12 @@ import {
   Edit2, Save, X, Trash2, Send, PauseCircle, Play,
   Bot, CheckCircle, AlertTriangle, Clock, Image, FileText,
   ChevronRight, ArrowRight, Eye, Tag, Plus, Loader2, TreeDeciduous, Mail, Inbox,
-  StickyNote,
   ArrowRightLeft, MailQuestion, MessagesSquare, Search
 } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
-import {
-  humanizeAuditAction,
-  ACTION_CATEGORY_LABELS,
-  type ActionCategory,
-} from "@/lib/audit-action-meta";
+import { type ActionCategory } from "@/lib/audit-action-meta";
+import { ActivityFeed } from "@/components/activity-feed";
 import { RefNumber } from "@/components/ref-number";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { WorkflowPlayer } from "@/components/workflow-player";
@@ -203,6 +199,17 @@ export default function ClaimDetail() {
   const { data: notes } = useListClaimNotes(claimId, { query: { queryKey: getListClaimNotesQueryKey(claimId), enabled: !!claimId } });
   const { data: auditLogs } = useListClaimAuditLogs(claimId, { query: { queryKey: getListClaimAuditLogsQueryKey(claimId), enabled: !!claimId } });
 
+  // Pull the parent invoice group so we can render the persistent context strip
+  // (invoice #, ride count, total, link back). Disabled until the claim itself
+  // has loaded and we know whether it actually has a parent group.
+  const parentGroupId = claim?.invoiceGroupId ?? null;
+  const { data: parentGroup } = useGetInvoiceGroup(parentGroupId ?? 0, {
+    query: {
+      queryKey: getGetInvoiceGroupQueryKey(parentGroupId ?? 0),
+      enabled: parentGroupId !== null && parentGroupId > 0,
+    },
+  });
+
   const { viewers, botActivity: botPresenceActivity } = usePresence(claimId);
   useClaimEvents(claimId);
 
@@ -218,7 +225,6 @@ export default function ClaimDetail() {
   const placeHold = usePlaceClaimOnHold();
   const removeHold = useRemoveClaimHold();
   const createNote = useCreateClaimNote();
-  const deleteNote = useDeleteNote();
   const generateEmail = useGenerateClaimEmail();
   const createSubmission = useCreatePortalSubmission();
 
@@ -300,7 +306,7 @@ export default function ClaimDetail() {
   const [holdPending, setHoldPending] = useState("");
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [postResponseNotes, setPostResponseNotes] = useState("");
-  const [auditFilter, setAuditFilter] = useState<ActionCategory | "all">("all");
+  const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
 
   useEffect(() => {
     if (claim) {
@@ -415,6 +421,37 @@ export default function ClaimDetail() {
     <div className="space-y-6">
       <HumanPresenceBanner viewers={viewers} />
       <BotPresenceBanner botActivity={botPresenceActivity} />
+
+      {parentGroup && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm"
+          data-testid="invoice-context-strip"
+        >
+          <Link
+            href={`/invoice-groups/${parentGroup.id}`}
+            className="flex items-center gap-1.5 font-medium text-primary hover:underline"
+            data-testid="link-parent-invoice"
+          >
+            <FileText className="h-4 w-4" />
+            <span className="font-mono">Invoice #{parentGroup.invoiceNumber}</span>
+            <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+          </Link>
+          <span className="text-muted-foreground">
+            {parentGroup.rideCount} ride{parentGroup.rideCount === 1 ? "" : "s"}
+          </span>
+          <span className="text-muted-foreground">
+            Total {formatCurrency(parentGroup.totalAmount)}
+          </span>
+          <Link
+            href={`/invoice-groups/${parentGroup.id}`}
+            className="ml-auto text-xs text-primary hover:underline"
+            data-testid="link-back-to-group"
+          >
+            View invoice group →
+          </Link>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="text-2xl font-bold tracking-tight font-mono">{claim.confNumber}</h2>
@@ -1299,113 +1336,33 @@ export default function ClaimDetail() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-1">
-                Notes
-                <InfoTooltip content="Internal notes visible only to staff. Use notes to record observations, next steps, or communication details about this claim." />
+              <CardTitle className="flex items-center gap-1 text-sm">
+                Add a note
+                <InfoTooltip content="Internal notes visible only to staff. Notes appear in the activity feed below alongside status changes and other history." />
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Add a note..."
-                  value={noteContent}
-                  onChange={e => setNoteContent(e.target.value)}
-                  className="flex-1"
-                  rows={2}
-                />
-                <Button size="sm" onClick={handleAddNote} disabled={!noteContent.trim()}>Add</Button>
-              </div>
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {(notes || []).length === 0 && (
-                  <EmptyState
-                    icon={StickyNote}
-                    title="No notes yet"
-                    description="Add a note above to capture observations or next steps for this claim."
-                    className="py-6"
-                  />
-                )}
-                {(notes || []).map(note => (
-                  <div key={note.id} className="p-3 border rounded-md text-sm">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium">{note.author || "System"}</span>
-                      <div className="flex items-center gap-1">
-                        <Badge variant="outline" className="text-xs">{note.type}</Badge>
-                        <Button
-                          variant="ghost" size="icon" className="h-5 w-5"
-                          onClick={async () => { await deleteNote.mutateAsync({ id: note.id }); invalidate(); }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="text-muted-foreground">{note.content}</p>
-                    <p className="text-xs text-muted-foreground/70 mt-1">{formatDateTime(note.createdAt)}</p>
-                  </div>
-                ))}
+            <CardContent className="space-y-2">
+              <Textarea
+                placeholder="Capture an observation, next step, or context for the team..."
+                value={noteContent}
+                onChange={e => setNoteContent(e.target.value)}
+                rows={2}
+              />
+              <div className="flex justify-end">
+                <Button size="sm" onClick={handleAddNote} disabled={!noteContent.trim()}>
+                  Add note
+                </Button>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-1">
-                Audit Trail
-                <InfoTooltip content="A chronological record of every status change, edit, and action taken on this claim. Entries are system-generated and cannot be modified." />
-              </CardTitle>
-              <Select value={auditFilter} onValueChange={(v) => setAuditFilter(v as ActionCategory | "all")}>
-                <SelectTrigger className="h-8 w-[170px] text-xs" data-testid="select-audit-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(ACTION_CATEGORY_LABELS) as Array<ActionCategory | "all">).map((key) => (
-                    <SelectItem key={key} value={key} className="text-xs">
-                      {ACTION_CATEGORY_LABELS[key]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                const annotated = (auditLogs || []).map((log) => ({
-                  log,
-                  meta: humanizeAuditAction(log.action, "claim"),
-                }));
-                const filtered = auditFilter === "all"
-                  ? annotated
-                  : annotated.filter((entry) => entry.meta.category === auditFilter);
-                const visible = filtered.slice(0, 20);
-                if (visible.length === 0) {
-                  return (
-                    <p className="text-sm text-muted-foreground" data-testid="text-empty-audit">
-                      {auditFilter === "all" ? "No audit entries yet." : "No matching audit entries."}
-                    </p>
-                  );
-                }
-                return (
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto" data-testid="list-audit-trail">
-                    {visible.map(({ log, meta }) => {
-                      const Icon = meta.icon;
-                      return (
-                        <div key={log.id} className="text-sm border-l-2 border-muted pl-3 py-1 flex gap-2">
-                          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${meta.iconClass}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium">{meta.label}</p>
-                            {log.details && (
-                              <p className="text-muted-foreground text-xs break-words">{log.details}</p>
-                            )}
-                            <p className="text-muted-foreground/70 text-xs">
-                              {log.userName || log.userEmail || "System"} — {formatDateTime(log.timestamp)}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
+          <ActivityFeed
+            auditLogs={auditLogs || []}
+            notes={notes || []}
+            kind="claim"
+            filter={activityFilter}
+            onFilterChange={setActivityFilter}
+          />
         </div>
       </div>
 

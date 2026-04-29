@@ -434,7 +434,10 @@ export type AuditLogResponseMetadata = { [key: string]: unknown } | null;
 
 export interface AuditLogResponse {
   id: number;
-  claimId: number;
+  /** @nullable */
+  claimId?: number | null;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   action: string;
   details: string;
   /** @nullable */
@@ -443,7 +446,14 @@ export interface AuditLogResponse {
   userEmail?: string | null;
   /** @nullable */
   userName?: string | null;
-  timestamp?: string;
+  timestamp: string;
+  /** True when this audit row originated at the parent invoice group level rather than directly on the claim. Surfaced on claim history feeds so users can see group-level actions that affected this claim. */
+  viaGroup: boolean;
+  /**
+   * Parent invoice number, populated when viaGroup is true so the UI can render a "via INV-####" link.
+   * @nullable
+   */
+  invoiceNumber?: string | null;
 }
 
 export type PortalResponseItemSource =

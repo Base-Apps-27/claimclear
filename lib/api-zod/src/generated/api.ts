@@ -434,13 +434,25 @@ export const GetInvoiceGroupResponse = zod
         .array(
           zod.object({
             id: zod.number(),
-            claimId: zod.number(),
+            claimId: zod.number().nullish(),
+            invoiceGroupId: zod.number().nullish(),
             action: zod.string(),
             details: zod.string(),
             metadata: zod.object({}).passthrough().nullish(),
             userEmail: zod.string().nullish(),
             userName: zod.string().nullish(),
-            timestamp: zod.string().optional(),
+            timestamp: zod.string(),
+            viaGroup: zod
+              .boolean()
+              .describe(
+                "True when this audit row originated at the parent invoice group level rather than directly on the claim. Surfaced on claim history feeds so users can see group-level actions that affected this claim.",
+              ),
+            invoiceNumber: zod
+              .string()
+              .nullish()
+              .describe(
+                'Parent invoice number, populated when viaGroup is true so the UI can render a \"via INV-####\" link.',
+              ),
           }),
         )
         .optional(),
@@ -2188,13 +2200,25 @@ export const ListClaimAuditLogsParams = zod.object({
 
 export const ListClaimAuditLogsResponseItem = zod.object({
   id: zod.number(),
-  claimId: zod.number(),
+  claimId: zod.number().nullish(),
+  invoiceGroupId: zod.number().nullish(),
   action: zod.string(),
   details: zod.string(),
   metadata: zod.object({}).passthrough().nullish(),
   userEmail: zod.string().nullish(),
   userName: zod.string().nullish(),
-  timestamp: zod.string().optional(),
+  timestamp: zod.string(),
+  viaGroup: zod
+    .boolean()
+    .describe(
+      "True when this audit row originated at the parent invoice group level rather than directly on the claim. Surfaced on claim history feeds so users can see group-level actions that affected this claim.",
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      'Parent invoice number, populated when viaGroup is true so the UI can render a \"via INV-####\" link.',
+    ),
 });
 export const ListClaimAuditLogsResponse = zod.array(
   ListClaimAuditLogsResponseItem,

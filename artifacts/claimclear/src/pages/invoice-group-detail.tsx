@@ -42,9 +42,7 @@ import {
   Calendar,
   Car,
   Trash2,
-  StickyNote,
   Mail,
-  Filter,
   Inbox,
   Bot,
   CheckCircle,
@@ -57,18 +55,13 @@ import {
   Play,
   SplitSquareHorizontal,
 } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  humanizeAuditAction,
-  ACTION_CATEGORY_LABELS,
-  type ActionCategory,
-} from "@/lib/audit-action-meta";
+import { type ActionCategory } from "@/lib/audit-action-meta";
+import { ActivityFeed } from "@/components/activity-feed";
 
 export default function InvoiceGroupDetail() {
   const params = useParams<{ id: string }>();
@@ -916,122 +909,13 @@ export default function InvoiceGroupDetail() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm">Activity</CardTitle>
-              <Select value={activityFilter} onValueChange={(v) => setActivityFilter(v as ActionCategory | "all")}>
-                <SelectTrigger className="h-7 w-[170px] text-xs" data-testid="select-activity-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(ACTION_CATEGORY_LABELS) as Array<ActionCategory | "all">).map((key) => (
-                    <SelectItem key={key} value={key} className="text-xs">
-                      {ACTION_CATEGORY_LABELS[key]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                type FeedItem =
-                  | { kind: "audit"; id: number; timestamp: string; log: any; category: ActionCategory }
-                  | { kind: "note"; id: number; timestamp: string; note: any };
-
-                const feed: FeedItem[] = [
-                  ...auditLogs.map((log: any) => {
-                    const meta = humanizeAuditAction(log.action, "group");
-                    return {
-                      kind: "audit" as const,
-                      id: log.id,
-                      timestamp: log.timestamp,
-                      log,
-                      category: meta.category,
-                    };
-                  }),
-                  ...notes.map((note: any) => ({
-                    kind: "note" as const,
-                    id: note.id,
-                    timestamp: note.createdAt,
-                    note,
-                  })),
-                ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-                const filtered = activityFilter === "all"
-                  ? feed
-                  : feed.filter((item) =>
-                      item.kind === "audit"
-                        ? item.category === activityFilter
-                        : activityFilter === "communication",
-                    );
-
-                if (filtered.length === 0) {
-                  return activityFilter === "all" ? (
-                    <EmptyState
-                      icon={StickyNote}
-                      title="No activity yet"
-                      description="Status changes, notes, and edits on this group will appear here."
-                      className="py-6"
-                    />
-                  ) : (
-                    <EmptyState
-                      icon={Filter}
-                      title="No matching activity"
-                      description="Try a different category to see more activity."
-                      primaryAction={{ label: "Clear filter", onClick: () => setActivityFilter("all") }}
-                      className="py-6"
-                    />
-                  );
-                }
-
-                return (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto" data-testid="list-activity-feed">
-                    {filtered.map((item) => {
-                      if (item.kind === "audit") {
-                        const meta = humanizeAuditAction(item.log.action, "group");
-                        const Icon = meta.icon;
-                        return (
-                          <div key={`audit-${item.id}`} className="flex gap-2 border-l-2 border-muted pl-3 py-1">
-                            <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${meta.iconClass}`} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium">{meta.label}</p>
-                              {item.log.details && (
-                                <p className="text-xs text-muted-foreground break-words">{item.log.details}</p>
-                              )}
-                              <p className="text-[10px] text-muted-foreground/60">
-                                <span>{item.log.userName || item.log.userEmail || "System"} · </span>
-                                {new Date(item.timestamp).toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      }
-                      const isEmail = item.note.type === "email";
-                      const Icon = isEmail ? Mail : StickyNote;
-                      return (
-                        <div key={`note-${item.id}`} className="flex gap-2 border-l-2 border-muted pl-3 py-1">
-                          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${isEmail ? "text-blue-600" : "text-amber-600"}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium">
-                              {isEmail ? "Email note" : "Note added"}
-                              {item.note.emailSubject && (
-                                <span className="text-muted-foreground font-normal"> · {item.note.emailSubject}</span>
-                              )}
-                            </p>
-                            <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">{item.note.content}</p>
-                            <p className="text-[10px] text-muted-foreground/60">
-                              {item.note.author && <span>{item.note.author} · </span>}
-                              {new Date(item.timestamp).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
+          <ActivityFeed
+            auditLogs={auditLogs}
+            notes={notes}
+            kind="group"
+            filter={activityFilter}
+            onFilterChange={setActivityFilter}
+          />
         </div>
       </div>
 
