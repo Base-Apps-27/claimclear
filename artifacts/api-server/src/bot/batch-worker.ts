@@ -227,9 +227,41 @@ async function fillChoicesDropdown(page: any, selectSelector: string, value: str
     } catch {}
   }
 
+  // Choices.js initialized this select and stashed its instance on the element
+  // as `select.choicesInstance`. Calling `setChoiceByValue` updates both the
+  // underlying <select> AND the visible widget UI in a single call — this is
+  // what we need for fields like GPS Breadcrumbs Available where Choices.js
+  // has stripped the options off the underlying <select> and is rendering
+  // them out of its own internal store.
+  const choicesApiResult = await page.evaluate(({ sel, val }: { sel: string; val: string }) => {
+    const select = document.querySelector(sel) as (HTMLSelectElement & { choicesInstance?: any }) | null;
+    if (!select) return "not_found";
+    if (!select.choicesInstance || typeof select.choicesInstance.setChoiceByValue !== "function") {
+      return "no_instance";
+    }
+    try {
+      select.choicesInstance.setChoiceByValue(val);
+      return select.value === val ? "ok" : `mismatch:${select.value}`;
+    } catch (err) {
+      return `error:${err instanceof Error ? err.message : String(err)}`;
+    }
+  }, { sel: selectSelector, val: value });
+
+  if (choicesApiResult === "ok") {
+    logger.info({ submissionId, value }, "fillChoicesDropdown: set via Choices.js setChoiceByValue API");
+    return true;
+  }
+  if (choicesApiResult !== "no_instance" && choicesApiResult !== "not_found") {
+    logger.warn({ submissionId, value, choicesApiResult }, "fillChoicesDropdown: Choices.js API call did not stick — trying widget click");
+  }
+
   const choicesContainer = await page.evaluateHandle((sel: string) => {
     const select = document.querySelector(sel);
-    return select ? select.closest(".choices") : null;
+    if (!select) return null;
+    // Walk past `select` itself — Choices.js adds `choices` to the underlying
+    // <select>, so a plain `closest(".choices")` returns the select element
+    // and never reaches the real `<div class="choices">` wrapper one level up.
+    return select.parentElement?.closest("div.choices") || null;
   }, selectSelector);
 
   const isChoicesWidget = await choicesContainer.evaluate((el: Element | null) => !!el).catch(() => false);

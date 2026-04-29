@@ -29,3 +29,9 @@ id = "E7V47qraKy2YNsuJEfh5U"
 uri = "file://attached_assets/dry_run_other_form.png"
 type = "image"
 title = "MAS portal dry run — Other Issue or Question form (filled, same submission)"
+
+[[outputs]]
+id = "KkP8h8_6tCxP7J57kHhuK"
+uri = "file://attached_assets/gps_breadcrumbs_fix_verified.png"
+type = "image"
+title = "GPS Breadcrumbs dropdown filled with 'Yes' — fix verified on live MAS portal"
