@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 pnpm install --frozen-lockfile
-pnpm --filter db push
+pnpm --filter @workspace/db push-force
 # Regenerate the OpenAPI client first so downstream type builds see fresh source.
 pnpm --filter @workspace/api-spec run codegen
 # Rebuild composite project declarations so referencing projects don't pick up
