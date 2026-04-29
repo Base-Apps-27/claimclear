@@ -30,7 +30,7 @@ async function getPortalDefaults() {
 
 export interface BatchJob {
   id: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "aborted";
   submissionIds: number[];
   total: number;
   processed: number;
@@ -40,9 +40,51 @@ export interface BatchJob {
   startedAt: string;
   completedAt?: string;
   triggeredBy: string;
+  /** Display name of the user who requested an abort, set once requestBatchAbort succeeds. */
+  abortRequestedBy?: string;
 }
 
 const activeBatches = new Map<string, BatchJob>();
+
+// In-memory cancellation flags for in-flight batches. Keyed by batchId; the
+// processSequentially loop polls this set between rows and exits cleanly when
+// it finds its own ID. The set is cleared after the abort path runs so a
+// subsequent batch with a different ID is never accidentally pre-aborted.
+const abortedBatches = new Set<string>();
+
+export type RequestBatchAbortResult =
+  | { ok: true; job: BatchJob }
+  | { ok: false; reason: "not_found" | "not_running" | "not_owner" };
+
+/**
+ * Flip the cancellation flag for a running batch so the worker loop exits
+ * between rows. The caller must be the user who triggered the run, or an
+ * admin. Returns a discriminated result so the route layer can map each
+ * failure to a specific HTTP status.
+ *
+ * Note: the abort cannot interrupt a row that is already mid-Playwright —
+ * the worker checks this flag at the top of each iteration, so the current
+ * row will finish (success or failure) before the loop exits and broadcasts
+ * `batch_aborted`.
+ */
+export function requestBatchAbort(
+  batchId: string,
+  requester: { displayName: string; isAdmin: boolean },
+): RequestBatchAbortResult {
+  const job = activeBatches.get(batchId);
+  if (!job) return { ok: false, reason: "not_found" };
+  if (job.status !== "running") return { ok: false, reason: "not_running" };
+  const isOwner = !!requester.displayName && job.triggeredBy === requester.displayName;
+  if (!isOwner && !requester.isAdmin) return { ok: false, reason: "not_owner" };
+  job.abortRequestedBy = requester.displayName || (requester.isAdmin ? "Admin" : job.triggeredBy);
+  abortedBatches.add(batchId);
+  return { ok: true, job };
+}
+
+/** Pure predicate for tests / external callers. */
+export function isBatchAbortRequested(batchId: string): boolean {
+  return abortedBatches.has(batchId);
+}
 
 export function getBatchJob(batchId: string): BatchJob | undefined {
   return activeBatches.get(batchId);
@@ -78,7 +120,7 @@ export interface WorkerRunSummary {
   batchId: string;
   startedAt: string;
   finishedAt: string | null;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "aborted";
   total: number;
   succeeded: number;
   failed: number;
@@ -261,6 +303,9 @@ export function jobToCronOutcome(
 ): { kind: "throw"; message: string } | { kind: "result"; status: "ok" | "degraded"; message: string } {
   // Rule (a): processSequentially blew up — always a hard failure.
   if (job.status === "failed") return { kind: "throw", message };
+  // Rule (a'): a user-initiated abort during a cron-triggered run is also a
+  // hard failure — the cron didn't get to do its job.
+  if (job.status === "aborted") return { kind: "throw", message };
   // Rule (b): all attempted items failed.
   if (job.total > 0 && job.succeeded === 0 && job.failed > 0) return { kind: "throw", message };
   const status: "ok" | "degraded" = job.failed > 0 ? "degraded" : "ok";
@@ -470,6 +515,13 @@ async function processSequentially(job: BatchJob): Promise<void> {
   logger.info({ batchId: job.id, total: job.total }, "Starting batch processing");
 
   for (const subId of job.submissionIds) {
+    // User-initiated abort: check between rows so the current Playwright run
+    // (if any) finishes cleanly before we exit. The abort path below handles
+    // releasing remaining claimed rows and broadcasting batch_aborted.
+    if (abortedBatches.has(job.id)) {
+      logger.info({ batchId: job.id, processed: job.processed, total: job.total }, "Batch abort requested — exiting worker loop");
+      break;
+    }
     let subClaimId: number | null = null;
     try {
       const [sub] = await db.select().from(portalSubmissionsTable)
@@ -620,11 +672,42 @@ async function processSequentially(job: BatchJob): Promise<void> {
   }
 
   // Release any rows that were claimed but never reached in_progress (e.g.
-  // status raced ahead between SELECT and UPDATE, or row was deleted). This
-  // is the normal happy-path cleanup; the fatal-error path also calls it.
+  // status raced ahead between SELECT and UPDATE, row was deleted, or the
+  // run was aborted before the row was picked up). This is the normal
+  // happy-path cleanup; the fatal-error path also calls it.
   await releaseClaimedRows(job.id).catch((err) => {
     logger.error({ err, batchId: job.id }, "Failed to release claimed rows on completion");
   });
+
+  // If the loop exited because of an abort request, broadcast batch_aborted
+  // and skip the regular batch_completed event so the in-progress card on
+  // every connected client clears with the right reason.
+  if (abortedBatches.has(job.id)) {
+    abortedBatches.delete(job.id);
+    job.status = "aborted";
+    job.completedAt = new Date().toISOString();
+    const message = job.abortRequestedBy
+      ? `Stopped by ${job.abortRequestedBy}`
+      : "Stopped by user";
+    logger.info({
+      batchId: job.id,
+      processed: job.processed,
+      total: job.total,
+      abortRequestedBy: job.abortRequestedBy,
+    }, "Batch processing aborted by user");
+    broadcastBatchEvent({
+      type: "batch_aborted",
+      batchId: job.id,
+      completedAt: job.completedAt,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      total: job.total,
+      message,
+    });
+    setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000);
+    return;
+  }
 
   job.status = "completed";
   job.completedAt = new Date().toISOString();

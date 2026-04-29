@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock } from "lucide-react";
+import { RefreshCw, XCircle, Eye, Bot, Play, CheckSquare, Loader2, Clock, AlertTriangle, CheckCircle, Pencil, Sparkles, Save, X, FlaskConical, Image, Send, Filter, Lock, StopCircle, Ban } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
@@ -50,7 +50,7 @@ const statusDescriptions: Record<string, string> = {
 
 interface BatchJob {
   id: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "aborted";
   total: number;
   processed: number;
   succeeded: number;
@@ -59,6 +59,7 @@ interface BatchJob {
   startedAt: string;
   completedAt?: string;
   results: { submissionId: number; status: string; message: string }[];
+  abortRequestedBy?: string;
 }
 
 function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
@@ -96,12 +97,19 @@ export default function PortalSubmissions() {
   // Shared in-flight batch (visible to all viewers via SSE).
   const sharedBatch = usePortalBatchEvents();
   const myDisplayName = user?.displayName || user?.email || "";
+  const isAdmin = user?.role === "admin";
   // The batch is "owned" by the user who clicked Process. Other viewers see
   // disabled buttons + a tooltip. Match by triggeredBy (display name / email).
   const isMyBatch = !!sharedBatch && !!myDisplayName &&
     sharedBatch.triggeredBy === myDisplayName;
+  // The Stop button is visible to the run's owner and to admins (so an admin
+  // can recover from a hung run by another user without restarting the API).
+  const canStopBatch = !!sharedBatch && (isMyBatch || isAdmin);
   const batchOwnerName = sharedBatch?.triggeredBy ?? "";
   const batchInFlight = !!sharedBatch || batchTriggering;
+  // Local "I just clicked Stop" guard so the button disables instantly,
+  // before the batch_aborted SSE event arrives back from the server.
+  const [batchAborting, setBatchAborting] = useState(false);
 
   const { data: submissions, isLoading } = useListPortalSubmissions(
     statusFilter ? { status: statusFilter } : undefined
@@ -165,6 +173,9 @@ export default function PortalSubmissions() {
       // the run; clear it so the UI reflects the shared state directly.
       setBatchTriggering(false);
     } else if (lastBatchIdRef.current) {
+      // Batch ended (completed / failed / aborted). Reset the local stop
+      // guard so the next run's button starts enabled.
+      setBatchAborting(false);
       const finishedId = lastBatchIdRef.current;
       lastBatchIdRef.current = null;
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -232,6 +243,31 @@ export default function PortalSubmissions() {
     } catch (err) {
       setBatchTriggering(false);
       alert(err instanceof Error ? err.message : "Failed to start batch processing");
+    }
+  };
+
+  const handleAbortBatch = async () => {
+    if (!sharedBatch) return;
+    const ownerLabel = isMyBatch ? "this run" : `${batchOwnerName}'s run`;
+    if (!confirm(`Stop ${ownerLabel}? The current row will finish, then the worker will exit and any queued rows will go back to Pending.`)) {
+      return;
+    }
+    setBatchAborting(true);
+    try {
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+      const res = await fetch(`${base}/api/portal-submissions/batch-abort/${sharedBatch.batchId}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to stop batch (HTTP ${res.status})`);
+      }
+      // Stay disabled until the batch_aborted SSE event clears sharedBatch
+      // and the effect above resets batchAborting.
+    } catch (err) {
+      setBatchAborting(false);
+      alert(err instanceof Error ? err.message : "Failed to stop batch");
     }
   };
 
@@ -399,11 +435,36 @@ export default function PortalSubmissions() {
               </div>
             </div>
 
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${sharedBatch.total > 0 ? (sharedBatch.processed / sharedBatch.total) * 100 : 0}%` }}
-              />
+            <div className="flex items-center gap-3">
+              <div className="flex-1 bg-muted rounded-full h-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${sharedBatch.total > 0 ? (sharedBatch.processed / sharedBatch.total) * 100 : 0}%` }}
+                />
+              </div>
+              {canStopBatch && (
+                <WrapTooltip
+                  content={
+                    isMyBatch
+                      ? "Stop this batch — the current row will finish, then queued rows go back to Pending."
+                      : `Admin override — stop ${batchOwnerName}'s run. The current row will finish, then queued rows go back to Pending.`
+                  }
+                >
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleAbortBatch}
+                    disabled={batchAborting}
+                    data-testid="button-stop-batch"
+                  >
+                    {batchAborting ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Stopping…</>
+                    ) : (
+                      <><StopCircle className="h-4 w-4 mr-1" />Stop this batch</>
+                    )}
+                  </Button>
+                </WrapTooltip>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -412,6 +473,7 @@ export default function PortalSubmissions() {
       {!sharedBatch && completedJob && (
         <Card className={`border-2 ${
           completedJob.status === "completed" ? "border-green-300 bg-green-50/50" :
+          completedJob.status === "aborted" ? "border-amber-300 bg-amber-50/50" :
           "border-red-300 bg-red-50/50"
         }`}>
           <CardContent className="py-4 space-y-3">
@@ -419,15 +481,24 @@ export default function PortalSubmissions() {
               <div className="flex items-center gap-3">
                 {completedJob.status === "completed" ? (
                   <CheckCircle className="h-5 w-5 text-green-600" />
+                ) : completedJob.status === "aborted" ? (
+                  <Ban className="h-5 w-5 text-amber-600" />
                 ) : (
                   <AlertTriangle className="h-5 w-5 text-red-600" />
                 )}
                 <div>
                   <p className="text-sm font-semibold">
-                    Batch Processing — {completedJob.status === "completed" ? "Complete" : "Failed"}
+                    Batch Processing — {
+                      completedJob.status === "completed" ? "Complete" :
+                      completedJob.status === "aborted" ? "Stopped" :
+                      "Failed"
+                    }
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Triggered by {completedJob.triggeredBy} · {formatDateTime(completedJob.startedAt)}
+                    {completedJob.status === "aborted" && completedJob.abortRequestedBy
+                      ? ` · stopped by ${completedJob.abortRequestedBy}`
+                      : ""}
                   </p>
                 </div>
               </div>

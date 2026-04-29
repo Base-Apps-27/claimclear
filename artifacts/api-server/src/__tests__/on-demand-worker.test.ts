@@ -4,6 +4,7 @@ import { strict as assert } from "node:assert";
 import { createWorkerGate } from "../lib/worker-gate";
 import { computeRollup, type CronRunRow, type KnownCronJob, type WorkerSnapshot } from "../lib/system-health-rollup";
 import { isSubmissionDue, isSubmissionOverdue, jobToCronOutcome } from "../lib/batch-processor";
+import { requestBatchAbort, isBatchAbortRequested } from "../lib/batch-processor";
 
 test("workerGate.run lets the first call through and skips concurrent calls", async () => {
   const gate = createWorkerGate<string>();
@@ -409,6 +410,47 @@ test("isSubmissionDue: row whose next_retry_at equals exactly now is due (bounda
     isSubmissionDue({ status: "pending", nextRetryAt: new Date(NOW.getTime()) }, NOW),
     true,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Batch abort
+// ---------------------------------------------------------------------------
+
+test("requestBatchAbort: unknown batch ID → not_found", () => {
+  const result = requestBatchAbort("does-not-exist", { displayName: "Alice", isAdmin: false });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "not_found");
+  assert.equal(isBatchAbortRequested("does-not-exist"), false, "no flag should be set when the batch isn't found");
+});
+
+test("jobToCronOutcome: job.status='aborted' → throw (cron run with manual stop is a hard alert)", () => {
+  const out = jobToCronOutcome(
+    { status: "aborted", total: 5, succeeded: 1, failed: 0 },
+    "Stopped by Admin",
+  );
+  assert.equal(out.kind, "throw");
+  if (out.kind === "throw") assert.match(out.message, /Stopped/);
+});
+
+test("rollup: lastWorkerRun status='aborted' surfaces stop in worker detail and degrades the component", () => {
+  const out = computeRollup({
+    now: NOW,
+    connectors: [],
+    knownJobs: [],
+    lastRunByJob: new Map(),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: {
+      status: "aborted",
+      finishedAt: NOW.toISOString(),
+      startedAt: NOW.toISOString(),
+      batchId: "batch_stopped",
+      lastError: null,
+    },
+  });
+  const worker = out.components.find((c) => c.name === "portal_worker");
+  assert.equal(worker!.status, "degraded");
+  assert.match(worker!.detail ?? "", /stopped by user/);
 });
 
 test("rollup: a known cron with zero recorded runs → degraded with explicit message", () => {

@@ -23,7 +23,7 @@ export interface KnownCronJob {
 }
 
 export interface WorkerSnapshot {
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "aborted";
   finishedAt: string | null;
   startedAt: string;
   batchId: string;
@@ -119,6 +119,13 @@ export function computeRollup(input: RollupInput): RollupOutput {
   if (input.lastWorkerRun?.status === "failed") {
     if (workerStatus === "ok") workerStatus = "degraded";
     workerDetail = input.lastWorkerRun.lastError ?? "Last worker run failed";
+  }
+  if (input.lastWorkerRun?.status === "aborted") {
+    // A user-initiated stop is informational — the worker is otherwise
+    // healthy, but we surface the abort so dashboards don't pretend
+    // everything is fine.
+    if (workerStatus === "ok") workerStatus = "degraded";
+    workerDetail = `Last run ${input.lastWorkerRun.batchId} stopped by user at ${input.lastWorkerRun.finishedAt ?? input.lastWorkerRun.startedAt}`;
   }
   components.push({ name: "portal_worker", status: workerStatus, detail: workerDetail });
 

@@ -6,6 +6,7 @@ import {
   listBatchJobs,
   getLastWorkerRun,
   getActiveBatchJob,
+  requestBatchAbort,
 } from "../lib/batch-processor";
 import { addGlobalBatchClient } from "../lib/sse";
 
@@ -86,6 +87,38 @@ router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): 
     total: job.total,
     status: job.status,
     message: `Worker run started: ${job.total} submission(s) queued for processing`,
+  });
+}));
+
+// User-initiated abort. Authorized for the user who triggered the run, or
+// any admin (e.g. when the owner is unavailable). Flips an in-memory
+// cancellation flag that processSequentially polls between rows; the worker
+// then releases any still-claimed rows and broadcasts batch_aborted on the
+// shared SSE channel so every viewer's UI updates.
+router.post("/portal-submissions/batch-abort/:batchId", asyncHandler(async (req, res): Promise<void> => {
+  const requester = {
+    displayName: req.user?.displayName || req.user?.email || "",
+    isAdmin: req.user?.role === "admin",
+  };
+  const result = requestBatchAbort(String(req.params.batchId), requester);
+  if (!result.ok) {
+    if (result.reason === "not_found") {
+      res.status(404).json({ error: "Batch not found" });
+      return;
+    }
+    if (result.reason === "not_running") {
+      res.status(409).json({ error: "Batch is not running" });
+      return;
+    }
+    // not_owner
+    res.status(403).json({ error: "Only the user who started this batch (or an admin) can stop it." });
+    return;
+  }
+  res.json({
+    ok: true,
+    batchId: result.job.id,
+    abortRequestedBy: result.job.abortRequestedBy ?? null,
+    message: "Stop signal sent — the batch will exit after the current row finishes.",
   });
 }));
 
