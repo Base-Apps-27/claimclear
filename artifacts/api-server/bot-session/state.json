@@ -1,0 +1,95 @@
+{
+  "cookies": [
+    {
+      "name": "_x_w",
+      "value": "47_1",
+      "domain": "tpissues.medanswering.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cf_bm",
+      "value": "_LC4q_w4jLpVu_58Pp5V7y_ubwR7OMVC467XPO1Hn1o-1777470449.3621721-1.0.1.1-ueuH3SFYyfq3jkvgQQR_ELKn1BZQ79WWVIKmD9mdnxI062s.f82hv_IxKR49oQrziS.dG73JIuYH0PpqRZ1.zInU_9VmWp20CwhQmy2NXHkdz3697JFjaZ0mGzQdQf7r",
+      "domain": ".tpissues.medanswering.com",
+      "path": "/",
+      "expires": 1777472249.492353,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "XSRF-TOKEN",
+      "value": "0e2fd2da-14d3-4e38-82e9-6df488684d12.Zbdf36bTvkeYCuxfbbrcKI/CiHcG26jMcfcwYa74PoM=",
+      "domain": "medicalansweringservices-org.myfreshworks.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "__cf_bm",
+      "value": "X7N3AXpQw5EiuZmXG.KgO_vLZ_tCWD6jSg_pKKUSzA4-1777470449.5633063-1.0.1.1-raclL.3o3UyyVTu2mA927CgmgVHxHlgtLWHyqLTNxWXyC06XexXgd6WMKF.PKTm4MZhIwV7NFW07vwUV8qaMhWmhgpTxEgOwKnagWdBiwWNPGZtRKXe6Fa_r5Hx5atOn",
+      "domain": ".myfreshworks.com",
+      "path": "/",
+      "expires": 1777472249.617913,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_x_w",
+      "value": "47_1",
+      "domain": "medanswering.freshdesk.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cf_bm",
+      "value": "rZvp45ckE4cHb_aZZIKW6f55Luz1A4TVOpvUaUc.1DA-1777470449.6856663-1.0.1.1-KZy7NpeafEjuP9a5uILSewjqHI6Gu0fVuwzNt.B_O2QAAcTJTEwG9fuF3Z7s.JcMyV2RsOv_V3Y5frf3PG2SLBE0M7JhSwvxju4NhhMUTSZ3Cs.g39_Q0D.FAvOvzwsD",
+      "domain": ".freshdesk.com",
+      "path": "/",
+      "expires": 1777472249.789597,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "helpdesk_node_session",
+      "value": "d45ea634ec9147e248c38fbe245b1499e82a932cf99c3a6d0af7e3d0ff65d11a91374cfd6d6c077528490173769c44da42bb244a0401766500a2d2987219430a",
+      "domain": "tpissues.medanswering.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "user_credentials",
+      "value": "eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaEpJZ0dwT1dVek9UazRZV0UzTldFMk9XTTJOekE0TWpWak9XUXlZMkkyTVRneVlXRXpPR0l5TkdNNFpUTmhZekkxT0RnME5ERm1ObVpqWW1ZeU0yRmlaV0ZsWXpFMk9USTNaVEE0TmpFeU5qSXlNbU00WWpFMU5UVmtORGcyWVdNME1ETmhaV0ZrWVRKallqUmtPVFJsWkRsbVlqRmlNamsxTmprek0yTXdObVpsWm1JNk9qRTFPREF4TVRRMU56Y3dPVG82TWpBeU5pMHdOeTB5T1ZRd09UbzBOem96TXkwd05Eb3dNQVk2QmtWVSIsImV4cCI6IjIwMjYtMDctMjlUMTM6NDc6MzNaIiwicHVyIjpudWxsfX0%3D--0bc5e8d18c8901dd5b108946b32a4be50c070c2c",
+      "domain": "tpissues.medanswering.com",
+      "path": "/",
+      "expires": 1785332853.72187,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_helpkit_session",
+      "value": "Lzg5a1ZaeTl4eC83VVl0YTk0cEs2b1RZT0NRTzJlbDVCWEsxdE82UXduSHZhK3A0ZGpKMFB0cERuM2k3eXlneEh2TmhGclg0cnRTWDJabmFZK0V3cHo5MkZmYk1pZm5ZakhiZ2oxRE4xTytaQ1MrbVgzcTFJMmc5K1EydEM4S3A1TUYyYXVjMjZJNVBWY1NxZXZkSEZUYllLK1BkRDh2c3ZPYXo4Z1F0Z0ZNK3pXRURBVVVPWGg5Y2pQRFQ0QmVMQlZ6dFgwcmkwVnI5QUE5ZXZaN0FaUDNiOGZVcitBZXRsam1pNUszUFR6dzZqcVNiYlRjSCtuTlVobWZFc2tXSUMwNGlUdCswMnhvazRIaVM2c25sY1VyUUM2eDl1Sklta0VTY0lCY0d2MWQ1cUM4aXNIOUtxdFFLa0VUWEZycmE5VHJ5YXp1MTRtMndPZHRWYThPODBQZlVEQnRSaVlzYjUrTm9ZWDlZdVNsVktEQWI4T0h3UXMyZGZaUUxYNWlxdldYeVFaS2J5QWhHcXBDTXdyMjJ5ZDFtWUJ2c2lTMmo4N2JadGFQRnlsckxHdHNrYlVDemk3VlpWbzA3M0M0UFRvNmZuTnEzN0VBTnpQNTEyUm5QMzRtWldpbHplRjBkSlVoNWVvcXFlb2s9LS1rRjZMM3dhMUdNd0dpQ2ZXQjFhYlZRPT0%3D--7934195a3894c41e790e692f4ce73373ea924e42",
+      "domain": "tpissues.medanswering.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

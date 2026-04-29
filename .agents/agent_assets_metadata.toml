@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "Xxqh_iy-EYH2NCfl5X1Sl"
@@ -12,3 +11,9 @@ id = "QEL8FKJ1_4H9pI75AA33K"
 uri = "file://artifacts/training-guide/public/section-bg.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "LUAPjRlLhdXLKtcjK2H_R"
+uri = "file://attached_assets/gps_control_deviation_dry_run.png"
+type = "image"
+title = "MAS portal dry run — GPS Control Deviation form (filled, not submitted)"
