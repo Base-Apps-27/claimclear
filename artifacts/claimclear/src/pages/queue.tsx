@@ -144,7 +144,7 @@ export default function Queue() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
-            <TabsList>
+            <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="actionable">
                 Action Required
                 {actionableGroups.length > 0 && (
