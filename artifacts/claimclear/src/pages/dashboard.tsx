@@ -14,7 +14,13 @@ import {
   XCircle,
   MinusCircle,
 } from "lucide-react";
-import { useGetDashboardSummary, getGetDashboardSummaryQueryKey } from "@workspace/api-client-react";
+import {
+  useGetDashboardSummary,
+  getGetDashboardSummaryQueryKey,
+  useGetDashboardActivity,
+  getGetDashboardActivityQueryKey,
+  type DashboardActivityEvent,
+} from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { PageHeader, Section } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
@@ -25,17 +31,33 @@ import { StatusBadge } from "@/components/status-badge";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { formatCurrency, formatDate } from "@/lib/format";
 
-// Recent activity rows use a 3-color signal: win / loss / neutral.
-function dotColorForStatus(status: string): string {
-  if (status === "Resolved") return "hsl(var(--cc-success))";    // win
-  if (status === "Denied") return "hsl(var(--destructive))";     // loss
-  return "hsl(var(--muted-foreground))";                          // neutral / in-flight
+// Recent activity rows use a 3-color signal: good / bad / neutral.
+function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
+  if (tone === "good") return "hsl(var(--cc-success))";
+  if (tone === "bad") return "hsl(var(--destructive))";
+  return "hsl(var(--muted-foreground))";
 }
 
-function dotLabelForStatus(status: string): string {
-  if (status === "Resolved") return `${status} · win`;
-  if (status === "Denied") return `${status} · loss`;
-  return `${status} · in flight`;
+function dotLabelForTone(tone: DashboardActivityEvent["tone"]): string {
+  if (tone === "good") return "Positive event";
+  if (tone === "bad") return "Negative event";
+  return "Neutral event";
+}
+
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const min = Math.round(diffSec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.round(hr / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function firstNameFromUser(user: { displayName?: string | null; firstName?: string | null; email?: string | null } | null | undefined): string {
@@ -103,6 +125,10 @@ export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary({
     query: { queryKey: getGetDashboardSummaryQueryKey() },
   });
+  const { data: activity } = useGetDashboardActivity(
+    { limit: 15 },
+    { query: { queryKey: getGetDashboardActivityQueryKey({ limit: 15 }) } },
+  );
 
   if (isLoading) {
     return (
@@ -419,7 +445,7 @@ export default function Dashboard() {
               title="Recent activity"
               icon={<Activity className="w-4 h-4" />}
               action={
-                <Link href="/invoice-groups" className="text-xs text-primary hover:underline">
+                <Link href="/admin/users/activity" className="text-xs text-primary hover:underline">
                   See all →
                 </Link>
               }
@@ -427,42 +453,57 @@ export default function Dashboard() {
               className="lg:col-span-2"
             >
               <div data-testid="recent-activity-list">
-                {summary.recentGroups.length === 0 ? (
+                {!activity ? (
+                  <div className="p-4 space-y-2">
+                    {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-6 w-full" />)}
+                  </div>
+                ) : activity.events.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
-                    No recent invoice groups found.
+                    No recent activity yet. Triage a claim or import a job-status report to get started.
                   </div>
                 ) : (
-                  summary.recentGroups.slice(0, 8).map((group, i, arr) => (
-                    <div
-                      key={group.id}
-                      className="flex items-center gap-3 px-4 py-2.5"
-                      style={{
-                        borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))",
-                      }}
-                      data-testid={`recent-row-${group.id}`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        title={dotLabelForStatus(group.status)}
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ background: dotColorForStatus(group.status) }}
-                      />
-                      <Link
-                        href={`/invoice-groups/${group.id}`}
-                        className="font-mono text-sm font-medium text-primary hover:underline truncate"
-                        style={{ minWidth: 140 }}
+                  activity.events.slice(0, 8).map((event, i, arr) => {
+                    const summaryNode = (
+                      <span className="text-sm flex-1 truncate text-foreground">
+                        {event.summary}
+                      </span>
+                    );
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-center gap-3 px-4 py-2.5"
+                        style={{
+                          borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))",
+                        }}
+                        data-testid={`recent-row-${event.id}`}
+                        data-tone={event.tone}
                       >
-                        {group.invoiceNumber}
-                      </Link>
-                      <span className="text-sm flex-1 truncate text-muted-foreground">
-                        <span className="text-foreground">{group.status}</span>
-                        <span> · {group.errorTypeName || "Unclassified"} · {group.rideCount} ride{group.rideCount === 1 ? "" : "s"} · {formatCurrency(group.totalAmount)}</span>
-                      </span>
-                      <span className="text-xs text-muted-foreground flex-shrink-0">
-                        {formatDate(group.updatedAt)}
-                      </span>
-                    </div>
-                  ))
+                        <span
+                          aria-hidden="true"
+                          title={dotLabelForTone(event.tone)}
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: dotColorForTone(event.tone) }}
+                        />
+                        {event.href ? (
+                          <Link
+                            href={event.href}
+                            className="flex-1 truncate hover:underline"
+                            data-testid={`recent-row-link-${event.id}`}
+                          >
+                            {summaryNode}
+                          </Link>
+                        ) : (
+                          <div className="flex-1 truncate">{summaryNode}</div>
+                        )}
+                        <span
+                          className="text-xs text-muted-foreground flex-shrink-0 tabular-nums"
+                          title={new Date(event.timestamp).toLocaleString()}
+                        >
+                          {formatRelativeTime(event.timestamp)}
+                        </span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </Section>

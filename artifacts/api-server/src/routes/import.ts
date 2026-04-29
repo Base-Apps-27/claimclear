@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 
@@ -210,6 +210,28 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
       });
       created++;
     }
+  }
+
+  // Record a single human-readable activity row so the dashboard activity
+  // feed can show "X imported N claims from job-status report".
+  if (created > 0 || updated > 0 || groupsCreated > 0) {
+    await db.insert(auditLogsTable).values({
+      claimId: null,
+      invoiceGroupId: null,
+      action: "claims_imported",
+      details: `Imported ${created} claim${created === 1 ? "" : "s"} (${updated} updated, ${skipped} skipped) across ${groupsCreated} new invoice group${groupsCreated === 1 ? "" : "s"}`,
+      metadata: {
+        batchId,
+        created,
+        updated,
+        skipped,
+        groupsCreated,
+        invoiceGroupCount: invoiceMap.size,
+        total: rows.length,
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
   }
 
   res.json({

@@ -1107,6 +1107,50 @@ export interface DashboardSummary {
   portalWorker: DashboardSummaryPortalWorker;
 }
 
+export type DashboardActivityEventActorRole =
+  (typeof DashboardActivityEventActorRole)[keyof typeof DashboardActivityEventActorRole];
+
+export const DashboardActivityEventActorRole = {
+  user: "user",
+  system: "system",
+} as const;
+
+export type DashboardActivityEventTone =
+  (typeof DashboardActivityEventTone)[keyof typeof DashboardActivityEventTone];
+
+export const DashboardActivityEventTone = {
+  good: "good",
+  bad: "bad",
+  neutral: "neutral",
+} as const;
+
+/**
+ * A single human-readable activity event shaped from an audit log row.
+ */
+export interface DashboardActivityEvent {
+  id: number;
+  /** ISO timestamp */
+  timestamp: string;
+  /** Underlying audit action key (for grouping/filtering on the client) */
+  action: string;
+  /** Display name of the person or system that performed the action */
+  actor: string;
+  actorRole: DashboardActivityEventActorRole;
+  /** Single-line human-readable summary suitable for direct rendering */
+  summary: string;
+  tone: DashboardActivityEventTone;
+  invoiceGroupId: number | null;
+  invoiceNumber: string | null;
+  claimId: number | null;
+  claimConfNumber: string | null;
+  /** Suggested deep-link path for this event, if any */
+  href: string | null;
+}
+
+export interface DashboardActivity {
+  events: DashboardActivityEvent[];
+}
+
 export type DashboardTimeseriesPointsItem = {
   /** ISO date (YYYY-MM-DD) at UTC midnight */
   date: string;
@@ -1916,6 +1960,14 @@ export type GetDashboardUserProductivityParams = {
    * @maximum 365
    */
   days?: number;
+};
+
+export type GetDashboardActivityParams = {
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  limit?: number;
 };
 
 export type GetDashboardRepeatOffendersParams = {

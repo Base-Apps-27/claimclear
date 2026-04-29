@@ -5,6 +5,7 @@ import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
+import { humanizeAuditRow } from "../lib/activity-humanizer";
 
 const router: IRouter = Router();
 
@@ -462,6 +463,56 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
     driverGroupsTotal: currentDrivers.size,
     memberGroupsTotal: currentMembers.size,
   });
+}));
+
+// Actions we never want to surface in the dashboard activity feed because
+// they're either too noisy or duplicate something else we already show.
+const ACTIVITY_FEED_EXCLUDED_ACTIONS = [
+  // Status sync rows are auto-generated alongside group_status_changed and
+  // would otherwise drown out everything else.
+  "status_changed",
+  "outcome_changed",
+  "status_and_outcome_changed",
+  // Per-batch bot rows are extremely chatty and only meaningful in aggregate
+  // (which is already on the System Health and Batches pages).
+  "batch_claimed",
+  "submission_complete",
+  "dry_run_complete",
+] as const;
+
+router.get("/dashboard/activity", asyncHandler(async (req, res): Promise<void> => {
+  const limit = parseLimit(req.query.limit, 15, 50);
+
+  // Pull recent rows. We intentionally fetch a wider window than `limit` so
+  // that filtering out child-claim sync rows still leaves us with a full feed.
+  const fetchLimit = Math.max(limit * 4, 50);
+
+  const rows = await db
+    .select({
+      id: auditLogsTable.id,
+      action: auditLogsTable.action,
+      details: auditLogsTable.details,
+      metadata: auditLogsTable.metadata,
+      userEmail: auditLogsTable.userEmail,
+      userName: auditLogsTable.userName,
+      timestamp: auditLogsTable.timestamp,
+      claimId: auditLogsTable.claimId,
+      invoiceGroupId: auditLogsTable.invoiceGroupId,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
+      claimConfNumber: claimsTable.confNumber,
+    })
+    .from(auditLogsTable)
+    .leftJoin(invoiceGroupsTable, eq(auditLogsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .leftJoin(claimsTable, eq(auditLogsTable.claimId, claimsTable.id))
+    .orderBy(desc(auditLogsTable.timestamp), desc(auditLogsTable.id))
+    .limit(fetchLimit);
+
+  const events = rows
+    .filter((r) => !(ACTIVITY_FEED_EXCLUDED_ACTIONS as readonly string[]).includes(r.action))
+    .slice(0, limit)
+    .map((r) => humanizeAuditRow(r));
+
+  res.json({ events });
 }));
 
 router.get("/dashboard/user-productivity", asyncHandler(async (req, res): Promise<void> => {

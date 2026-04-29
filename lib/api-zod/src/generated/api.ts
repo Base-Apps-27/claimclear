@@ -3631,6 +3631,57 @@ export const GetDashboardUserProductivityResponse = zod.object({
 });
 
 /**
+ * @summary Recent human-readable activity events for the dashboard
+ */
+export const getDashboardActivityQueryLimitDefault = 15;
+export const getDashboardActivityQueryLimitMax = 50;
+
+export const GetDashboardActivityQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardActivityQueryLimitMax)
+    .default(getDashboardActivityQueryLimitDefault),
+});
+
+export const GetDashboardActivityResponse = zod.object({
+  events: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        timestamp: zod.string().describe("ISO timestamp"),
+        action: zod
+          .string()
+          .describe(
+            "Underlying audit action key (for grouping\/filtering on the client)",
+          ),
+        actor: zod
+          .string()
+          .describe(
+            "Display name of the person or system that performed the action",
+          ),
+        actorRole: zod.enum(["user", "system"]),
+        summary: zod
+          .string()
+          .describe(
+            "Single-line human-readable summary suitable for direct rendering",
+          ),
+        tone: zod.enum(["good", "bad", "neutral"]),
+        invoiceGroupId: zod.union([zod.number(), zod.null()]),
+        invoiceNumber: zod.union([zod.string(), zod.null()]),
+        claimId: zod.union([zod.number(), zod.null()]),
+        claimConfNumber: zod.union([zod.string(), zod.null()]),
+        href: zod
+          .union([zod.string(), zod.null()])
+          .describe("Suggested deep-link path for this event, if any"),
+      })
+      .describe(
+        "A single human-readable activity event shaped from an audit log row.",
+      ),
+  ),
+});
+
+/**
  * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
  */
 export const getDashboardRepeatOffendersQueryDaysDefault = 30;

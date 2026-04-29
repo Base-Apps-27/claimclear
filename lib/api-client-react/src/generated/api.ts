@@ -49,6 +49,7 @@ import type {
   CreatePortalSubmissionBody,
   CronRunsResponse,
   DailyBriefResponse,
+  DashboardActivity,
   DashboardRepeatOffenders,
   DashboardSummary,
   DashboardTimeseries,
@@ -65,6 +66,7 @@ import type {
   GetAuthSession200,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
+  GetDashboardActivityParams,
   GetDashboardRepeatOffendersParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
@@ -6288,6 +6290,106 @@ export function useGetDashboardUserProductivity<
     params,
     options,
   );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recent human-readable activity events for the dashboard
+ */
+export const getGetDashboardActivityUrl = (
+  params?: GetDashboardActivityParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/activity?${stringifiedParams}`
+    : `/api/dashboard/activity`;
+};
+
+export const getDashboardActivity = async (
+  params?: GetDashboardActivityParams,
+  options?: RequestInit,
+): Promise<DashboardActivity> => {
+  return customFetch<DashboardActivity>(getGetDashboardActivityUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDashboardActivityQueryKey = (
+  params?: GetDashboardActivityParams,
+) => {
+  return [`/api/dashboard/activity`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDashboardActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardActivityQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardActivity>>
+  > = ({ signal }) =>
+    getDashboardActivity(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardActivity>>
+>;
+export type GetDashboardActivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent human-readable activity events for the dashboard
+ */
+
+export function useGetDashboardActivity<
+  TData = Awaited<ReturnType<typeof getDashboardActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardActivityQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
