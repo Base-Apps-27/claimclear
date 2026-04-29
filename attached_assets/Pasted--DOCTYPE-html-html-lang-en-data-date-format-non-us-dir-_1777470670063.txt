@@ -1,0 +1,867 @@
+
+<!DOCTYPE html>
+<html lang="en" data-date-format="non_us" dir="ltr">
+
+<head>
+
+  <meta name="csrf-param" content="authenticity_token" />
+<meta name="csrf-token" content="CdQMz9whjmagkj9KQaq9ugd+ykYfBRzygVq43MgdPySHFYrmUMWlwbtRDWVgdtgXYsFWECyufWlzfRm0mz0HYQ==" />
+
+  <link rel='shortcut icon' href='https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png' />
+
+  <!-- Title for the page -->
+<title> Submit a ticket : Medical Answering Services </title>
+
+<!-- Meta information -->
+
+      <meta charset="utf-8" />
+      <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+      <meta name="description" content= "" />
+      <meta name="author" content= "" />
+       <meta property="og:title" content="Submit a ticket" />  <meta property="og:url" content="https://tpissues.medanswering.com/support/tickets/new" />  <meta property="og:image" content="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122087/logo/MD86ej7XYl2jyzTqoNbOmDB-9GrB3EW_2Q.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;amp;X-Amz-Credential=AKIAS6FNSMY2XLZULJPI%2F20260425%2Fus-east-1%2Fs3%2Faws4_request&amp;amp;X-Amz-Date=20260425T135222Z&amp;amp;X-Amz-Expires=604800&amp;amp;X-Amz-SignedHeaders=host&amp;amp;X-Amz-Signature=3654cfaac2fe870dc3b774a3c3d0d4b8bc1c62786c7909047c8bbd81631b1ebb" />  <meta property="og:site_name" content="Medical Answering Services" />  <meta property="og:type" content="article" />  <meta name="twitter:title" content="Submit a ticket" />  <meta name="twitter:url" content="https://tpissues.medanswering.com/support/tickets/new" />  <meta name="twitter:image" content="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122087/logo/MD86ej7XYl2jyzTqoNbOmDB-9GrB3EW_2Q.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;amp;X-Amz-Credential=AKIAS6FNSMY2XLZULJPI%2F20260425%2Fus-east-1%2Fs3%2Faws4_request&amp;amp;X-Amz-Date=20260425T135222Z&amp;amp;X-Amz-Expires=604800&amp;amp;X-Amz-SignedHeaders=host&amp;amp;X-Amz-Signature=3654cfaac2fe870dc3b774a3c3d0d4b8bc1c62786c7909047c8bbd81631b1ebb" />  <meta name="twitter:card" content="summary" />  <link rel="canonical" href="https://tpissues.medanswering.com/support/tickets/new" /> 
+
+<!-- Responsive setting -->
+<link rel="apple-touch-icon" href="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png" />
+        <link rel="apple-touch-icon" sizes="72x72" href="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png" />
+        <link rel="apple-touch-icon" sizes="114x114" href="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png" />
+        <link rel="apple-touch-icon" sizes="144x144" href="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" /> 
+
+  <link rel="icon" href="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122088/fav_icon/oRsrWrubMSk1tYQIdpHlnbDmXD2xos2_vQ.png" />
+
+  <link rel="stylesheet" href="/assets/cdn/portal/styles/theme.css?FD004" nonce="/Qpk6+PuHBS43DcBV1fLmw=="/>
+
+  <style type="text/css" nonce="/Qpk6+PuHBS43DcBV1fLmw=="> /* theme */ .portal--light {
+              --fw-body-bg: #ffffff;
+              --fw-header-bg: #ffffff;
+              --fw-header-text-color: #12344D;
+              --fw-helpcenter-bg: #004898;
+              --fw-helpcenter-text-color: #FFFFFF;
+              --fw-footer-bg: #f5f7f9;
+              --fw-footer-text-color: #12344D;
+              --fw-tab-active-color: #12344D;
+              --fw-tab-active-text-color: #FFFFFF;
+              --fw-tab-hover-color: #FFFFFF;
+              --fw-tab-hover-text-color: #12344D;
+              --fw-btn-background: #FFFFFF;
+              --fw-btn-text-color: #12344D;
+              --fw-btn-primary-background: #12344D;
+              --fw-btn-primary-text-color: #FFFFFF;
+              --fw-baseFont: Source Sans Pro;
+              --fw-textColor: #053e5e;
+              --fw-headingsFont: Source Sans Pro;
+              --fw-linkColor: #003b5c;
+              --fw-linkColorHover: #003b5c;
+              --fw-inputFocusRingColor: #EBEFF3;
+              --fw-formInputFocusColor: #EBEFF3;
+              --fw-card-bg: #FFFFFF;
+              --fw-card-fg: #264966;
+              --fw-card-border-color: #EBEFF3;
+              --fw-nonResponsive: #ffffff;
+              --bs-body-font-family: Source Sans Pro;
+    } </style>
+
+  <link href='https://fonts.googleapis.com/css?family=Source+Sans+Pro:regular,italic,600,700,700italic' rel='stylesheet' type='text/css' nonce='/Qpk6+PuHBS43DcBV1fLmw=='>
+
+  <script type="text/javascript" nonce="/Qpk6+PuHBS43DcBV1fLmw==">
+    window.cspNonce = "/Qpk6+PuHBS43DcBV1fLmw==";
+  </script>
+
+  <script src="/assets/cdn/portal/scripts/nonce.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+  <script src="/assets/cdn/portal/vendor.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+  <script src="/assets/cdn/portal/scripts/head.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+  <script type="text/javascript" nonce="/Qpk6+PuHBS43DcBV1fLmw==">
+      window.store = {};
+window.store = {
+  assetPath: "/assets/cdn/portal/",
+  defaultLocale: "en",
+  currentLocale: "en",
+  currentPageName: "submit_ticket",
+  portal: {"id":158000012164,"name":"Medical Answering Services","product_id":158000012080},
+  portalAccess: {"hasSolutions":false,"hasForums":false,"hasTickets":false,"accessCount":0},
+  account: {"id":4128361,"name":"Medical Answering Services","time_zone":"Eastern Time (US & Canada)","companies":[]},
+  vault_service: {"url":"https://vault-service.freshworks.com/data","max_try":2,"product_name":"fd"},
+  blockedExtensions: "exe,dll,sys,swf,scr,gzquar,js,jse,class,vb,com,bat,cmd,pif,img,iso,hta,html,msc,msp,cpl,reg,tmp,py,ps,msi,msp,inf,scf,ocx,bin,ws,sh,lnk,gadget,dmg,msh,apk,iqy,pub,jar,zip,rar,sfx,zix,ear,war,arj",
+  allowedExtensions: "",
+  search: {"all":"/support/search","solutions":"/support/search/solutions","topics":"/support/search/topics","tickets":"/support/search/tickets"},
+  portalLaunchParty: {
+    enableStrictSearch: false,
+    ticketFragmentsEnabled: false,
+    homepageNavAccessibilityEnabled: false,
+    channelIdentifierFieldsEnabled: true,
+  },
+    ticket_fields: [{"field_type":"custom_dropdown","id":158000173861,"name":"cf_decline_specific_address_4128361","dom_type":"dropdown_blank","label":"Decline Specific Address","label_in_portal":"Are you requesting to service the zip code except for a specific address?","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes (specify address)","Yes (specify address)",158000073048],["No","No",158000073049]],"levels":null,"level_three_present":null,"field_options":{"section_present":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000173842,"name":"cf_zip_code_to_be_unblocked_4128361","dom_type":"text","label":"Zip code to be unblocked","label_in_portal":"Which zip code are you requesting be unblocked?","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000187077,"name":"cf_zipcode_add_or_unblock_4128361","dom_type":"dropdown_blank","label":"Zipcode Add or Unblock","label_in_portal":"What is the action you want to take with this zip code?","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Add","Add",158000078591],["Unblock","Unblock",158000078592]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000215828,"name":"cf_trip_concern_number_4128361","dom_type":"text","label":"Trip Concern Number","label_in_portal":"Trip Concern Number","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000172840,"name":"cf_tp_name_4128361","dom_type":"text","label":"TP Name","label_in_portal":"Transportation Provider Name","description":null,"position":1,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173846,"name":"cf_street_4128361","dom_type":"text","label":"Address Line 1","label_in_portal":"Address Line 1","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173829,"name":"cf_enrollee_cin_4128361","dom_type":"text","label":"Enrollee CIN","label_in_portal":"Enrollee CIN","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000173845,"name":"cf_single_address_or_entire_zip_code_4128361","dom_type":"dropdown_blank","label":"Single address or entire zip code","label_in_portal":"Are you requesting to service","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["A Single Address (specify address)","A Single Address (specify address)",158000073041],["Entire Zip Code","Entire Zip Code",158000073042]],"levels":null,"level_three_present":null,"field_options":{"section_present":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_date","id":158000173828,"name":"cf_date_of_service_4128361","dom_type":"date","label":"Date of Service","label_in_portal":"Date of Service","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"date"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000172841,"name":"cf_contact_name_4128361","dom_type":"text","label":"Contact Name","label_in_portal":"Contact Name","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000449285,"name":"cf_category_4128361","dom_type":"dropdown_blank","label":"Category","label_in_portal":"Category","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":false,"required_in_portal":false,"choices":[["Custom Payments","Custom Payments",158000190720],["GPS Control Deviation","GPS Control Deviation",158000190721],["Other Issue or Question","Other Issue or Question",158000190722],["Trip Concern","Trip Concern",158000190723],["Trip Correction","Trip Correction",158000190724],["Vehicle, Driver or TPP","Vehicle, Driver or TPP",158000190725],["MAS Trips App Issue","MAS Trips App Issue",158000190726],["Zip Code Block","Zip Code Block",158000190727],["System Operations","System Operations",158000474275]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000173843,"name":"cf_agree_to_handle_all_assignments_4128361","dom_type":"dropdown_blank","label":"Agree to handle all assignments","label_in_portal":"Do you agree to handle ALL trip assignments for the requested zip code(s) or address(es)?","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Yes","Yes",158000073037],["No","No",158000073038]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000173844,"name":"cf_previously_provided_service_to_zip_code_4128361","dom_type":"dropdown_blank","label":"Previously Provided Service to Zip Code?","label_in_portal":"Have you previously provided service in this zip code?","description":null,"position":1,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Yes","Yes",158000073039],["No","No",158000073040]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000172842,"name":"cf_phone_number_4128361","dom_type":"text","label":"Phone Number","label_in_portal":"Phone Number","description":null,"position":2,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000172843,"name":"cf_email_address_4128361","dom_type":"text","label":"Email Address","label_in_portal":"Email Address","description":null,"position":3,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"default_requester","id":158000003649,"name":"requester","dom_type":"requester","label":"Search a requester","label_in_portal":"Requester","description":"Ticket requester","position":4,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"portalcc":false,"portalcc_to":"company","field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000172856,"name":"cf_enrollee_last_name_4128361","dom_type":"text","label":"Enrollee Last Name","label_in_portal":"Enrollee Last Name","description":null,"position":5,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"default_ticket_type","id":158000003651,"name":"ticket_type","dom_type":"dropdown_blank","label":"Type","label_in_portal":"Type","description":"Ticket type","position":6,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["MAS Trips App Issue","MAS Trips App Issue",158000001524]],"levels":null,"level_three_present":null,"field_options":{"section_present":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":true},{"field_type":"default_subject","id":158000003650,"name":"subject","dom_type":"text","label":"Subject","label_in_portal":"Subject","description":"Ticket subject","position":6,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"default_status","id":158000003653,"name":"status","dom_type":"dropdown","label":"Status","label_in_portal":"Status","description":"Ticket status","position":8,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":false,"required_in_portal":false,"choices":[{"status_id":2,"name":"Open","customer_display_name":"Open","stop_sla_timer":false,"deleted":false,"skip_agent_load":false},{"status_id":3,"name":"Pending","customer_display_name":"Pending","stop_sla_timer":true,"deleted":false,"skip_agent_load":false},{"status_id":4,"name":"Resolved","customer_display_name":"Resolved","stop_sla_timer":true,"deleted":false,"skip_agent_load":false},{"status_id":5,"name":"Closed","customer_display_name":"Closed","stop_sla_timer":true,"deleted":false,"skip_agent_load":false},{"status_id":6,"name":"Waiting on Customer","customer_display_name":"Awaiting your Reply","stop_sla_timer":true,"deleted":false,"skip_agent_load":false},{"status_id":7,"name":"Waiting on Third Party","customer_display_name":"Being Processed","stop_sla_timer":true,"deleted":false,"skip_agent_load":false},{"status_id":8,"name":"Research Required","customer_display_name":"Review Required","stop_sla_timer":false,"deleted":false,"skip_agent_load":false}],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":true},{"field_type":"default_priority","id":158000003654,"name":"priority","dom_type":"dropdown","label":"Priority","label_in_portal":"Priority","description":"Ticket priority","position":9,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Low",1],["Medium",2],["High",3],["Urgent",4]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000141079,"name":"cf_app_issue_type_4128361","dom_type":"dropdown_blank","label":"App Issue Type","label_in_portal":"App Issue Type","description":null,"position":10,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Driver Can't Sign In","Driver Can't Sign In",158000058815]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"default_agent","id":158000003656,"name":"agent","dom_type":"dropdown_blank","label":"Agent","label_in_portal":"Assigned to","description":"Agent","position":12,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":false,"required_in_portal":false,"choices":[["Andre Nelson",158005708523],["Charnissa Yancey",158011621817],["Compliance Mailbox",158000314151],["Custompayments",158000296963],["Darlene Humphrey",158000531824],["Ed Carson",158000197161],["Elizabeth Makuch",158000765916],["Frank Flanagan",158000154186],["Greg Paul",158000429987],["Jason Nester",158000000305],["Jazmin Martinez-Hernandez",158000765912],["Jeff Lammers",158005681729],["John Arneth",158000342511],["John Gladziszewski",158000219035],["Larry Passantino",158005681737],["Mike DiRenzo",158003282611],["Missy Horn",158011621801],["Mmcconnell",158000158830],["Myesha Britt",158000765913],["Naja Pitts",158000765917],["Nicolas Corbishley",158000309333],["Presious Floyd",158000357576],["Sierra Floyd",158000343018],["Stephani Crysler",158000343053],["Terri Collins",158002183508],["Tina Beswick",158000429983],["TP Issues",158000330293],["Trip Correction Mailbox",158000314131],["Unique Bishop",158000765914],["Vanessa Mauna",158000175453]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":true},{"field_type":"default_description","id":158000003658,"name":"description","dom_type":"html_paragraph","label":"Description","label_in_portal":"Description","description":"Ticket description","position":14,"active":true,"required":true,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"multi_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_number","id":158000003660,"name":"cf_reference_number_4128361","dom_type":"number","label":"Reference Number","label_in_portal":"Reference Number","description":null,"position":16,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"number"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000140142,"name":"cf_invoice_number_4128361","dom_type":"text","label":"Invoice Number","label_in_portal":"Invoice Number (note: only ONE invoice per ticket)","description":null,"position":16,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000146642,"name":"cf_gps_breadcrumbs_available_4128361","dom_type":"dropdown_blank","label":"GPS Breadcrumbs Available","label_in_portal":"Are the GPS Breadcrumbs available and unaltered for the trip?","description":null,"position":17,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061141],["No","No",158000061142],["Unknown","Unknown",158000061143]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000146727,"name":"cf_drivertrip_issue_4128361","dom_type":"dropdown_blank","label":"Driver/Trip Issue","label_in_portal":"What Issue Are You Reporting?","description":null,"position":18,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Can't assign a driver","Can't assign a driver",158000061179],["Can't assign a vehicle","Can't assign a vehicle",158000061180],["Can't attest to a trip","Can't attest to a trip",158000061181],["TP not showing as available for a trip","TP not showing as available for a trip",158000061182],["Need to add or update a vehicle","Need to add or update a vehicle",158000061183],["Other (Please describe below)","Other (Please describe below)",158000073069]],"levels":null,"level_three_present":null,"field_options":{"section_present":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000148419,"name":"cf_app_issue_4128361","dom_type":"dropdown_blank","label":"App Issue","label_in_portal":"What?","description":null,"position":19,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Download/Installation","Download/Installation",158000061895],["Geofencing","Geofencing",158000061896],["Login","Login",158000061897],["Multiloading","Multiloading",158000061898],["Start/End Trip","Start/End Trip",158000061899],["Trip Selection","Trip Selection",158000061900],["Other","Other",158000061901]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_date","id":158000172857,"name":"cf_enrollee_dob_4128361","dom_type":"date","label":"Enrollee DOB","label_in_portal":"Enrollee Date of Birth","description":null,"position":20,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"date"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172931,"name":"cf_medically_necessary_stair_carry_or_twoperson_assist_4128361","dom_type":"checkbox","label":"Medically necessary stair carry or two-person assist","label_in_portal":"Medically necessary stair carry or two-person assist","description":null,"position":21,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172932,"name":"cf_high_enrollee_weight_or_significant_mobility_limitations_4128361","dom_type":"checkbox","label":"High enrollee weight or significant mobility limitations","label_in_portal":"High enrollee weight or significant mobility limitations","description":null,"position":22,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172933,"name":"cf_stayandwait_required_due_to_hospital_transfer_logistics_4128361","dom_type":"checkbox","label":"Stay-and-wait required due to hospital transfer logistics","label_in_portal":"Stay-and-wait required due to hospital transfer logistics","description":null,"position":23,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172934,"name":"cf_facility_limitations_prevent_standard_transfer_eg_no_space_for_stretcherlift_4128361","dom_type":"checkbox","label":"Facility limitations prevent standard transfer (e.g., no space for stretcher/lift)","label_in_portal":"Facility limitations prevent standard transfer (e.g., no space for stretcher/lift)","description":null,"position":24,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172947,"name":"cf_no_other_transportation_provider_available_at_required_cost_4128361","dom_type":"checkbox","label":"No other transportation provider available at required cost","label_in_portal":"No other transportation provider available at required cost","description":null,"position":25,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172948,"name":"cf_approved_mode_upgrade_4128361","dom_type":"checkbox","label":"Approved mode upgrade","label_in_portal":"Approved mode upgrade","description":null,"position":26,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172949,"name":"cf_travel_distance_4128361","dom_type":"checkbox","label":"Travel distance","label_in_portal":"Travel distance","description":null,"position":27,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_checkbox","id":158000172950,"name":"cf_other_please_specify_4128361","dom_type":"checkbox","label":"Other - please specify","label_in_portal":"Other - please specify","description":null,"position":28,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"boolean"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000172965,"name":"cf_payment_amount_total_4128361","dom_type":"text","label":"Payment amount - Total","label_in_portal":"Total","description":null,"position":29,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000172964,"name":"cf_payment_amount_time_on_task_4128361","dom_type":"text","label":"Payment amount - Time on Task","label_in_portal":"Time on Task","description":null,"position":29,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000200966,"name":"cf_driver_username_4128361","dom_type":"text","label":"Driver Username","label_in_portal":"Driver Username","description":null,"position":29,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000172963,"name":"cf_payment_amount_labor_4128361","dom_type":"text","label":"Payment amount - Labor","label_in_portal":"Labor","description":null,"position":29,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000240904,"name":"cf_ride_invoice_number_4128361","dom_type":"text","label":"Ride Invoice Number","label_in_portal":"Ride Invoice Number","description":null,"position":30,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000240905,"name":"cf_leg_number_of_ride_4128361","dom_type":"text","label":"Leg Number of Ride","label_in_portal":"Leg Number of Ride","description":null,"position":31,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"nested_field","id":158000200968,"name":"cf_mas_trips_issue_categories_4128361","dom_type":"nested_field","label":"MAS Trips Issue Categories","label_in_portal":"MAS Trips Issue Categories","description":null,"position":32,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[{"name":"Downloading/Installation","value":"Downloading/Installation","id":158000084421,"choices":[]},{"name":"Login","value":"Login","id":158000084422,"choices":[{"name":"Two-Factor Authentication","value":"Two-Factor Authentication","id":158000084423,"choices":[{"name":"Code not received","value":"Code not received","id":158000084424,"choices":[]},{"name":"Code returns an error","value":"Code returns an error","id":158000084425,"choices":[]},{"name":"Other","value":"Other","id":158000084426,"choices":[]}]},{"name":"Temporary Password","value":"Temporary Password","id":158000084427,"choices":[{"name":"Password not received","value":"Password not received","id":158000084428,"choices":[]},{"name":"Password returns an error","value":"Password returns an error","id":158000084429,"choices":[]},{"name":"Other","value":"Other","id":158000084430,"choices":[]}]},{"name":"Other","value":"Other","id":158000084447,"choices":[]}]},{"name":"Geofencing","value":"Geofencing","id":158000084431,"choices":[{"name":"Issue with pickup geo-fence","value":"Issue with pickup geo-fence","id":158000084432,"choices":[]},{"name":"Issue with dropoff geo-fence","value":"Issue with dropoff geo-fence","id":158000084433,"choices":[]},{"name":"Other","value":"Other","id":158000084434,"choices":[]}]},{"name":"Multiloading","value":"Multiloading","id":158000084435,"choices":[]},{"name":"Start/End Trip","value":"Start/End Trip","id":158000084436,"choices":[{"name":"Trip did not register pickup","value":"Trip did not register pickup","id":158000084437,"choices":[]},{"name":"Trip did not register arriving at pickup","value":"Trip did not register arriving at pickup","id":158000084438,"choices":[]},{"name":"Trip did not register as started","value":"Trip did not register as started","id":158000084439,"choices":[]},{"name":"Trip did not register arriving at dropoff","value":"Trip did not register arriving at dropoff","id":158000084440,"choices":[]},{"name":"Trip did not register as completed","value":"Trip did not register as completed","id":158000084441,"choices":[]},{"name":"Other","value":"Other","id":158000084442,"choices":[]}]},{"name":"Trip selection","value":"Trip selection","id":158000084443,"choices":[{"name":"Trip missing from ride list","value":"Trip missing from ride list","id":158000084444,"choices":[]},{"name":"Other","value":"Other","id":158000084445,"choices":[]}]},{"name":"Other","value":"Other","id":158000084446,"choices":[]}],"levels":[{"id":158000000019,"label":"Type of Issue Experienced","label_in_portal":"Type of Issue Experienced","description":null,"level":2,"position":1,"type":"dropdown"},{"id":158000000020,"label":"Issue Description","label_in_portal":"Issue Description","description":null,"level":3,"position":1,"type":"dropdown"}],"level_three_present":true,"field_options":{"field_data_type":"nested_field"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000146740,"name":"cf_driver_active_check_4128361","dom_type":"dropdown_blank","label":"Driver Active Check","label_in_portal":"Have you checked that the driver is active in the system?","description":null,"position":32,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061190],["No","No",158000061191]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_date","id":158000200971,"name":"cf_issue_date_4128361","dom_type":"date","label":"Issue Date","label_in_portal":"Issue Date","description":null,"position":33,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"date"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000209112,"name":"cf_was_an_error_message_displayed_4128361","dom_type":"dropdown_blank","label":"Was an error message displayed?","label_in_portal":"Was an error message displayed?","description":null,"position":34,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Yes","Yes",158000087913],["No","No",158000087914]],"levels":null,"level_three_present":null,"field_options":{"section_present":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000226802,"name":"cf_phones_operating_system_4128361","dom_type":"dropdown_blank","label":"Phone's Operating System","label_in_portal":"Phone's Operating System","description":null,"position":35,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Android","Android",158000095738],["Apple","Apple",158000095739]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158002987329,"name":"cf_mp_first_name_4128361","dom_type":"text","label":"MP - First Name","label_in_portal":"First Name","description":null,"position":36,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987330,"name":"cf_mp_last_name_4128361","dom_type":"text","label":"MP - Last Name","label_in_portal":"Last Name","description":null,"position":37,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987331,"name":"cf_mp_work_title_position_4128361","dom_type":"text","label":"MP - Work Title / Position","label_in_portal":"Work Title / Position","description":null,"position":38,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987332,"name":"cf_mp_department_name_4128361","dom_type":"text","label":"MP - Department Name","label_in_portal":"Department Name","description":null,"position":39,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158002987333,"name":"cf_mp_nys_licensed_medical_professional_4128361","dom_type":"dropdown_blank","label":"MP - NYS Licensed Medical Professional","label_in_portal":"Are you a NYS Licensed Medical Professional?","description":null,"position":40,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Yes","Yes",158001363210],["No","No",158001363211]],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"dropdown","section_present":true},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158002987347,"name":"cf_mp_if_yes_4128361","dom_type":"text","label":"MP - NYS License Number","label_in_portal":"If yes, what is your NYS License Number?","description":null,"position":41,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text","section":true},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987348,"name":"cf_mp_supervisor_name_and_title_4128361","dom_type":"text","label":"MP - Supervisor Name and Title","label_in_portal":"Supervisor Name and Title","description":null,"position":42,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002998615,"name":"cf_mp_supervisors_username_4128361","dom_type":"text","label":"MP - Supervisor's Username","label_in_portal":"Supervisor's Username","description":null,"position":43,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987349,"name":"cf_mp_supervisors_phone_number_4128361","dom_type":"text","label":"MP - Supervisor's Phone Number","label_in_portal":"Supervisor's Phone Number","description":null,"position":44,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987350,"name":"cf_mp_supervisors_email_4128361","dom_type":"text","label":"MP - Supervisor's Email","label_in_portal":"Supervisor's Email","description":null,"position":45,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987351,"name":"cf_mp_facility_name_4128361","dom_type":"text","label":"MP - Facility Name","label_in_portal":"Facility Name","description":null,"position":46,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987352,"name":"cf_mp_facility_main_address_4128361","dom_type":"text","label":"MP - Facility Main Address","label_in_portal":"Facility Main Address","description":null,"position":47,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987366,"name":"cf_mp_facility_city_state_4128361","dom_type":"text","label":"MP - Facility City, State","label_in_portal":"Facility City, State","description":null,"position":48,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_number","id":158002987367,"name":"cf_mp_facility_zip_code_4128361","dom_type":"number","label":"MP - Facility Zip Code","label_in_portal":"Facility Zip Code","description":null,"position":49,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"number"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158002987368,"name":"cf_mp_facility_main_phone_number_4128361","dom_type":"text","label":"MP - Facility Main Phone Number","label_in_portal":"Facility Main Phone Number","description":null,"position":50,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002987369,"name":"cf_mp_npi_4128361","dom_type":"text","label":"MP - NPI","label_in_portal":"NPI","description":null,"position":51,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_paragraph","id":158002987370,"name":"cf_mp_commentsadditional_information_4128361","dom_type":"paragraph","label":"MP - Comments/Additional Information","label_in_portal":"Comments/Additional Information","description":null,"position":52,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"multi_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158002998601,"name":"cf_username_4128361","dom_type":"text","label":"Username","label_in_portal":"Username","description":null,"position":53,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000146815,"name":"cf_vehicle_active_check_4128361","dom_type":"dropdown_blank","label":"Vehicle Active Check","label_in_portal":"Have you checked that the vehicle is active in the system?","description":null,"position":54,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061222],["No","No",158000061223]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000146742,"name":"cf_motorist_id_4128361","dom_type":"text","label":"Motorist ID","label_in_portal":"Motorist ID","description":null,"position":54,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000146741,"name":"cf_drover_4128361","dom_type":"text","label":"Driver's Name","label_in_portal":"Driver's Name","description":null,"position":54,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000146840,"name":"cf_vin_4128361","dom_type":"text","label":"VIN","label_in_portal":"Vehicle's VIN","description":null,"position":55,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000146853,"name":"cf_outsideofcoveragearea_4128361","dom_type":"dropdown_blank","label":"OutsideOfCoverageArea","label_in_portal":"Have you checked if the trip is outside of your coverage area?","description":null,"position":56,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061239],["No","No",158000061240]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000146854,"name":"cf_availablecapacity_4128361","dom_type":"dropdown_blank","label":"AvailableCapacity","label_in_portal":"Have you checked if you had available capacity at the trip time?","description":null,"position":57,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061241],["No","No",158000061242]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_dropdown","id":158000146879,"name":"cf_outsideofregularhours_4128361","dom_type":"dropdown_blank","label":"OutsideOfRegularHours","label_in_portal":"Have you checked if the trip is outside of your regular hours of operation?","description":null,"position":58,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[["Yes","Yes",158000061253],["No","No",158000061254]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000173847,"name":"cf_address_line_2_4128361","dom_type":"text","label":"Address Line 2","label_in_portal":"Address Line 2","description":null,"position":59,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173860,"name":"cf_city_4128361","dom_type":"text","label":"City","label_in_portal":"City","description":null,"position":60,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173862,"name":"cf_address_line_1_4128361","dom_type":"text","label":"Address Line 1","label_in_portal":"Address Line 1","description":null,"position":61,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173863,"name":"cf_address_line_244020_4128361","dom_type":"text","label":"Address Line 2","label_in_portal":"Address Line 2","description":null,"position":62,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000173864,"name":"cf_city15230_4128361","dom_type":"text","label":"City","label_in_portal":"City","description":null,"position":63,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_dropdown","id":158000173905,"name":"cf_gps_complete_and_uploaded_4128361","dom_type":"dropdown_blank","label":"GPS complete and uploaded","label_in_portal":"Have you confirmed GPS is complete and uploaded in the trip? ","description":null,"position":64,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[["Yes","Yes",158000073067],["No","No",158000073068]],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"dropdown"},"has_section":true,"denormalized_field":false},{"field_type":"custom_text","id":158000173907,"name":"cf_trip_invoice_4128361","dom_type":"text","label":"Trip Invoice #","label_in_portal":"Please enter the trip invoice #","description":null,"position":65,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000187116,"name":"cf_vin395617_4128361","dom_type":"text","label":"VIN","label_in_portal":"VIN","description":null,"position":66,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_text","id":158000187117,"name":"cf_license_plate272987_4128361","dom_type":"text","label":"License Plate","label_in_portal":"License Plate","description":null,"position":67,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"single_line_text"},"has_section":true,"denormalized_field":true},{"field_type":"custom_date","id":158000187118,"name":"cf_registration_expiration_date880981_4128361","dom_type":"date","label":"Registration Expiration Date","label_in_portal":"Registration Expiration Date","description":null,"position":68,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":false,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"date"},"has_section":true,"denormalized_field":false},{"field_type":"custom_paragraph","id":158000215829,"name":"cf_error_message_displayed_4128361","dom_type":"paragraph","label":"Error Message Displayed","label_in_portal":"Error Message Displayed","description":null,"position":69,"active":true,"required":false,"required_for_closure":false,"visible_in_portal":true,"editable_in_portal":true,"required_in_portal":true,"choices":[],"levels":null,"level_three_present":null,"field_options":{"section":true,"field_data_type":"multi_line_text"},"has_section":true,"denormalized_field":true}],
+
+
+
+
+
+    marketplace: {"token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJwcm9kdWN0IjoiZnJlc2hkZXNrIiwiYWNjb3VudF9pZCI6IjQxMjgzNjEiLCJkb21haW4iOiJtZWRhbnN3ZXJpbmcuZnJlc2hkZXNrLmNvbSIsIm9yZ2FuaXNhdGlvbl9pZCI6IjgzOTUxNzI4NTc0OTIyMDE4NiIsInRpbWUiOjE3Nzc0NzAzNzgsImlzcyI6ImZyZXNoZGVza192aXNpdG9yX3BvcnRhbCJ9.uFJAFm6Kjpu8NEEy9HpLQKttkBxr_tJFqz_aKJ4KqLw","data_pipe_key":"634cd594466a52fa53c54b5b34779134","region":"us","org_domain":"medicalansweringservices-org.myfreshworks.com"},
+
+  pod: "us-east-1",
+  region: "US",
+};
+  </script>
+
+
+</head>
+
+<body class="portal portal--light  ">
+  
+  <header class="container-fluid px-0 fw-nav-wrapper fixed-top">
+  <section class="bg-light container-fluid">
+    <div class="container">
+      <a  id="" href="#fw-main-content" class="visually-hidden visually-hidden-focusable p-8 my-12 btn btn-outline-primary"
+
+>Skip to main content</a>
+    </div>
+  </section>
+
+  
+    <section class="container">
+      <nav class="navbar navbar-expand-xl navbar-light px-0 py-8 pt-xl-4 pb-xl-0">
+        
+
+    <a class="navbar-brand d-flex align-items-center" href="https://www.medanswering.com">
+      <img data-src="https://s3.amazonaws.com/cdn.freshdesk.com/data/helpdesk/attachments/production/158000122087/logo/MD86ej7XYl2jyzTqoNbOmDB-9GrB3EW_2Q.jpg" loading="lazy" alt="Freshworks Logo" class="lazyload d-inline-block align-top me-4 fw-brand-logo" />
+      <div class="fs-22 semi-bold fw-brand-name ms-4" title="Medical Answering Services">Medical Answering Services</div>
+   </a>
+
+
+        <button class="navbar-toggler collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation" id="navbarContentToggler">
+  <span class="icon-bar"></span>
+  <span class="icon-bar"></span>
+  <span class="icon-bar"></span>
+</button>
+
+        <div class="collapse navbar-collapse" id="navbarContent">
+          <ul class="navbar-nav ms-auto mt-64 mt-xl-0">
+            
+              <li class="nav-item ">
+                <a href="/support/home" class="nav-link">
+                  <span class="d-md-none icon-home"></span> Home
+                </a>
+              </li>
+            
+            <li class="nav-item no-hover">
+             <a  id="" href="/support/tickets/new" class="btn fw-secondary-button"
+
+>Submit a ticket</a>
+            </li>
+          </ul>
+          <ul class="navbar-nav flex-row align-items-center ps-8 fw-nav-dropdown-wrapper">
+            
+
+    <li class="nav-item no-hover fw-login">
+      <a  id="" href="/support/login" class="nav-link pe-8"
+
+>Login</a>
+    </li>
+    
+      <li class="nav-item no-hover fw-signup">
+        <a  id="" href="/support/signup" class="nav-link fw-border-start ps-8"
+
+>Sign up</a>
+      </li>
+    
+
+
+            <li class="nav-item dropdown no-hover ms-auto">
+             
+            </li>
+          </ul>
+        </div>
+      </nav>
+    </section>
+    <div class="nav-overlay d-none"></div>
+  
+</header>
+
+
+
+<main class="fw-main-wrapper" id="fw-main-content">
+    <section class="fw-sticky fw-searchbar-wrapper">
+    <div class="container">
+      <div class="row align-items-center py-8">
+        <div class="col-md-6">
+          <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        
+          
+            
+              <li class="breadcrumb-item"><a href="/support/home">Home</a></li>
+            
+          
+            
+              <li class="breadcrumb-item breadcrumb-active-item d-lg-none" aria-current="page">Submit a ticket</li>
+            
+          
+        
+    </ol>
+</nav>
+
+        </div>
+        <div class="col-md-4 ms-auto">
+          <!---->
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="container-fluid px-0 fw-page-title-wrapper">
+    <div class="container">
+      <div class="py-24 py-lg-60 mx-0 fw-search-meta-info g-0">
+        <div class="text-start">
+          <h1 class="fw-page-title">Submit a ticket</h1>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="container-fluid pt-32 pb-60">
+      <div class="container px-0">
+         <div class="alert alert-with-close notice hide" id="noticeajax"></div> 
+        <div class="row fw-wrapper-shadow fw-new-ticket-wrapper mx-0 g-0 bg-light">
+          <div class="col-lg-9 fw-content-wrapper mb-16 mb-lg-0">
+            <div class="fw-content fw-new-ticket">
+              <h1>What can we help you with?</h1>
+                <div class='fw-helpdesk-ticket-forms-dropdown-container  '>
+      <h2 class="heading">Select issue type</h2>
+      <form autocomplete="off">
+      
+  <div class="form-group  ">
+    <label for="helpdesk_ticket_forms_dropdown" class=" form-label">
+    	
+	  	
+      
+    </label>
+
+    
+	  
+
+    <select
+    	class="form-control choices helpdesk-ticket-forms-dropdown"
+    	id="helpdesk_ticket_forms_dropdown"
+    	name="helpdesk_ticket_forms_dropdown"
+      
+    	
+     	
+     	
+    >
+
+    
+
+    
+       
+          <option  data-custom-properties='{"id": ""}' disabled  hidden value="">
+            Choose...
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000036209"}'value="custom_payment_request">
+            Custom Payment Request
+          </option>
+       
+          <option  selected  data-custom-properties='{"id": "158000036244"}'value="gps_control_deviation">
+            GPS Control Deviation
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000036246"}'value="mas_trips_app_issue">
+            MAS Trips App Issue
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000036248"}'value="vehicle,_driver,_or_tpp">
+            Vehicle, Driver, or TPP
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000043210"}'value="zip_code_block">
+            Zip Code Block
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000047848"}'value="other_issue_or_question">
+            Other Issue or Question
+          </option>
+       
+    
+
+    </select>
+
+    
+    
+    <div class="invalid-feedback helpdesk_ticket_forms_dropdown" id="helpdesk_ticket_forms_dropdown-error-message"></div>
+  </div>
+  
+
+      </form>
+    </div>
+
+    <script type="text/javascript" nonce="/Qpk6+PuHBS43DcBV1fLmw==">
+      var ticketFormsDropdown = document.getElementById('helpdesk_ticket_forms_dropdown');
+
+      ticketFormsDropdown.addEventListener('change', function (ev) {
+        var searchParams = new URLSearchParams(window.location.search);
+        if (ev.target.value) {
+          searchParams.set('ticket_form', ev.target.value);
+        } else {
+          searchParams.delete('ticket_form');
+        }
+        window.location.search = searchParams.toString();
+      });
+
+      if(!ticketFormsDropdown.value) {
+        var [container] = document.getElementsByClassName('c-wrapper');
+        container && container.classList.add('no-form-selected');
+      }
+    </script>
+
+
+
+
+
+  <form class="form-portal ticket-form w-100" id="new_helpdesk_ticket" rel="validate" novalidate="novalidate" enctype="multipart/form-data" action="/support/tickets" accept-charset="UTF-8" method="post"><input name="utf8" type="hidden" value="&#x2713;" autocomplete="off" /><input type="hidden" name="authenticity_token" value="yYxhmFbz4eVLA03q2aQm+23N3MIhTEnNV5SApwaoo3VHTeex2hfKQlDAf8X4eENWCHJAlBLnKFalsyHPVYibMA==" autocomplete="off" />
+    
+
+
+
+            <div class="form-group ">
+	
+		<label for="helpdesk_ticket_subject" class=" form-label">
+			Subject
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+	
+
+	
+	
+
+	
+
+	<input
+  	type="text"
+  	class="form-control "
+  	id="helpdesk_ticket_subject"
+		placeholder=""
+  	name="helpdesk_ticket[subject]"
+		
+  	required
+	
+		
+    	aria-describedby = "helpdesk_ticket_subject-error-message"
+  	
+    	data-allow-solution-suggester = "false"
+  	
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback helpdesk_ticket_subject" id="helpdesk_ticket_subject-error-message"></div>
+</div>
+
+
+
+        <div class="form-group helpdesk_ticket_email">
+	
+		<label for="helpdesk_ticket_email" class=" form-label">
+			Requester Email Address
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+	
+
+	
+	
+
+	
+
+	<input
+  	type="email"
+  	class="form-control "
+  	id="helpdesk_ticket_email"
+		placeholder=""
+  	name="helpdesk_ticket[email]"
+		value=""
+  	required
+	
+		
+    	data-user-email = ""
+  	
+    	data-user-contractor = "false"
+  	
+    	data-not-allow-others = "false"
+  	
+    	aria-describedby = "helpdesk_ticket_email-error-message"
+  	
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback helpdesk_ticket_email" id="helpdesk_ticket_email-error-message"></div>
+</div>
+
+
+<div class="form-group d-none requester-name">
+	
+
+	
+	
+
+	
+
+	<input
+  	type="text"
+  	class="form-control "
+  	id=""
+		placeholder="Your name"
+  	name="helpdesk_ticket[name]"
+		
+  	
+	
+		
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback " id="-error-message"></div>
+</div>
+
+
+
+
+
+
+            <div class="form-group ">
+	
+		<label for="helpdesk_ticket_custom_field_cf_tp_name_4128361" class=" form-label">
+			Transportation Provider Name
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+	
+
+	
+	
+
+	
+
+	<input
+  	type="text"
+  	class="form-control "
+  	id="helpdesk_ticket_custom_field_cf_tp_name_4128361"
+		placeholder=""
+  	name="helpdesk_ticket[custom_field][cf_tp_name_4128361]"
+		
+  	required
+	
+		
+    	aria-describedby = "helpdesk_ticket_custom_field_cf_tp_name_4128361-error-message"
+  	
+    	 = ""
+  	
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback helpdesk_ticket_custom_field_cf_tp_name_4128361" id="helpdesk_ticket_custom_field_cf_tp_name_4128361-error-message"></div>
+</div>
+
+
+
+            <div class="form-group ">
+	
+		<label for="helpdesk_ticket_custom_field_cf_phone_number_4128361" class=" form-label">
+			Phone Number
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+	
+
+	
+	
+
+	
+
+	<input
+  	type="text"
+  	class="form-control "
+  	id="helpdesk_ticket_custom_field_cf_phone_number_4128361"
+		placeholder=""
+  	name="helpdesk_ticket[custom_field][cf_phone_number_4128361]"
+		
+  	required
+	
+		
+    	aria-describedby = "helpdesk_ticket_custom_field_cf_phone_number_4128361-error-message"
+  	
+    	 = ""
+  	
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback helpdesk_ticket_custom_field_cf_phone_number_4128361" id="helpdesk_ticket_custom_field_cf_phone_number_4128361-error-message"></div>
+</div>
+
+
+
+            <div class="form-group ">
+	
+		<label for="helpdesk_ticket_custom_field_cf_invoice_number_4128361" class=" form-label">
+			Invoice Number (note: only ONE invoice per ticket)
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+	
+
+	
+	
+
+	
+
+	<input
+  	type="text"
+  	class="form-control "
+  	id="helpdesk_ticket_custom_field_cf_invoice_number_4128361"
+		placeholder=""
+  	name="helpdesk_ticket[custom_field][cf_invoice_number_4128361]"
+		
+  	required
+	
+		
+    	aria-describedby = "helpdesk_ticket_custom_field_cf_invoice_number_4128361-error-message"
+  	
+    	 = ""
+  	
+  >
+
+   	
+
+	
+
+  <div class="invalid-feedback helpdesk_ticket_custom_field_cf_invoice_number_4128361" id="helpdesk_ticket_custom_field_cf_invoice_number_4128361-error-message"></div>
+</div>
+
+
+
+        
+  <div class="form-group  helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361">
+    <label for="helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361" class=" form-label">
+    	Are the GPS Breadcrumbs available and unaltered for the trip?
+	  	
+	  		<span class="fw-asterisk">*</span>
+	  	
+      
+    </label>
+
+    
+	  
+
+    <select
+    	class="form-control new_ticket_dynamic_sections choices"
+    	id="helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361"
+    	name="helpdesk_ticket[custom_field][cf_gps_breadcrumbs_available_4128361]"
+      
+      	data-placeholder = ''
+    	
+      	aria-describedby = 'helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361-error-message'
+    	
+    	required
+     	
+     	
+    >
+
+    
+      <option value>Choose...</option>
+    
+
+    
+       
+          <option  data-custom-properties='{"id": "158000061141"}'value="Yes">
+            Yes
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000061142"}'value="No">
+            No
+          </option>
+       
+          <option  data-custom-properties='{"id": "158000061143"}'value="Unknown">
+            Unknown
+          </option>
+       
+    
+
+    </select>
+
+    
+    
+    <div class="invalid-feedback helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361" id="helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361-error-message"></div>
+  </div>
+  
+   <div class="helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361_section_wrapper">
+   </div>
+ 
+
+
+
+
+        <div class="form-group ">
+  
+		<label for="helpdesk_ticket_ticket_body_attributes_description_html" class="form-label">
+			Brief description of the issue and why you believe this is not a true deviation
+			
+				<span class="fw-asterisk">*</span>
+			
+			
+		</label>
+  
+
+  <textarea
+  	class="form-control rich-editor new-ticket-editor"
+  	id="helpdesk_ticket_ticket_body_attributes_description_html"
+  	name="helpdesk_ticket[ticket_body_attributes][description_html]"
+    rows=""
+    cols=""
+  	required
+  	
+		placeholder=""
+    
+    	aria-label = "Description, Use Alt+F10 to access formatting toolbar"
+  	
+    	aria-describedby = "helpdesk_ticket_ticket_body_attributes_description_html-error-message"
+  	
+  ></textarea>
+
+  <div class="invalid-feedback helpdesk_ticket_ticket_body_attributes_description_html" id="helpdesk_ticket_ticket_body_attributes_description_html-error-message"></div>
+</div>
+
+
+    <div class='form-group attachments-container'>
+    <span class='d-none'>
+        <input id='upload_file' type='file' multiple='true'/>
+        <input id='files_list' type='file' name='helpdesk_ticket[attachments][][resource]' multiple='true'/>
+    </span>
+    <div class="dropdown">
+        <button class="btn btn-link " type="button" id="attach_btn" aria-label="Attachment"  data-attach-type="file"  >
+            <span class='file-upload-btn' aria-hidden="true">
+                <img data-src="/glyphs/vectors/attachment.svg" loading="lazy" alt="Attachment" class="lazyload icon" />
+                Attachment
+            </span>
+        </button>
+        <ul class="dropdown-menu" aria-labelledby="attach_btn">
+            <li><a class="dropdown-item" href="#" data-attach-type="file">Attach a file</a></li>
+            
+        </ul>
+    </div>
+    <div id='attachments_list' class='files-container'></div>
+    <div>
+      <div id='cumulative_error_heading' class='error-heading'></div>
+      <div id='cumulative_error_attachments_list' class='files-container'></div>
+    </div>
+    <div>
+      <div id='individual_error_heading' class='error-heading'></div>
+      <div id='individual_error_attachments_list' class='files-container'></div>
+    </div>
+</div>
+
+      <div class="form-group">
+        <div class="controls recaptcha-control">
+              <script src="https://www.recaptcha.net/recaptcha/enterprise.js" async defer  nonce='/Qpk6+PuHBS43DcBV1fLmw=='></script>
+<div data-sitekey="6LdvejUUAAAAAEn6wjOFcPVRyQr4KtAJ03ltA1SQ" class="g-recaptcha " display="{:theme=>"white"}"></div>
+          <noscript>
+            <div>
+              <div style="width: 302px; height: 422px; position: relative;">
+                <div style="width: 302px; height: 422px; position: absolute;">
+                  <iframe
+                    src="https://www.recaptcha.net/recaptcha/enterprise/fallback?k=6LdvejUUAAAAAEn6wjOFcPVRyQr4KtAJ03ltA1SQ"
+                    name="ReCAPTCHA"
+                    style="width: 302px; height: 422px; border-style: none; border: 0; overflow: hidden;">
+                  </iframe>
+                </div>
+              </div>
+              <div style="width: 300px; height: 60px; border-style: none;
+                bottom: 12px; left: 25px; margin: 0px; padding: 0px; right: 25px;
+                background: #f9f9f9; border: 1px solid #c1c1c1; border-radius: 3px;">
+                <textarea id="g-recaptcha-response" name="g-recaptcha-response"
+                  class="g-recaptcha-response"
+                  style="width: 250px; height: 40px; border: 1px solid #c1c1c1;
+                  margin: 10px 25px; padding: 0px; resize: none;">
+                </textarea>
+              </div>
+            </div>
+          </noscript>
+
+
+        </div>
+      </div>
+
+    <input type="hidden" name="meta[user_agent]" id="meta_user_agent" value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0" autocomplete="off" />
+    <input type="hidden" name="meta[seen_articles]" id="meta_seen_articles" autocomplete="off" />
+    <input type="hidden" name="meta[enterprise_enabled]" id="meta_enterprise_enabled" value="false" autocomplete="off" />    <input type="hidden" name="meta[referrer]" id="meta_referrer" value="https://tpissues.medanswering.com/support/tickets/new" autocomplete="off" />
+      <input type="hidden" name="helpdesk_ticket[form_id]" id="helpdesk_ticket_form_id" value="158000036244" autocomplete="off" />
+
+      <a  id="" href="/support/home" class="btn fw-secondary-button"
+
+>Cancel</a>
+      <button
+  type="submit"
+  class="btn fw-primary-button new-ticket-submit-button"
+  
+  
+  
+    data-recaptcha-enterprise = "false"
+  
+    data-submit-text = "Please Wait..."
+  
+  >
+
+  Submit
+  </button>
+</form>
+            </div>
+          </div>
+          <div class="col-lg-3 fw-sidebar-wrapper d-none">
+            <section class="bg-grey fw-sidebar" data-toggle="true">
+  <section class="mb-20 d-none">
+    <h2 class="mb-12 fs-20 semi-bold">Related articles</h2>
+    <ul class="fw-no-bullet suggestions-results"></ul>
+  </section>
+
+  <section class="apps d-flex flex-column" id="portal_tickets_new_sidebar"></section>
+</section>
+          </div>
+        </div>
+      </div>
+  </section>
+
+<div class="modal fade" id="codeInsertModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="codeInsertModal" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content p-32">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="staticBackdropLabel">Code Snippet</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Select Language</label>
+          <select class="form-select choices" aria-label="Select Language" id="codeLanguage">
+            
+              <option value="Html">Html</option>
+            
+              <option value=" Css"> Css</option>
+            
+              <option value=" JavaScript"> JavaScript</option>
+            
+              <option value=" Sass"> Sass</option>
+            
+              <option value=" Xml"> Xml</option>
+            
+              <option value=" Ruby"> Ruby</option>
+            
+              <option value=" PHP"> PHP</option>
+            
+              <option value=" Java"> Java</option>
+            
+              <option value=" C#"> C#</option>
+            
+              <option value=" C++"> C++</option>
+            
+              <option value=" ObjectiveC"> ObjectiveC</option>
+            
+              <option value=" Perl"> Perl</option>
+            
+              <option value=" Python"> Python</option>
+            
+              <option value=" VB"> VB</option>
+            
+              <option value=" SQL"> SQL</option>
+            
+              <option value=" Generic Language"> Generic Language</option>
+            
+          </select>
+        </div>
+        <div class="form-group">
+          <textarea class="form-control" id="codeSnippet" placeholder="Enter code here" rows="15"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="insertCode">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+<script type="text/javascript">
+jQuery(document).ready(function(){
+   jQuery('#helpdesk_ticket_custom_field_cf_enrollee_last_name_4128361').after("<br><b>Which reason or justification most closely describes the basis for your custom payment request? (Select all that apply)</b>");
+   jQuery('#helpdesk_ticket_custom_field_cf_payment_amount_total_4128361').after("<br><b>Itemized</b>");
+});
+</script>
+
+</main>
+
+
+ <footer class="container-fluid px-0">
+   <section class="fw-contact-info">
+     <p class="fw-contacts">
+       
+     </p>
+   </section>
+   <section class="fw-credit">
+     <nav class="fw-laws">
+        
+        
+        
+        
+     </nav>
+   </section>
+ </footer>
+
+
+  
+
+  <div class="modal-backdrop fade d-none" id="overlay"></div>
+
+  <script src="/assets/cdn/portal/scripts/bottom.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+  <script src="/assets/cdn/portal/scripts/locales/en.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+    <script src="/assets/cdn/portal/scripts/new-tickets.js" nonce="/Qpk6+PuHBS43DcBV1fLmw=="></script>
+
+    <script src="/assets/cdn/portal/scripts/marketplace.js" nonce="/Qpk6+PuHBS43DcBV1fLmw==" async></script>
+
+
+  <script src="/assets/cdn/portal/scripts/integrations.js"  nonce="/Qpk6+PuHBS43DcBV1fLmw==" async></script>
+  
+
+
+
+    <script src="/assets/cdn/portal/scripts/preview-interactions.js" nonce="/Qpk6+PuHBS43DcBV1fLmw==" async></script>
+
+
+</body>
+
+</html>

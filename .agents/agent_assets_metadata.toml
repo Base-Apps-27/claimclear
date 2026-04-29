@@ -17,3 +17,15 @@ id = "LUAPjRlLhdXLKtcjK2H_R"
 uri = "file://attached_assets/gps_control_deviation_dry_run.png"
 type = "image"
 title = "MAS portal dry run — GPS Control Deviation form (filled, not submitted)"
+
+[[outputs]]
+id = "s5DQGyL6IA73zzy4OF8v4"
+uri = "file://attached_assets/dry_run_gps_form.png"
+type = "image"
+title = "MAS portal dry run — GPS Control Deviation form (filled)"
+
+[[outputs]]
+id = "E7V47qraKy2YNsuJEfh5U"
+uri = "file://attached_assets/dry_run_other_form.png"
+type = "image"
+title = "MAS portal dry run — Other Issue or Question form (filled, same submission)"
