@@ -835,7 +835,10 @@ async function processSequentially(job: BatchJob): Promise<void> {
       total: job.total,
       message,
     });
-    setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000);
+    // .unref() so this 24h cleanup timer never blocks process shutdown
+    // (graceful exits, tests). Losing the cleanup on early exit is fine
+    // because the in-memory map dies with the process anyway.
+    setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000).unref();
     return;
   }
 
@@ -860,13 +863,31 @@ async function processSequentially(job: BatchJob): Promise<void> {
     total: job.total,
   });
 
-  setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000);
+  // .unref() so this 24h cleanup timer never blocks process shutdown
+  // (graceful exits, tests). Losing the cleanup on early exit is fine
+  // because the in-memory map dies with the process anyway.
+  setTimeout(() => activeBatches.delete(job.id), 24 * 60 * 60 * 1000).unref();
+}
+
+// Test seam. When set, processViaExternalBot uses this function instead of
+// dynamically importing runBatchWorker. Production code never sets this;
+// only the runtime integration tests in __tests__/ assign it (via
+// __setBatchWorkerForTests) so they can drive the batch loop without
+// launching real Playwright. Cleared via __setBatchWorkerForTests(null).
+let __batchWorkerOverride:
+  | typeof import("../bot/batch-worker").runBatchWorker
+  | null = null;
+export function __setBatchWorkerForTests(
+  fn: typeof __batchWorkerOverride,
+): void {
+  __batchWorkerOverride = fn;
 }
 
 async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
 ): Promise<void> {
-  const { runBatchWorker } = await import("../bot/batch-worker");
+  const runBatchWorker = __batchWorkerOverride
+    ?? (await import("../bot/batch-worker")).runBatchWorker;
   const defaults = await getPortalDefaults();
 
   const issueType = sub.issueType || "Other Issue or Question";
