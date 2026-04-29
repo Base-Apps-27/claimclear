@@ -83,6 +83,24 @@
 
   --app-font-sans: 'Inter', sans-serif;
   --radius: 0.5rem;
+
+  --cc-blue-bg: 214 100% 96%;
+  --cc-blue-border: 214 95% 85%;
+  --cc-blue-fg: 221 83% 38%;
+  --cc-purple-bg: 270 95% 96%;
+  --cc-purple-border: 269 80% 85%;
+  --cc-purple-fg: 272 60% 38%;
+  --cc-amber-bg: 48 96% 95%;
+  --cc-amber-border: 45 93% 80%;
+  --cc-amber-fg: 28 78% 38%;
+  --cc-green-bg: 141 78% 95%;
+  --cc-green-border: 142 70% 80%;
+  --cc-green-fg: 142 71% 30%;
+  --cc-red-bg: 0 93% 96%;
+  --cc-red-border: 0 90% 85%;
+  --cc-red-fg: 0 74% 42%;
+  --cc-success: 142 71% 38%;
+  --cc-warning: 38 92% 50%;
 }
 
 .dark {
@@ -116,6 +134,24 @@
   --sidebar-accent: 221 45% 18%;
   --sidebar-accent-foreground: 210 30% 95%;
   --sidebar-ring: 12 79% 57%;
+
+  --cc-blue-bg: 219 60% 16%;
+  --cc-blue-border: 219 60% 26%;
+  --cc-blue-fg: 219 90% 75%;
+  --cc-purple-bg: 271 50% 18%;
+  --cc-purple-border: 271 50% 28%;
+  --cc-purple-fg: 271 90% 78%;
+  --cc-amber-bg: 38 60% 16%;
+  --cc-amber-border: 38 60% 26%;
+  --cc-amber-fg: 38 95% 70%;
+  --cc-green-bg: 142 50% 12%;
+  --cc-green-border: 142 50% 22%;
+  --cc-green-fg: 142 70% 65%;
+  --cc-red-bg: 0 50% 15%;
+  --cc-red-border: 0 50% 25%;
+  --cc-red-fg: 0 80% 72%;
+  --cc-success: 142 60% 50%;
+  --cc-warning: 38 92% 60%;
 }
 
 @layer base {
