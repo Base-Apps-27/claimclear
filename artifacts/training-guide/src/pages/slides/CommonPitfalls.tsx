@@ -2,34 +2,34 @@ import { SlideShell } from "@/components/slide-ui";
 
 const PITFALLS = [
   {
-    bad: "Sending a dispute with no evidence attached",
-    why: "MAS denies these almost every time. The bot will submit anyway because you told it to.",
-    fix: "If you can't get the file, place On Hold with a note. Better to wait one day than to burn your one good shot at the dispute.",
+    bad: "Bypassing the Quality Check warnings before submit",
+    why: "The Lint Gate blocks hard errors but lets you push past warnings. Ignored warnings (missing GPS, weak attestation) are the #1 reason payors deny.",
+    fix: "Treat warnings as a checklist. Fix what you can in 2 minutes, or place On Hold with a note. Better to wait one day than burn your one good shot.",
   },
   {
     bad: "Re-submitting the same claim twice",
-    why: "Counts as two filings against your account. MAS notices and gets stricter.",
+    why: "Counts as two filings against your account. The payor notices and gets stricter.",
     fix: "Use Re-dispute (after a denial) or post a Note. Never Send to Portal a second time on a claim that's still Awaiting.",
   },
   {
-    bad: "Triaging Non-Issue without checking",
-    why: "Non-Issue closes the group at $0. If it was actually a real denial, you just gave up the money.",
-    fix: "When in doubt, Issue Found. You can change your mind from the group page later — you can't un-resolve a Non-Issue easily.",
+    bad: "Withdrawing claims you could have fought",
+    why: "Withdrawn (accepted_loss / not_contestable / non_issue) closes at $0 and counts against your team. The Closure Breakdown on the dashboard makes the trend visible.",
+    fix: "When in doubt, Re-dispute or place On Hold and ask. You can't easily un-withdraw, and a high Withdrawn % is the first thing supervisors look at.",
   },
   {
-    bad: "Editing a claim while a teammate is on it",
-    why: "Last save wins. You'll overwrite their work without knowing.",
-    fix: "Watch for the human-presence banner at the top of the claim. If you see another name, message them or come back later.",
+    bad: "Editing a claim while a bot is working it",
+    why: "The Bot Presence banner means the bot is actively typing into the payor portal. Saving over its data mid-run causes failed submissions.",
+    fix: "Wait for the banner to clear (usually <2 min) before editing. If urgent, click Cancel Run on Portal Submissions first.",
   },
   {
     bad: "Ignoring the AI dispute letter before submit",
     why: "The AI sometimes references evidence you didn't actually attach, or quotes the wrong amount.",
-    fix: "Always open the letter, scan it once, click Regenerate if you changed evidence or error type after it was first written.",
+    fix: "Always open the letter, scan it once. Click Generate Preview (Dry Run) to see exactly what the bot will type, then Regenerate if anything's off.",
   },
   {
     bad: "Letting Awaiting Response pile up past 14 days",
-    why: "MAS rarely volunteers responses. Stale items just rot.",
-    fix: "Sort Awaiting by 'days waiting'. Anything >14 days, post a Note flagging your supervisor — they'll know who to call.",
+    why: "Payors rarely volunteer responses. Stale items just rot.",
+    fix: "Sort Awaiting by 'days waiting'. Anything >14 days, open the Email Thread and reply directly, or post a Note flagging your supervisor.",
   },
 ];
 

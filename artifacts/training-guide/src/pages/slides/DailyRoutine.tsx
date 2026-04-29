@@ -3,11 +3,12 @@ import { SlideShell } from "@/components/slide-ui";
 const ROUTINE = [
   {
     time: "9:00",
-    page: "Dashboard",
+    page: "Command Center",
     tasks: [
       "Scan the 4 KPI cards: any number jump out?",
       "Open Expiring Soon — note any ≤7 day items",
-      "Check Bot Health — bots online, success rate >90%?",
+      "Check Bot Health + System Health — bots online, queues clear?",
+      "Glance at Closure Breakdown — Withdrawn % rising?",
     ],
   },
   {
@@ -25,7 +26,7 @@ const ROUTINE = [
     tasks: [
       "Sort by days-left, work red first",
       "Run the workflow, edit data, attach evidence",
-      "Read the AI dispute letter, then Send to Portal",
+      "Pass the Quality Check (Lint Gate), then Send to Portal",
     ],
   },
   {
@@ -41,8 +42,8 @@ const ROUTINE = [
     time: "3:00",
     page: "Work Queue · Awaiting + Action Required",
     tasks: [
-      "Re-check Action Required for new MAS responses",
-      "Handle each: Accept Loss, Submit New Invoice, or Re-dispute",
+      "Re-check Action Required for new payor responses (Email Thread)",
+      "Handle each: Accept Loss (Withdrawn), Submit New Invoice, or Re-dispute",
       "Add a note on anything you couldn't finish",
     ],
   },

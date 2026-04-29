@@ -5,8 +5,8 @@ export default function DashboardCheckIn() {
     <SlideShell
       step={19}
       totalSteps={22}
-      title="The Dashboard: Your Morning Check-In"
-      subtitle="Start every day here. The dashboard tells you what's urgent, what's pending, and how the bots are doing."
+      title="The Command Center: Your Morning Check-In"
+      subtitle="Start every day on the Dashboard. The Command Center tells you what's urgent, what's pending, and how the bots are doing."
     >
       <div style={{ flex: 1.6 }}>
         <Browser url="/dashboard">
@@ -14,13 +14,13 @@ export default function DashboardCheckIn() {
             <AppSidebar active="dashboard" />
             <div className="flex-1 bg-bg" style={{ padding: "1.2vh 1vw" }}>
               <p className="font-display text-primary font-bold" style={{ fontSize: "1.3vw" }}>Good morning, Maria</p>
-              <p className="font-body text-muted" style={{ fontSize: "0.8vw" }}>Here's where things stand right now</p>
+              <p className="font-body text-muted" style={{ fontSize: "0.8vw" }}>Command Center · here's where things stand right now</p>
 
               <div className="grid grid-cols-4 gap-[0.7vw]" style={{ marginTop: "1.2vh" }}>
                 {[
                   { l: "Needs Evidence", v: "12", h: "Action you owe", c: "text-orange" },
-                  { l: "Awaiting Response", v: "18", h: "MAS owes you", c: "text-[#6D28D9]" },
-                  { l: "Total Exposure", v: "$4.2K", h: "At risk this month", c: "text-primary" },
+                  { l: "Awaiting Response", v: "18", h: "Payor owes you", c: "text-[#6D28D9]" },
+                  { l: "Total Exposure", v: "$4.2K", h: "Claim + ~70% vendor prepay", c: "text-primary" },
                   { l: "Recovered MTD", v: "$1.8K", h: "+34% vs last month", c: "text-[#16A34A]" },
                 ].map((s) => (
                   <div key={s.l} className="bg-white rounded-[0.5vw] border border-primary/10" style={{ padding: "1vh 0.9vw" }}>
@@ -67,15 +67,32 @@ export default function DashboardCheckIn() {
                   </div>
                 </div>
               </div>
+
+              <div className="bg-white rounded-[0.5vw] border border-primary/10" style={{ padding: "1vh 0.9vw", marginTop: "0.8vh" }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: "0.6vh" }}>
+                  <p className="font-display text-primary font-bold" style={{ fontSize: "0.9vw" }}>Closure Breakdown — last 30 days</p>
+                  <span className="font-body text-muted" style={{ fontSize: "0.65vw" }}>148 closed</span>
+                </div>
+                <div className="flex h-[1vh] rounded-full overflow-hidden bg-primary/10" style={{ marginBottom: "0.5vh" }}>
+                  <div className="bg-[#16A34A]" style={{ width: "62%" }} />
+                  <div className="bg-[#DC2626]" style={{ width: "26%" }} />
+                  <div className="bg-[#9CA3AF]" style={{ width: "12%" }} />
+                </div>
+                <div className="grid grid-cols-3 gap-[0.5vw] font-body" style={{ fontSize: "0.7vw" }}>
+                  <span className="text-[#065F46]"><span className="font-display font-bold">62%</span> Resolved</span>
+                  <span className="text-[#991B1B]"><span className="font-display font-bold">26%</span> Denied (payor)</span>
+                  <span className="text-muted"><span className="font-display font-bold">12%</span> Withdrawn (us)</span>
+                </div>
+              </div>
             </div>
           </div>
         </Browser>
       </div>
       <div className="flex flex-col gap-[1vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="The 4 numbers tell your day" body="Needs Evidence is your to-do count. Awaiting is what you're waiting on. Exposure and Recovered tell you the dollars at stake." />
-        <Callout number="2" title="Expiring Soon = drop everything" body="Anything ≤7 days is in red. These are claims that will time out and become unrecoverable if you don't act today." color="orange" />
-        <Callout number="3" title="Check Bot Health" body="If bots are offline or success rate is dropping, ping a supervisor before piling more work into the portal queue." color="primary" />
-        <Callout number="4" title="Click any number to drill in" body="The stat cards are clickable — they take you to the matching filter on All Claims or Work Queue." />
+        <Callout number="1" title="The 4 numbers tell your day" body="Needs Evidence is your to-do count. Awaiting is what the payor owes you. Exposure (claim + ~70% vendor prepay) and Recovered tell you the dollars at stake." />
+        <Callout number="2" title="Expiring Soon = drop everything" body="Anything ≤7 business days is in red (weekends count as Friday). These claims will time out and become unrecoverable if you don't act today." color="orange" />
+        <Callout number="3" title="Closure Breakdown shows your win/loss split" body="Resolved (green) is recovered. Denied is the payor saying no. Withdrawn is when WE close it. Watch the Withdrawn slice — if it grows, we're giving up money we could have fought for." />
+        <Callout number="4" title="Bot Health + click-through" body="If bots are offline or success rate drops, ping a supervisor before piling more into the queue. Stat cards are clickable — they jump to the matching filter on Work Queue or All Claims." color="primary" />
       </div>
     </SlideShell>
   );

@@ -3,7 +3,7 @@ import { AppSidebar, Browser, Callout, SlideShell, StatusPill } from "@/componen
 const RIDES = [
   { conf: "CC-2026-04-1138", date: "04/14", amt: "$68.50", status: "Awaiting Response", kind: "violet" as const },
   { conf: "CC-2026-04-1139", date: "04/14", amt: "$72.00", status: "Awaiting Response", kind: "violet" as const },
-  { conf: "CC-2026-04-1140", date: "04/14", amt: "$54.25", status: "Needs Evidence", kind: "orange" as const },
+  { conf: "CC-2026-04-1140", date: "04/14", amt: "$54.25", status: "On Hold", kind: "muted" as const, held: true },
   { conf: "CC-2026-04-1141", date: "04/14", amt: "$91.00", status: "Needs Evidence", kind: "orange" as const },
 ];
 
@@ -25,11 +25,12 @@ export default function InvoiceGroupDetail() {
                   <div className="flex items-center gap-[0.6vw]">
                     <p className="font-mono font-bold text-primary" style={{ fontSize: "1.3vw" }}>INV-89384</p>
                     <StatusPill label="In Progress" kind="violet" size="md" />
+                    <StatusPill label="Partial" kind="amber" size="md" />
                   </div>
-                  <p className="font-body text-muted" style={{ fontSize: "0.8vw", marginTop: "0.3vh" }}>4 rides · $285.75 · GPS Out of Range · 6 days remaining</p>
+                  <p className="font-body text-muted" style={{ fontSize: "0.8vw", marginTop: "0.3vh" }}>4 rides · $285.75 · GPS Out of Range · 6 days remaining · 1 leg held</p>
                 </div>
                 <div className="flex gap-[0.5vw]">
-                  <button className="bg-white border border-primary/20 text-primary font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.5vh 0.8vw", fontSize: "0.78vw" }}>Place On Hold</button>
+                  <button className="bg-white border border-primary/20 text-primary font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.5vh 0.8vw", fontSize: "0.78vw" }}>Place Group On Hold</button>
                   <button className="bg-accent text-white font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.5vh 0.8vw", fontSize: "0.78vw" }}>Run Group Workflow</button>
                 </div>
               </div>
@@ -43,10 +44,13 @@ export default function InvoiceGroupDetail() {
                 </div>
                 {RIDES.map((r) => (
                   <div key={r.conf} className="grid grid-cols-12 gap-[0.4vw] border-b border-primary/5 items-center" style={{ padding: "0.6vh 0" }}>
-                    <div className="col-span-4 font-mono text-accent font-semibold" style={{ fontSize: "0.78vw" }}>{r.conf}</div>
+                    <div className="col-span-3 font-mono text-accent font-semibold" style={{ fontSize: "0.78vw" }}>{r.conf}</div>
                     <div className="col-span-2 font-body text-primary" style={{ fontSize: "0.78vw" }}>{r.date}</div>
                     <div className="col-span-2 font-display text-primary font-semibold" style={{ fontSize: "0.78vw" }}>{r.amt}</div>
-                    <div className="col-span-4"><StatusPill label={r.status} kind={r.kind} /></div>
+                    <div className="col-span-3"><StatusPill label={r.status} kind={r.kind} /></div>
+                    <div className="col-span-2 text-right">
+                      <span className="font-body font-semibold" style={{ fontSize: "0.7vw", color: r.held ? "#16A34A" : "#6B7A90" }}>{r.held ? "Resume leg" : "Hold leg"}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -61,9 +65,9 @@ export default function InvoiceGroupDetail() {
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
         <Callout number="1" title="One invoice = one workflow run" body="You only run the SOP once for the whole group. Group-level answers and evidence apply to every ride inside." />
-        <Callout number="2" title="Each ride still has its own claim page" body="Click a Conf # to open the claim detail for that ride if you need to fix something specific (different amount, different driver)." color="orange" />
-        <Callout number="3" title="Place On Hold pauses the group" body="Use this when you're waiting on dispatch for evidence that covers all rides. Add a note explaining why and what unblocks it." />
-        <Callout number="4" title="Run Group Workflow processes them together" body="Saves a ton of time vs. doing 4 separate workflow runs. The bot files 4 disputes back-to-back, sharing the same evidence." color="primary" />
+        <Callout number="2" title="Per-leg Hold for one bad ride" body="Click 'Hold leg' on a single row to pause just that ride while the others ship. The group shows a 'Partial' badge so you know not all legs went out together." color="orange" />
+        <Callout number="3" title="Place Group On Hold pauses everything" body="Use this when you're waiting on dispatch for evidence that covers all rides. Add a note explaining why and what unblocks it." />
+        <Callout number="4" title="Run Group Workflow processes them together" body="Saves a ton of time vs. doing 4 separate workflow runs. The bot files disputes back-to-back, sharing the same evidence." color="primary" />
       </div>
     </SlideShell>
   );

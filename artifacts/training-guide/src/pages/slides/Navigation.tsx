@@ -17,7 +17,7 @@ export default function Navigation() {
                 className="font-display text-primary font-bold"
                 style={{ fontSize: "1.5vw" }}
               >
-                Dashboard
+                Command Center
               </p>
               <p
                 className="font-body text-muted"
@@ -68,7 +68,7 @@ export default function Navigation() {
         <Callout
           number="2"
           title="The sidebar is your map"
-          body="Top-to-bottom matches your daily order: Dashboard for context, Review for new uploads, Work Queue to process, Portal Submissions to ship, Summary to measure."
+          body="Top-to-bottom matches your daily order: Dashboard (Command Center) for context, Work Queue to process, Review for new uploads, Portal Submissions to ship, Summary to measure."
           color="orange"
         />
         <Callout
@@ -78,8 +78,8 @@ export default function Navigation() {
         />
         <Callout
           number="4"
-          title="Settings and Error Types are admin tools"
-          body="You'll only need Error Types if a supervisor asks you to add a new SOP. Most days you live in Review, Work Queue, and Portal Submissions."
+          title="Import, Error Types, and System Health are for admins"
+          body="Import handles bulk MAS uploads. Error Types houses the SOP decision trees. System Health (admin only) shows cron jobs and connector probes — most days you live in Work Queue, Review, and Portal Submissions."
           color="primary"
         />
       </div>

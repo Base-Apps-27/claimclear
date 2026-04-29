@@ -6,7 +6,7 @@ export default function AwaitingResponse() {
       step={15}
       totalSteps={22}
       title="What Happens Next: Awaiting Response"
-      subtitle="Once the bot files the dispute, the claim sits in Awaiting Response. Most replies come back from MAS in 7–14 days."
+      subtitle="Once the bot files the dispute, the claim sits in Awaiting Response. Most payor replies come back in 7–14 days via the Email Thread."
     >
       <div style={{ flex: 1.4 }}>
         <Browser url="/queue?tab=awaiting">
@@ -46,10 +46,10 @@ export default function AwaitingResponse() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="No action needed — usually" body="Awaiting means MAS owns the next move. ClaimClear watches for response files automatically and updates the status when one lands." />
-        <Callout number="2" title="Sort by 'Days waiting'" body="Anything red (>14 days) is past the typical reply window. Add a note to follow up with MAS, or escalate." color="orange" />
+        <Callout number="1" title="No action needed — usually" body="Awaiting means the payor owns the next move. ClaimClear watches the Email Thread and Portal Submissions for replies and updates status automatically." />
+        <Callout number="2" title="Sort by 'Days waiting'" body="Anything red (>14 days) is past the typical reply window. Open the Email Thread and reply directly, or escalate." color="orange" />
         <Callout number="3" title="Don't re-submit while waiting" body="Filing the same dispute twice gets you flagged. If you really need to add new evidence, post a Note instead of re-submitting." color="primary" />
-        <Callout number="4" title="When MAS responds…" body="The status auto-changes to Approved or Denied, and the claim re-appears in Action Required so you can close it out." />
+        <Callout number="4" title="When the payor responds…" body="Status auto-changes to Resolved (won) or Denied, and the claim re-appears in Action Required so you can close it or re-dispute." />
       </div>
     </SlideShell>
   );

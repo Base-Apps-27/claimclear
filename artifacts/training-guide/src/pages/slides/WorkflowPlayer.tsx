@@ -40,6 +40,14 @@ export default function WorkflowPlayer() {
                 </div>
                 <span className="font-body text-muted" style={{ fontSize: "0.75vw" }}>1 of 3 answered</span>
               </div>
+
+              <div className="bg-bg rounded-[0.5vw] flex items-center justify-between" style={{ padding: "0.8vh 1vw", marginTop: "1vh" }}>
+                <div>
+                  <p className="font-display text-primary font-semibold" style={{ fontSize: "0.78vw" }}>Quality Check</p>
+                  <p className="font-body text-muted" style={{ fontSize: "0.7vw" }}>2 warnings · 0 fails — review before submitting</p>
+                </div>
+                <span className="bg-[#FEF3C7] text-[#92400E] rounded-full font-body font-semibold" style={{ padding: "0.2vh 0.6vw", fontSize: "0.65vw" }}>2 warn</span>
+              </div>
             </div>
           </div>
         </Browser>
@@ -48,7 +56,7 @@ export default function WorkflowPlayer() {
         <Callout number="1" title="Read the question carefully" body="Each step tells you exactly what to look at — the GPS log, the signature, the auth file. The hint text under each question is your SOP." />
         <Callout number="2" title="Pick the answer that matches reality" body="Don't guess. If you can't tell, pick the 'unknown' branch — it routes the claim to On Hold so you can chase it later." color="orange" />
         <Callout number="3" title="The tree branches based on your answers" body="Different answers lead to different next steps. Sometimes 3 questions, sometimes 1. Just keep going until the tree ends." />
-        <Callout number="4" title="The final step decides the outcome" body="The tree ends at one of: Send to Portal Dispute, Place On Hold, or Internal Resolution (no MAS dispute needed)." color="primary" />
+        <Callout number="4" title="Quality Check + Lint Gate catch problems before submit" body="Warnings (yellow) are flagged but you can proceed. Fails (red) block submission until you fix them — missing evidence, wrong amount format, expired window." color="primary" />
       </div>
     </SlideShell>
   );

@@ -21,9 +21,12 @@ export default function HandlingResponse() {
               </div>
 
               <div className="bg-[#FEE2E2] rounded-[0.5vw] border border-[#DC2626]/20" style={{ padding: "1.2vh 1.2vw" }}>
-                <div className="flex items-center gap-[0.5vw]" style={{ marginBottom: "0.5vh" }}>
-                  <div className="bg-[#DC2626] rounded-full" style={{ width: "0.5vw", height: "0.5vw" }} />
-                  <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>MAS responded — denied</p>
+                <div className="flex items-center justify-between" style={{ marginBottom: "0.5vh" }}>
+                  <div className="flex items-center gap-[0.5vw]">
+                    <div className="bg-[#DC2626] rounded-full" style={{ width: "0.5vw", height: "0.5vw" }} />
+                    <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Payor reply in Email Thread — denied</p>
+                  </div>
+                  <span className="font-body text-[#991B1B]" style={{ fontSize: "0.7vw" }}>Open thread →</span>
                 </div>
                 <p className="font-body text-[#991B1B]" style={{ fontSize: "0.8vw" }}>"Evidence insufficient. GPS pickup point exceeds tolerance. Trip sheet signature does not match member on file."</p>
               </div>
@@ -32,7 +35,7 @@ export default function HandlingResponse() {
               <div className="grid grid-cols-3 gap-[0.7vw]" style={{ marginTop: "0.8vh" }}>
                 <div className="border border-[#DC2626]/30 bg-[#FEE2E2]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
                   <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Accept as Loss</p>
-                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Close the claim with the denial standing. Trip cost is written off.</p>
+                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Withdraw with reason "accepted_loss". Status → Resolved. Short note required.</p>
                   <button className="bg-[#DC2626] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>Accept Loss</button>
                 </div>
                 <div className="border border-[#16A34A]/30 bg-[#D1FAE5]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
@@ -51,9 +54,9 @@ export default function HandlingResponse() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="Read MAS's exact response" body="The red banner at the top quotes MAS verbatim. Their wording tells you whether it's worth pushing again." />
-        <Callout number="2" title="Accept as Loss when you have nothing more" body="No new evidence, no different angle — accept it. The amount counts toward 'lost' in the Summary report." color="orange" />
-        <Callout number="3" title="Submit New Invoice fixes data problems" body="If MAS denied because of a member-name mismatch and you can re-bill correctly, this is the right call." />
+        <Callout number="1" title="Read the payor's exact response in Email Thread" body="The banner snippets the latest message; click 'Open thread' to see the full back-and-forth and reply directly to the payor." />
+        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = payer_denied. 'Withdrawn' (Accept Loss, not contestable, non-issue) is when WE close it. Either way, a short note is required." color="orange" />
+        <Callout number="3" title="Submit New Invoice fixes data problems" body="If the payor denied because of a member-name mismatch and you can re-bill correctly, this is the right call." />
         <Callout number="4" title="Re-dispute adds firepower" body="Pulled a better GPS log? Got a corrected signature? Re-dispute. Status goes back to Needs Evidence and you run the workflow again." color="primary" />
       </div>
     </SlideShell>

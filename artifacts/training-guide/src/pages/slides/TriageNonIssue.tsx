@@ -21,9 +21,12 @@ export default function TriageNonIssue() {
                 <StatusPill label="Needs Review" kind="amber" size="md" />
               </div>
               <div className="bg-bg rounded-[0.5vw] border border-primary/10" style={{ padding: "1.5vh 1.2vw", marginTop: "2vh" }}>
-                <p className="font-display text-primary font-semibold" style={{ fontSize: "0.95vw", marginBottom: "0.8vh" }}>Reason (required)</p>
+                <div className="flex items-center justify-between" style={{ marginBottom: "0.8vh" }}>
+                  <p className="font-display text-primary font-semibold" style={{ fontSize: "0.95vw" }}>Reason (required)</p>
+                  <span className="font-mono text-muted" style={{ fontSize: "0.7vw" }}>closure_reason: non_issue</span>
+                </div>
                 <div className="bg-white border border-primary/15 rounded-[0.4vw]" style={{ padding: "1vh 0.8vw" }}>
-                  <p className="font-body text-primary" style={{ fontSize: "0.85vw" }}>Already paid by MAS in the prior cycle — confirmed in remittance file 2026-04-12.</p>
+                  <p className="font-body text-primary" style={{ fontSize: "0.85vw" }}>Already paid by payor in the prior cycle — confirmed in remittance file 2026-04-12.</p>
                 </div>
               </div>
               <div className="flex justify-end gap-[0.8vw]" style={{ marginTop: "2vh" }}>
@@ -40,7 +43,7 @@ export default function TriageNonIssue() {
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
         <Callout number="1" title="Click Non-Issue" body='From the triage screen, the green "Non-Issue (Resolve)" button opens the confirm dialog.' color="primary" />
-        <Callout number="2" title="Write a real reason" body="One sentence is fine, but be specific. This becomes part of the audit trail forever." color="orange" />
+        <Callout number="2" title="Write a real reason" body="One sentence is fine, but be specific. It's stamped to the Activity Feed forever as closure_reason: non_issue." color="orange" />
         <Callout number="3" title="Confirm to close at $0" body="All rides in the group flip to Resolved. No money is recorded as recovered or lost." />
         <div className="bg-orange/10 border border-orange/30 rounded-[0.7vw]" style={{ padding: "1vh 1vw" }}>
           <p className="font-display text-orange font-bold" style={{ fontSize: "0.95vw" }}>When in doubt — don't</p>

@@ -2,10 +2,12 @@ import { AppSidebar, Browser, Callout, SlideShell, StatusPill } from "@/componen
 
 const ROWS = [
   { conf: "CC-2026-04-1138", status: "In Progress", kind: "violet" as const, ticket: "MAS-998421", amt: "$68.50" },
-  { conf: "CC-2026-04-1131", status: "Submitted", kind: "violet" as const, ticket: "MAS-998418", amt: "$92.10" },
+  { conf: "CC-2026-04-1131", status: "Submitted", kind: "green" as const, ticket: "MAS-998418", amt: "$92.10" },
   { conf: "CC-2026-04-1124", status: "Failed", kind: "red" as const, ticket: "—", amt: "$54.00" },
-  { conf: "CC-2026-04-1119", status: "Portal Queued", kind: "blue" as const, ticket: "—", amt: "$148.00" },
-  { conf: "CC-2026-04-1112", status: "Submitted", kind: "violet" as const, ticket: "MAS-998403", amt: "$71.25" },
+  { conf: "CC-2026-04-1119", status: "Queued", kind: "blue" as const, ticket: "—", amt: "$148.00" },
+  { conf: "CC-2026-04-1117", status: "Dry Run", kind: "amber" as const, ticket: "preview", amt: "$83.40" },
+  { conf: "CC-2026-04-1115", status: "Pending", kind: "muted" as const, ticket: "—", amt: "$66.00" },
+  { conf: "CC-2026-04-1112", status: "Cancelled", kind: "muted" as const, ticket: "—", amt: "$71.25" },
 ];
 
 export default function BotFleet() {
@@ -69,10 +71,10 @@ export default function BotFleet() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="Live status of every dispute" body="Draft → Pending → In Progress → Submitted (or Failed). The MAS Ticket column fills in once the portal accepts the filing." />
+        <Callout number="1" title="The full status set" body="Draft → Pending → Queued → In Progress → Submitted (or Failed / Cancelled). Dry Run is a preview the bot rendered without actually filing — safe to inspect." />
         <Callout number="2" title="Watch for Failed (red) rows" body="Open them, read the bot error, and decide: edit the data and retry, or escalate to a supervisor." color="orange" />
-        <Callout number="3" title="Process All Pending = release the queue" body="If bots are idle and Portal Queued has items waiting, click this to start a batch. The progress bar shows real-time succeeded/failed counts." color="primary" />
-        <Callout number="4" title="View opens the submission detail" body="See the screenshot, the exact form fields the bot used, and the rendered dispute letter — useful for debugging failures." />
+        <Callout number="3" title="Process All Pending = release the queue" body="If bots are idle and items are Queued, click this to start a batch. The progress bar shows real-time succeeded/failed counts." color="primary" />
+        <Callout number="4" title="View opens the submission detail" body="See the screenshot, the exact form fields the bot used, and the rendered dispute letter. Use Cancel Run if you need to stop a bot mid-flight." />
       </div>
     </SlideShell>
   );

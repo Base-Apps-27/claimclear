@@ -137,14 +137,16 @@ export function Browser({
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "review", label: "Review Queue" },
   { key: "queue", label: "Work Queue" },
+  { key: "review", label: "Review Queue" },
   { key: "groups", label: "Invoice Groups" },
   { key: "claims", label: "All Claims" },
+  { key: "import", label: "Import" },
+  { key: "errors", label: "Error Types" },
   { key: "portal", label: "Portal Submissions" },
   { key: "summary", label: "Summary" },
-  { key: "errors", label: "Error Types" },
   { key: "settings", label: "Settings" },
+  { key: "health", label: "System Health", admin: true },
 ];
 
 export function AppSidebar({ active }: { active: string }) {
@@ -171,14 +173,22 @@ export function AppSidebar({ active }: { active: string }) {
           return (
             <div
               key={it.key}
-              className={`flex items-center ${
+              className={`flex items-center justify-between ${
                 isActive
                   ? "bg-white/10 text-white border-l-2 border-orange"
                   : "text-white/55 border-l-2 border-transparent"
               }`}
-              style={{ padding: "0.65vh 1vw", fontSize: "0.78vw" }}
+              style={{ padding: "0.55vh 1vw", fontSize: "0.75vw" }}
             >
               <span className="font-body">{it.label}</span>
+              {it.admin && (
+                <span
+                  className="font-body text-white/40 uppercase tracking-wider"
+                  style={{ fontSize: "0.55vw" }}
+                >
+                  admin
+                </span>
+              )}
             </div>
           );
         })}

@@ -24,14 +24,14 @@ const STAGES = [
     n: "4",
     label: "Submit",
     where: "Portal Submissions",
-    desc: "Bot files the dispute on the MAS portal for you",
+    desc: "Bot files the dispute on the payor portal (or sends the email) for you",
     color: "bg-[#8B5CF6]",
   },
   {
     n: "5",
     label: "Outcome",
     where: "Claim Detail",
-    desc: "Handle approval, denial, or re-dispute when MAS responds",
+    desc: "Resolved (won), Denied (payor said no), or Withdrawn (we closed it)",
     color: "bg-[#16A34A]",
   },
 ];
@@ -169,9 +169,10 @@ export default function JourneyOverview() {
               className="font-body text-white/70"
               style={{ fontSize: "1.15vw", marginTop: "0.6vh", lineHeight: "1.5" }}
             >
-              Every dispute has a 30-day filing window. Always work the oldest
-              and most-expiring claims first — that's why the Dashboard and
-              Work Queue both surface "Expiring Soon" at the top.
+              Every dispute has a strict filing window (typically 30 business
+              days). Always work the oldest and most-expiring claims first —
+              that's why the Command Center and Work Queue both surface
+              "Expiring Soon" at the top.
             </p>
           </div>
         </div>
