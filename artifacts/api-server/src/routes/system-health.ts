@@ -18,8 +18,7 @@ const router: IRouter = Router();
 
 // Cron job names + their cron expressions, kept in sync with index.ts
 const KNOWN_JOBS: { name: string; cron: string; tz: string }[] = [
-  { name: "midnight_portal_processor", cron: "0 0 * * *", tz: "America/New_York" },
-  { name: "portal_retry_sweeper", cron: "*/5 * * * *", tz: "America/New_York" },
+  { name: "portal_batch_sweeper", cron: "0 */4 * * *", tz: "America/New_York" },
   { name: "daily_brief", cron: "0 7 * * 1-5", tz: "America/New_York" },
   { name: "response_tracker", cron: "*/30 8-18 * * 1-5", tz: "America/New_York" },
   { name: "outlook_heartbeat", cron: "*/15 * * * *", tz: "America/New_York" },
@@ -216,7 +215,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
   // the UI can show "next sweep in 2m" without polling cron internals.
   let nextSweepAt: string | null = null;
   try {
-    const sweeper = KNOWN_JOBS.find((j) => j.name === "portal_retry_sweeper");
+    const sweeper = KNOWN_JOBS.find((j) => j.name === "portal_batch_sweeper");
     if (sweeper) {
       const it = CronExpressionParser.parse(sweeper.cron, { tz: sweeper.tz, currentDate: now });
       nextSweepAt = it.next().toDate().toISOString();

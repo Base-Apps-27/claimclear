@@ -8,16 +8,14 @@ import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { lintDraft, type LintResult } from "../lib/draft-lint";
-import { triggerWorkerRun } from "../lib/batch-processor";
 
-function kickWorkerForQueueing(triggeredBy: string): void {
-  // Fire-and-forget: a queued submission should kick a worker run, but the
-  // HTTP response should not wait for Playwright to finish. The trigger is
-  // gated so multiple kicks coalesce to one in-flight run.
-  triggerWorkerRun({ triggeredBy }).catch((err) => {
-    logger.warn({ err, triggeredBy }, "On-demand worker trigger failed");
-  });
-}
+// NOTE: Confirming a draft, queueing a submission, or retrying a failed
+// submission only moves the row to status="pending". The Playwright worker is
+// no longer kicked here — pending rows are picked up either (a) by an admin
+// clicking "Process Pending" / "Process Selected" on the Portal Submissions
+// page, or (b) by the scheduled portal_batch_sweeper cron that runs every
+// 4 hours. This is intentional: admins want to batch submissions rather
+// than have the bot fire one row at a time the instant it's queued.
 
 async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, submission.claimId));
@@ -789,8 +787,6 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
     });
   }
 
-  kickWorkerForQueueing(`Submission #${id} confirmed`);
-
   await db.insert(auditLogsTable).values({
     claimId: existing.claimId,
     invoiceGroupId: existing.invoiceGroupId ?? null,
@@ -880,8 +876,6 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
   });
 
-  kickWorkerForQueueing(`Submission #${submission.id} queued`);
-
   res.status(201).json(submission);
 }));
 
@@ -923,8 +917,6 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
       actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
     });
   }
-
-  kickWorkerForQueueing(`Submission #${id} retried`);
 
   res.json(sub);
 }));

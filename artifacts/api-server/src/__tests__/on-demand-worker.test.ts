@@ -101,9 +101,9 @@ test("rollup: all-green inputs → overall ok", () => {
   const out = computeRollup({
     now: NOW,
     connectors: [{ connectorName: "outlook", status: "healthy", lastError: null }],
-    knownJobs: [knownJob("midnight_portal_processor", new Date(NOW.getTime() - 60 * 60 * 1000))],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 60 * 60 * 1000))],
     lastRunByJob: lastRunMap([
-      { jobName: "midnight_portal_processor", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
@@ -116,16 +116,16 @@ test("rollup: degraded cron status from DB propagates to overall=degraded", () =
   const out = computeRollup({
     now: NOW,
     connectors: [],
-    knownJobs: [knownJob("portal_retry_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
-      { jobName: "portal_retry_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "degraded", message: "1 failed of 3" },
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "degraded", message: "1 failed of 3" },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "degraded");
-  const sweeper = out.components.find((c) => c.name === "cron:portal_retry_sweeper");
+  const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.ok(sweeper);
   assert.equal(sweeper!.status, "degraded");
 });
@@ -149,15 +149,15 @@ test("rollup: a 'running' cron row past 2x its interval is flagged as stuck", ()
   const out = computeRollup({
     now: NOW,
     connectors: [],
-    knownJobs: [knownJob("portal_retry_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
-      { jobName: "portal_retry_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "running", message: null },
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "running", message: null },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
     lastWorkerRun: workerOk(),
   });
-  const sweeper = out.components.find((c) => c.name === "cron:portal_retry_sweeper");
+  const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.ok(sweeper);
   assert.equal(sweeper!.status, "degraded");
   assert.match(sweeper!.detail ?? "", /still "running"/);
@@ -168,15 +168,15 @@ test("rollup: a 'running' cron within the grace window stays ok", () => {
   const out = computeRollup({
     now: NOW,
     connectors: [],
-    knownJobs: [knownJob("portal_retry_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
-      { jobName: "portal_retry_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "running", message: null },
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "running", message: null },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
     lastWorkerRun: workerOk(),
   });
-  const sweeper = out.components.find((c) => c.name === "cron:portal_retry_sweeper");
+  const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.equal(sweeper!.status, "ok");
 });
 
@@ -184,15 +184,15 @@ test("rollup: missed scheduled run (terminal status older than previous expected
   const out = computeRollup({
     now: NOW,
     connectors: [],
-    knownJobs: [knownJob("portal_retry_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
-      { jobName: "portal_retry_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
     lastWorkerRun: workerOk(),
   });
-  const sweeper = out.components.find((c) => c.name === "cron:portal_retry_sweeper");
+  const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.equal(sweeper!.status, "degraded");
   assert.match(sweeper!.detail ?? "", /older than previous expected/);
 });
@@ -457,13 +457,13 @@ test("rollup: a known cron with zero recorded runs → degraded with explicit me
   const out = computeRollup({
     now: NOW,
     connectors: [],
-    knownJobs: [knownJob("midnight_portal_processor")],
+    knownJobs: [knownJob("portal_batch_sweeper")],
     lastRunByJob: new Map(),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
     lastWorkerRun: workerOk(),
   });
-  const cron = out.components.find((c) => c.name === "cron:midnight_portal_processor");
+  const cron = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.equal(cron!.status, "degraded");
   assert.match(cron!.detail ?? "", /No runs recorded/);
 });

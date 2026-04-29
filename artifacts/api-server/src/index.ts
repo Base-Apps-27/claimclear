@@ -470,46 +470,6 @@ app.listen(port, (err) => {
   });
 });
 
-cron.schedule("0 0 * * *", async () => {
-  await recordCronRun("midnight_portal_processor", async () => {
-    logger.info("Midnight cron: triggering on-demand worker run");
-    const outcome = await triggerWorkerRun({
-      triggeredBy: "Midnight Auto-Process",
-      awaitCompletion: true,
-      awaitTimeoutMs: WORKER_AWAIT_TIMEOUT_MS,
-    });
-    if (outcome.kind === "skipped") {
-      const message = outcome.reason === "no_pending"
-        ? "No pending submissions to process"
-        : "Worker already running — midnight trigger coalesced";
-      logger.info({ reason: outcome.reason }, message);
-      return { message, metadata: { skipped: true, reason: outcome.reason } };
-    }
-    const { job, awaited } = outcome;
-    if (awaited === "timeout") {
-      // Watchdog tripped — record degraded so the rollup surfaces the hang
-      // without leaving the cron lane blocked. The worker keeps running in
-      // the background; if it never returns, the stuck-running rollup
-      // detection (2x interval grace) escalates further.
-      const message = `Worker run ${job.id} watchdog: still in progress after ${WORKER_AWAIT_TIMEOUT_MS / 60000}m, releasing cron lane`;
-      logger.warn({ batchId: job.id }, message);
-      return {
-        status: "degraded",
-        message,
-        metadata: { batchId: job.id, watchdogTimeoutMs: WORKER_AWAIT_TIMEOUT_MS, jobStatus: job.status },
-      };
-    }
-    const message = `Worker run ${job.id} completed: ${job.succeeded}/${job.total} succeeded, ${job.failed} failed`;
-    const sev = jobToCronOutcome(job, message);
-    if (sev.kind === "throw") throw new Error(sev.message);
-    return {
-      status: sev.status,
-      message: sev.message,
-      metadata: { batchId: job.id, total: job.total, succeeded: job.succeeded, failed: job.failed, jobStatus: job.status },
-    };
-  });
-}, { timezone: "America/New_York" });
-
 if (!process.env.BOT_SERVICE_TOKEN) {
   logger.warn("BOT_SERVICE_TOKEN not set; cron jobs that call internal HTTP endpoints will fail authentication.");
 }
@@ -579,13 +539,15 @@ cron.schedule("*/30 * * * *", async () => {
   });
 }, { timezone: "America/New_York" });
 
-// On-demand portal worker sweeper. Runs every 5 minutes; if any pending
-// submissions are due (next_retry_at <= now or NULL), triggers a fresh
-// worker run. The triggerWorkerRun gate ensures only one Playwright instance
-// is in flight at a time, so concurrent sweeps + admin batches coalesce
-// safely.
-cron.schedule("*/5 * * * *", async () => {
-  await recordCronRun("portal_retry_sweeper", async () => {
+// Scheduled portal batch sweeper. Runs every 4 hours (12am, 4am, 8am, 12pm,
+// 4pm, 8pm America/New_York); if any pending submissions are due
+// (next_retry_at <= now or NULL), triggers a worker run that drains the
+// queue. Admins can also fire a batch on demand from the Portal Submissions
+// page via "Process Pending" / "Process Selected" — that path uses the same
+// triggerWorkerRun gate, so concurrent sweeps + admin batches coalesce into
+// one in-flight Playwright session.
+cron.schedule("0 */4 * * *", async () => {
+  await recordCronRun("portal_batch_sweeper", async () => {
     const [{ value: dueCount } = { value: 0 }] = await db
       .select({ value: count() })
       .from(portalSubmissionsTable)
@@ -602,7 +564,7 @@ cron.schedule("*/5 * * * *", async () => {
     }
 
     const outcome = await triggerWorkerRun({
-      triggeredBy: "Retry Sweeper",
+      triggeredBy: "Scheduled Batch Sweep",
       awaitCompletion: true,
       awaitTimeoutMs: WORKER_AWAIT_TIMEOUT_MS,
     });
