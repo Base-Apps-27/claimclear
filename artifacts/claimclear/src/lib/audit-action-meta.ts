@@ -1,5 +1,6 @@
 import {
   Activity as ActivityIcon,
+  BrainCircuit,
   Camera,
   ImageOff,
   Workflow,
@@ -56,6 +57,7 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   hold_placed: { label: "Placed on hold", icon: PauseCircle, iconClass: "text-amber-600", category: "hold" },
   hold_removed: { label: "Hold removed", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
   workflow_updated: { label: "Workflow updated", icon: Workflow, iconClass: "text-blue-600", category: "workflow" },
+  portal_understanding_preflight: { label: "AI understanding checked", icon: BrainCircuit, iconClass: "text-violet-600", category: "draft" },
   portal_draft_created: { label: "Dispute write-up generated", icon: FilePlus2, iconClass: "text-blue-600", category: "draft" },
   portal_draft_edited: { label: "Dispute write-up edited", icon: FileEdit, iconClass: "text-violet-600", category: "draft" },
   portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },
@@ -87,6 +89,7 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   group_denied: { label: "Group denied", icon: XCircle, iconClass: "text-rose-600", category: "status" },
   closure_addressed: { label: "Addressed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
   closure_review_updated: { label: "Review notes updated", icon: FileEdit, iconClass: "text-muted-foreground", category: "other" },
+  portal_understanding_preflight: { label: "AI understanding checked", icon: BrainCircuit, iconClass: "text-violet-600", category: "draft" },
   portal_draft_created: { label: "Dispute write-up generated", icon: FilePlus2, iconClass: "text-blue-600", category: "draft" },
   portal_draft_edited: { label: "Dispute write-up edited", icon: FileEdit, iconClass: "text-violet-600", category: "draft" },
   portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },

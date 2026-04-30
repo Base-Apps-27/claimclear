@@ -194,6 +194,8 @@ export * from "./portalSubmissionResponseDescriptionHistoryItem";
 export * from "./portalSubmissionResponseEvidenceFiles";
 export * from "./portalSubmissionResponseStatus";
 export * from "./portalSubmissionResponseWorkflowHistory";
+export * from "./portalUnderstandingPreflightBody";
+export * from "./portalUnderstandingPreflightResponse";
 export * from "./postResponseActionBody";
 export * from "./postResponseActionBodyAction";
 export * from "./presenceHeartbeatBody";

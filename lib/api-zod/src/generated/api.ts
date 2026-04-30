@@ -561,6 +561,24 @@ export const GetInvoiceGroupResponse = zod
             errorTypeName: zod.string().nullish(),
             errorDetails: zod.string().nullish(),
             disputeReason: zod.string().nullish(),
+            specialCircumstances: zod
+              .string()
+              .nullish()
+              .describe(
+                'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+              ),
+            understandingReadback: zod
+              .string()
+              .nullish()
+              .describe(
+                "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+              ),
+            understandingReadbackAt: zod
+              .string()
+              .nullish()
+              .describe(
+                "Timestamp of when the most recent confirmed understanding readback was captured.",
+              ),
             evidenceNotes: zod.string().nullish(),
             evidenceFiles: zod.object({}).passthrough().nullish(),
             workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4025,6 +4043,24 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4073,6 +4109,18 @@ export const CreatePortalSubmissionBody = zod.object({
   gpsBreadcrumbsAvailable: zod.string().optional(),
   descriptionHtml: zod.string().optional(),
   disputeReason: zod.string().optional(),
+  specialCircumstances: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional narrative-changing context provided by the operator. If non-empty, `understandingReadback` MUST also be supplied (the UI gates Generate behind a confirmed AI readback).",
+    ),
+  understandingReadback: zod
+    .string()
+    .optional()
+    .describe(
+      "The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.",
+    ),
 });
 
 /**
@@ -4125,6 +4173,24 @@ export const GetPortalSubmissionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4205,6 +4271,24 @@ export const RetryPortalSubmissionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4285,6 +4369,24 @@ export const CancelPortalSubmissionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4330,6 +4432,18 @@ export const GeneratePortalSubmissionPreviewBody = zod.object({
   gpsBreadcrumbsAvailable: zod.string().optional(),
   descriptionHtml: zod.string().optional(),
   disputeReason: zod.string().optional(),
+  specialCircumstances: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional narrative-changing context provided by the operator. If non-empty, `understandingReadback` MUST also be supplied (the UI gates Generate behind a confirmed AI readback).",
+    ),
+  understandingReadback: zod
+    .string()
+    .optional()
+    .describe(
+      "The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.",
+    ),
 });
 
 export const GeneratePortalSubmissionPreviewResponse = zod.object({
@@ -4375,6 +4489,24 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4406,6 +4538,26 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
 });
 
 /**
+ * Lightweight read-only step. Given the error type, the decision-tree outcome, and any operator-supplied special circumstances, returns a short plain-language restatement of what the dispute is actually about. The operator either confirms (and then triggers Generate) or sharpens the context and re-checks. No DB writes happen here.
+
+ * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ */
+export const PortalUnderstandingPreflightBody = zod.object({
+  claimId: zod.number().optional(),
+  invoiceGroupId: zod.number().optional(),
+  disputeReason: zod.string().optional(),
+  specialCircumstances: zod.string().optional(),
+});
+
+export const PortalUnderstandingPreflightResponse = zod.object({
+  readback: zod
+    .string()
+    .describe(
+      "A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context.",
+    ),
+});
+
+/**
  * @summary Update a draft submission before queuing
  */
 export const UpdatePortalSubmissionDraftParams = zod.object({
@@ -4421,6 +4573,18 @@ export const UpdatePortalSubmissionDraftBody = zod.object({
   transportationProviderName: zod.string().optional(),
   phoneNumber: zod.string().optional(),
   invoiceNumber: zod.string().optional(),
+  specialCircumstances: zod
+    .string()
+    .optional()
+    .describe(
+      "Edited operator context. When this changes, `understandingReadback` is cleared server-side so a fresh re-check is required before regenerate.",
+    ),
+  understandingReadback: zod
+    .string()
+    .optional()
+    .describe(
+      "Updated AI readback the operator confirmed. Usually only sent together with the matching `specialCircumstances`.",
+    ),
 });
 
 export const UpdatePortalSubmissionDraftResponse = zod.object({
@@ -4466,6 +4630,24 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4546,6 +4728,24 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4634,6 +4834,24 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4737,6 +4955,24 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),
@@ -4817,6 +5053,24 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   errorTypeName: zod.string().nullish(),
   errorDetails: zod.string().nullish(),
   disputeReason: zod.string().nullish(),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      'Operator-supplied narrative-changing context (e.g. \"MAS pushed an address update after the ride completed\"). Woven into the AI prompt with strong emphasis.',
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.",
+    ),
+  understandingReadbackAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of when the most recent confirmed understanding readback was captured.",
+    ),
   evidenceNotes: zod.string().nullish(),
   evidenceFiles: zod.object({}).passthrough().nullish(),
   workflowHistory: zod.object({}).passthrough().nullish(),

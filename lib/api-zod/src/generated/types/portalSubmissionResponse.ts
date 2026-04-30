@@ -59,6 +59,21 @@ export interface PortalSubmissionResponse {
   errorDetails?: string | null;
   /** @nullable */
   disputeReason?: string | null;
+  /**
+   * Operator-supplied narrative-changing context (e.g. "MAS pushed an address update after the ride completed"). Woven into the AI prompt with strong emphasis.
+   * @nullable
+   */
+  specialCircumstances?: string | null;
+  /**
+   * AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.
+   * @nullable
+   */
+  understandingReadback?: string | null;
+  /**
+   * Timestamp of when the most recent confirmed understanding readback was captured.
+   * @nullable
+   */
+  understandingReadbackAt?: string | null;
   /** @nullable */
   evidenceNotes?: string | null;
   /** @nullable */

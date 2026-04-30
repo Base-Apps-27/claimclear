@@ -1532,6 +1532,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/PortalSubmissionResponse"
 
+  /portal-submissions/preflight-understanding:
+    post:
+      operationId: portalUnderstandingPreflight
+      tags: [portalSubmissions]
+      summary: Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+      description: >
+        Lightweight read-only step. Given the error type, the decision-tree
+        outcome, and any operator-supplied special circumstances, returns a
+        short plain-language restatement of what the dispute is actually about.
+        The operator either confirms (and then triggers Generate) or sharpens
+        the context and re-checks. No DB writes happen here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalUnderstandingPreflightBody"
+      responses:
+        "200":
+          description: AI readback of the dispute
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalUnderstandingPreflightResponse"
+
   /portal-submissions/{id}/update-draft:
     put:
       operationId: updatePortalSubmissionDraft
@@ -1566,6 +1591,12 @@ paths:
                   type: string
                 invoiceNumber:
                   type: string
+                specialCircumstances:
+                  type: string
+                  description: Edited operator context. When this changes, `understandingReadback` is cleared server-side so a fresh re-check is required before regenerate.
+                understandingReadback:
+                  type: string
+                  description: Updated AI readback the operator confirmed. Usually only sent together with the matching `specialCircumstances`.
       responses:
         "200":
           description: Updated draft
@@ -4248,6 +4279,15 @@ components:
           type: ["string", "null"]
         disputeReason:
           type: ["string", "null"]
+        specialCircumstances:
+          type: ["string", "null"]
+          description: Operator-supplied narrative-changing context (e.g. "MAS pushed an address update after the ride completed"). Woven into the AI prompt with strong emphasis.
+        understandingReadback:
+          type: ["string", "null"]
+          description: AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.
+        understandingReadbackAt:
+          type: ["string", "null"]
+          description: Timestamp of when the most recent confirmed understanding readback was captured.
         evidenceNotes:
           type: ["string", "null"]
         evidenceFiles:
@@ -4313,6 +4353,33 @@ components:
           type: string
         disputeReason:
           type: string
+        specialCircumstances:
+          type: string
+          description: Optional narrative-changing context provided by the operator. If non-empty, `understandingReadback` MUST also be supplied (the UI gates Generate behind a confirmed AI readback).
+        understandingReadback:
+          type: string
+          description: The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.
+
+    PortalUnderstandingPreflightBody:
+      type: object
+      properties:
+        claimId:
+          type: integer
+        invoiceGroupId:
+          type: integer
+        disputeReason:
+          type: string
+        specialCircumstances:
+          type: string
+
+    PortalUnderstandingPreflightResponse:
+      type: object
+      properties:
+        readback:
+          type: string
+          description: A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context.
+      required:
+        - readback
 
     PollSubmissionsBody:
       type: object

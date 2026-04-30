@@ -34,6 +34,16 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   errorTypeName: text("error_type_name"),
   errorDetails: text("error_details"),
   disputeReason: text("dispute_reason"),
+  // Operator-supplied "special circumstances" text that reshapes the AI dispute
+  // narrative — e.g. "MAS pushed an address update after the ride completed".
+  // Persisted with the draft so regenerate keeps the same context, and so the
+  // review card can show + edit it. Free-form, may be null/empty.
+  specialCircumstances: text("special_circumstances"),
+  // The 2–4 sentence "read it back to me" restatement the AI produced, which
+  // the operator confirmed before we generated the full write-up. Cleared
+  // whenever specialCircumstances changes so the gate forces a fresh re-check.
+  understandingReadback: text("understanding_readback"),
+  understandingReadbackAt: timestamp("understanding_readback_at", { withTimezone: true }),
   evidenceNotes: text("evidence_notes"),
   evidenceFiles: jsonb("evidence_files"),
   workflowHistory: jsonb("workflow_history"),

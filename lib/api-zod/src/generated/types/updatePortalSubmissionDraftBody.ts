@@ -15,4 +15,8 @@ export type UpdatePortalSubmissionDraftBody = {
   transportationProviderName?: string;
   phoneNumber?: string;
   invoiceNumber?: string;
+  /** Edited operator context. When this changes, `understandingReadback` is cleared server-side so a fresh re-check is required before regenerate. */
+  specialCircumstances?: string;
+  /** Updated AI readback the operator confirmed. Usually only sent together with the matching `specialCircumstances`. */
+  understandingReadback?: string;
 };

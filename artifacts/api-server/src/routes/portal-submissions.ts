@@ -272,6 +272,7 @@ async function generatePortalDescription(
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
   settings: PortalSettings,
+  specialCircumstances?: string | null,
 ): Promise<string> {
   const { group, rides } = ctx;
   const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || settings.defaultDisputeInstructions;
@@ -327,6 +328,17 @@ ${ridesBlock}`
     ? "Write a concise dispute message for an NEMT (Non-Emergency Medical Transportation) claim correction request that will be sent as an email to MAS Trip Inventory Resolution."
     : "Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.";
 
+  const trimmedSpecial = (specialCircumstances || "").trim();
+  // The special-circumstances block has to *reshape* the narrative, not be a
+  // tail-appendix. Place it above the format rules and lead with a plainly
+  // bossy directive so the model treats it as the spine of the write-up.
+  const specialBlock = trimmedSpecial
+    ? `CRITICAL CONTEXT — incorporate this into the narrative, do not just append it. This may fundamentally change what the dispute is about; treat it as authoritative and let it shape the framing, the headline argument, and the order of the supporting points. If it conflicts with the surface-level error type, follow this context:
+${trimmedSpecial}
+
+`
+    : "";
+
   const prompt = `${channelLine}
 
 ${groupHeader}
@@ -336,7 +348,7 @@ Reason for dispute (from workflow decision): ${disputeReason}
 ${evidenceSummary ? `Evidence gathered: ${evidenceSummary}` : ""}
 ${errorType?.guidance ? `SOP context: ${errorType.guidance}` : ""}
 
-${instructions ? `IMPORTANT — Follow these guidelines for tone and content:\n${instructions}` : ""}
+${specialBlock}${instructions ? `IMPORTANT — Follow these guidelines for tone and content:\n${instructions}` : ""}
 
 ${formatRules}
 
@@ -361,12 +373,17 @@ Return ONLY the note text, no JSON wrapping.`;
 function buildFallbackDescription(
   ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] },
   disputeReason: string,
+  specialCircumstances?: string | null,
 ): string {
   const { group, rides } = ctx;
   const snap = buildSnapshot(ctx);
+  // Lead with the operator's narrative-shaping context so a failed LLM call
+  // doesn't silently drop it from the write-up.
+  const trimmedSpecial = (specialCircumstances || "").trim();
+  const specialPrefix = trimmedSpecial ? `Special Circumstances: ${trimmedSpecial}\n\n` : "";
   if (group) {
     const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"} — $${r.claimAmount || "0.00"}`).join("\n");
-    return `Dispute for Invoice Number: ${group.invoiceNumber}
+    return `${specialPrefix}Dispute for Invoice Number: ${group.invoiceNumber}
 Client Number: ${group.clientNumber || "N/A"}
 Total Amount: $${snap.claimAmount || "0.00"}
 Error Type: ${group.errorTypeName || "N/A"}
@@ -380,7 +397,7 @@ Dispute Reason: ${disputeReason || "N/A"}
 Evidence Notes: ${group.evidenceNotes || "N/A"}`;
   }
   const r = rides[0];
-  return `Dispute for Confirmation Number: ${r.confNumber || "N/A"}
+  return `${specialPrefix}Dispute for Confirmation Number: ${r.confNumber || "N/A"}
 Service Date: ${r.date || "N/A"}
 Reference Number: ${r.refNumber || "N/A"}
 Client Number: ${r.clientNumber || "N/A"}
@@ -466,10 +483,100 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
   res.json(submissions);
 }));
 
-router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, claimId, disputeReason } = req.body;
+/**
+ * Preflight "read it back to me" step. Given the error type, the decision-tree
+ * outcome, and any operator-supplied context, the model returns a 2–4 sentence
+ * restatement of what the dispute is actually about. Read-only — no DB writes
+ * happen here so the operator can re-check freely. A successful call writes a
+ * single audit log entry so the activity feed can show that the operator
+ * verified AI understanding before generating the full draft.
+ */
+router.post("/portal-submissions/preflight-understanding", asyncHandler(async (req, res): Promise<void> => {
+  const { invoiceGroupId, claimId, disputeReason, specialCircumstances } = req.body as {
+    invoiceGroupId?: number;
+    claimId?: number;
+    disputeReason?: string;
+    specialCircumstances?: string;
+  };
   if (!invoiceGroupId && !claimId) {
     res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+    return;
+  }
+
+  const ctx = await resolveContext({ invoiceGroupId, claimId });
+  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+
+  const errorType = await loadErrorTypeForContext(ctx);
+  const reason = (disputeReason || "").trim();
+  const trimmedSpecial = (specialCircumstances || "").trim();
+
+  const headline = ctx.group
+    ? `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`
+    : `Conf #${ctx.primaryClaim.confNumber || "N/A"} — Error Type: ${ctx.primaryClaim.errorTypeName || errorType?.name || "Unclassified"}.`;
+
+  const guidance = errorType?.guidance ? `\nSOP guidance for this error type: ${errorType.guidance}` : "";
+  const treeLine = reason ? `\nDecision-tree outcome: ${reason}` : "";
+  const specialLine = trimmedSpecial
+    ? `\nOperator-supplied special circumstances (this may fundamentally change the framing — let it lead):\n${trimmedSpecial}`
+    : "\nOperator-supplied special circumstances: (none)";
+
+  const prompt = `You are previewing your understanding of an NEMT claim dispute before drafting the full write-up. Do NOT write the dispute. In 2 to 4 plain-language sentences, restate — in your own words — what the dispute is actually about, given the inputs below. Lead with the core ask, then the key reason. If the operator's special circumstances change the framing from a surface read of the error type, reflect that explicitly in the readback so the operator can spot any misunderstanding.
+
+${headline}${guidance}${treeLine}${specialLine}
+
+Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no preamble like "Here is my understanding".`;
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 400,
+    messages: [{ role: "user", content: prompt }],
+    system: "You restate the operator's pending NEMT claim dispute in 2–4 sentences so they can verify the AI is on the same page before you draft the full write-up. Be concrete, specific to the inputs, and never invent facts.",
+  });
+  const textBlock = message.content.find((b: { type: string }) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    res.status(502).json({ error: "Empty AI response" });
+    return;
+  }
+  const readback = (textBlock as { type: "text"; text: string }).text.trim();
+
+  await db.insert(auditLogsTable).values({
+    claimId: ctx.primaryClaim.id,
+    invoiceGroupId: ctx.group?.id ?? null,
+    action: "portal_understanding_preflight",
+    details: trimmedSpecial
+      ? `AI understanding preflight returned (with special circumstances, ${trimmedSpecial.length} chars)`
+      : `AI understanding preflight returned (no special circumstances)`,
+    metadata: {
+      hasSpecialCircumstances: trimmedSpecial.length > 0,
+      specialCircumstancesLength: trimmedSpecial.length,
+      readbackLength: readback.length,
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+
+  res.json({ readback });
+}));
+
+router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
+  const { invoiceGroupId, claimId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
+    invoiceGroupId?: number;
+    claimId?: number;
+    disputeReason?: string;
+    specialCircumstances?: string;
+    understandingReadback?: string;
+  };
+  if (!invoiceGroupId && !claimId) {
+    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+    return;
+  }
+  const trimmedSpecial = (specialCircumstances || "").trim();
+  const trimmedReadback = (understandingReadback || "").trim();
+  // Universal gate: a confirmed AI understanding readback is required before
+  // any draft is generated, even when no special circumstances were supplied.
+  // The operator must have seen and approved the AI's restatement first.
+  if (trimmedReadback.length === 0) {
+    res.status(400).json({ error: "understandingReadback is required to generate a draft. Run /portal-submissions/preflight-understanding first." });
     return;
   }
 
@@ -519,16 +626,16 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
 
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings);
+    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, trimmedSpecial || null);
   } catch (err) {
     logger.warn({ err }, "AI portal description generation failed, using fallback");
-    generatedDescription = buildFallbackDescription(ctx, reason);
+    generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
   }
 
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
 
-  logger.info({ groupId: ctx.group?.id, claimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length }, "Portal draft: evidence and GPS resolved");
+  logger.info({ groupId: ctx.group?.id, claimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length, hasSpecialCircumstances: trimmedSpecial.length > 0 }, "Portal draft: evidence and GPS resolved");
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
     claimId: ctx.primaryClaim.id,
@@ -554,6 +661,9 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     errorTypeName: snap.errorTypeName,
     errorDetails: snap.errorDetails,
     disputeReason: reason,
+    specialCircumstances: trimmedSpecial || null,
+    understandingReadback: trimmedReadback || null,
+    understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles as never,
     workflowHistory: snap.workflowHistory as never,
@@ -563,16 +673,20 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const partialSuffix = isPartialSubmission
     ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted)`
     : "";
+  const contextSuffix = trimmedSpecial ? " — with operator special circumstances" : "";
   await db.insert(auditLogsTable).values({
     claimId: ctx.primaryClaim.id,
     invoiceGroupId: ctx.group?.id ?? null,
     action: "portal_draft_created",
-    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}`,
-    metadata: isPartialSubmission ? {
-      includedLegs: ctx.rides.map(r => r.confNumber || r.id),
-      excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
-      excludedAlreadySubmitted: filtered.excludedAlreadySubmitted.map(r => r.confNumber || r.id),
-    } : undefined,
+    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}${contextSuffix}`,
+    metadata: {
+      hasSpecialCircumstances: trimmedSpecial.length > 0,
+      ...(isPartialSubmission ? {
+        includedLegs: ctx.rides.map(r => r.confNumber || r.id),
+        excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
+        excludedAlreadySubmitted: filtered.excludedAlreadySubmitted.map(r => r.confNumber || r.id),
+      } : {}),
+    },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });
@@ -601,6 +715,33 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   if (req.body.phoneNumber !== undefined) updates.phoneNumber = req.body.phoneNumber;
   if (req.body.invoiceNumber !== undefined) updates.invoiceNumber = req.body.invoiceNumber;
 
+  // Special circumstances editing on the Review card. If the operator changes
+  // the context, the previously-confirmed AI readback no longer reflects what
+  // the AI was told, so we wipe it (and its timestamp) — the UI will gate
+  // Regenerate behind a fresh re-check. If only the readback is supplied
+  // (e.g. operator just confirmed a fresh preflight), accept it as-is.
+  if (req.body.specialCircumstances !== undefined) {
+    const incoming = (req.body.specialCircumstances as string | null | undefined) ?? "";
+    const trimmedIncoming = incoming.trim();
+    const previous = (existing.specialCircumstances || "").trim();
+    updates.specialCircumstances = trimmedIncoming.length > 0 ? trimmedIncoming : null;
+    if (trimmedIncoming !== previous) {
+      updates.understandingReadback = null;
+      updates.understandingReadbackAt = null;
+    }
+  }
+  if (req.body.understandingReadback !== undefined) {
+    const incomingReadback = (req.body.understandingReadback as string | null | undefined) ?? "";
+    const trimmedIncomingReadback = incomingReadback.trim();
+    if (trimmedIncomingReadback.length > 0) {
+      updates.understandingReadback = trimmedIncomingReadback;
+      updates.understandingReadbackAt = new Date();
+    } else {
+      updates.understandingReadback = null;
+      updates.understandingReadbackAt = null;
+    }
+  }
+
   if (req.body.descriptionHtml !== undefined) {
     const newDescription = req.body.descriptionHtml;
     const previousDescription = existing.descriptionHtml || "";
@@ -622,13 +763,36 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   const [sub] = await db.update(portalSubmissionsTable).set(updates)
     .where(eq(portalSubmissionsTable.id, id)).returning();
 
-  if (updates.descriptionHtml !== undefined) {
+  const specialChanged = req.body.specialCircumstances !== undefined && updates.specialCircumstances !== undefined;
+  const readbackChanged = req.body.understandingReadback !== undefined && updates.understandingReadback !== undefined;
+  const descriptionChanged = updates.descriptionHtml !== undefined;
+  if (descriptionChanged || specialChanged || readbackChanged) {
+    const editedParts: string[] = [];
+    if (descriptionChanged) editedParts.push("description");
+    if (specialChanged) editedParts.push("special circumstances");
+    if (readbackChanged && !specialChanged) editedParts.push("AI readback");
+    const newSpecial = (updates.specialCircumstances as string | null | undefined) ?? null;
+    const newReadback = (updates.understandingReadback as string | null | undefined) ?? null;
+    const detailSuffix = specialChanged
+      ? (newSpecial && newSpecial.length > 0
+        ? " — operator special circumstances updated (readback re-confirmed)"
+        : " — operator special circumstances cleared")
+      : "";
     await db.insert(auditLogsTable).values({
       claimId: existing.claimId,
       invoiceGroupId: existing.invoiceGroupId,
       action: "portal_draft_edited",
-      details: `Portal submission #${id} description manually edited`,
-      metadata: { submissionId: id },
+      details: `Portal submission #${id} ${editedParts.join(", ")} edited${detailSuffix}`,
+      metadata: {
+        submissionId: id,
+        editedFields: editedParts,
+        descriptionChanged,
+        specialCircumstancesChanged: specialChanged,
+        understandingReadbackChanged: readbackChanged,
+        hasSpecialCircumstances: newSpecial !== null && newSpecial.length > 0,
+        specialCircumstancesLength: newSpecial ? newSpecial.length : 0,
+        hasUnderstandingReadback: newReadback !== null && newReadback.length > 0,
+      },
       userEmail: req.user?.email ?? null,
       userName: req.user?.displayName ?? null,
     });
@@ -674,12 +838,25 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
 
+  // Universal preflight gate: a confirmed AI understanding readback is
+  // required for any draft generation, including regenerate. The original
+  // draft was created with a confirmed readback; if context was later edited
+  // without a fresh re-check, update-draft cleared the readback and this
+  // guard rejects the regenerate.
+  const savedReadback = (existing.understandingReadback || "").trim();
+  if (savedReadback.length === 0) {
+    res.status(400).json({
+      error: "understandingReadback is required to regenerate the draft. Re-confirm AI understanding from the Special Circumstances panel first.",
+    });
+    return;
+  }
+  const savedSpecial = (existing.specialCircumstances || "").trim();
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings);
+    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, savedSpecial || null);
   } catch (err) {
     logger.warn({ err }, "AI portal description regeneration failed, using fallback");
-    generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "");
+    generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "", savedSpecial || null);
   }
 
   const previousDescription = existing.descriptionHtml || "";
@@ -842,10 +1019,20 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
 
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { invoiceGroupId, claimId, issueType, subject, requesterEmail, transportationProviderName,
-    phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason } = req.body;
+    phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason,
+    specialCircumstances, understandingReadback } = req.body;
 
   if (!invoiceGroupId && !claimId) {
     res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+    return;
+  }
+
+  const trimmedSpecial = (specialCircumstances || "").trim();
+  const trimmedReadback = (understandingReadback || "").trim();
+  // Universal preflight gate: a confirmed AI understanding readback is required
+  // for any new draft, regardless of whether special circumstances were given.
+  if (trimmedReadback.length === 0) {
+    res.status(400).json({ error: "understandingReadback is required to generate a draft. Run /portal-submissions/preflight-understanding first." });
     return;
   }
 
@@ -860,14 +1047,14 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   let generatedDescription = descriptionHtml || "";
   if (!generatedDescription && reason) {
     try {
-      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings);
+      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, trimmedSpecial || null);
     } catch (err) {
       logger.warn({ err }, "AI portal description generation failed, using fallback");
-      generatedDescription = buildFallbackDescription(ctx, reason);
+      generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
     }
   }
   if (!generatedDescription) {
-    generatedDescription = buildFallbackDescription(ctx, reason);
+    generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
   }
 
   const resolvedIssueType = issueType || determineIssueType(errorType);
@@ -898,6 +1085,9 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     errorTypeName: snap.errorTypeName,
     errorDetails: snap.errorDetails,
     disputeReason: reason,
+    specialCircumstances: trimmedSpecial || null,
+    understandingReadback: trimmedReadback || null,
+    understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles as never,
     workflowHistory: snap.workflowHistory as never,

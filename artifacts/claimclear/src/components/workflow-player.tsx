@@ -7,6 +7,7 @@ import {
   usePlaceClaimOnHold,
   useRemoveClaimHold,
   useGeneratePortalSubmissionPreview,
+  usePortalUnderstandingPreflight,
   useUpdatePortalSubmissionDraft,
   useConfirmPortalSubmission,
   useRegeneratePortalSubmissionText,
@@ -33,7 +34,7 @@ import { EvidenceFileList } from "@/components/evidence-file-list";
 import {
   ChevronRight, CheckCircle, AlertTriangle, Send, Loader2, Edit3,
   PauseCircle, ArrowRight, Eye, TreeDeciduous, Car, Calendar, Hash, Sparkles,
-  History, Undo2,
+  History, Undo2, BrainCircuit, RefreshCw, X,
 } from "lucide-react";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { toast } from "@/hooks/use-toast";
@@ -67,6 +68,7 @@ export function WorkflowPlayer({
   const placeHold = usePlaceClaimOnHold();
   const removeHold = useRemoveClaimHold();
   const generatePreview = useGeneratePortalSubmissionPreview();
+  const preflightUnderstanding = usePortalUnderstandingPreflight();
   const updateDraft = useUpdatePortalSubmissionDraft();
   const confirmSubmission = useConfirmPortalSubmission();
   const regenerateText = useRegeneratePortalSubmissionText();
@@ -119,7 +121,22 @@ export function WorkflowPlayer({
     phoneNumber: string;
     invoiceNumber: string;
     attachmentUrls: string[];
+    specialCircumstances: string | null;
+    understandingReadback: string | null;
   } | null>(null);
+  // "Pre-generate" inputs on the Ready-to-Submit card. The operator types any
+  // narrative-changing context, runs the AI readback check, and only after a
+  // confirmed (still-unedited) readback can they generate the full draft.
+  const [preflightContext, setPreflightContext] = useState("");
+  const [preflightReadback, setPreflightReadback] = useState<string | null>(null);
+  // Tracks the exact context string the readback was generated from. If the
+  // textarea drifts from this, we treat the readback as stale and re-gate.
+  const [preflightReadbackForContext, setPreflightReadbackForContext] = useState<string | null>(null);
+  // Editable special-circumstances state for the Review card.
+  const [reviewContextEditing, setReviewContextEditing] = useState(false);
+  const [reviewContextDraft, setReviewContextDraft] = useState("");
+  const [reviewReadback, setReviewReadback] = useState<string | null>(null);
+  const [reviewReadbackForContext, setReviewReadbackForContext] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [draftEditing, setDraftEditing] = useState(false);
@@ -158,13 +175,51 @@ export function WorkflowPlayer({
     invalidate();
   };
 
+  const trimmedPreflightContext = preflightContext.trim();
+  const preflightReadbackIsFresh =
+    preflightReadback !== null && preflightReadbackForContext === trimmedPreflightContext;
+  // The full draft cannot be generated until the operator has confirmed a
+  // fresh AI readback — even when no special circumstances were supplied.
+  // This guarantees the operator sees how the AI is interpreting the dispute
+  // before any text is written.
+  const preflightGateBlocked = !preflightReadbackIsFresh;
+
+  const handleCheckUnderstanding = async () => {
+    const ctxText = preflightContext.trim();
+    const result = await preflightUnderstanding.mutateAsync({
+      data: {
+        claimId: claim.id,
+        disputeReason: treeOutcomeLabel || undefined,
+        specialCircumstances: ctxText || undefined,
+      },
+    });
+    setPreflightReadback(result.readback);
+    setPreflightReadbackForContext(ctxText);
+  };
+
   const handleGeneratePreview = async () => {
+    const ctxText = preflightContext.trim();
+    if (!preflightReadbackIsFresh) {
+      toast({
+        variant: "destructive",
+        title: "Confirm AI understanding first",
+        description: "Run \"Check understanding\" and review the AI's restatement before generating the draft.",
+      });
+      return;
+    }
     const result = await generatePreview.mutateAsync({
-      data: { claimId: claim.id, disputeReason: treeOutcomeLabel || undefined },
+      data: {
+        claimId: claim.id,
+        disputeReason: treeOutcomeLabel || undefined,
+        specialCircumstances: ctxText || undefined,
+        understandingReadback: preflightReadback || undefined,
+      },
     });
     const draft = result as unknown as Record<string, unknown>;
     const attachUrls = (Array.isArray(draft.attachmentUrls) ? draft.attachmentUrls : []) as string[];
     const history = (Array.isArray(draft.descriptionHistory) ? draft.descriptionHistory : []) as Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>;
+    const savedSpecial = (draft.specialCircumstances as string | null) ?? null;
+    const savedReadback = (draft.understandingReadback as string | null) ?? null;
     setDraftSubmission({
       id: draft.id as number,
       subject: (draft.subject as string) || "",
@@ -179,7 +234,13 @@ export function WorkflowPlayer({
       phoneNumber: (draft.phoneNumber as string) || "",
       invoiceNumber: (draft.invoiceNumber as string) || "",
       attachmentUrls: attachUrls,
+      specialCircumstances: savedSpecial,
+      understandingReadback: savedReadback,
     });
+    setReviewReadback(savedReadback);
+    setReviewReadbackForContext((savedSpecial || "").trim());
+    setReviewContextEditing(false);
+    setReviewContextDraft("");
     setDraftEditing(false);
     setHistoryOpen(false);
     setPreviewIndex(null);
@@ -232,8 +293,83 @@ export function WorkflowPlayer({
     setDraftEditing(false);
   };
 
+  const reviewSavedContext = (draftSubmission?.specialCircumstances || "").trim();
+  const reviewSavedReadback = (draftSubmission?.understandingReadback || "").trim();
+  const reviewReadbackIsFresh =
+    reviewReadback !== null && reviewReadbackForContext === reviewSavedContext;
+  // Universal regenerate gate: block whenever the submission has lost its
+  // saved readback (e.g., context was cleared post-generation) OR the
+  // operator has unsaved context edits without a fresh re-check. This
+  // mirrors the API guard so the button is never the only thing standing
+  // between an operator and an unconfirmed regeneration.
+  const reviewRegenerateBlocked =
+    reviewSavedReadback.length === 0 ||
+    (reviewSavedContext.length > 0 && !reviewReadbackIsFresh);
+
+  const handleCheckReviewUnderstanding = async () => {
+    if (!draftSubmission) return;
+    const ctxText = (reviewContextEditing ? reviewContextDraft : reviewSavedContext).trim();
+    const result = await preflightUnderstanding.mutateAsync({
+      data: {
+        claimId: claim.id,
+        disputeReason: treeOutcomeLabel || draftSubmission.subject || undefined,
+        specialCircumstances: ctxText || undefined,
+      },
+    });
+    setReviewReadback(result.readback);
+    setReviewReadbackForContext(ctxText);
+  };
+
+  const handleSaveReviewContext = async () => {
+    if (!draftSubmission) return;
+    const ctxText = reviewContextDraft.trim();
+    // Universal: a fresh readback that matches the current context (empty or
+    // not) is required before persisting any change to the dispute context.
+    if (reviewReadback === null || reviewReadbackForContext !== ctxText) {
+      toast({
+        variant: "destructive",
+        title: "Confirm AI understanding first",
+        description: "Run the understanding check on the current context before saving.",
+      });
+      return;
+    }
+    try {
+      const result = await updateDraft.mutateAsync({
+        id: draftSubmission.id,
+        data: {
+          specialCircumstances: ctxText,
+          understandingReadback: reviewReadback,
+        },
+      });
+      const updated = result as unknown as Record<string, unknown>;
+      const newSpecial = (updated.specialCircumstances as string | null) ?? null;
+      const newReadback = (updated.understandingReadback as string | null) ?? null;
+      setDraftSubmission({
+        ...draftSubmission,
+        specialCircumstances: newSpecial,
+        understandingReadback: newReadback,
+      });
+      setReviewReadback(newReadback);
+      setReviewReadbackForContext((newSpecial || "").trim());
+      setReviewContextEditing(false);
+      setReviewContextDraft("");
+      toast({ title: "Context updated", description: "Regenerate the write-up to apply the new context." });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Please try again.";
+      toast({ title: "Could not update context", description: message, variant: "destructive" });
+    }
+  };
+
   const handleRegenerateText = async () => {
     if (!draftSubmission) return;
+    if (reviewRegenerateBlocked) {
+      toast({
+        variant: "destructive",
+        title: "Re-check AI understanding",
+        description: "Special circumstances were edited. Confirm the AI readback (and Save) before regenerating.",
+      });
+      return;
+    }
     try {
       const result = await regenerateText.mutateAsync({ id: draftSubmission.id });
       const updated = result as unknown as { descriptionHtml?: string; descriptionHistory?: Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>; descriptionEditorEmail?: string | null; descriptionEditorName?: string | null };
@@ -639,19 +775,88 @@ export function WorkflowPlayer({
                 <p><span className="text-muted-foreground">Dispute Reason:</span> <span className="font-medium">{treeOutcomeLabel}</span></p>
               )}
             </div>
+
+            <div className="space-y-2 rounded-md border border-violet-200 bg-violet-50/40 p-3">
+              <div className="flex items-start gap-2">
+                <BrainCircuit className="h-4 w-4 mt-0.5 text-violet-600 shrink-0" />
+                <div className="flex-1">
+                  <Label htmlFor="preflight-context" className="text-sm font-medium text-violet-900">
+                    Special circumstances or context for the AI
+                    <span className="ml-1 text-xs font-normal text-violet-700">(optional)</span>
+                  </Label>
+                  <p className="mt-0.5 text-xs text-violet-800/80">
+                    Anything the AI wouldn't know from the error type alone — e.g. "MAS pushed an
+                    address update mid-trip", "client called for a same-day cancel". Strong context
+                    here changes how the dispute is framed.
+                  </p>
+                </div>
+              </div>
+              <Textarea
+                id="preflight-context"
+                value={preflightContext}
+                onChange={(e) => setPreflightContext(e.target.value)}
+                placeholder="Add any narrative-changing context for the AI…"
+                className="min-h-[64px] bg-white"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCheckUnderstanding}
+                  disabled={preflightUnderstanding.isPending}
+                  className="border-violet-300 text-violet-800 hover:bg-violet-100"
+                >
+                  {preflightUnderstanding.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Checking…</>
+                  ) : preflightReadback ? (
+                    <><RefreshCw className="h-4 w-4 mr-1" />Re-check understanding</>
+                  ) : (
+                    <><BrainCircuit className="h-4 w-4 mr-1" />Check understanding</>
+                  )}
+                </Button>
+                {preflightGateBlocked && preflightReadback && (
+                  <span className="text-xs text-amber-700">Context changed — re-check before generating.</span>
+                )}
+                {!preflightReadback && (
+                  <span className="text-xs text-violet-700">
+                    Required before generating: confirm the AI's restatement.
+                  </span>
+                )}
+              </div>
+              {preflightReadback && (
+                <div className={`rounded-md border p-3 text-sm ${preflightReadbackIsFresh ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+                  <div className="flex items-center gap-1.5 mb-1 text-xs font-semibold uppercase tracking-wide">
+                    <BrainCircuit className="h-3.5 w-3.5" />
+                    {preflightReadbackIsFresh ? "AI's understanding (confirmed)" : "AI's understanding (stale)"}
+                  </div>
+                  <p className="whitespace-pre-wrap leading-snug">{preflightReadback}</p>
+                  {preflightReadbackIsFresh && (
+                    <p className="mt-2 text-xs opacity-80">
+                      If this matches what you mean, hit Generate. If not, sharpen your context above and re-check.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
-              <Button
-                size="sm"
-                onClick={handleGeneratePreview}
-                disabled={generatePreview.isPending}
-              >
-                {generatePreview.isPending ? (
-                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
-                ) : (
-                  <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
-                )}
-              </Button>
+              <WrapTooltip content={preflightGateBlocked ? "Re-check the AI's understanding of your context first." : ""}>
+                <Button
+                  size="sm"
+                  onClick={handleGeneratePreview}
+                  disabled={generatePreview.isPending || preflightGateBlocked}
+                >
+                  {generatePreview.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
+                  ) : preflightReadbackIsFresh ? (
+                    <><CheckCircle className="h-4 w-4 mr-1" />Looks right — Generate Submission Preview</>
+                  ) : (
+                    <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
+                  )}
+                </Button>
+              </WrapTooltip>
             </div>
           </CardContent>
         </Card>
@@ -726,6 +931,114 @@ export function WorkflowPlayer({
               </div>
             </div>
 
+            <div className="rounded-md border border-violet-200 bg-violet-50/40 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-900">
+                  <BrainCircuit className="h-3.5 w-3.5" />
+                  Special circumstances
+                </div>
+                {!reviewContextEditing && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs gap-1 text-violet-800 hover:bg-violet-100"
+                    onClick={() => {
+                      setReviewContextDraft(reviewSavedContext);
+                      setReviewContextEditing(true);
+                    }}
+                  >
+                    <Edit3 className="h-3 w-3" />Edit
+                  </Button>
+                )}
+              </div>
+              {!reviewContextEditing && (
+                <>
+                  {reviewSavedContext ? (
+                    <p className="text-sm text-violet-900 whitespace-pre-wrap">{reviewSavedContext}</p>
+                  ) : (
+                    <p className="text-xs italic text-muted-foreground">No special circumstances were attached. Add some if the surface error type is misleading.</p>
+                  )}
+                  {draftSubmission.understandingReadback && reviewReadbackIsFresh && (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900">
+                      <div className="font-semibold uppercase tracking-wide mb-1">AI understanding (confirmed)</div>
+                      <p className="whitespace-pre-wrap leading-snug">{draftSubmission.understandingReadback}</p>
+                    </div>
+                  )}
+                  {reviewRegenerateBlocked && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 flex items-start gap-2">
+                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-medium">AI understanding not confirmed for this context.</p>
+                        <p className="mt-0.5">Click Edit, run "Check understanding", and Save before regenerating.</p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              {reviewContextEditing && (
+                <>
+                  <Textarea
+                    value={reviewContextDraft}
+                    onChange={(e) => setReviewContextDraft(e.target.value)}
+                    placeholder="Add or edit narrative-changing context for the AI…"
+                    className="min-h-[64px] bg-white"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {reviewContextDraft.trim().length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCheckReviewUnderstanding}
+                        disabled={preflightUnderstanding.isPending}
+                        className="border-violet-300 text-violet-800 hover:bg-violet-100"
+                      >
+                        {preflightUnderstanding.isPending ? (
+                          <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Checking…</>
+                        ) : reviewReadback && reviewReadbackForContext === reviewContextDraft.trim() ? (
+                          <><RefreshCw className="h-3 w-3 mr-1" />Re-check</>
+                        ) : (
+                          <><BrainCircuit className="h-3 w-3 mr-1" />Check understanding</>
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveReviewContext}
+                      disabled={updateDraft.isPending}
+                    >
+                      {updateDraft.isPending ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Saving…</>
+                      ) : (
+                        <>Save context</>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setReviewContextEditing(false);
+                        setReviewContextDraft("");
+                      }}
+                    >
+                      <X className="h-3 w-3 mr-1" />Cancel
+                    </Button>
+                  </div>
+                  {reviewReadback && (
+                    <div className={`rounded-md border p-2.5 text-xs ${reviewReadbackForContext === reviewContextDraft.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+                      <div className="font-semibold uppercase tracking-wide mb-1 flex items-center gap-1">
+                        <BrainCircuit className="h-3 w-3" />
+                        AI understanding {reviewReadbackForContext === reviewContextDraft.trim() ? "(confirmed for this context)" : "(stale — re-check)"}
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">{reviewReadback}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider text-xs">Dispute Write-Up</div>
               <div className="flex items-center gap-1">
@@ -745,7 +1058,8 @@ export function WorkflowPlayer({
                   variant="ghost"
                   className="h-7 text-xs gap-1"
                   onClick={handleRegenerateText}
-                  disabled={regenerateText.isPending || revertDescription.isPending}
+                  disabled={regenerateText.isPending || revertDescription.isPending || reviewRegenerateBlocked}
+                  title={reviewRegenerateBlocked ? "Re-confirm AI understanding for the updated context first." : undefined}
                 >
                   {regenerateText.isPending ? (
                     <><Loader2 className="h-3 w-3 animate-spin" />Regenerating...</>

@@ -18,4 +18,8 @@ export interface CreatePortalSubmissionBody {
   gpsBreadcrumbsAvailable?: string;
   descriptionHtml?: string;
   disputeReason?: string;
+  /** Optional narrative-changing context provided by the operator. If non-empty, `understandingReadback` MUST also be supplied (the UI gates Generate behind a confirmed AI readback). */
+  specialCircumstances?: string;
+  /** The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty. */
+  understandingReadback?: string;
 }

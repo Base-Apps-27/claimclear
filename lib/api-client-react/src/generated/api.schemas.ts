@@ -478,6 +478,21 @@ export interface PortalSubmissionResponse {
   errorDetails?: string | null;
   /** @nullable */
   disputeReason?: string | null;
+  /**
+   * Operator-supplied narrative-changing context (e.g. "MAS pushed an address update after the ride completed"). Woven into the AI prompt with strong emphasis.
+   * @nullable
+   */
+  specialCircumstances?: string | null;
+  /**
+   * AI's 2–4 sentence restatement of what the dispute is actually about, confirmed by the operator before the full draft was generated.
+   * @nullable
+   */
+  understandingReadback?: string | null;
+  /**
+   * Timestamp of when the most recent confirmed understanding readback was captured.
+   * @nullable
+   */
+  understandingReadbackAt?: string | null;
   /** @nullable */
   evidenceNotes?: string | null;
   /** @nullable */
@@ -1449,6 +1464,22 @@ export interface CreatePortalSubmissionBody {
   gpsBreadcrumbsAvailable?: string;
   descriptionHtml?: string;
   disputeReason?: string;
+  /** Optional narrative-changing context provided by the operator. If non-empty, `understandingReadback` MUST also be supplied (the UI gates Generate behind a confirmed AI readback). */
+  specialCircumstances?: string;
+  /** The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty. */
+  understandingReadback?: string;
+}
+
+export interface PortalUnderstandingPreflightBody {
+  claimId?: number;
+  invoiceGroupId?: number;
+  disputeReason?: string;
+  specialCircumstances?: string;
+}
+
+export interface PortalUnderstandingPreflightResponse {
+  /** A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context. */
+  readback: string;
 }
 
 export interface PollSubmissionsBody {
@@ -2640,6 +2671,10 @@ export type UpdatePortalSubmissionDraftBody = {
   transportationProviderName?: string;
   phoneNumber?: string;
   invoiceNumber?: string;
+  /** Edited operator context. When this changes, `understandingReadback` is cleared server-side so a fresh re-check is required before regenerate. */
+  specialCircumstances?: string;
+  /** Updated AI readback the operator confirmed. Usually only sent together with the matching `specialCircumstances`. */
+  understandingReadback?: string;
 };
 
 export type RevertPortalSubmissionDescriptionBody = {

@@ -102,6 +102,8 @@ import type {
   PlaceHoldBody,
   PortalResponseItem,
   PortalSubmissionResponse,
+  PortalUnderstandingPreflightBody,
+  PortalUnderstandingPreflightResponse,
   PostResponseActionBody,
   PresenceHeartbeatBody,
   PresenceLeaveBody,
@@ -5124,6 +5126,98 @@ export const useGeneratePortalSubmissionPreview = <
   return useMutation(
     getGeneratePortalSubmissionPreviewMutationOptions(options),
   );
+};
+
+/**
+ * Lightweight read-only step. Given the error type, the decision-tree outcome, and any operator-supplied special circumstances, returns a short plain-language restatement of what the dispute is actually about. The operator either confirms (and then triggers Generate) or sharpens the context and re-checks. No DB writes happen here.
+
+ * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ */
+export const getPortalUnderstandingPreflightUrl = () => {
+  return `/api/portal-submissions/preflight-understanding`;
+};
+
+export const portalUnderstandingPreflight = async (
+  portalUnderstandingPreflightBody: PortalUnderstandingPreflightBody,
+  options?: RequestInit,
+): Promise<PortalUnderstandingPreflightResponse> => {
+  return customFetch<PortalUnderstandingPreflightResponse>(
+    getPortalUnderstandingPreflightUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(portalUnderstandingPreflightBody),
+    },
+  );
+};
+
+export const getPortalUnderstandingPreflightMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof portalUnderstandingPreflight>>,
+    TError,
+    { data: BodyType<PortalUnderstandingPreflightBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof portalUnderstandingPreflight>>,
+  TError,
+  { data: BodyType<PortalUnderstandingPreflightBody> },
+  TContext
+> => {
+  const mutationKey = ["portalUnderstandingPreflight"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof portalUnderstandingPreflight>>,
+    { data: BodyType<PortalUnderstandingPreflightBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return portalUnderstandingPreflight(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PortalUnderstandingPreflightMutationResult = NonNullable<
+  Awaited<ReturnType<typeof portalUnderstandingPreflight>>
+>;
+export type PortalUnderstandingPreflightMutationBody =
+  BodyType<PortalUnderstandingPreflightBody>;
+export type PortalUnderstandingPreflightMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ */
+export const usePortalUnderstandingPreflight = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof portalUnderstandingPreflight>>,
+    TError,
+    { data: BodyType<PortalUnderstandingPreflightBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof portalUnderstandingPreflight>>,
+  TError,
+  { data: BodyType<PortalUnderstandingPreflightBody> },
+  TContext
+> => {
+  return useMutation(getPortalUnderstandingPreflightMutationOptions(options));
 };
 
 /**
