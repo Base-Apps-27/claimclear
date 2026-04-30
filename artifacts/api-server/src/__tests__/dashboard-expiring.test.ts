@@ -178,14 +178,17 @@ test("isUrgent: a deadline already in the past counts as urgent", () => {
 
 // Status filter ---------------------------------------------------------
 
-test("EXPIRING_ACTIONABLE_STATUSES excludes 'Awaiting Response' and 'On Hold'", () => {
+test("EXPIRING_ACTIONABLE_STATUSES excludes 'Awaiting Response' (already filed; clock satisfied)", () => {
   assert.ok(
     !EXPIRING_ACTIONABLE_STATUSES.includes("Awaiting Response" as never),
-    "Awaiting Response must not be in actionable statuses",
+    "Awaiting Response must not be in actionable statuses — once we've filed, the 30-day rule is met",
   );
+});
+
+test("EXPIRING_ACTIONABLE_STATUSES includes 'On Hold' (the filing clock keeps running while paused)", () => {
   assert.ok(
-    !EXPIRING_ACTIONABLE_STATUSES.includes("On Hold" as never),
-    "On Hold must not be in actionable statuses",
+    EXPIRING_ACTIONABLE_STATUSES.includes("On Hold" as never),
+    "On Hold must be in actionable statuses — pausing internally does not pause the 30-day deadline",
   );
 });
 

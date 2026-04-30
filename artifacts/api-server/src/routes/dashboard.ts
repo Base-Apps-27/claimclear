@@ -11,14 +11,18 @@ import { humanizeAuditRow } from "../lib/activity-humanizer";
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
-// Statuses where the next action is on our team. Excludes "Awaiting Response"
-// (ball is in the payor's court) and "On Hold" (we've intentionally paused).
+// Statuses where the 30-day filing clock is still running on us. Includes
+// "On Hold" because pausing internally does not pause the deadline — if we
+// don't unpause and file in time, we lose the window. Excludes only
+// "Awaiting Response": once we've filed, the 30-day rule is satisfied and
+// the wait is on the payor's external timeline, not ours.
 export const EXPIRING_ACTIONABLE_STATUSES = [
   "New",
   "Needs Evidence",
   "Portal Queued",
   "Generating Email",
   "Ready to Review",
+  "On Hold",
 ] as const;
 const OVERDUE_THRESHOLD_MINUTES = 15;
 
