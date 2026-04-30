@@ -40,10 +40,10 @@ const ROUTINE = [
   },
   {
     time: "3:00",
-    page: "Work Queue · Awaiting + Action Required",
+    page: "Queue · Responses Awaiting Review",
     tasks: [
-      "Re-check Action Required for new payor responses (Email Thread)",
-      "Handle each: Accept Loss (Withdrawn), Submit New Invoice, or Re-dispute",
+      "Open the Responses Awaiting Review card — these are payor replies AI tagged",
+      "Pick the verdict: Re-dispute, Re-attest, Submit New Invoice, or Denied by Payor",
       "Add a note on anything you couldn't finish",
     ],
   },
@@ -51,7 +51,7 @@ const ROUTINE = [
     time: "4:00",
     page: "Withdrawals Review",
     tasks: [
-      "Open today's Cannot Dispute / Non-Issue / Accepted Loss closures",
+      "Open today's Cannot Dispute / Non-Issue / Denied by Payor closures",
       "Fill 'Communicated to' and 'Review notes / lessons learned' on each",
       "Mark Addressed (bulk where the row is already complete)",
     ],

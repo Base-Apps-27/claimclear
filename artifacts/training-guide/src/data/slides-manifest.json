@@ -35,8 +35,8 @@
     "id": "a1b2c3d4-0005-4000-8000-000000000005",
     "position": 5,
     "filepath": "src/pages/slides/ReviewQueue.tsx",
-    "title": "Triage New Uploads in the Review Queue",
-    "description": "First look at every freshly imported group",
+    "title": "The Queue Page: Two Cards, Two Jobs",
+    "description": "Classification Inbox + Responses Awaiting Review side by side",
     "speakerNotes": ""
   },
   {
@@ -131,8 +131,8 @@
     "id": "a1b2c3d4-0018-4000-8000-000000000018",
     "position": 17,
     "filepath": "src/pages/slides/HandlingResponse.tsx",
-    "title": "Handling the MAS Response",
-    "description": "Accept Loss, Submit New Invoice, or Re-dispute",
+    "title": "Handling the Payor Response",
+    "description": "Pick the verdict: Re-dispute, Re-attest, Submit New Invoice, or Denied by Payor",
     "speakerNotes": ""
   },
   {
@@ -140,7 +140,7 @@
     "position": 18,
     "filepath": "src/pages/slides/WithdrawalsReview.tsx",
     "title": "Withdrawals Review: Where Closures Land",
-    "description": "Supervisor sign-off for Cannot Dispute, Non-Issue, and Accepted Loss",
+    "description": "Supervisor sign-off for Cannot Dispute, Non-Issue, and Denied by Payor",
     "speakerNotes": ""
   },
   {

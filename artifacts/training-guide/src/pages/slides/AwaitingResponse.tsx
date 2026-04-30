@@ -49,7 +49,7 @@ export default function AwaitingResponse() {
         <Callout number="1" title="No action needed — usually" body="Awaiting means the payor owns the next move. ClaimClear watches the Email Thread and Portal Submissions for replies and updates status automatically." />
         <Callout number="2" title="Sort by 'Days waiting'" body="Anything red (>14 days) is past the typical reply window. Open the Email Thread and reply directly, or escalate." color="orange" />
         <Callout number="3" title="Don't re-submit while waiting" body="Filing the same dispute twice gets you flagged. If you really need to add new evidence, post a Note instead of re-submitting." color="primary" />
-        <Callout number="4" title="When the payor responds…" body="Status auto-changes to Resolved (won) or Denied, and the claim re-appears in Action Required so you can close it or re-dispute." />
+        <Callout number="4" title="When the payor responds…" body="Status auto-changes to Needs Review when a substantive response arrives — find it in Responses Awaiting Review on the Queue page, where AI has tagged it with a hint. Acknowledgments don't change status." />
       </div>
     </SlideShell>
   );

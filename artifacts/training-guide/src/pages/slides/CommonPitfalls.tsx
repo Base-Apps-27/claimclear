@@ -12,8 +12,8 @@ const PITFALLS = [
     fix: "Use Re-dispute (after a denial) or post a Note. Never Send to Portal a second time on a claim that's still Awaiting.",
   },
   {
-    bad: "Closing claims as Cannot Dispute / Non-Issue without lessons learned",
-    why: "Every closure exit (Cannot Dispute, Non-Issue, Accepted Loss) lands in Withdrawals Review. If 'Communicated to' and 'Review notes / lessons learned' are blank, supervisors can't sign off and the team learns nothing from the loss.",
+    bad: "Closing claims as Cannot Dispute / Non-Issue / Denied by Payor without lessons learned",
+    why: "Every closure exit (Cannot Dispute, Non-Issue, Denied by Payor) lands in Withdrawals Review. If 'Communicated to' and 'Review notes / lessons learned' are blank, supervisors can't sign off and the team learns nothing from the loss.",
     fix: "Fill in who you told (driver / dispatcher / supervisor) and one line about why. Then mark Addressed. Don't take a closure exit at all if you can't articulate the reason.",
   },
   {

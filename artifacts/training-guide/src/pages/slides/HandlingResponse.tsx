@@ -3,50 +3,52 @@ import { Browser, Callout, SlideShell, StatusPill } from "@/components/slide-ui"
 export default function HandlingResponse() {
   return (
     <SlideShell
-      step={16}
+      step={17}
       totalSteps={22}
-      title="Handling the MAS Response"
-      subtitle="When MAS replies, you'll see a banner on the claim with three choices. Pick the one that matches what MAS actually said."
+      title="Handling the Payor Response"
+      subtitle="A response landed. AI tagged it as a hint, the row sits in Responses Awaiting Review on the Queue page, and now it needs a human verdict."
       accent="orange"
     >
       <div style={{ flex: 1.4 }}>
         <Browser url="/claim/CC-2026-04-1138">
           <div className="bg-bg h-full" style={{ padding: "1.5vh 1.5vw" }}>
-            <div className="bg-white rounded-[0.7vw] border border-primary/10" style={{ padding: "1.8vh 1.5vw" }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: "1vh" }}>
+            <div className="bg-white rounded-[0.7vw] border border-primary/10" style={{ padding: "1.5vh 1.3vw" }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: "0.8vh" }}>
                 <div className="flex items-center gap-[0.6vw]">
                   <p className="font-mono font-bold text-primary" style={{ fontSize: "1.1vw" }}>CC-2026-04-1138</p>
-                  <StatusPill label="Denied" kind="red" />
+                  <StatusPill label="Needs Review" kind="amber" />
                 </div>
+                <span className="font-body text-muted" style={{ fontSize: "0.7vw" }}>$68.50 · GPS Out of Range</span>
               </div>
 
-              <div className="bg-[#FEE2E2] rounded-[0.5vw] border border-[#DC2626]/20" style={{ padding: "1.2vh 1.2vw" }}>
-                <div className="flex items-center justify-between" style={{ marginBottom: "0.5vh" }}>
+              <div className="bg-[#FEE2E2] rounded-[0.5vw] border border-[#DC2626]/20" style={{ padding: "1vh 1vw" }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: "0.4vh" }}>
                   <div className="flex items-center gap-[0.5vw]">
                     <div className="bg-[#DC2626] rounded-full" style={{ width: "0.5vw", height: "0.5vw" }} />
-                    <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Payor reply in Email Thread — denied</p>
+                    <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.85vw" }}>Payor reply received — needs your verdict</p>
                   </div>
-                  <span className="font-body text-[#991B1B]" style={{ fontSize: "0.7vw" }}>Open thread →</span>
+                  <span className="bg-white text-[#991B1B] rounded-full font-display font-bold border border-[#DC2626]/30" style={{ padding: "0.15vh 0.55vw", fontSize: "0.65vw" }}>AI hint: Denial · 87%</span>
                 </div>
-                <p className="font-body text-[#991B1B]" style={{ fontSize: "0.8vw" }}>"Evidence insufficient. GPS pickup point exceeds tolerance. Trip sheet signature does not match member on file."</p>
+                <p className="font-body text-[#991B1B]" style={{ fontSize: "0.78vw", lineHeight: "1.4" }}>"Evidence insufficient. GPS pickup point exceeds tolerance. Trip sheet signature does not match member on file."</p>
+                <p className="font-body text-[#991B1B]" style={{ fontSize: "0.65vw", marginTop: "0.4vh" }}>Open Email Thread →</p>
               </div>
 
-              <p className="font-display text-primary font-bold" style={{ fontSize: "1vw", marginTop: "1.5vh" }}>What now?</p>
-              <div className="grid grid-cols-3 gap-[0.7vw]" style={{ marginTop: "0.8vh" }}>
-                <div className="border border-[#DC2626]/30 bg-[#FEE2E2]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
-                  <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Mark Denied by Payor</p>
-                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Closure reason "denied_by_payor". Status → Denied. Short note required.</p>
-                  <button className="bg-[#DC2626] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>Denied by Payor</button>
+              <p className="font-display text-primary font-bold" style={{ fontSize: "0.95vw", marginTop: "1.3vh" }}>What's the verdict?</p>
+              <p className="font-body text-muted" style={{ fontSize: "0.7vw", marginTop: "0.2vh" }}>The AI tag is just a suggestion. You pick the action.</p>
+
+              <div style={{ marginTop: "0.9vh" }}>
+                <p className="font-body text-muted uppercase tracking-wider" style={{ fontSize: "0.6vw" }}>Continuation</p>
+                <div className="grid grid-cols-3 gap-[0.5vw]" style={{ marginTop: "0.4vh" }}>
+                  <button className="border border-[#F4A23E]/40 bg-[#FEF3C7]/40 text-[#92400E] font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.7vh 0", fontSize: "0.75vw" }}>Re-dispute</button>
+                  <button className="border border-[#F4A23E]/40 bg-[#FEF3C7]/40 text-[#92400E] font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.7vh 0", fontSize: "0.75vw" }}>Re-attest</button>
+                  <button className="border border-[#16A34A]/40 bg-[#D1FAE5]/40 text-[#065F46] font-display font-semibold rounded-[0.4vw]" style={{ padding: "0.7vh 0", fontSize: "0.75vw" }}>Submit New Invoice</button>
                 </div>
-                <div className="border border-[#16A34A]/30 bg-[#D1FAE5]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
-                  <p className="font-display text-[#065F46] font-bold" style={{ fontSize: "0.9vw" }}>Submit New Invoice</p>
-                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Re-bill under a new invoice with corrected info (e.g. fix the member name).</p>
-                  <button className="bg-[#16A34A] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>New Invoice</button>
-                </div>
-                <div className="border border-[#F4A23E]/30 bg-[#FEF3C7]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
-                  <p className="font-display text-[#92400E] font-bold" style={{ fontSize: "0.9vw" }}>Re-dispute</p>
-                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Add stronger evidence and submit again. Resets to Needs Evidence.</p>
-                  <button className="bg-[#F4A23E] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>Re-dispute</button>
+              </div>
+
+              <div style={{ marginTop: "0.8vh" }}>
+                <p className="font-body text-muted uppercase tracking-wider" style={{ fontSize: "0.6vw" }}>Closure</p>
+                <div style={{ marginTop: "0.4vh" }}>
+                  <button className="border border-[#DC2626]/40 bg-[#FEE2E2]/40 text-[#991B1B] font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.7vh 0", fontSize: "0.75vw" }}>Denied by Payor — close with structured intake</button>
                 </div>
               </div>
             </div>
@@ -54,10 +56,10 @@ export default function HandlingResponse() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="Read the payor's exact response in Email Thread" body="The banner snippets the latest message; click 'Open thread' to see the full back-and-forth and reply directly to the payor." />
-        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = denied_by_payor (response required). 'Withdrawn' (Cannot Dispute) is when WE close it before submission. 'Non-Issue' is when there's no real billing error. All closures need a reason and lessons-learned in Withdrawals Review." color="orange" />
-        <Callout number="3" title="Submit New Invoice fixes data problems" body="If the payor denied because of a member-name mismatch and you can re-bill correctly, this is the right call." />
-        <Callout number="4" title="Re-dispute adds firepower" body="Pulled a better GPS log? Got a corrected signature? Re-dispute. Status goes back to Needs Evidence and you run the workflow again." color="primary" />
+        <Callout number="1" title="AI tags, you decide" body="Every payor reply gets auto-classified (approval / denial / partial / info_request / other). The tag is a hint — even an apparent approval still needs you to re-attest and confirm payment off-platform. Acknowledgments are the only exception: they don't change status." />
+        <Callout number="2" title="Continuation = keep fighting" body="Re-dispute when you've got stronger evidence. Re-attest when the payor needs a fresh signature. Submit New Invoice when you can re-bill correctly (e.g. fix the member name)." color="orange" />
+        <Callout number="3" title="Closure here = Denied by Payor only" body="Stage 2 closures only have one reason: the payor formally rejected us. Cannot Dispute and Non-Issue belong to Stage 1 (before submission) — you can't pick them here." color="primary" />
+        <Callout number="4" title="Find it in Responses Awaiting Review" body="Every claim with a fresh response surfaces on the Queue page's Responses Awaiting Review card. Pick the verdict from there or open the claim and use the same buttons." />
       </div>
     </SlideShell>
   );

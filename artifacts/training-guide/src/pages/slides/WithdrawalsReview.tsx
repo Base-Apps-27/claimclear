@@ -3,7 +3,7 @@ import { AppSidebar, Browser, Callout, SlideShell, StatusPill } from "@/componen
 const ROWS = [
   { inv: "INV-89388", reason: "Cannot Dispute", kind: "orange" as const, amt: "$184", who: "Maria R.", days: "2d" },
   { inv: "INV-89372", reason: "Non-Issue", kind: "muted" as const, amt: "$62", who: "Jordan T.", days: "3d" },
-  { inv: "INV-89351", reason: "Accepted Loss", kind: "red" as const, amt: "$94", who: "—", days: "5d" },
+  { inv: "INV-89351", reason: "Denied by Payor", kind: "red" as const, amt: "$94", who: "—", days: "5d" },
   { inv: "INV-89344", reason: "Cannot Dispute", kind: "orange" as const, amt: "$220", who: "—", days: "6d" },
 ];
 
@@ -13,7 +13,7 @@ export default function WithdrawalsReview() {
       step={18}
       totalSteps={24}
       title="Withdrawals Review: Where Closures Land"
-      subtitle="Every claim or group closed as Cannot Dispute, Non-Issue, or Accepted Loss shows up here for supervisor sign-off. Capture lessons learned, confirm who was told, then mark Addressed."
+      subtitle="Every claim or group closed as Cannot Dispute, Non-Issue, or Denied by Payor shows up here for supervisor sign-off. Capture lessons learned, confirm who was told, then mark Addressed."
       accent="orange"
     >
       <div style={{ flex: 1.5 }}>
@@ -76,7 +76,7 @@ export default function WithdrawalsReview() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="Three closure exits land here" body="Cannot Dispute, Non-Issue, and Accepted Loss all funnel into Withdrawals. Denied (payor said no) doesn't — it stays on the claim until you decide what to do." color="orange" />
+        <Callout number="1" title="Three closure reasons land here" body="Cannot Dispute and Non-Issue (Stage 1, before we ever submit a dispute) plus Denied by Payor (Stage 2, after the payor formally rejects us) all funnel into Withdrawals. Different stages, same sign-off ritual." color="orange" />
         <Callout number="2" title="Open the side panel to capture context" body="Every closure deserves a 'Communicated to' (driver, dispatcher, supervisor) and a 'Review notes / lessons learned' so the next person sees why we walked away." />
         <Callout number="3" title="Mark Addressed when sign-off is done" body="Addressed flips the row green and writes a 'closure_addressed' entry to the activity feed with the communicated-to and review notes baked in. Use bulk select for routine sign-off." color="primary" />
         <Callout number="4" title="Hide-addressed is on by default" body="Toggle it off when you need to audit historical closures or revisit a row. The CSV export respects whatever filters you've set." />
