@@ -127,9 +127,9 @@ test("isUrgent: Friday + Sunday deadline is urgent (shifts to today)", () => {
   assert.equal(isUrgentDeadline(sd, FRIDAY), true);
 });
 
-test("isUrgent: Friday + Monday deadline is urgent (next business day)", () => {
+test("isUrgent: Friday + Monday deadline is NOT urgent (Mon can still be filed Mon)", () => {
   const sd = serviceDateForDeadline(NEXT_MONDAY);
-  assert.equal(isUrgentDeadline(sd, FRIDAY), true);
+  assert.equal(isUrgentDeadline(sd, FRIDAY), false);
 });
 
 test("isUrgent: Friday + Tuesday deadline is NOT urgent", () => {
@@ -137,14 +137,14 @@ test("isUrgent: Friday + Tuesday deadline is NOT urgent", () => {
   assert.equal(isUrgentDeadline(sd, FRIDAY), false);
 });
 
-test("isUrgent: Thursday + Saturday deadline is urgent (shifts to Friday = NBD)", () => {
+test("isUrgent: Thursday + Saturday deadline is NOT urgent (effective deadline = Fri = tomorrow)", () => {
   const sd = serviceDateForDeadline(SATURDAY);
-  assert.equal(isUrgentDeadline(sd, THURSDAY), true);
+  assert.equal(isUrgentDeadline(sd, THURSDAY), false);
 });
 
-test("isUrgent: Thursday + Sunday deadline is urgent (shifts to Friday = NBD)", () => {
+test("isUrgent: Thursday + Sunday deadline is NOT urgent (effective deadline = Fri = tomorrow)", () => {
   const sd = serviceDateForDeadline(SUNDAY);
-  assert.equal(isUrgentDeadline(sd, THURSDAY), true);
+  assert.equal(isUrgentDeadline(sd, THURSDAY), false);
 });
 
 test("isUrgent: Thursday + Monday deadline is NOT urgent", () => {
@@ -152,10 +152,15 @@ test("isUrgent: Thursday + Monday deadline is NOT urgent", () => {
   assert.equal(isUrgentDeadline(sd, THURSDAY), false);
 });
 
-test("isUrgent: Monday + Tuesday deadline is urgent (today + NBD)", () => {
+test("isUrgent: Monday + Tuesday deadline is NOT urgent (Tue can still be filed Tue)", () => {
   // Use a Tuesday that's exactly +1 day from MONDAY.
   const tuesdayJan20 = localDay(2026, 0, 20);
   const sd = serviceDateForDeadline(tuesdayJan20);
+  assert.equal(isUrgentDeadline(sd, MONDAY), false);
+});
+
+test("isUrgent: Monday + Monday deadline is urgent (today)", () => {
+  const sd = serviceDateForDeadline(MONDAY);
   assert.equal(isUrgentDeadline(sd, MONDAY), true);
 });
 

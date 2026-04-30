@@ -74,10 +74,12 @@ export function effectiveDaysRemaining(
 
 /**
  * A deadline is "urgent" when, after shifting weekend deadlines back to the
- * prior Friday, it lands on today or the very next business day. This
- * captures the rule that on a Friday, deadlines on Sat/Sun/Mon are all
- * effectively as urgent as today/tomorrow because the office is closed over
- * the weekend.
+ * prior Friday, it lands on today or earlier. In other words: the team must
+ * file it today because tomorrow is too late.
+ *
+ * On a Friday this naturally captures Sat/Sun raw deadlines (they shift back
+ * to Friday = today). It does NOT capture next Monday's deadlines on a
+ * Friday, because those can still be filed on Monday morning.
  */
 export function isUrgentDeadline(
   serviceDate: string | null,
@@ -86,6 +88,5 @@ export function isUrgentDeadline(
   if (!serviceDate) return false;
   const deadline = shiftDeadlineForOfficeClosure(rawDeadline(serviceDate));
   const today = startOfDay(now);
-  const nbd = nextBusinessDay(today);
-  return deadline.getTime() <= nbd.getTime();
+  return deadline.getTime() <= today.getTime();
 }

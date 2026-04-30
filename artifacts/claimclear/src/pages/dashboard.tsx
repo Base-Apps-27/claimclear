@@ -276,7 +276,7 @@ export default function Dashboard() {
                   Needs filing now
                 </span>
                 <span className="text-xs" style={{ color: "hsl(var(--cc-red-fg))", opacity: 0.85 }}>
-                  · {summary.urgentCount} urgent · {Math.max(summary.expiringGroups.length - summary.urgentCount, 0)} more this week
+                  · {summary.urgentCount} must file today · {Math.max(summary.expiringGroups.length - summary.urgentCount, 0)} more in next 10 days
                 </span>
               </div>
               <Link

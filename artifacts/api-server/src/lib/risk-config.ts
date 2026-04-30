@@ -13,7 +13,11 @@ export const VENDOR_PREPAY_RATE = 0.70;
 // been shifted back to the prior Friday.
 //   SOON   — broadest "deadline closing" window; powers the dashboard
 //            "Expiring" list and the `?expiring=soon` filter URL.
-//   URGENT — narrower band for "needs filing now"; powers the red urgent
-//            badge and the `?expiring=urgent` filter URL.
+//   URGENT — strict "cannot wait until tomorrow" set; powers the red urgent
+//            badge, the email's "Needs filing now" rows, and the
+//            `?expiring=urgent` filter URL. Defined as effective deadline on
+//            or before today (zero days remaining or less). On a Friday this
+//            naturally includes Sat/Sun raw deadlines because the
+//            office-closure shift has already pulled them back to Friday.
 export const SOON_DAYS = 10;
-export const URGENT_DAYS = 3;
+export const URGENT_DAYS = 0;

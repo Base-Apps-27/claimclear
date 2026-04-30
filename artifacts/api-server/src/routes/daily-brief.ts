@@ -252,7 +252,7 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
           <h2 style="font-size:16px;color:#1e293b;margin:0;">
             Needs filing now
             <span style="font-size:13px;font-weight:500;color:${urgentCount > 0 ? "#dc2626" : "#64748b"};margin-left:6px;">
-              · ${urgentCount} urgent${urgentCount > 0 ? `, ${actionableExpiring.length - urgentCount} more this week` : `, ${actionableExpiring.length} approaching deadline`}
+              · ${urgentCount} must file today${urgentCount > 0 ? `, ${actionableExpiring.length - urgentCount} more in next ${SOON_DAYS} days` : `, ${actionableExpiring.length} approaching deadline`}
             </span>
           </h2>
           <a href="${urgentListHref}" style="font-size:12px;color:#3478F6;text-decoration:none;font-weight:600;">
