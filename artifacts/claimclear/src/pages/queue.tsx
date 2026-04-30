@@ -13,9 +13,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
-import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle, Inbox } from "lucide-react";
+import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle, Inbox, Loader2 } from "lucide-react";
 import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
+import {
+  QueueResponseReviewPanel,
+  ResponseReviewRowMeta,
+} from "@/components/queue-response-review-panel";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -39,10 +43,12 @@ export default function Queue() {
     ? (tabParam as QueueTab)
     : DEFAULT_TAB;
 
-  // Two independent selection contexts so triage and workflow can coexist
-  // visually without one closing the other.
+  // Three independent selection contexts so the workflow panel and the two
+  // triage cards (Classification Inbox and Responses Awaiting Review) can
+  // each manage their own open row without stepping on the others.
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
   const [selectedTriageId, setSelectedTriageId] = useState<number | null>(null);
+  const [selectedResponseReviewId, setSelectedResponseReviewId] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
   const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedWorkflowId ?? undefined);
@@ -61,6 +67,15 @@ export default function Queue() {
 
   const selectTriage = (id: number) => {
     setSelectedTriageId(id);
+    setSelectedResponseReviewId(null);
+    window.requestAnimationFrame(() => {
+      triagePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const selectResponseReview = (id: number) => {
+    setSelectedResponseReviewId(id);
+    setSelectedTriageId(null);
     window.requestAnimationFrame(() => {
       triagePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -99,14 +114,20 @@ export default function Queue() {
   const awaitingTotal = awaitingQuery.data?.total ?? 0;
   const onHoldTotal = onHoldQuery.data?.total ?? 0;
 
-  // The Classification Inbox is strictly for items missing a classification
-  // (no errorTypeId). "Needs Review" status also gets set when a payer
-  // response comes back via the email response matcher (see
-  // lib/response-matcher.ts) — those items are already classified and
-  // belong to a separate "response received → action required" surface
-  // that hasn't been redesigned yet. Filtering by !errorTypeId keeps this
-  // inbox honest until that redesign happens.
+  // "Needs Review" is overloaded: it covers both untriaged imports (no
+  // errorTypeId yet) AND already-classified groups whose payor sent a
+  // response that needs a human verdict. We split the list down the middle:
+  //  - Classification Inbox  → !errorTypeId (label & auto-advance)
+  //  - Responses Awaiting Review → errorTypeId (review verdict + next step)
+  // Keeping these as two distinct surfaces preserves the muscle memory
+  // operators built on the inbox while giving response triage its own UI.
   const unclassifiedGroups = needsReviewGroups.filter(g => !g.errorTypeId);
+  const responseReviewGroups = needsReviewGroups.filter(g => !!g.errorTypeId);
+  // Show a loading shim instead of "All caught up / All payor responses
+  // reviewed" while the underlying Needs Review query is still resolving —
+  // otherwise the empty messages flash on first paint and look like false
+  // negatives.
+  const triageLoading = needsReviewQuery.isLoading;
 
   // Within each on-clock list, sort urgent rows to the top, then by remaining
   // days asc. The API already returns rows in service-date asc order, which is
@@ -143,6 +164,9 @@ export default function Queue() {
   ];
   const selectedWorkflowGroup = selectedWorkflowId ? allGroups.find(g => g.id === selectedWorkflowId) || null : null;
   const selectedTriageGroup = selectedTriageId ? needsReviewGroups.find(g => g.id === selectedTriageId) || null : null;
+  const selectedResponseReviewGroup = selectedResponseReviewId
+    ? responseReviewGroups.find(g => g.id === selectedResponseReviewId) || null
+    : null;
 
   useEffect(() => {
     if (!successMessage) return;
@@ -159,6 +183,16 @@ export default function Queue() {
       setSelectedTriageId(null);
     }
   }, [selectedTriageId, unclassifiedGroups]);
+
+  // Same self-cleaning behaviour for the Responses Awaiting Review panel:
+  // once a verdict moves the group out of "Needs Review" (or strips its
+  // errorTypeId, hypothetically) we drop the dangling selection so the
+  // empty-state is honest.
+  useEffect(() => {
+    if (selectedResponseReviewId && !responseReviewGroups.some(g => g.id === selectedResponseReviewId)) {
+      setSelectedResponseReviewId(null);
+    }
+  }, [selectedResponseReviewId, responseReviewGroups]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
 
@@ -199,8 +233,26 @@ export default function Queue() {
     );
   };
 
-  const renderGroupRow = (group: InvoiceGroupResponse, opts: { onSelect: (id: number) => void; selectedId: number | null; showDeadline?: boolean }) => {
+  const renderGroupRow = (
+    group: InvoiceGroupResponse,
+    opts: {
+      onSelect: (id: number) => void;
+      selectedId: number | null;
+      showDeadline?: boolean;
+      // When provided, replaces the default right-hand content slot
+      // (currently just errorTypeName). Used by the Responses Awaiting
+      // Review card to surface a response-type pill + AI summary inline.
+      renderMeta?: (group: InvoiceGroupResponse) => React.ReactNode;
+    },
+  ) => {
     const isSelected = opts.selectedId === group.id;
+    const meta = opts.renderMeta
+      ? opts.renderMeta(group)
+      : group.errorTypeName ? (
+          <span className="text-muted-foreground truncate min-w-0" title={group.errorTypeName}>
+            {group.errorTypeName}
+          </span>
+        ) : null;
     return (
       <button
         key={group.id}
@@ -223,11 +275,7 @@ export default function Queue() {
             {opts.showDeadline && renderDeadlineHint(group)}
           </div>
           <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
-            {group.errorTypeName && (
-              <span className="text-muted-foreground truncate min-w-0" title={group.errorTypeName}>
-                {group.errorTypeName}
-              </span>
-            )}
+            {meta}
             <span className="font-medium whitespace-nowrap">{formatCurrency(group.totalAmount)}</span>
             <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
           </div>
@@ -241,7 +289,7 @@ export default function Queue() {
       <div className="space-y-1">
         <h2 className="text-2xl font-bold tracking-tight">Work Queue</h2>
         <p className="text-muted-foreground">
-          Dispute operator workspace. Start at the <span className="font-medium">Classification Inbox</span> to label new portal responses, then work the <span className="font-medium">Action Required</span> tab — earliest service date first, with red badges for groups that must file today.
+          Dispute operator workspace. Start with triage above — <span className="font-medium">Classification Inbox</span> labels new imports and <span className="font-medium">Responses Awaiting Review</span> handles payor replies that need a verdict — then work the <span className="font-medium">Action Required</span> tab. Earliest service date first; red badges mark groups that must file today.
         </p>
       </div>
 
@@ -270,40 +318,105 @@ export default function Queue() {
         </div>
       )}
 
-      {/* Classification Inbox — strictly items missing an Error Type.
-          Already-classified groups whose payer responded also live in the
-          "Needs Review" status, but they're a separate concept (action
-          required on a real response) and don't belong here. They're
-          filtered out above and will be surfaced elsewhere once that
-          flow is redesigned. */}
+      {/* Triage zone — two cards side-by-side that both feed off the
+          "Needs Review" status:
+            - Classification Inbox: items missing an Error Type (label them)
+            - Responses Awaiting Review: classified items where a payor
+              response landed and a human verdict is required.
+          Selecting a row in either card opens its own panel below the grid;
+          the cards clear each other's selection so only one panel is open
+          at a time. */}
       <div className="space-y-3" data-testid="triage-inbox">
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Inbox className="h-5 w-5 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Classification Inbox</h3>
-                {unclassifiedGroups.length > 0 ? (
-                  <Badge variant="secondary" data-testid="badge-classification-count">
-                    {unclassifiedGroups.length} to classify
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">Empty</Badge>
-                )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Inbox className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">Classification Inbox</h3>
+                  {unclassifiedGroups.length > 0 ? (
+                    <Badge variant="secondary" data-testid="badge-classification-count">
+                      {unclassifiedGroups.length} to classify
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Empty</Badge>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground max-w-md text-right">
+              <p className="text-xs text-muted-foreground">
                 Imported groups with no Error Type yet. Pick a label and they auto-advance to Build Case.
               </p>
-            </div>
-            {unclassifiedGroups.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">All caught up — nothing to classify.</p>
-            ) : (
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-needs-review">
-                {unclassifiedGroups.map(g => renderGroupRow(g, { onSelect: selectTriage, selectedId: selectedTriageId }))}
+              {triageLoading ? (
+                <div
+                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
+                  data-testid="classification-inbox-loading"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading triage queue…
+                </div>
+              ) : unclassifiedGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">All caught up — nothing to classify.</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-needs-review">
+                  {unclassifiedGroups.map(g => renderGroupRow(g, { onSelect: selectTriage, selectedId: selectedTriageId }))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="responses-awaiting-review-card">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">Responses Awaiting Review</h3>
+                  {responseReviewGroups.length > 0 ? (
+                    <Badge variant="secondary" data-testid="badge-response-review-count">
+                      {responseReviewGroups.length} to review
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Empty</Badge>
+                  )}
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <p className="text-xs text-muted-foreground">
+                Payor sent something back — read it and decide the next move (continue the dispute, or close).
+              </p>
+              {triageLoading ? (
+                <div
+                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
+                  data-testid="responses-awaiting-review-loading"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading payor responses…
+                </div>
+              ) : responseReviewGroups.length === 0 ? (
+                <p
+                  className="text-sm text-muted-foreground py-4 text-center"
+                  data-testid="responses-awaiting-review-empty"
+                >
+                  All payor responses reviewed — check back later.
+                </p>
+              ) : (
+                <div
+                  className="space-y-2 max-h-72 overflow-y-auto pr-1"
+                  data-testid="queue-list-responses-awaiting-review"
+                >
+                  {responseReviewGroups.map(g =>
+                    renderGroupRow(g, {
+                      onSelect: selectResponseReview,
+                      selectedId: selectedResponseReviewId,
+                      // Show Overdue / N-days-left hints — payor responses
+                      // can land late and the filing clock is still running.
+                      showDeadline: true,
+                      renderMeta: () => <ResponseReviewRowMeta groupId={g.id} />,
+                    }),
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {selectedTriageGroup && (
           <div ref={triagePanelRef} className="scroll-mt-4">
@@ -312,6 +425,19 @@ export default function Queue() {
               onCompleted={(message) => {
                 setSuccessMessage(message);
                 setSelectedTriageId(null);
+                invalidate();
+              }}
+            />
+          </div>
+        )}
+
+        {selectedResponseReviewGroup && (
+          <div ref={triagePanelRef} className="scroll-mt-4">
+            <QueueResponseReviewPanel
+              group={selectedResponseReviewGroup}
+              onCompleted={(message) => {
+                setSuccessMessage(message);
+                setSelectedResponseReviewId(null);
                 invalidate();
               }}
             />
@@ -377,7 +503,7 @@ export default function Queue() {
 
             <TabsContent value="awaiting" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-awaiting">
-                <span className="font-medium text-foreground">Submitted to the payer portal — waiting on a response.</span> No action needed unless a response arrives (it'll re-appear in the Classification Inbox above).
+                <span className="font-medium text-foreground">Submitted to the payer portal — waiting on a response.</span> No action needed unless a response arrives (it'll re-appear in <span className="font-medium">Responses Awaiting Review</span> above).
               </p>
               {awaitingGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups awaiting response.</CardContent></Card>
