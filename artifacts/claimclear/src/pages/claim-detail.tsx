@@ -24,7 +24,7 @@ import {
   useListClaims,
   useGetInvoiceGroup, getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, PostResponseActionBodyAction } from "@workspace/api-client-react";
 import { ConversationsCard } from "@/components/conversations-card";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
@@ -54,6 +54,8 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { RefNumber } from "@/components/ref-number";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { WorkflowPlayer } from "@/components/workflow-player";
+import { ResponseActionsCard, type PostResponseAction } from "@/components/response-actions-card";
+import { getLifecyclePhase } from "@/lib/lifecycle-phase";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
@@ -777,6 +779,7 @@ export default function ClaimDetail() {
                 showClaimContext={false}
                 showDetailsLink={false}
                 onComplete={() => invalidate()}
+                historicalSubmissionsCount={claimSubmissions.length}
               />
             </CardContent>
           </Card>
@@ -992,132 +995,25 @@ export default function ClaimDetail() {
           />
 
           {validTransitions?.postResponseActions && validTransitions.postResponseActions.length > 0 && (
-            <Card className="border-2 border-blue-300 bg-blue-50/30">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-900">
-                  <ArrowRight className="h-5 w-5" />
-                  Next Steps — Response Received
-                </CardTitle>
-                <p className="text-sm text-blue-700 mt-1">
-                  {validTransitions.latestResponseType === "approval" || validTransitions.latestResponseType === "partial_approval"
-                    ? "A positive response was received. Choose how to proceed:"
-                    : validTransitions.latestResponseType === "denial"
-                    ? "The dispute was denied. Choose how to proceed:"
-                    : "A response was received. Choose how to proceed:"}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {validTransitions.postResponseActions.includes("resolve_reattest") && (
-                    <Button
-                      variant="outline"
-                      className="h-auto py-3 px-4 flex flex-col items-start gap-1 bg-green-50 hover:bg-green-100 border-green-300 text-green-900"
-                      disabled={postResponseActionMutation.isPending}
-                      onClick={async () => {
-                        await postResponseActionMutation.mutateAsync({
-                          id: claimId,
-                          data: { action: "resolve_reattest", notes: postResponseNotes || undefined },
-                        });
-                        setPostResponseNotes("");
-                        queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                        queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
-                      }}
-                    >
-                      <span className="flex items-center gap-2 font-semibold">
-                        <CheckCircle className="h-4 w-4" /> Resolve — Reattest
-                      </span>
-                      <span className="text-xs font-normal text-green-700">
-                        Team will reattest on external system
-                      </span>
-                    </Button>
-                  )}
-                  {validTransitions.postResponseActions.includes("resolve_new_invoice") && (
-                    <Button
-                      variant="outline"
-                      className="h-auto py-3 px-4 flex flex-col items-start gap-1 bg-green-50 hover:bg-green-100 border-green-300 text-green-900"
-                      disabled={postResponseActionMutation.isPending}
-                      onClick={async () => {
-                        await postResponseActionMutation.mutateAsync({
-                          id: claimId,
-                          data: { action: "resolve_new_invoice", notes: postResponseNotes || undefined },
-                        });
-                        setPostResponseNotes("");
-                        queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                        queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
-                      }}
-                    >
-                      <span className="flex items-center gap-2 font-semibold">
-                        <CheckCircle className="h-4 w-4" /> Resolve — New Invoice #
-                      </span>
-                      <span className="text-xs font-normal text-green-700">
-                        Submit under new invoice number provided in response
-                      </span>
-                    </Button>
-                  )}
-                  {validTransitions.postResponseActions.includes("mark_denied_by_payor") && (
-                    <Button
-                      variant="outline"
-                      className="h-auto py-3 px-4 flex flex-col items-start gap-1 bg-red-50 hover:bg-red-100 border-red-300 text-red-900"
-                      disabled={postResponseActionMutation.isPending}
-                      onClick={async () => {
-                        await postResponseActionMutation.mutateAsync({
-                          id: claimId,
-                          data: { action: "mark_denied_by_payor", notes: postResponseNotes || undefined },
-                        });
-                        setPostResponseNotes("");
-                        queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                        queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
-                      }}
-                    >
-                      <span className="flex items-center gap-2 font-semibold">
-                        <X className="h-4 w-4" /> Mark as Denied by Payor
-                      </span>
-                      <span className="text-xs font-normal text-red-700">
-                        Close claim — denial accepted, no further action
-                      </span>
-                    </Button>
-                  )}
-                  {validTransitions.postResponseActions.includes("re_dispute") && (
-                    <Button
-                      variant="outline"
-                      className="h-auto py-3 px-4 flex flex-col items-start gap-1 bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900"
-                      disabled={postResponseActionMutation.isPending}
-                      onClick={async () => {
-                        await postResponseActionMutation.mutateAsync({
-                          id: claimId,
-                          data: { action: "re_dispute", notes: postResponseNotes || undefined },
-                        });
-                        setPostResponseNotes("");
-                        queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                        queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
-                      }}
-                    >
-                      <span className="flex items-center gap-2 font-semibold">
-                        <Send className="h-4 w-4" /> Re-dispute
-                      </span>
-                      <span className="text-xs font-normal text-amber-700">
-                        Gather additional evidence and resubmit through portal
-                      </span>
-                    </Button>
-                  )}
-                </div>
-                <div>
-                  <Label className="text-xs text-blue-700">Notes (optional)</Label>
-                  <Textarea
-                    value={postResponseNotes}
-                    onChange={(e) => setPostResponseNotes(e.target.value)}
-                    placeholder="Add context for this decision (e.g., new invoice number, reason for re-dispute)..."
-                    className="mt-1 bg-white/80 text-sm"
-                    rows={2}
-                  />
-                </div>
-                {postResponseActionMutation.isPending && (
-                  <div className="flex items-center gap-2 text-sm text-blue-600">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Processing...
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ResponseActionsCard
+              postResponseActions={validTransitions.postResponseActions}
+              latestResponseType={validTransitions.latestResponseType ?? null}
+              notes={postResponseNotes}
+              onNotesChange={setPostResponseNotes}
+              isPending={postResponseActionMutation.isPending}
+              onAction={async (action: PostResponseAction) => {
+                await postResponseActionMutation.mutateAsync({
+                  id: claimId,
+                  // The shared component's PostResponseAction is a structural
+                  // mirror of the generated PostResponseActionBodyAction; TS
+                  // treats them as nominally distinct unions, so cast.
+                  data: { action: action as PostResponseActionBodyAction, notes: postResponseNotes || undefined },
+                });
+                setPostResponseNotes("");
+                queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+                queryClient.invalidateQueries({ queryKey: getGetClaimValidTransitionsQueryKey(claimId) });
+              }}
+            />
           )}
 
         </div>
@@ -1135,15 +1031,20 @@ export default function ClaimDetail() {
               )}
 
               {(() => {
-                const status = claim.status;
+                // Phase, not status, drives the recommendation banner.
+                // Status-level branching is fine for the "Needs Evidence vs
+                // Needs Review" copy distinction, but the outer routing
+                // (which phase shows a banner at all) belongs to the shared
+                // lifecycle mapping so adding a status flows in for free.
+                const phase = getLifecyclePhase(claim.status);
                 let recommended: { label: string; description: string } | null = null;
-                if (status === "Needs Review" || status === "New") {
-                  recommended = { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
-                } else if (status === "Needs Evidence") {
-                  recommended = { label: "Gather evidence", description: "Add supporting documents, then queue for portal." };
-                } else if (status === "Ready to Review") {
+                if (phase === "pre-submit") {
+                  recommended = claim.status === "Needs Evidence"
+                    ? { label: "Gather evidence", description: "Add supporting documents, then queue for portal." }
+                    : { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
+                } else if (phase === "response-pending") {
                   recommended = { label: "Review payer response", description: "Tag the response with what you read, then pick a verdict below — the AI hint is just a suggestion, the human decides." };
-                } else if (status === "On Hold") {
+                } else if (phase === "on-hold") {
                   recommended = { label: "Resume when ready", description: "Remove the hold to continue processing this claim." };
                 }
                 return recommended ? (

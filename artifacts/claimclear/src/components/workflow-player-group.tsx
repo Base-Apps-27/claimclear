@@ -43,6 +43,8 @@ import { PresenceLockWrapper } from "@/components/presence-lock";
 import { LintGateDialog } from "@/components/lint-gate-dialog";
 import type { LintResult } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
+import { closureReasonLabel } from "@/lib/closure-reasons";
+import { getGroupLifecyclePhase, type RideForRollup } from "@/lib/lifecycle-phase";
 import {
   TreePlayer,
   type TreePlayerHandle, type TreePlayerState,
@@ -62,6 +64,20 @@ interface WorkflowPlayerGroupProps {
    * panel to lock the workflow when another viewer is on the group.
    */
   presenceLockReason?: string | null;
+  /**
+   * Disputed-leg rollup input. When present, the player picks its lifecycle
+   * phase from the slowest disputed leg ("if any leg has an issue, the
+   * entire invoice can't move on") rather than from `group.status` alone.
+   * Pass the same ride list the page is rendering — clean (non-disputed)
+   * legs are filtered out by getGroupLifecyclePhase.
+   */
+  legs?: ReadonlyArray<RideForRollup>;
+  /**
+   * Defense-in-depth: when the parent already knows how many portal
+   * submissions exist for this group, pass the count here so the player can
+   * disable "Generate Submission Preview" if any history exists.
+   */
+  historicalSubmissionsCount?: number;
 }
 
 export function WorkflowPlayerGroup({
@@ -70,6 +86,8 @@ export function WorkflowPlayerGroup({
   showGroupContext = false,
   showDetailsLink = true,
   presenceLockReason = null,
+  legs,
+  historicalSubmissionsCount = 0,
 }: WorkflowPlayerGroupProps) {
   const presenceLocked = !!presenceLockReason;
   const queryClient = useQueryClient();
@@ -92,9 +110,30 @@ export function WorkflowPlayerGroup({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
-  const isOnHold = group.status === "On Hold";
-  const PORTAL_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"];
-  const isAlreadyQueued = PORTAL_STATUSES.includes(group.status);
+  // Phase rollup: prefer the legs prop when the parent passed one; otherwise
+  // try to use the rides we already fetched in groupDetail; otherwise fall
+  // back to the group's own status. This way the queue panel doesn't need to
+  // re-fetch rides just to feed the player — but it can if it wants to.
+  const detailRides = (() => {
+    const detail = groupDetail as unknown as { rides?: Array<{ status?: string | null; errorTypeId?: string | null }> } | undefined;
+    return (detail?.rides ?? []).map((r) => ({
+      status: r.status ?? "",
+      errorTypeId: r.errorTypeId ?? null,
+    }));
+  })();
+  const rollupLegs: ReadonlyArray<RideForRollup> = legs && legs.length > 0
+    ? legs
+    : detailRides;
+  const phase = getGroupLifecyclePhase(group.status, rollupLegs);
+  const isOnHold = phase === "on-hold";
+  // Defensive fallback only — phase early-returns below subsume this branch
+  // for the in-flight / response-pending stretch.
+  const isAlreadyQueued = phase === "in-flight" || phase === "response-pending";
+
+  // Defense-in-depth: refuse to spawn a fresh draft if a portal submission
+  // row already exists for this group. Operator should resume the existing
+  // draft from the detail page.
+  const canGenerateNewPreview = historicalSubmissionsCount === 0;
 
   const errorTypeId = group.errorTypeId ? parseInt(group.errorTypeId, 10) : 0;
   const { data: errorType } = useGetErrorType(errorTypeId, {
@@ -532,6 +571,128 @@ export function WorkflowPlayerGroup({
     invalidate();
   };
 
+  // Lifecycle-phase override — see workflow-player.tsx for the rationale.
+  if (phase === "in-flight") {
+    return (
+      <div className="space-y-4" data-testid="player-phase-in-flight">
+        {showGroupContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Invoice #:</span>{" "}
+            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+          </div>
+        )}
+        <Card className="border-blue-200 bg-blue-50/40">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <Send className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-semibold text-blue-900">In flight — submission is with the payer</p>
+                <p className="text-sm text-blue-800">
+                  This invoice group is currently in <span className="font-semibold">{group.status}</span>.
+                  No manual action is required while we wait for the payer to respond.
+                </p>
+                <p className="text-xs text-blue-700">
+                  When a response lands, the workflow will reopen for review automatically.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/invoice-groups/${group.id}`}>
+                  <Button size="sm" variant="outline">Full Details</Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (phase === "response-pending") {
+    return (
+      <div className="space-y-4" data-testid="player-phase-response-pending">
+        {showGroupContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Invoice #:</span>{" "}
+            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+          </div>
+        )}
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <ArrowRight className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-semibold text-amber-900">Response received — pick a verdict</p>
+                <p className="text-sm text-amber-800">
+                  A payer response is waiting on this invoice group. Open the full detail page to read
+                  the message and choose a verdict.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/invoice-groups/${group.id}`}>
+                  <Button size="sm">Open Full Details<ArrowRight className="h-4 w-4 ml-1" /></Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (phase === "closed") {
+    const isResolved = group.status === "Resolved";
+    return (
+      <div className="space-y-4" data-testid="player-phase-closed">
+        {showGroupContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Invoice #:</span>{" "}
+            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+          </div>
+        )}
+        <Card className={isResolved
+          ? "border-green-200 bg-green-50/40"
+          : "border-zinc-200 bg-zinc-50/40"}>
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <CheckCircle className={`h-5 w-5 mt-0.5 shrink-0 ${isResolved ? "text-green-600" : "text-zinc-500"}`} />
+              <div className="flex-1 space-y-1">
+                <p className={`text-sm font-semibold ${isResolved ? "text-green-900" : "text-zinc-800"}`}>
+                  Closed — {group.status}
+                </p>
+                {group.outcome && group.outcome !== "Pending" && (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Outcome:</span>{" "}
+                    <span className="font-medium">{group.outcome}</span>
+                  </p>
+                )}
+                {group.closureReason && (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Reason:</span>{" "}
+                    <span className="font-medium">{closureReasonLabel(group.closureReason)}</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Nothing further to do — open the full details if you need to review the audit trail.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/invoice-groups/${group.id}`}>
+                  <Button size="sm" variant="outline">Full Details</Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {showGroupContext && (
@@ -843,15 +1004,30 @@ export function WorkflowPlayerGroup({
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
                   <PresenceLockWrapper reason={presenceLockReason ?? (preflightGateBlocked ? "Re-check the AI's understanding of your context first." : null)}>
-                    <Button size="sm" onClick={handleGeneratePreview} disabled={generatePreview.isPending || presenceLocked || preflightGateBlocked}>
-                      {generatePreview.isPending ? (
-                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
-                      ) : preflightReadbackIsFresh ? (
-                        <><CheckCircle className="h-4 w-4 mr-1" />Looks right — Generate Submission Preview</>
-                      ) : (
-                        <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
-                      )}
-                    </Button>
+                    <WrapTooltip
+                      content={
+                        !canGenerateNewPreview
+                          ? "A portal submission already exists for this invoice group — open the full details to resume the existing draft instead of creating a duplicate."
+                          : "Build a fresh draft of the portal submission for this invoice group."
+                      }
+                    >
+                      <span tabIndex={0} className="inline-block">
+                        <Button
+                          size="sm"
+                          onClick={handleGeneratePreview}
+                          disabled={generatePreview.isPending || presenceLocked || preflightGateBlocked || !canGenerateNewPreview}
+                          data-testid="button-generate-submission-preview"
+                        >
+                          {generatePreview.isPending ? (
+                            <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
+                          ) : preflightReadbackIsFresh && canGenerateNewPreview ? (
+                            <><CheckCircle className="h-4 w-4 mr-1" />Looks right — Generate Submission Preview</>
+                          ) : (
+                            <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
+                          )}
+                        </Button>
+                      </span>
+                    </WrapTooltip>
                   </PresenceLockWrapper>
                 </div>
               </CardContent>

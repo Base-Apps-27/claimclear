@@ -42,6 +42,8 @@ import { QualityCheckPanel } from "@/components/quality-check-panel";
 import { LintGateDialog } from "@/components/lint-gate-dialog";
 import type { LintResult } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
+import { closureReasonLabel } from "@/lib/closure-reasons";
+import { getLifecyclePhase } from "@/lib/lifecycle-phase";
 import {
   TreePlayer,
   type TreePlayerHandle, type TreePlayerState,
@@ -54,6 +56,15 @@ interface WorkflowPlayerProps {
   onComplete: () => void;
   showClaimContext?: boolean;
   showDetailsLink?: boolean;
+  /**
+   * Defense-in-depth: when the parent already knows how many portal
+   * submissions exist for this claim, pass the count here so the player can
+   * disable "Generate Submission Preview" if any history exists. Prevents a
+   * second draft being spawned while a real submission is still on the books
+   * (active or historical) — the server enforces this too, but failing fast
+   * in the UI keeps the operator from paying for a wasted round-trip.
+   */
+  historicalSubmissionsCount?: number;
 }
 
 export function WorkflowPlayer({
@@ -61,6 +72,7 @@ export function WorkflowPlayer({
   onComplete,
   showClaimContext = false,
   showDetailsLink = true,
+  historicalSubmissionsCount = 0,
 }: WorkflowPlayerProps) {
   const queryClient = useQueryClient();
   const updateStatus = useUpdateClaimStatus();
@@ -75,11 +87,21 @@ export function WorkflowPlayer({
   const revertDescription = useRevertPortalSubmissionDescription();
   const addEvidence = useAddClaimEvidence();
   const createNote = useCreateClaimNote();
-  const isOnHold = claim.status === "On Hold";
+  const phase = getLifecyclePhase(claim.status);
+  const isOnHold = phase === "on-hold";
   const [portalSubmitted, setPortalSubmitted] = useState(false);
 
-  const PORTAL_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"];
-  const isAlreadyQueued = PORTAL_STATUSES.includes(claim.status);
+  // The pre-submit stepper's "Submit" step doubles as a "you're already
+  // queued" confirmation when the dispute moved on without going through
+  // this player. Now that lifecycle-phase short-circuits in-flight before
+  // we get here, this branch only fires defensively if status drifted.
+  const isAlreadyQueued = phase === "in-flight" || phase === "response-pending";
+
+  // Defense-in-depth: even when phase=pre-submit, refuse to spawn a fresh
+  // draft if the server already has a submission row for this claim. The
+  // operator should resume the existing draft (visible on the detail page)
+  // rather than create a parallel one.
+  const canGenerateNewPreview = historicalSubmissionsCount === 0;
 
   const errorTypeId = claim.errorTypeId ? parseInt(claim.errorTypeId, 10) : 0;
   const { data: errorType } = useGetErrorType(errorTypeId, {
@@ -510,6 +532,138 @@ export function WorkflowPlayer({
     invalidate();
   };
 
+  // Lifecycle-phase override: once the claim has crossed into the portal /
+  // response / closed phases the pre-submit stepper is misleading (the
+  // operator can't go back to "Build Case"). Render a compact summary panel
+  // for those phases instead, keeping the on-hold and pre-submit flows
+  // untouched.
+  if (phase === "in-flight") {
+    return (
+      <div className="space-y-4" data-testid="player-phase-in-flight">
+        {showClaimContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Conf #:</span>{" "}
+            <span className="font-mono font-semibold">{claim.confNumber}</span>
+          </div>
+        )}
+        <Card className="border-blue-200 bg-blue-50/40">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <Send className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-semibold text-blue-900">In flight — submission is with the payer</p>
+                <p className="text-sm text-blue-800">
+                  This claim is currently in <span className="font-semibold">{claim.status}</span>. No
+                  manual action is required while we wait for the payer to respond.
+                </p>
+                <p className="text-xs text-blue-700">
+                  When a response lands, the workflow will reopen for review automatically.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/claims/${claim.id}`}>
+                  <Button size="sm" variant="outline">Full Details</Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (phase === "response-pending") {
+    return (
+      <div className="space-y-4" data-testid="player-phase-response-pending">
+        {showClaimContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Conf #:</span>{" "}
+            <span className="font-mono font-semibold">{claim.confNumber}</span>
+          </div>
+        )}
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <ArrowRight className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="text-sm font-semibold text-amber-900">Response received — pick a verdict</p>
+                <p className="text-sm text-amber-800">
+                  A payer response is waiting on this claim. Open the full detail page to read the
+                  message and choose Resolve, Re-dispute, or Mark as Denied.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/claims/${claim.id}`}>
+                  <Button size="sm">Open Full Details<ArrowRight className="h-4 w-4 ml-1" /></Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (phase === "closed") {
+    const isResolved = claim.status === "Resolved";
+    return (
+      <div className="space-y-4" data-testid="player-phase-closed">
+        {showClaimContext && (
+          <div className="bg-muted/50 border rounded-lg px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Conf #:</span>{" "}
+            <span className="font-mono font-semibold">{claim.confNumber}</span>
+          </div>
+        )}
+        <Card className={isResolved
+          ? "border-green-200 bg-green-50/40"
+          : "border-zinc-200 bg-zinc-50/40"}>
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <CheckCircle className={`h-5 w-5 mt-0.5 shrink-0 ${isResolved ? "text-green-600" : "text-zinc-500"}`} />
+              <div className="flex-1 space-y-1">
+                <p className={`text-sm font-semibold ${isResolved ? "text-green-900" : "text-zinc-800"}`}>
+                  Closed — {claim.status}
+                </p>
+                {claim.outcome && claim.outcome !== "Pending" && (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Outcome:</span>{" "}
+                    <span className="font-medium">{claim.outcome}</span>
+                  </p>
+                )}
+                {claim.closureReason && (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Reason:</span>{" "}
+                    <span className="font-medium">{closureReasonLabel(claim.closureReason)}</span>
+                  </p>
+                )}
+                {claim.approvedAmount && (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Approved amount:</span>{" "}
+                    <span className="font-semibold">{formatCurrency(claim.approvedAmount)}</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Nothing further to do — open the full details if you need to review the audit trail.
+                </p>
+              </div>
+            </div>
+            {showDetailsLink && (
+              <div className="flex gap-2 ml-8">
+                <Link href={`/claims/${claim.id}`}>
+                  <Button size="sm" variant="outline">Full Details</Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {showClaimContext && (
@@ -842,20 +996,31 @@ export function WorkflowPlayer({
 
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => advanceStep("sop")}>Back</Button>
-              <WrapTooltip content={preflightGateBlocked ? "Re-check the AI's understanding of your context first." : ""}>
-                <Button
-                  size="sm"
-                  onClick={handleGeneratePreview}
-                  disabled={generatePreview.isPending || preflightGateBlocked}
-                >
-                  {generatePreview.isPending ? (
-                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
-                  ) : preflightReadbackIsFresh ? (
-                    <><CheckCircle className="h-4 w-4 mr-1" />Looks right — Generate Submission Preview</>
-                  ) : (
-                    <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
-                  )}
-                </Button>
+              <WrapTooltip
+                content={
+                  !canGenerateNewPreview
+                    ? "A portal submission already exists for this claim — open the full details to resume the existing draft instead of creating a duplicate."
+                    : preflightGateBlocked
+                    ? "Re-check the AI's understanding of your context first."
+                    : "Build a fresh draft of the portal submission for this claim."
+                }
+              >
+                <span tabIndex={0} className="inline-block">
+                  <Button
+                    size="sm"
+                    onClick={handleGeneratePreview}
+                    disabled={generatePreview.isPending || preflightGateBlocked || !canGenerateNewPreview}
+                    data-testid="button-generate-submission-preview"
+                  >
+                    {generatePreview.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generating Preview...</>
+                    ) : preflightReadbackIsFresh && canGenerateNewPreview ? (
+                      <><CheckCircle className="h-4 w-4 mr-1" />Looks right — Generate Submission Preview</>
+                    ) : (
+                      <><Eye className="h-4 w-4 mr-1" />Generate Submission Preview</>
+                    )}
+                  </Button>
+                </span>
               </WrapTooltip>
             </div>
           </CardContent>

@@ -29,6 +29,11 @@ import {
 } from "@/components/cohesion";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
+import {
+  LIFECYCLE_TABS,
+  deriveLifecycleTab,
+  type LifecycleTabKey,
+} from "@/lib/lifecycle-phase";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -37,30 +42,11 @@ const STATUSES = [
 
 const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
 
-type GroupsTabKey = "All" | "Action Required" | "Awaiting" | "On Hold" | "Submitted" | "Closed";
-
-const GROUP_TABS: { key: GroupsTabKey; label: string; statuses: string[] }[] = [
-  { key: "All",             label: "All",             statuses: [] },
-  { key: "Action Required", label: "Action Required", statuses: ["Needs Review", "Needs Evidence"] },
-  { key: "Awaiting",        label: "Awaiting",        statuses: ["Awaiting Response"] },
-  { key: "On Hold",         label: "On Hold",         statuses: ["On Hold"] },
-  { key: "Submitted",       label: "Submitted",       statuses: ["Portal Queued", "Generating Email", "Ready to Review"] },
-  { key: "Closed",          label: "Closed",          statuses: ["Resolved", "Denied"] },
-];
-
-function deriveActiveTab(filterStatuses: string[]): GroupsTabKey {
-  if (filterStatuses.length === 0) return "All";
-  for (const t of GROUP_TABS) {
-    if (t.statuses.length === 0) continue;
-    if (
-      t.statuses.length === filterStatuses.length &&
-      t.statuses.every(s => filterStatuses.includes(s))
-    ) {
-      return t.key;
-    }
-  }
-  return "All";
-}
+// Tabs come from the shared lifecycle vocabulary so Claims and Invoice
+// Groups stay in lockstep when a status is added/renamed.
+type GroupsTabKey = LifecycleTabKey;
+const GROUP_TABS = LIFECYCLE_TABS;
+const deriveActiveTab = deriveLifecycleTab;
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "invoiceNumber", label: "Invoice #", hideable: false },

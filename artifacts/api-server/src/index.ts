@@ -454,7 +454,12 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   if (!isProduction) {
     logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Disputed-child sync backfill: skipping (not production)");
   } else try {
-    const SYNCABLE = ["Portal Queued", "Generating Email", "Awaiting Response", "Ready to Review", "Resolved", "Denied"];
+    // "Needs Review" was missing here even though disputed legs can land in
+    // it after a payer response is auto-classified — without it, a leg in
+    // Needs Review on a group whose status is also Needs Review wouldn't
+    // be detected as drifted (no diff) but a *group* moved to Needs Review
+    // by the auto-classifier wouldn't pull its disputed legs along.
+    const SYNCABLE = ["Needs Review", "Portal Queued", "Generating Email", "Awaiting Response", "Ready to Review", "Resolved", "Denied"];
     const drifted = await runWithDbWarmupRetry("Disputed-child sync backfill scan", () => db.execute(sql`
       SELECT c.id            AS claim_id,
              c.conf_number   AS conf_number,

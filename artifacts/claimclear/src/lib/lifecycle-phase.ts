@@ -1,0 +1,152 @@
+// One-page mapping of every claim/group status to a small set of
+// "lifecycle phases". Phase, not status, is what the workflow player and the
+// list-page tabs branch on — so adding or renaming a status only requires
+// touching this file.
+//
+// Phases (the only thing UI code should switch on):
+//   pre-submit       — work the dispute is still being prepared for the portal
+//   in-flight        — portal/email submission queued, sent, or awaiting reply
+//   response-pending — payer response landed and needs a human verdict
+//   on-hold          — manually parked; deadline clock still ticks
+//   closed           — terminal state, nothing else to do
+//
+// The "two flavors of Needs Review" semantic split (pre-classification vs
+// post-response) is a separate task — for now Needs Review maps to
+// response-pending because the dominant operator action on it is "review the
+// payer response that just arrived".
+
+export type LifecyclePhase =
+  | "pre-submit"
+  | "in-flight"
+  | "response-pending"
+  | "closed"
+  | "on-hold";
+
+export const STATUSES_BY_PHASE: Record<LifecyclePhase, readonly string[]> = {
+  "pre-submit": ["New", "Needs Evidence"],
+  "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
+  "response-pending": ["Ready to Review", "Needs Review"],
+  "closed": ["Resolved", "Denied", "Withdrawn"],
+  "on-hold": ["On Hold"],
+};
+
+export function getLifecyclePhase(
+  status: string | null | undefined,
+): LifecyclePhase {
+  if (!status) return "pre-submit";
+  for (const phase of Object.keys(STATUSES_BY_PHASE) as LifecyclePhase[]) {
+    if (STATUSES_BY_PHASE[phase].includes(status)) return phase;
+  }
+  return "pre-submit";
+}
+
+export const isPreSubmit = (s: string | null | undefined) =>
+  getLifecyclePhase(s) === "pre-submit";
+export const isInFlight = (s: string | null | undefined) =>
+  getLifecyclePhase(s) === "in-flight";
+export const isResponsePending = (s: string | null | undefined) =>
+  getLifecyclePhase(s) === "response-pending";
+export const isClosed = (s: string | null | undefined) =>
+  getLifecyclePhase(s) === "closed";
+export const isOnHold = (s: string | null | undefined) =>
+  getLifecyclePhase(s) === "on-hold";
+
+// Group rollup: when collapsing a set of leg statuses into one phase for the
+// invoice group, only "disputed" legs (errorTypeId != null) count. Clean legs
+// sit on the same invoice but were never part of any dispute and must not
+// drag the group's phase backwards. Earliest (most-blocking) phase wins —
+// one stuck leg blocks the whole invoice's submission, by design.
+//
+// Order is the natural reading direction of work; on-hold is grouped with
+// the in-flight stretch so a parked leg shows up as still blocking
+// downstream work but doesn't masquerade as either pre-submit or closed.
+const PHASE_ORDER: readonly LifecyclePhase[] = [
+  "pre-submit",
+  "in-flight",
+  "response-pending",
+  "on-hold",
+  "closed",
+];
+
+export interface RideForRollup {
+  status: string;
+  errorTypeId?: string | null;
+}
+
+export function getGroupLifecyclePhase(
+  groupStatus: string | null | undefined,
+  legs: ReadonlyArray<RideForRollup> = [],
+): LifecyclePhase {
+  if (groupStatus && (groupStatus === "Resolved" || groupStatus === "Denied" || groupStatus === "Withdrawn")) {
+    return "closed";
+  }
+  const disputed = legs.filter((l) => l.errorTypeId != null);
+  if (disputed.length === 0) return getLifecyclePhase(groupStatus);
+  let earliest: LifecyclePhase = "closed";
+  for (const l of disputed) {
+    const p = getLifecyclePhase(l.status);
+    if (PHASE_ORDER.indexOf(p) < PHASE_ORDER.indexOf(earliest)) earliest = p;
+  }
+  return earliest;
+}
+
+// Shared tab vocabulary for the Claims and Invoice Groups list pages. Both
+// pages must use the same labels and the same status buckets — the only
+// difference is the row entity. Source of truth lives here so a status added
+// to STATUSES_BY_PHASE flows into both filter strips without further edits.
+export type LifecycleTabKey =
+  | "All"
+  | "Action Required"
+  | "In Flight"
+  | "Response Pending"
+  | "On Hold"
+  | "Closed";
+
+export interface LifecycleTab {
+  key: LifecycleTabKey;
+  label: string;
+  statuses: string[];
+}
+
+export const LIFECYCLE_TABS: LifecycleTab[] = [
+  { key: "All", label: "All", statuses: [] },
+  {
+    key: "Action Required",
+    label: "Action Required",
+    statuses: [...STATUSES_BY_PHASE["pre-submit"]],
+  },
+  {
+    key: "In Flight",
+    label: "In Flight",
+    statuses: [...STATUSES_BY_PHASE["in-flight"]],
+  },
+  {
+    key: "Response Pending",
+    label: "Response Pending",
+    statuses: [...STATUSES_BY_PHASE["response-pending"]],
+  },
+  {
+    key: "On Hold",
+    label: "On Hold",
+    statuses: [...STATUSES_BY_PHASE["on-hold"]],
+  },
+  {
+    key: "Closed",
+    label: "Closed",
+    statuses: [...STATUSES_BY_PHASE["closed"]],
+  },
+];
+
+export function deriveLifecycleTab(filterStatuses: string[]): LifecycleTabKey {
+  if (filterStatuses.length === 0) return "All";
+  for (const t of LIFECYCLE_TABS) {
+    if (t.statuses.length === 0) continue;
+    if (
+      t.statuses.length === filterStatuses.length &&
+      t.statuses.every((s) => filterStatuses.includes(s))
+    ) {
+      return t.key;
+    }
+  }
+  return "All";
+}

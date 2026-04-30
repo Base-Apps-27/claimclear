@@ -29,6 +29,11 @@ import {
 } from "@/components/cohesion";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
+import {
+  LIFECYCLE_TABS,
+  deriveLifecycleTab,
+  type LifecycleTabKey,
+} from "@/lib/lifecycle-phase";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -37,31 +42,11 @@ const STATUSES = [
 
 const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
 
-type ClaimsTabKey = "All" | "Needs Review" | "Needs Evidence" | "In Dispute" | "On Hold" | "Resolved" | "Denied";
-
-const CLAIM_TABS: { key: ClaimsTabKey; label: string; statuses: string[] }[] = [
-  { key: "All",            label: "All",           statuses: [] },
-  { key: "Needs Review",   label: "Needs Review",  statuses: ["Needs Review"] },
-  { key: "Needs Evidence", label: "Needs Evidence", statuses: ["Needs Evidence"] },
-  { key: "In Dispute",     label: "In Dispute",    statuses: ["Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response"] },
-  { key: "On Hold",        label: "On Hold",       statuses: ["On Hold"] },
-  { key: "Resolved",       label: "Resolved",      statuses: ["Resolved"] },
-  { key: "Denied",         label: "Denied",        statuses: ["Denied"] },
-];
-
-function deriveActiveTab(filterStatuses: string[]): ClaimsTabKey {
-  if (filterStatuses.length === 0) return "All";
-  for (const t of CLAIM_TABS) {
-    if (t.statuses.length === 0) continue;
-    if (
-      t.statuses.length === filterStatuses.length &&
-      t.statuses.every(s => filterStatuses.includes(s))
-    ) {
-      return t.key;
-    }
-  }
-  return "All";
-}
+// Tabs come from the shared lifecycle vocabulary so Claims and Invoice
+// Groups stay in lockstep when a status is added/renamed.
+type ClaimsTabKey = LifecycleTabKey;
+const CLAIM_TABS = LIFECYCLE_TABS;
+const deriveActiveTab = deriveLifecycleTab;
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "confNumber", label: "Conf #", hideable: false },

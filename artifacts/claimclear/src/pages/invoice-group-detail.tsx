@@ -24,6 +24,7 @@ import {
   getListErrorTypesQueryKey,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { getGroupLifecyclePhase } from "@/lib/lifecycle-phase";
 import { ClosureActions } from "@/components/closure/closure-actions";
 import { usePresence } from "@/hooks/use-presence";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
@@ -951,15 +952,19 @@ export default function InvoiceGroupDetail() {
               meta={`Step ${GROUP_STAGE_KEYS.indexOf(getGroupCurrentStageKey(group.status, rides)) + 1} of ${GROUP_STAGE_KEYS.length}`}
             >
               {(() => {
+                // Phase, not status, drives the recommendation banner. The
+                // group rolls up over disputed legs so a parked or stuck leg
+                // surfaces here even when group.status looks fine.
+                const phase = getGroupLifecyclePhase(group.status, rides);
                 let recommended: { label: string; description: string } | null = null;
-                if (group.status === "Needs Review") {
-                  recommended = { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
-                } else if (group.status === "On Hold") {
-                  recommended = { label: "Resume when ready", description: "Remove the hold to continue processing." };
-                } else if (group.status === "Needs Evidence") {
-                  recommended = { label: "Add evidence", description: "Gather supporting documents for this group." };
-                } else if (group.status === "Ready to Review") {
+                if (phase === "pre-submit") {
+                  recommended = group.status === "Needs Evidence"
+                    ? { label: "Add evidence", description: "Gather supporting documents for this group." }
+                    : { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
+                } else if (phase === "response-pending") {
                   recommended = { label: "Review payer response", description: "Tag the response with what you read, then pick a verdict below — the AI hint is just a suggestion, the human decides." };
+                } else if (phase === "on-hold") {
+                  recommended = { label: "Resume when ready", description: "Remove the hold to continue processing." };
                 }
                 return recommended ? (
                   <ActionsRailRecommended variant="group" label="Recommended next" description={recommended.description}>

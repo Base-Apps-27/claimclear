@@ -126,6 +126,23 @@ What's the verdict?
 - **Re-bucket confirmation.** Existing `accepted_loss` → `denied_by_payor` is the leaning, but user hasn't confirmed.
 - **Outcome alignment confirmation.** `cannot_dispute` → `Withdrawn`, `denied_by_payor` → `Denied`. User leaning yes; not yet confirmed.
 
+## Lifecycle phases — single mapping for player + tabs + banners (Apr 30, 2026)
+
+The workflow player, the Claims/Invoice Groups tab strips, and the recommendation banners on both detail pages used to each carry their own copy of the "which statuses count as in-flight / response-pending / closed" buckets. Adding or renaming a status meant chasing the same conditional through six files; in practice the buckets had drifted (e.g. `Needs Review` was missing from the disputed-leg backfill scan).
+
+**Single source of truth: `artifacts/claimclear/src/lib/lifecycle-phase.ts`.** Five phases (`pre-submit`, `in-flight`, `response-pending`, `closed`, `on-hold`); `STATUSES_BY_PHASE` is the canonical mapping; `getLifecyclePhase(status)` and the per-phase predicates are the only thing UI code should switch on. `getGroupLifecyclePhase(groupStatus, legs)` rolls up over **disputed legs only** (clean legs are filtered out so they can't drag the rollup backwards), preserving the same "the slowest disputed leg defines the invoice's phase" rule used by the stage stepper.
+
+**Where it's wired:**
+
+- `WorkflowPlayer` and `WorkflowPlayerGroup` (`src/components/workflow-player.tsx`, `workflow-player-group.tsx`) compute `phase` and short-circuit to compact summary cards for `in-flight` (blue, "submission is with the payer"), `response-pending` (amber, "open Full Details to pick a verdict"), and `closed` (green for Resolved, zinc for Denied/Withdrawn — shows outcome, closure reason, approved amount). The pre-submit stepper still runs end-to-end. Group player also accepts a `legs` prop and falls back to `groupDetail.rides` (already fetched) when no legs prop is supplied.
+- The Claims and Invoice Groups list pages share `LIFECYCLE_TABS` + `deriveLifecycleTab` from the same module — six tabs in lockstep: All / Action Required / In Flight / Response Pending / On Hold / Closed.
+- Recommendation banners on the claim and invoice-group detail pages branch on phase, with status-level only kept where the copy actually differs ("Gather evidence" vs "Classify this claim" inside the pre-submit phase).
+- The post-response verdict lanes (Resolve—Reattest / Resolve—New Invoice # / Mark as Denied by Payor / Re-dispute) live in one shared component, `src/components/response-actions-card.tsx`, with an "AI hint" badge labeling what the classifier inferred from the latest response. Claim-detail renders the full version; the player's response-pending phase deep-links to it.
+- **Defense in depth on Generate Submission Preview.** Both players accept `historicalSubmissionsCount` and disable the button (with an explanatory tooltip) when it's > 0, so the operator can't spawn a parallel draft when a submission already exists. The server still enforces this; failing in the UI just keeps a wasted round-trip from happening.
+- `SYNCABLE` (`artifacts/api-server/src/index.ts:457`) — the production-only disputed-leg sync backfill — now includes `Needs Review` so a group auto-classified into Needs Review pulls its disputed legs along on the next prod boot.
+
+Adding or renaming a status from now on means editing `STATUSES_BY_PHASE` and (if needed) `LIFECYCLE_TABS`. The player branches, the list-page tabs, the banners, and the rollup all flow through.
+
 ## Disputed-leg cascade and rollup (fixed Apr 30, 2026)
 
 A bug let claim status drift away from invoice-group status mid-lifecycle, and let clean rides drag the group's stepper backwards. Mechanism:
