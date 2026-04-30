@@ -24,6 +24,7 @@ import appSettingsRouter from "./app-settings";
 import batchJobsRouter from "./batch-jobs";
 import responseTrackerRouter, { checkEmailRouter } from "./response-tracker";
 import invoiceGroupsRouter from "./invoice-groups";
+import withdrawalsRouter from "./withdrawals";
 import adminRouter from "./admin";
 import systemHealthRouter from "./system-health";
 
@@ -59,6 +60,7 @@ router.use(sopAnalyzerRouter);
 router.use(appSettingsRouter);
 router.use(responseTrackerRouter);
 router.use(invoiceGroupsRouter);
+router.use(withdrawalsRouter);
 router.use(adminRouter);
 router.use(systemHealthRouter);
 router.use("/anthropic/conversations", anthropicRouter);

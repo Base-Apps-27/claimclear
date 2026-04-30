@@ -729,4 +729,89 @@ router.delete("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void
   res.sendStatus(204);
 }));
 
+router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  const reason = (existing as any).closureReason as string | null;
+  if (!reason || !["not_contestable", "non_issue", "accepted_loss"].includes(reason)) {
+    res.status(409).json({ error: "Closure review only applies to closed (withdrawn / non-issue) invoice groups." });
+    return;
+  }
+
+  const { closureReviewNotes, closureCommunicatedTo, closureReviewState, addressed } = req.body ?? {};
+  const updates: Record<string, unknown> = {};
+
+  if (Object.prototype.hasOwnProperty.call(req.body, "closureReviewNotes")) {
+    updates.closureReviewNotes = closureReviewNotes ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, "closureCommunicatedTo")) {
+    updates.closureCommunicatedTo = closureCommunicatedTo ?? null;
+  }
+
+  let stateChange: { from: string | null; to: string | null } | null = null;
+  if (typeof addressed === "boolean") {
+    if (addressed) {
+      const actor = actorFromReq(req);
+      updates.closureReviewState = "acknowledged";
+      updates.closureAddressedAt = new Date();
+      updates.closureAddressedBy = actor.userName;
+      updates.closureAddressedByEmail = actor.userEmail;
+    } else {
+      updates.closureReviewState = "pending";
+      updates.closureAddressedAt = null;
+      updates.closureAddressedBy = null;
+      updates.closureAddressedByEmail = null;
+    }
+    stateChange = { from: (existing as any).closureReviewState ?? null, to: updates.closureReviewState as string };
+  } else if (Object.prototype.hasOwnProperty.call(req.body, "closureReviewState")) {
+    if (closureReviewState !== null && !["pending", "acknowledged", "needs_revisit", "resolved"].includes(closureReviewState)) {
+      res.status(400).json({ error: "Invalid closureReviewState" });
+      return;
+    }
+    updates.closureReviewState = closureReviewState;
+    if (closureReviewState === "acknowledged" || closureReviewState === "resolved") {
+      const actor = actorFromReq(req);
+      updates.closureAddressedAt = new Date();
+      updates.closureAddressedBy = actor.userName;
+      updates.closureAddressedByEmail = actor.userEmail;
+    } else {
+      updates.closureAddressedAt = null;
+      updates.closureAddressedBy = null;
+      updates.closureAddressedByEmail = null;
+    }
+    stateChange = { from: (existing as any).closureReviewState ?? null, to: closureReviewState };
+  }
+
+  if (Object.keys(updates).length === 0) {
+    res.json(existing);
+    return;
+  }
+
+  const [updated] = await db.update(invoiceGroupsTable).set(updates).where(eq(invoiceGroupsTable.id, id)).returning();
+
+  if (stateChange && stateChange.from !== stateChange.to) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "closure_review_state_changed",
+      details: `Closure review state: ${stateChange.from ?? "pending"} → ${stateChange.to ?? "pending"}`,
+      metadata: { from: stateChange.from, to: stateChange.to },
+      ...actorFromReq(req),
+    });
+  } else if (Object.prototype.hasOwnProperty.call(updates, "closureReviewNotes") || Object.prototype.hasOwnProperty.call(updates, "closureCommunicatedTo")) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "closure_review_updated",
+      details: "Closure review notes / communicated-to updated",
+      ...actorFromReq(req),
+    });
+  }
+
+  emitGroupEvent(id, "group_edited", req);
+  res.json(updated);
+}));
+
 export default router;

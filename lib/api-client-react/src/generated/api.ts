@@ -32,6 +32,8 @@ import type {
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
   BotActivityLogResponse,
+  BulkAddressBody,
+  BulkAddressResponse,
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorType200,
   BulkAssignInvoiceGroupErrorTypeBody,
@@ -40,6 +42,7 @@ import type {
   ClaimEvidenceResponse,
   ClaimResponse,
   ClaimsListResponse,
+  ClosureReviewBody,
   ConfirmPortalSubmission422,
   ConfirmPortalSubmissionBody,
   ConnectorHealthResponse,
@@ -63,6 +66,7 @@ import type {
   EvidenceTypeResponse,
   ExportClaimsCsvParams,
   ExportInvoiceGroupsCsvParams,
+  ExportWithdrawalsCsvParams,
   GenerateEmailBody,
   GetAuthSession200,
   GetClaimValidTransitions200,
@@ -89,6 +93,7 @@ import type {
   ListPortalSubmissionsParams,
   ListResponses200,
   ListResponsesParams,
+  ListWithdrawalsParams,
   LookupMappingsBody,
   LookupMappingsResponse,
   NoteResponse,
@@ -130,6 +135,7 @@ import type {
   UploadUrlRequest,
   UploadUrlResponse,
   ValidTransitionsResponse,
+  WithdrawalsListResponse,
   WorkerActivityResponse,
 } from "./api.schemas";
 
@@ -9560,4 +9566,464 @@ export const useBackfillInvoiceGroups = <
   TContext
 > => {
   return useMutation(getBackfillInvoiceGroupsMutationOptions(options));
+};
+
+/**
+ * @summary Update post-closure review fields (notes, communicated-to, addressed)
+ */
+export const getUpdateClaimClosureReviewUrl = (id: number) => {
+  return `/api/claims/${id}/closure-review`;
+};
+
+export const updateClaimClosureReview = async (
+  id: number,
+  closureReviewBody: ClosureReviewBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getUpdateClaimClosureReviewUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(closureReviewBody),
+  });
+};
+
+export const getUpdateClaimClosureReviewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClaimClosureReview>>,
+    TError,
+    { id: number; data: BodyType<ClosureReviewBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateClaimClosureReview>>,
+  TError,
+  { id: number; data: BodyType<ClosureReviewBody> },
+  TContext
+> => {
+  const mutationKey = ["updateClaimClosureReview"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateClaimClosureReview>>,
+    { id: number; data: BodyType<ClosureReviewBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateClaimClosureReview(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateClaimClosureReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateClaimClosureReview>>
+>;
+export type UpdateClaimClosureReviewMutationBody = BodyType<ClosureReviewBody>;
+export type UpdateClaimClosureReviewMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update post-closure review fields (notes, communicated-to, addressed)
+ */
+export const useUpdateClaimClosureReview = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateClaimClosureReview>>,
+    TError,
+    { id: number; data: BodyType<ClosureReviewBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateClaimClosureReview>>,
+  TError,
+  { id: number; data: BodyType<ClosureReviewBody> },
+  TContext
+> => {
+  return useMutation(getUpdateClaimClosureReviewMutationOptions(options));
+};
+
+/**
+ * @summary Update post-closure review fields on an invoice group
+ */
+export const getUpdateInvoiceGroupClosureReviewUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/closure-review`;
+};
+
+export const updateInvoiceGroupClosureReview = async (
+  id: number,
+  closureReviewBody: ClosureReviewBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getUpdateInvoiceGroupClosureReviewUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(closureReviewBody),
+    },
+  );
+};
+
+export const getUpdateInvoiceGroupClosureReviewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>,
+    TError,
+    { id: number; data: BodyType<ClosureReviewBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>,
+  TError,
+  { id: number; data: BodyType<ClosureReviewBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInvoiceGroupClosureReview"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>,
+    { id: number; data: BodyType<ClosureReviewBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInvoiceGroupClosureReview(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInvoiceGroupClosureReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>
+>;
+export type UpdateInvoiceGroupClosureReviewMutationBody =
+  BodyType<ClosureReviewBody>;
+export type UpdateInvoiceGroupClosureReviewMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update post-closure review fields on an invoice group
+ */
+export const useUpdateInvoiceGroupClosureReview = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>,
+    TError,
+    { id: number; data: BodyType<ClosureReviewBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInvoiceGroupClosureReview>>,
+  TError,
+  { id: number; data: BodyType<ClosureReviewBody> },
+  TContext
+> => {
+  return useMutation(
+    getUpdateInvoiceGroupClosureReviewMutationOptions(options),
+  );
+};
+
+/**
+ * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ */
+export const getListWithdrawalsUrl = (params?: ListWithdrawalsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/withdrawals?${stringifiedParams}`
+    : `/api/withdrawals`;
+};
+
+export const listWithdrawals = async (
+  params?: ListWithdrawalsParams,
+  options?: RequestInit,
+): Promise<WithdrawalsListResponse> => {
+  return customFetch<WithdrawalsListResponse>(getListWithdrawalsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWithdrawalsQueryKey = (params?: ListWithdrawalsParams) => {
+  return [`/api/withdrawals`, ...(params ? [params] : [])] as const;
+};
+
+export const getListWithdrawalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWithdrawals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWithdrawalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWithdrawals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListWithdrawalsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listWithdrawals>>> = ({
+    signal,
+  }) => listWithdrawals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWithdrawals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWithdrawalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWithdrawals>>
+>;
+export type ListWithdrawalsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ */
+
+export function useListWithdrawals<
+  TData = Awaited<ReturnType<typeof listWithdrawals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWithdrawalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWithdrawals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWithdrawalsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export the matching withdrawals as CSV
+ */
+export const getExportWithdrawalsCsvUrl = (
+  params?: ExportWithdrawalsCsvParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/withdrawals/export-csv?${stringifiedParams}`
+    : `/api/withdrawals/export-csv`;
+};
+
+export const exportWithdrawalsCsv = async (
+  params?: ExportWithdrawalsCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportWithdrawalsCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportWithdrawalsCsvQueryKey = (
+  params?: ExportWithdrawalsCsvParams,
+) => {
+  return [`/api/withdrawals/export-csv`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportWithdrawalsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportWithdrawalsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportWithdrawalsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWithdrawalsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportWithdrawalsCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportWithdrawalsCsv>>
+  > = ({ signal }) =>
+    exportWithdrawalsCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportWithdrawalsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportWithdrawalsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportWithdrawalsCsv>>
+>;
+export type ExportWithdrawalsCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export the matching withdrawals as CSV
+ */
+
+export function useExportWithdrawalsCsv<
+  TData = Awaited<ReturnType<typeof exportWithdrawalsCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportWithdrawalsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWithdrawalsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportWithdrawalsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mark multiple closures as addressed in one request
+ */
+export const getBulkAddressWithdrawalsUrl = () => {
+  return `/api/withdrawals/bulk-address`;
+};
+
+export const bulkAddressWithdrawals = async (
+  bulkAddressBody: BulkAddressBody,
+  options?: RequestInit,
+): Promise<BulkAddressResponse> => {
+  return customFetch<BulkAddressResponse>(getBulkAddressWithdrawalsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkAddressBody),
+  });
+};
+
+export const getBulkAddressWithdrawalsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAddressWithdrawals>>,
+    TError,
+    { data: BodyType<BulkAddressBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkAddressWithdrawals>>,
+  TError,
+  { data: BodyType<BulkAddressBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkAddressWithdrawals"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkAddressWithdrawals>>,
+    { data: BodyType<BulkAddressBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkAddressWithdrawals(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkAddressWithdrawalsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkAddressWithdrawals>>
+>;
+export type BulkAddressWithdrawalsMutationBody = BodyType<BulkAddressBody>;
+export type BulkAddressWithdrawalsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mark multiple closures as addressed in one request
+ */
+export const useBulkAddressWithdrawals = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkAddressWithdrawals>>,
+    TError,
+    { data: BodyType<BulkAddressBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkAddressWithdrawals>>,
+  TError,
+  { data: BodyType<BulkAddressBody> },
+  TContext
+> => {
+  return useMutation(getBulkAddressWithdrawalsMutationOptions(options));
 };

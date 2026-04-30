@@ -862,6 +862,134 @@ export interface UpdateInvoiceGroupOutcomeBody {
   closureReviewNotes?: string | null;
 }
 
+/**
+ * @nullable
+ */
+export type ClosureReviewBodyClosureReviewState =
+  | (typeof ClosureReviewBodyClosureReviewState)[keyof typeof ClosureReviewBodyClosureReviewState]
+  | null;
+
+export const ClosureReviewBodyClosureReviewState = {
+  pending: "pending",
+  acknowledged: "acknowledged",
+  needs_revisit: "needs_revisit",
+  resolved: "resolved",
+} as const;
+
+/**
+ * Editable post-closure review fields.
+ */
+export interface ClosureReviewBody {
+  /** @nullable */
+  closureReviewNotes?: string | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewState?: ClosureReviewBodyClosureReviewState;
+  /** Convenience flag — when true, sets closureReviewState=acknowledged and stamps closureAddressedAt/By; when false, clears those fields. */
+  addressed?: boolean;
+}
+
+export type WithdrawalRowKind =
+  (typeof WithdrawalRowKind)[keyof typeof WithdrawalRowKind];
+
+export const WithdrawalRowKind = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;
+
+export type WithdrawalRowClosureReason =
+  (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
+
+export const WithdrawalRowClosureReason = {
+  not_contestable: "not_contestable",
+  non_issue: "non_issue",
+  accepted_loss: "accepted_loss",
+} as const;
+
+/**
+ * A unified row representing a closed claim or invoice group.
+ */
+export interface WithdrawalRow {
+  kind: WithdrawalRowKind;
+  id: number;
+  /** Conf */
+  identifier: string;
+  /** @nullable */
+  clientNumber?: string | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  outcome: string;
+  closureReason: WithdrawalRowClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** @nullable */
+  amount?: string | null;
+  /** @nullable */
+  closedAt?: string | null;
+  /** @nullable */
+  closedBy?: string | null;
+  /** @nullable */
+  closureReviewState?: string | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  addressed: boolean;
+}
+
+/**
+ * Total counts per closure reason across the entire (unfiltered) dataset.
+ */
+export type WithdrawalsListResponseCounts = {
+  not_contestable: number;
+  non_issue: number;
+  accepted_loss: number;
+  addressed: number;
+};
+
+export interface WithdrawalsListResponse {
+  rows: WithdrawalRow[];
+  total: number;
+  /** Total counts per closure reason across the entire (unfiltered) dataset. */
+  counts: WithdrawalsListResponseCounts;
+}
+
+export type BulkAddressBodyItemsItemKind =
+  (typeof BulkAddressBodyItemsItemKind)[keyof typeof BulkAddressBodyItemsItemKind];
+
+export const BulkAddressBodyItemsItemKind = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;
+
+export type BulkAddressBodyItemsItem = {
+  kind: BulkAddressBodyItemsItemKind;
+  id: number;
+};
+
+export interface BulkAddressBody {
+  items: BulkAddressBodyItemsItem[];
+  /** When true, mark all items addressed. When false, clear addressed state. */
+  addressed: boolean;
+}
+
+export interface BulkAddressResponse {
+  updated: number;
+}
+
 export type CreateClosureRequestOutcome =
   (typeof CreateClosureRequestOutcome)[keyof typeof CreateClosureRequestOutcome];
 
@@ -2641,3 +2769,87 @@ export type BackfillInvoiceGroupsBody = {
   /** If true, report what would change without writing to the database */
   dryRun?: boolean;
 };
+
+export type ListWithdrawalsParams = {
+  search?: string;
+  /**
+   * Comma-separated list of closure reasons to include
+   */
+  reason?: string;
+  /**
+   * When true (default), hide rows already marked as addressed
+   */
+  hideAddressed?: ListWithdrawalsHideAddressed;
+  closedFrom?: string;
+  closedTo?: string;
+  sort?: ListWithdrawalsSort;
+  dir?: ListWithdrawalsDir;
+  limit?: number;
+  offset?: number;
+};
+
+export type ListWithdrawalsHideAddressed =
+  (typeof ListWithdrawalsHideAddressed)[keyof typeof ListWithdrawalsHideAddressed];
+
+export const ListWithdrawalsHideAddressed = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type ListWithdrawalsSort =
+  (typeof ListWithdrawalsSort)[keyof typeof ListWithdrawalsSort];
+
+export const ListWithdrawalsSort = {
+  closedAt: "closedAt",
+  reason: "reason",
+  kind: "kind",
+  identifier: "identifier",
+  amount: "amount",
+  addressed: "addressed",
+} as const;
+
+export type ListWithdrawalsDir =
+  (typeof ListWithdrawalsDir)[keyof typeof ListWithdrawalsDir];
+
+export const ListWithdrawalsDir = {
+  asc: "asc",
+  desc: "desc",
+} as const;
+
+export type ExportWithdrawalsCsvParams = {
+  search?: string;
+  reason?: string;
+  hideAddressed?: ExportWithdrawalsCsvHideAddressed;
+  closedFrom?: string;
+  closedTo?: string;
+  sort?: ExportWithdrawalsCsvSort;
+  dir?: ExportWithdrawalsCsvDir;
+};
+
+export type ExportWithdrawalsCsvHideAddressed =
+  (typeof ExportWithdrawalsCsvHideAddressed)[keyof typeof ExportWithdrawalsCsvHideAddressed];
+
+export const ExportWithdrawalsCsvHideAddressed = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type ExportWithdrawalsCsvSort =
+  (typeof ExportWithdrawalsCsvSort)[keyof typeof ExportWithdrawalsCsvSort];
+
+export const ExportWithdrawalsCsvSort = {
+  closedAt: "closedAt",
+  reason: "reason",
+  kind: "kind",
+  identifier: "identifier",
+  amount: "amount",
+  addressed: "addressed",
+} as const;
+
+export type ExportWithdrawalsCsvDir =
+  (typeof ExportWithdrawalsCsvDir)[keyof typeof ExportWithdrawalsCsvDir];
+
+export const ExportWithdrawalsCsvDir = {
+  asc: "asc",
+  desc: "desc",
+} as const;

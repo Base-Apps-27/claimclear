@@ -17,6 +17,7 @@ import PortalSubmissions from "@/pages/portal-submissions";
 import Insights from "@/pages/insights";
 import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
+import Withdrawals from "@/pages/withdrawals";
 import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
 import SystemHealth from "@/pages/system-health";
@@ -50,6 +51,7 @@ function Router() {
         <Route path="/invoice-groups" component={InvoiceGroupsList} />
         <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />
         <Route path="/claims" component={ClaimsList} />
+        <Route path="/withdrawals" component={Withdrawals} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/claims/:id" component={ClaimDetail} />
         <Route path="/import" component={Import} />

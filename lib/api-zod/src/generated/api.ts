@@ -6198,3 +6198,380 @@ export const BackfillInvoiceGroupsResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * @summary Update post-closure review fields (notes, communicated-to, addressed)
+ */
+export const UpdateClaimClosureReviewParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateClaimClosureReviewBody = zod
+  .object({
+    closureReviewNotes: zod.string().nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureReviewState: zod
+      .union([
+        zod.literal("pending"),
+        zod.literal("acknowledged"),
+        zod.literal("needs_revisit"),
+        zod.literal("resolved"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    addressed: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Convenience flag — when true, sets closureReviewState=acknowledged and stamps closureAddressedAt\/By; when false, clears those fields.",
+      ),
+  })
+  .describe("Editable post-closure review fields.");
+
+export const UpdateClaimClosureReviewResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update post-closure review fields on an invoice group
+ */
+export const UpdateInvoiceGroupClosureReviewParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceGroupClosureReviewBody = zod
+  .object({
+    closureReviewNotes: zod.string().nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureReviewState: zod
+      .union([
+        zod.literal("pending"),
+        zod.literal("acknowledged"),
+        zod.literal("needs_revisit"),
+        zod.literal("resolved"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    addressed: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Convenience flag — when true, sets closureReviewState=acknowledged and stamps closureAddressedAt\/By; when false, clears those fields.",
+      ),
+  })
+  .describe("Editable post-closure review fields.");
+
+export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("payer_denied"),
+      zod.literal("not_contestable"),
+      zod.literal("accepted_loss"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ */
+export const listWithdrawalsQueryLimitDefault = 50;
+export const listWithdrawalsQueryOffsetDefault = 0;
+
+export const ListWithdrawalsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  reason: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated list of closure reasons to include"),
+  hideAddressed: zod
+    .enum(["true", "false"])
+    .optional()
+    .describe("When true (default), hide rows already marked as addressed"),
+  closedFrom: zod.coerce.string().optional(),
+  closedTo: zod.coerce.string().optional(),
+  sort: zod
+    .enum(["closedAt", "reason", "kind", "identifier", "amount", "addressed"])
+    .optional(),
+  dir: zod.enum(["asc", "desc"]).optional(),
+  limit: zod.coerce.number().default(listWithdrawalsQueryLimitDefault),
+  offset: zod.coerce.number().default(listWithdrawalsQueryOffsetDefault),
+});
+
+export const ListWithdrawalsResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        kind: zod.enum(["claim", "invoice_group"]),
+        id: zod.number(),
+        identifier: zod.string().describe("Conf"),
+        clientNumber: zod.string().nullish(),
+        errorTypeName: zod.string().nullish(),
+        errorDetails: zod.string().nullish(),
+        outcome: zod.string(),
+        closureReason: zod.enum([
+          "not_contestable",
+          "non_issue",
+          "accepted_loss",
+        ]),
+        closureCategory: zod.string().nullish(),
+        closureRootCause: zod.string().nullish(),
+        closureNarrative: zod.string().nullish(),
+        closureAccountabilityTags: zod.array(zod.string()).nullish(),
+        amount: zod.string().nullish(),
+        closedAt: zod.string().nullish(),
+        closedBy: zod.string().nullish(),
+        closureReviewState: zod.string().nullish(),
+        closureCommunicatedTo: zod.string().nullish(),
+        closureReviewNotes: zod.string().nullish(),
+        closureAddressedAt: zod.string().nullish(),
+        closureAddressedBy: zod.string().nullish(),
+        addressed: zod.boolean(),
+      })
+      .describe("A unified row representing a closed claim or invoice group."),
+  ),
+  total: zod.number(),
+  counts: zod
+    .object({
+      not_contestable: zod.number(),
+      non_issue: zod.number(),
+      accepted_loss: zod.number(),
+      addressed: zod.number(),
+    })
+    .describe(
+      "Total counts per closure reason across the entire (unfiltered) dataset.",
+    ),
+});
+
+/**
+ * @summary Export the matching withdrawals as CSV
+ */
+export const ExportWithdrawalsCsvQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  reason: zod.coerce.string().optional(),
+  hideAddressed: zod.enum(["true", "false"]).optional(),
+  closedFrom: zod.coerce.string().optional(),
+  closedTo: zod.coerce.string().optional(),
+  sort: zod
+    .enum(["closedAt", "reason", "kind", "identifier", "amount", "addressed"])
+    .optional(),
+  dir: zod.enum(["asc", "desc"]).optional(),
+});
+
+/**
+ * @summary Mark multiple closures as addressed in one request
+ */
+export const BulkAddressWithdrawalsBody = zod.object({
+  items: zod.array(
+    zod.object({
+      kind: zod.enum(["claim", "invoice_group"]),
+      id: zod.number(),
+    }),
+  ),
+  addressed: zod
+    .boolean()
+    .describe(
+      "When true, mark all items addressed. When false, clear addressed state.",
+    ),
+});
+
+export const BulkAddressWithdrawalsResponse = zod.object({
+  updated: zod.number(),
+});

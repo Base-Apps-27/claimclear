@@ -34,7 +34,8 @@ import {
   Clock,
   ShieldX,
   FolderOpen,
-  HeartPulse
+  HeartPulse,
+  FileMinus
 } from "lucide-react";
 
 type NavItem = {
@@ -53,6 +54,7 @@ const navDescriptions: Record<string, string> = {
   "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
   "Invoice Groups": "View and manage rides grouped by invoice number — the primary unit for disputes.",
   "All Claims": "Browse, search, and filter the complete claims database.",
+  "Withdrawals": "Review closed claims and groups (withdrawn, non-issue, accepted loss) — capture lessons, who was told, and mark addressed.",
   "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
   "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
@@ -85,6 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Invoice Groups", href: "/invoice-groups", icon: FolderOpen },
         { label: "All Claims", href: "/claims", icon: Files },
+        { label: "Withdrawals", href: "/withdrawals", icon: FileMinus },
       ],
     },
     {

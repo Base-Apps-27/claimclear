@@ -47,6 +47,8 @@ tags:
     description: Application settings
   - name: responses
     description: Portal and email response tracking
+  - name: withdrawals
+    description: Closure (withdrawal / non-issue) review queue
   - name: systemHealth
     description: System health, cron runs, connector status, bounces (admin)
 
@@ -2699,6 +2701,177 @@ paths:
               schema:
                 $ref: '#/components/schemas/BackfillInvoiceGroupsResponse'
 
+  /claims/{id}/closure-review:
+    patch:
+      operationId: updateClaimClosureReview
+      tags: [claims]
+      summary: Update post-closure review fields (notes, communicated-to, addressed)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClosureReviewBody"
+      responses:
+        "200":
+          description: Closure review updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /invoice-groups/{id}/closure-review:
+    patch:
+      operationId: updateInvoiceGroupClosureReview
+      tags: [invoice-groups]
+      summary: Update post-closure review fields on an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClosureReviewBody"
+      responses:
+        "200":
+          description: Closure review updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /withdrawals:
+    get:
+      operationId: listWithdrawals
+      tags: [withdrawals]
+      summary: List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: reason
+          in: query
+          description: Comma-separated list of closure reasons to include
+          schema:
+            type: string
+        - name: hideAddressed
+          in: query
+          description: When true (default), hide rows already marked as addressed
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: closedFrom
+          in: query
+          schema:
+            type: string
+        - name: closedTo
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [closedAt, reason, kind, identifier, amount, addressed]
+        - name: dir
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Withdrawals list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawalsListResponse"
+
+  /withdrawals/export-csv:
+    get:
+      operationId: exportWithdrawalsCsv
+      tags: [withdrawals]
+      summary: Export the matching withdrawals as CSV
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: reason
+          in: query
+          schema:
+            type: string
+        - name: hideAddressed
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: closedFrom
+          in: query
+          schema:
+            type: string
+        - name: closedTo
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [closedAt, reason, kind, identifier, amount, addressed]
+        - name: dir
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /withdrawals/bulk-address:
+    post:
+      operationId: bulkAddressWithdrawals
+      tags: [withdrawals]
+      summary: Mark multiple closures as addressed in one request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAddressBody"
+      responses:
+        "200":
+          description: Bulk update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkAddressResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -3248,6 +3421,133 @@ components:
           type: ["string", "null"]
       required:
         - name
+
+    ClosureReviewBody:
+      type: object
+      description: Editable post-closure review fields.
+      properties:
+        closureReviewNotes:
+          type: ["string", "null"]
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureReviewState:
+          type: ["string", "null"]
+          enum: ["pending", "acknowledged", "needs_revisit", "resolved", null]
+        addressed:
+          type: boolean
+          description: Convenience flag — when true, sets closureReviewState=acknowledged and stamps closureAddressedAt/By; when false, clears those fields.
+
+    WithdrawalRow:
+      type: object
+      description: A unified row representing a closed claim or invoice group.
+      properties:
+        kind:
+          type: string
+          enum: [claim, invoice_group]
+        id:
+          type: integer
+        identifier:
+          type: string
+          description: Conf # for claims, invoice number for groups.
+        clientNumber:
+          type: ["string", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        outcome:
+          type: string
+        closureReason:
+          type: string
+          enum: [not_contestable, non_issue, accepted_loss]
+        closureCategory:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+        amount:
+          type: ["string", "null"]
+        closedAt:
+          type: ["string", "null"]
+        closedBy:
+          type: ["string", "null"]
+        closureReviewState:
+          type: ["string", "null"]
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
+        closureAddressedAt:
+          type: ["string", "null"]
+        closureAddressedBy:
+          type: ["string", "null"]
+        addressed:
+          type: boolean
+      required:
+        - kind
+        - id
+        - identifier
+        - outcome
+        - closureReason
+        - addressed
+
+    WithdrawalsListResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/WithdrawalRow"
+        total:
+          type: integer
+        counts:
+          type: object
+          description: Total counts per closure reason across the entire (unfiltered) dataset.
+          properties:
+            not_contestable:
+              type: integer
+            non_issue:
+              type: integer
+            accepted_loss:
+              type: integer
+            addressed:
+              type: integer
+          required: [not_contestable, non_issue, accepted_loss, addressed]
+      required:
+        - rows
+        - total
+        - counts
+
+    BulkAddressBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum: [claim, invoice_group]
+              id:
+                type: integer
+            required: [kind, id]
+        addressed:
+          type: boolean
+          description: When true, mark all items addressed. When false, clear addressed state.
+      required: [items, addressed]
+
+    BulkAddressResponse:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required: [updated]
 
     CreateClosureRequest:
       type: object
