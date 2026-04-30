@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 
@@ -19,7 +20,6 @@ export const EXPIRING_ACTIONABLE_STATUSES = [
   "Generating Email",
   "Ready to Review",
 ] as const;
-const VENDOR_PREPAY_RATE = 0.70;
 const OVERDUE_THRESHOLD_MINUTES = 15;
 
 export function parseDays(raw: unknown, fallback: number, max = 365): number {
@@ -141,7 +141,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
         isUrgent: urgent,
       };
     })
-    .filter(g => g.effectiveDaysLeft !== null && g.effectiveDaysLeft <= 10)
+    .filter(g => g.effectiveDaysLeft !== null && g.effectiveDaysLeft <= SOON_DAYS)
     .sort((a, b) => a.effectiveDaysLeft - b.effectiveDaysLeft);
 
   const urgentCount = expiringGroups.filter(g => g.isUrgent).length;

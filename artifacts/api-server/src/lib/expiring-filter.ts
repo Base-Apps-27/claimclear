@@ -1,15 +1,9 @@
 import { and, eq, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import { EXPIRING_ACTIONABLE_STATUSES } from "../routes/dashboard";
+import { SOON_DAYS, URGENT_DAYS } from "./risk-config";
 
 export type ExpiringMode = "soon" | "urgent";
-
-// "Soon" matches the dashboard "Expiring Soon" section (filing deadline
-// within 10 calendar days, after weekend shifting). "Urgent" is the narrower
-// band that earns the red badge — items where the team needs to act in the
-// next few business days.
-const SOON_DAYS = 10;
-const URGENT_DAYS = 3;
 
 export function parseExpiringMode(raw: unknown): ExpiringMode | null {
   if (raw === "soon" || raw === "urgent") return raw;

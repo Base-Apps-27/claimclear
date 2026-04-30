@@ -273,18 +273,20 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" style={{ color: "hsl(var(--destructive))" }} />
                 <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "hsl(var(--cc-red-fg))" }}>
-                  Expiring Soon
+                  Needs filing now
                 </span>
                 <span className="text-xs" style={{ color: "hsl(var(--cc-red-fg))", opacity: 0.85 }}>
-                  · filing deadline within 10 days · {summary.urgentCount} urgent
+                  · {summary.urgentCount} urgent · {Math.max(summary.expiringGroups.length - summary.urgentCount, 0)} more this week
                 </span>
               </div>
               <Link
-                href="/invoice-groups?expiring=soon"
+                href={summary.urgentCount > 0 ? "/invoice-groups?expiring=urgent" : "/invoice-groups?expiring=soon"}
                 className="text-xs font-medium"
                 style={{ color: "hsl(var(--cc-red-fg))" }}
               >
-                See all {summary.expiringGroups.length} →
+                {summary.urgentCount > 0
+                  ? `See ${summary.urgentCount} urgent →`
+                  : `See all ${summary.expiringGroups.length} →`}
               </Link>
             </div>
             {expiringTop.length === 0 ? (

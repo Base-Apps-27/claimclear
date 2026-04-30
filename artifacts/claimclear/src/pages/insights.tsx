@@ -24,6 +24,7 @@ import {
   useGetDashboardRepeatOffenders,
   getExportClaimsCsvUrl,
 } from "@workspace/api-client-react";
+import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveContainer,
@@ -114,6 +115,7 @@ export default function Insights() {
     return d.toISOString();
   }, [days]);
 
+  useDashboardLiveUpdates();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
   const { data: allClaimsData } = useListClaims({ limit: 1000, createdFrom: createdFromISO });
   const { data: timeseries, isLoading: tsLoading } = useGetDashboardTimeseries({ days });
@@ -265,7 +267,11 @@ export default function Insights() {
   // Range-windowed amounts (computed from claims sample filtered by createdFrom).
   const totalClaimed = rangeAmounts.claimed;
   const totalApproved = rangeAmounts.approved;
-  const totalExposure = totalClaimed * 1.7; // claim + ~70% vendor prepay
+  // Use the vendor-prepay rate the API computed against, so insights and the
+  // dashboard / brief never disagree if the rate changes.
+  const vendorPrepayRate = summary.amounts.vendorPrepayRate ?? 0.70;
+  const exposureMultiplier = 1 + vendorPrepayRate;
+  const totalExposure = totalClaimed * exposureMultiplier;
   const recoveryRate = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0;
 
   const drivers = repeat?.drivers ?? [];
@@ -717,16 +723,24 @@ export default function Insights() {
           className="rounded-md border border-border bg-card p-3.5 flex items-center gap-3 text-sm flex-wrap"
           data-testid="exposure-callout"
         >
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: "hsl(var(--cc-warning))" }} />
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: summary.urgentCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--cc-warning))" }} />
           <span>
+            {summary.urgentCount > 0 ? (
+              <>
+                <strong style={{ color: "hsl(var(--destructive))" }}>{summary.urgentCount} urgent</strong> ·{" "}
+              </>
+            ) : null}
             <strong>{summary.expiringGroups.length}</strong> invoice group{summary.expiringGroups.length === 1 ? "" : "s"} approaching the dispute deadline · est. exposure {" "}
             <strong style={{ color: "hsl(var(--destructive))" }}>
-              {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * 1.7))}
+              {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * exposureMultiplier))}
             </strong>{" "}
-            <span className="text-xs text-muted-foreground">(claim + ~70% vendor prepay, approx.)</span>
+            <span className="text-xs text-muted-foreground">(claim + ~{Math.round(vendorPrepayRate * 100)}% vendor prepay, approx.)</span>
           </span>
-          <Link href="/dashboard" className="ml-auto text-xs text-primary hover:underline">
-            Open Command Center →
+          <Link
+            href={summary.urgentCount > 0 ? "/invoice-groups?expiring=urgent" : "/invoice-groups?expiring=soon"}
+            className="ml-auto text-xs text-primary hover:underline"
+          >
+            {summary.urgentCount > 0 ? "Open urgent worklist →" : "Open worklist →"}
           </Link>
         </div>
       )}

@@ -3,7 +3,9 @@ import { eq, or, and, sql, count, gte, lt, desc, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, portalSubmissionsTable, cronRunsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { daysRemaining } from "../lib/dates";
+import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
+import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 import { isOutlookConnected } from "../lib/outlook";
 import { sendEmailWithContext } from "../lib/email-send";
 import { getConnectorHealth } from "../lib/connector-health";
@@ -22,15 +24,17 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-const VENDOR_PREPAY_RATE = 0.70;
-
 interface ExpiringClaim {
   id: number;
   confNumber: string;
   date: string;
   claimAmount: string | null;
   status: string;
+  // `daysLeft` reflects the *effective* deadline (weekend deadlines pulled
+  // back to the prior Friday), so it matches the dashboard's
+  // `effectiveDaysLeft` and the SQL-side filter on the list pages.
   daysLeft: number;
+  isUrgent: boolean;
 }
 
 interface AutomationSummary {
@@ -139,19 +143,28 @@ function renderWeeklyDigestSection(d: WeeklyDigest): string {
 }
 
 function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDigest: WeeklyDigest | null): string {
-  // The "Expiring Claims" action table only lists rows that are still actionable
-  // (deadline today or in the future). Already-expired claims are surfaced by
-  // the "Expired" KPI tile and the at-risk dollar totals — repeating them here
+  // The deadline list only shows rows that are still actionable (deadline
+  // today or in the future). Already-expired claims are surfaced by the
+  // "Expired" KPI tile and the at-risk dollar totals — repeating them here
   // just buries the rows staff can still do something about today.
   const actionableExpiring = m.expiring.filter(c => c.daysLeft >= 0);
+  const urgentCount = actionableExpiring.filter(c => c.isUrgent).length;
+  const base = appBaseUrl();
   const expiringRows = actionableExpiring
-    .map(c => `<tr>
-      <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.confNumber}</td>
+    .map(c => {
+      const color = c.isUrgent ? "#dc2626" : "#f59e0b";
+      const label = c.isUrgent ? "Now" : `${c.daysLeft}d`;
+      const claimHref = `${base}/claims/${c.id}`;
+      return `<tr>
+      <td style="padding:8px;border-bottom:1px solid #e2e8f0;"><a href="${claimHref}" style="color:#3478F6;text-decoration:none;font-family:monospace;">${c.confNumber}</a></td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.date}</td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">$${c.claimAmount || "0.00"}</td>
-      <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:${c.daysLeft <= 3 ? "#dc2626" : "#f59e0b"};font-weight:600;">${c.daysLeft} days</td>
-    </tr>`)
+      <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:${color};font-weight:600;">${label}</td>
+    </tr>`;
+    })
     .join("");
+  const urgentListHref = `${base}/claims?expiring=urgent`;
+  const soonListHref = `${base}/claims?expiring=soon`;
 
   const attentionRows = m.needsAttention.map(r => {
     const reasonLabel = r.reason === "auto_reset" ? "Auto-reset (was stuck)" : "Failed";
@@ -235,7 +248,17 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
 
       ${actionableExpiring.length > 0 ? `
       <div>
-        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Expiring Claims (${actionableExpiring.length})</h2>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin:0 0 12px;gap:12px;flex-wrap:wrap;">
+          <h2 style="font-size:16px;color:#1e293b;margin:0;">
+            Needs filing now
+            <span style="font-size:13px;font-weight:500;color:${urgentCount > 0 ? "#dc2626" : "#64748b"};margin-left:6px;">
+              · ${urgentCount} urgent${urgentCount > 0 ? `, ${actionableExpiring.length - urgentCount} more this week` : `, ${actionableExpiring.length} approaching deadline`}
+            </span>
+          </h2>
+          <a href="${urgentListHref}" style="font-size:12px;color:#3478F6;text-decoration:none;font-weight:600;">
+            Open urgent worklist →
+          </a>
+        </div>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           <thead>
             <tr style="background:#f8fafc;">
@@ -247,9 +270,22 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
           </thead>
           <tbody>${expiringRows}</tbody>
         </table>
-      </div>` : "<p style='color:#16a34a;font-size:14px;'>No claims expiring within 10 days.</p>"}
+        <p style="margin:8px 0 0;font-size:11px;color:#94a3b8;">
+          <a href="${soonListHref}" style="color:#94a3b8;text-decoration:underline;">See full ${SOON_DAYS}-day window</a>
+        </p>
+      </div>` : "<p style='color:#16a34a;font-size:14px;'>Nothing to file today — no actionable claims approaching their filing deadline.</p>"}
 
       ${weeklyDigest ? renderWeeklyDigestSection(weeklyDigest) : ""}`;
+}
+
+// Public base URL for links rendered into emails. Falls back to the current
+// Replit dev domain so links work in development; in production, set
+// APP_BASE_URL to the deployed origin (e.g. https://claimclear.replit.app).
+function appBaseUrl(): string {
+  const explicit = process.env.APP_BASE_URL;
+  if (explicit) return explicit.replace(/\/$/, "");
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  return "";
 }
 
 function renderItemList(title: string, items: { id: number; confNumber: string; status: string; reason: string; href: string }[]): string {
@@ -291,6 +327,14 @@ function renderOperatorBody(needs: NeedsYouToday, weeklyDigest: WeeklyDigest | n
 
 async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promise<AdminMetrics> {
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
+  // For the deadline list specifically, narrow to the same "next action is on
+  // us" subset the dashboard uses. Claims in "Awaiting Response" / "On Hold"
+  // are open, but we can't actually file them today, so listing them in the
+  // expiring worklist just adds noise. Open count and yesterday-activity
+  // metrics still use the full open set.
+  const expiringStatusFilter = or(
+    ...EXPIRING_ACTIONABLE_STATUSES.map(s => eq(claimsTable.status, s)),
+  );
 
   const [openCountResult] = await db
     .select({ count: count() })
@@ -298,7 +342,7 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
     .where(openStatusFilter);
   const openCount = openCountResult.count;
 
-  const openClaimsWithDates = await db
+  const expiringCandidates = await db
     .select({
       id: claimsTable.id,
       confNumber: claimsTable.confNumber,
@@ -307,16 +351,31 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
       status: claimsTable.status,
     })
     .from(claimsTable)
-    .where(and(openStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
+    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
 
-  const expiring: ExpiringClaim[] = openClaimsWithDates
+  const expiringNow = new Date();
+  const expiring: ExpiringClaim[] = expiringCandidates
     .filter(c => c.date)
     .map(c => {
-      const dl = daysRemaining(c.date);
-      return { id: c.id, confNumber: c.confNumber, date: c.date!, claimAmount: c.claimAmount, status: c.status, daysLeft: dl! };
+      const dl = effectiveDaysRemaining(c.date, expiringNow);
+      const urgent = isUrgentDeadline(c.date, expiringNow);
+      return {
+        id: c.id,
+        confNumber: c.confNumber,
+        date: c.date!,
+        claimAmount: c.claimAmount,
+        status: c.status,
+        daysLeft: dl!,
+        isUrgent: urgent,
+      };
     })
-    .filter(c => c.daysLeft !== null && c.daysLeft <= 10)
-    .sort((a, b) => a.daysLeft - b.daysLeft);
+    .filter(c => c.daysLeft !== null && c.daysLeft <= SOON_DAYS)
+    // Urgent first (today / next business day), then ascending by days left
+    // so the recipient's eye lands on what has to be filed *now*.
+    .sort((a, b) => {
+      if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
+      return a.daysLeft - b.daysLeft;
+    });
 
   const expired = expiring.filter(c => c.daysLeft <= 0);
   const claimAmountAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
