@@ -22,7 +22,7 @@ import {
   Upload, X, Info, Loader2, ExternalLink, AlertTriangle, Plus,
   XCircle, FileX,
 } from "lucide-react";
-import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
+import { useClosureLauncher } from "@/components/closure/closure-launcher";
 import type { ClosureReasonKey } from "@/components/closure/closure-options";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
@@ -161,14 +161,12 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   );
   const [showRestoreNotice, setShowRestoreNotice] = useState(!!initialState && !canRestore);
 
-  type PendingClosure = {
-    reason: ClosureReasonKey;
-    step: Step;
-    result: { type: OutcomeType; label: string };
-    prefill: { category?: string; rootCause?: string };
-  };
-  const [pendingClosure, setPendingClosure] = useState<PendingClosure | null>(null);
-  const pendingClosureRef = useRef<PendingClosure | null>(null);
+  // Shared, headless dialog wiring. The player's "trigger" is the act of
+  // choosing a closure-leaf option in the guided flow rather than a button
+  // press, but every other behaviour (entity / valid-transitions /
+  // Withdrawals invalidation, prefill, banner) is identical to the inline
+  // <ClosureActions> path — so both go through the same launcher.
+  const { open: openClosure, dialog: closureDialogEl } = useClosureLauncher();
 
   useImperativeHandle(ref, () => ({
     getState: () => ({ steps, currentNodeId, nodeEvidence, outcome }),
@@ -255,18 +253,26 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
         type: opt.outcomeType!,
         label: opt.outcomeLabel || OUTCOME_LABELS[opt.outcomeType!],
       };
-      const pc: PendingClosure = {
+      // Defer recording the step / outcome until the structured intake is
+      // confirmed. The launcher's onSuccess only fires on a successful
+      // submit (not on cancel), so a cancelled dialog leaves the player
+      // exactly where it was.
+      openClosure({
+        target: closureTarget,
         reason,
-        step,
-        result,
-        prefill: {
-          category: opt.closureCategory,
-          rootCause: opt.closureRootCause,
+        prefill:
+          opt.closureCategory || opt.closureRootCause
+            ? { category: opt.closureCategory, rootCause: opt.closureRootCause }
+            : undefined,
+        onSuccess: () => {
+          setSteps((prev) => [...prev, step]);
+          setOutcome(result);
+          if (!isTestMode) {
+            onOutcome(result.type, result.label);
+          }
         },
-      };
-      pendingClosureRef.current = pc;
-      setPendingClosure(pc);
-      return; // do not record step / outcome until the dialog is confirmed
+      });
+      return;
     }
 
     const newSteps = [...steps, step];
@@ -281,7 +287,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
         onOutcome(result.type, result.label);
       }
     }
-  }, [currentNode, steps, isTestMode, onOutcome, nodeEvidence, claimId, onEvidenceCollected, closureTarget, actionsDisabled]);
+  }, [currentNode, steps, isTestMode, onOutcome, nodeEvidence, claimId, onEvidenceCollected, closureTarget, actionsDisabled, openClosure]);
 
   const handleUndo = useCallback(() => {
     if (steps.length === 0) return;
@@ -326,57 +332,6 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     const recs = nodeEvidence[node.id] || {};
     return node.evidenceRequirements.every(r => isReqSatisfied(r, recs[r.key] ?? { acknowledged: false, items: [] }));
   };
-
-  // The decision-tree player keeps its own thin wrapper around
-  // <ClosureIntakeDialog> rather than adopting the shared <ClosureActions>
-  // component. The reason: here the "trigger" is not a button — it's the act
-  // of choosing an option in the guided flow. The player also needs to record
-  // the chosen step + final outcome only AFTER the structured intake is
-  // confirmed (see pendingClosureRef below), and supports per-option category
-  // / root-cause prefill from the tree definition. None of that maps cleanly
-  // onto a list of inline trigger buttons. The shared dialog still drives the
-  // intake itself, and its onSuccess invalidates the entity, valid-transitions
-  // and Withdrawals list queries — so this surface ends up calling the same
-  // dialog with the same refresh behaviour as every other closure path.
-  const closureDialogEl = closureTarget ? (
-    <ClosureIntakeDialog
-      open={!!pendingClosure}
-      onOpenChange={(open) => {
-        if (!open) {
-          // Always close the visible dialog. We defer clearing the ref to
-          // the end of the tick so onSuccess (which fires immediately after
-          // onOpenChange(false) on submit) can still read pendingClosureRef
-          // before we drop it. If this was a true cancel, onSuccess never
-          // fires and the ref is cleared here, preventing a stale closure
-          // from being committed by a subsequent unrelated dialog open.
-          setPendingClosure(null);
-          queueMicrotask(() => {
-            pendingClosureRef.current = null;
-          });
-        }
-      }}
-      target={closureTarget}
-      reason={pendingClosure?.reason ?? "non_issue"}
-      prefill={
-        pendingClosure?.prefill?.category || pendingClosure?.prefill?.rootCause
-          ? {
-              category: pendingClosure.prefill.category,
-              rootCause: pendingClosure.prefill.rootCause,
-            }
-          : undefined
-      }
-      onSuccess={() => {
-        const pc = pendingClosureRef.current;
-        if (!pc) return;
-        pendingClosureRef.current = null;
-        setSteps((prev) => [...prev, pc.step]);
-        setOutcome(pc.result);
-        if (!isTestMode) {
-          onOutcome(pc.result.type, pc.result.label);
-        }
-      }}
-    />
-  ) : null;
 
   if (outcome) {
     const colors = OUTCOME_COLORS[outcome.type];

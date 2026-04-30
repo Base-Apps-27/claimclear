@@ -1,17 +1,17 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { ActionRow } from "@/components/actions-rail";
-import { ClosureIntakeDialog } from "./closure-intake-dialog";
+import { useClosureLauncher } from "./closure-launcher";
 import type { ClosureReasonKey } from "./closure-options";
 
 /**
  * Single source of truth for initiating a structured closure (Withdraw /
- * Non-Issue) from anywhere in the app. Owns the dialog open/close state,
- * renders the trigger buttons with consistent "currently selected"
- * highlighting, and mounts the closure intake dialog. The intake dialog
- * itself runs the entity + valid-transitions + Withdrawals list query
- * invalidations on success, so every surface that uses this component
- * (or that mounts the dialog directly, like the decision-tree player)
- * gets the same refresh behaviour for free.
+ * Non-Issue) from a list of inline trigger buttons. Renders each trigger
+ * with consistent "currently selected" highlighting and delegates the
+ * dialog wiring to <useClosureLauncher>, which is also used by non-button
+ * surfaces (e.g. the decision-tree player). The intake dialog itself runs
+ * the entity + valid-transitions + Withdrawals list query invalidations on
+ * success, so every surface that goes through the launcher gets the same
+ * refresh behaviour for free.
  */
 export type ClosureTarget = { kind: "claim" | "invoice_group"; id: number };
 
@@ -63,10 +63,10 @@ export function ClosureActions({
   outcome,
   closureReason,
   triggers,
-  variant = "action-row",
+  variant: _variant = "action-row",
   onAfterSuccess,
 }: ClosureActionsProps) {
-  const [openReason, setOpenReason] = useState<ClosureReasonKey | null>(null);
+  const { open: openClosure, dialog } = useClosureLauncher();
 
   // The closure intake dialog uses target.kind === "claim" | "group";
   // map our richer "invoice_group" naming through to its vocabulary.
@@ -85,7 +85,13 @@ export function ClosureActions({
             selected={selected}
             disabled={t.disabled}
             disabledReason={t.disabledReason}
-            onClick={() => setOpenReason(t.reason)}
+            onClick={() =>
+              openClosure({
+                target: { kind: dialogTargetKind, id: target.id },
+                reason: t.reason,
+                onSuccess: onAfterSuccess,
+              })
+            }
             testId={t.testId}
           />
         );
@@ -93,18 +99,7 @@ export function ClosureActions({
         return <Fragment key={t.reason}>{wrapped}</Fragment>;
       })}
 
-      <ClosureIntakeDialog
-        open={openReason !== null}
-        onOpenChange={(open) => {
-          if (!open) setOpenReason(null);
-        }}
-        target={{ kind: dialogTargetKind, id: target.id }}
-        reason={openReason ?? "non_issue"}
-        onSuccess={() => {
-          setOpenReason(null);
-          onAfterSuccess?.();
-        }}
-      />
+      {dialog}
     </>
   );
 }
