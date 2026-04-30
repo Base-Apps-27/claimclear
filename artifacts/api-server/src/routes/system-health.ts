@@ -13,6 +13,8 @@ import {
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
 import { computeRollup } from "../lib/system-health-rollup";
+import { getBootTime } from "../lib/boot-time";
+import { enumerateExpectedFiresSinceBoot } from "../lib/cron-fire-enumeration";
 
 const router: IRouter = Router();
 
@@ -280,7 +282,16 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     if (!lastRunByJob.has(r.jobName)) lastRunByJob.set(r.jobName, r);
   }
 
-  // Resolve each known cron's previous expected fire time once.
+  // Server boot time gates the missed-tick math: any expected fire that
+  // landed before this process started is silently ignored, so a fresh
+  // deploy doesn't look like a degraded job until the next tick lands.
+  const bootTime = getBootTime();
+  const nowForCron = new Date();
+
+  // Resolve each known cron's previous expected fire time + the list of
+  // expected fires since boot. Enumeration is bounded by the same 7-day
+  // window we use for pulling lastRun, so the list always contains the
+  // most recent ticks (not just the oldest ones after long uptime).
   const knownJobs = KNOWN_JOBS.map((known) => {
     let prevExpected: Date | null = null;
     try {
@@ -288,7 +299,18 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     } catch (err) {
       logger.warn({ err, cron: known.cron }, "Cron parse failed in rollup");
     }
-    return { name: known.name, prevExpected };
+    let expectedFiresSinceBoot: Date[] = [];
+    try {
+      expectedFiresSinceBoot = enumerateExpectedFiresSinceBoot({
+        cron: known.cron,
+        tz: known.tz,
+        bootTime,
+        now: nowForCron,
+      });
+    } catch (err) {
+      logger.warn({ err, cron: known.cron }, "Cron parse failed enumerating fires since boot");
+    }
+    return { name: known.name, prevExpected, expectedFiresSinceBoot };
   });
 
   // Same overdue rule as the worker-activity endpoint and dashboard tile.
@@ -312,6 +334,7 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
 
   const { overall, components } = computeRollup({
     now,
+    bootTime,
     connectors: connectors.map((c) => ({
       connectorName: c.connectorName,
       status: c.status,
@@ -340,6 +363,7 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     overdueCount,
     overdueThresholdMinutes: OVERDUE_THRESHOLD_MINUTES,
     generatedAt: now.toISOString(),
+    bootedAt: bootTime.toISOString(),
   });
 }));
 

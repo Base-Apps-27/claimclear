@@ -4976,10 +4976,19 @@ components:
         detail:
           type: string
           nullable: true
+        informational:
+          type: boolean
+          description: |
+            True when `detail` is a transient informational note from the
+            rollup itself (e.g. "Awaiting first scheduled run since server
+            boot", "Skipped one scheduled tick — recovering"). The UI
+            surfaces only these as informational notes, so normal "ok"
+            runs whose `detail` is just the last run's message are not
+            treated as alerts.
 
     SystemHealthRollupResponse:
       type: object
-      required: [overall, components, lastWorkerRun, workerRunning, overdueCount, overdueThresholdMinutes, generatedAt]
+      required: [overall, components, lastWorkerRun, workerRunning, overdueCount, overdueThresholdMinutes, generatedAt, bootedAt]
       properties:
         overall:
           type: string
@@ -5000,3 +5009,6 @@ components:
           type: integer
         generatedAt:
           type: string
+        bootedAt:
+          type: string
+          description: ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes.

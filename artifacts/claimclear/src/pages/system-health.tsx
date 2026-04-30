@@ -3,15 +3,17 @@ import {
   useGetSystemHealthConnectors,
   useGetSystemHealthBounces,
   useGetSystemHealthWorkerActivity,
+  useGetSystemHealthRollup,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
   getGetSystemHealthBouncesQueryKey,
   getGetSystemHealthWorkerActivityQueryKey,
+  getGetSystemHealthRollupQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
@@ -71,6 +73,23 @@ export default function SystemHealth() {
       },
     },
   );
+  const { data: rollupData } = useGetSystemHealthRollup({
+    query: {
+      queryKey: getGetSystemHealthRollupQueryKey(),
+      refetchInterval: REFRESH_MS,
+      retry: false,
+    },
+  });
+
+  // Surface only components the rollup explicitly marked as informational —
+  // e.g. "Awaiting first scheduled run since server boot" right after a
+  // deploy, or "Skipped one scheduled tick — recovering" after a brief
+  // restart. Filtering on the explicit flag (not just "status==ok &&
+  // detail") avoids treating every healthy component's last-run message as
+  // an alert.
+  const infoNotes = (rollupData?.components ?? []).filter(
+    (c) => c.informational && c.detail,
+  );
 
   return (
     <div className="space-y-8 pb-8">
@@ -82,6 +101,35 @@ export default function SystemHealth() {
       </div>
 
       <WorkerHealthBanner variant="full" />
+
+      {infoNotes.length > 0 ? (
+        <div
+          className="rounded-md border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/30 p-3 text-sm"
+          role="status"
+          data-testid="system-health-info-notes"
+        >
+          <div className="flex items-start gap-2">
+            <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-600" />
+            <div className="flex-1">
+              <p className="font-semibold text-blue-900 dark:text-blue-100">
+                Informational
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs text-blue-900/90 dark:text-blue-100/90">
+                {infoNotes.map((c) => (
+                  <li key={c.name}>
+                    <span className="font-mono">{c.name}</span> — {c.detail}
+                  </li>
+                ))}
+              </ul>
+              {rollupData?.bootedAt ? (
+                <p className="text-[11px] mt-1.5 text-blue-900/70 dark:text-blue-100/70">
+                  API server booted {relTime(rollupData.bootedAt)}.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>

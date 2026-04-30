@@ -17,4 +17,6 @@ export interface SystemHealthRollupResponse {
   overdueCount: number;
   overdueThresholdMinutes: number;
   generatedAt: string;
+  /** ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes. */
+  bootedAt: string;
 }

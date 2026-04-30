@@ -4594,6 +4594,12 @@ export const GetSystemHealthRollupResponse = zod.object({
       name: zod.string(),
       status: zod.enum(["ok", "degraded", "failed"]),
       detail: zod.string().nullable(),
+      informational: zod
+        .boolean()
+        .optional()
+        .describe(
+          'True when `detail` is a transient informational note from the\nrollup itself (e.g. \"Awaiting first scheduled run since server\nboot\", \"Skipped one scheduled tick — recovering\"). The UI\nsurfaces only these as informational notes, so normal \"ok\"\nruns whose `detail` is just the last run\'s message are not\ntreated as alerts.\n',
+        ),
     }),
   ),
   lastWorkerRun: zod.union([
@@ -4614,6 +4620,11 @@ export const GetSystemHealthRollupResponse = zod.object({
   overdueCount: zod.number(),
   overdueThresholdMinutes: zod.number(),
   generatedAt: zod.string(),
+  bootedAt: zod
+    .string()
+    .describe(
+      'ISO timestamp of when the API server process started. Used by the System Health page to contextualize \"awaiting first scheduled run\" notes.',
+    ),
 });
 
 /**

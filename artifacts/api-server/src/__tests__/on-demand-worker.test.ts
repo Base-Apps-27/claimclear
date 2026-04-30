@@ -76,6 +76,10 @@ test("workerGate releases even when the run throws", async () => {
 // ---------------------------------------------------------------------------
 
 const NOW = new Date("2026-04-28T17:00:00.000Z");
+// Default boot time for tests: a day before NOW. Plenty of time for any
+// scheduled fire to have landed, so the new boot-aware tolerances don't
+// accidentally suppress what the existing severity matrix is exercising.
+const BOOT = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
 
 function workerOk(): WorkerSnapshot {
   return {
@@ -87,8 +91,12 @@ function workerOk(): WorkerSnapshot {
   };
 }
 
-function knownJob(name: string, prevExpected: Date | null = null): KnownCronJob {
-  return { name, prevExpected };
+function knownJob(
+  name: string,
+  prevExpected: Date | null = null,
+  expectedFiresSinceBoot: Date[] = [],
+): KnownCronJob {
+  return { name, prevExpected, expectedFiresSinceBoot };
 }
 
 function lastRunMap(rows: CronRunRow[]): Map<string, CronRunRow> {
@@ -100,6 +108,7 @@ function lastRunMap(rows: CronRunRow[]): Map<string, CronRunRow> {
 test("rollup: all-green inputs → overall ok", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [{ connectorName: "outlook", status: "healthy", lastError: null }],
     knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 60 * 60 * 1000))],
     lastRunByJob: lastRunMap([
@@ -115,6 +124,7 @@ test("rollup: all-green inputs → overall ok", () => {
 test("rollup: degraded cron status from DB propagates to overall=degraded", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
@@ -133,6 +143,7 @@ test("rollup: degraded cron status from DB propagates to overall=degraded", () =
 test("rollup: failed cron run → overall=failed (hard alert wins over partial)", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [knownJob("daily_brief", new Date(NOW.getTime() - 24 * 60 * 60 * 1000))],
     lastRunByJob: lastRunMap([
@@ -148,6 +159,7 @@ test("rollup: failed cron run → overall=failed (hard alert wins over partial)"
 test("rollup: a 'running' cron row past 2x its interval is flagged as stuck", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
@@ -167,6 +179,7 @@ test("rollup: a 'running' cron row past 2x its interval is flagged as stuck", ()
 test("rollup: a 'running' cron within the grace window stays ok", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
     lastRunByJob: lastRunMap([
@@ -180,13 +193,23 @@ test("rollup: a 'running' cron within the grace window stays ok", () => {
   assert.equal(sweeper!.status, "ok");
 });
 
-test("rollup: missed scheduled run (terminal status older than previous expected) → degraded", () => {
+test("rollup: multiple consecutive missed scheduled fires → degraded with miss count", () => {
+  const lastRun = new Date(NOW.getTime() - 30 * 60 * 1000);
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
-    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 5 * 60 * 1000))],
+    knownJobs: [knownJob(
+      "portal_batch_sweeper",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      [
+        new Date(NOW.getTime() - 25 * 60 * 1000),
+        new Date(NOW.getTime() - 15 * 60 * 1000),
+        new Date(NOW.getTime() - 5 * 60 * 1000),
+      ],
+    )],
     lastRunByJob: lastRunMap([
-      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
+      { jobName: "portal_batch_sweeper", startedAt: lastRun, status: "ok", message: "done" },
     ]),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
@@ -195,11 +218,13 @@ test("rollup: missed scheduled run (terminal status older than previous expected
   const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.equal(sweeper!.status, "degraded");
   assert.match(sweeper!.detail ?? "", /older than previous expected/);
+  assert.match(sweeper!.detail ?? "", /missed 3 consecutive/);
 });
 
 test("rollup: overdueCount > 0 escalates the portal_worker component to degraded", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [],
     lastRunByJob: new Map(),
@@ -217,6 +242,7 @@ test("rollup: overdueCount > 0 escalates the portal_worker component to degraded
 test("rollup: lastWorkerRun status='failed' surfaces lastError as the worker detail", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [],
     lastRunByJob: new Map(),
@@ -238,6 +264,7 @@ test("rollup: lastWorkerRun status='failed' surfaces lastError as the worker det
 test("rollup: connector unhealthy → component=failed → overall=failed", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [{ connectorName: "outlook", status: "unhealthy", lastError: "401 from /me" }],
     knownJobs: [],
     lastRunByJob: new Map(),
@@ -435,6 +462,7 @@ test("jobToCronOutcome: job.status='aborted' → throw (cron run with manual sto
 test("rollup: lastWorkerRun status='aborted' surfaces stop in worker detail and degrades the component", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
     knownJobs: [],
     lastRunByJob: new Map(),
@@ -453,11 +481,19 @@ test("rollup: lastWorkerRun status='aborted' surfaces stop in worker detail and 
   assert.match(worker!.detail ?? "", /stopped by user/);
 });
 
-test("rollup: a known cron with zero recorded runs → degraded with explicit message", () => {
+test("rollup: a known cron with zero recorded runs but server up long enough → degraded with explicit message", () => {
   const out = computeRollup({
     now: NOW,
+    bootTime: BOOT,
     connectors: [],
-    knownJobs: [knownJob("portal_batch_sweeper")],
+    knownJobs: [knownJob(
+      "portal_batch_sweeper",
+      null,
+      [
+        new Date(NOW.getTime() - 6 * 60 * 60 * 1000),
+        new Date(NOW.getTime() - 3 * 60 * 60 * 1000),
+      ],
+    )],
     lastRunByJob: new Map(),
     overdueCount: 0,
     overdueThresholdMinutes: 15,
@@ -466,4 +502,199 @@ test("rollup: a known cron with zero recorded runs → degraded with explicit me
   const cron = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
   assert.equal(cron!.status, "degraded");
   assert.match(cron!.detail ?? "", /No runs recorded/);
+});
+
+// ---------------------------------------------------------------------------
+// New: boot-aware tolerances for transient blips
+// ---------------------------------------------------------------------------
+
+test("rollup: server just booted with no runs yet → cron is ok with 'awaiting first run' note", () => {
+  // Boot was 30 seconds ago — too new for any scheduled fire to have landed.
+  const recentBoot = new Date(NOW.getTime() - 30 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: recentBoot,
+    connectors: [],
+    knownJobs: [knownJob("daily_brief", null, [])],
+    lastRunByJob: new Map(),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:daily_brief");
+  assert.equal(cron!.status, "ok", `expected ok, got ${cron!.status}: ${cron!.detail}`);
+  assert.match(cron!.detail ?? "", /Awaiting first scheduled run/);
+  assert.equal(cron!.informational, true, "expected informational flag set on awaiting-first-run note");
+  assert.equal(out.overall, "ok");
+});
+
+test("rollup: one missed scheduled tick → ok with 'recovering' note (transient blip)", () => {
+  const lastRun = new Date(NOW.getTime() - 45 * 60 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: BOOT,
+    connectors: [],
+    knownJobs: [knownJob(
+      "response_tracker",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      // Only one expected fire landed since lastRun + tolerance.
+      [new Date(NOW.getTime() - 15 * 60 * 1000)],
+    )],
+    lastRunByJob: lastRunMap([
+      { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "0 checked" },
+    ]),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:response_tracker");
+  assert.equal(cron!.status, "ok", `expected ok, got ${cron!.status}: ${cron!.detail}`);
+  assert.match(cron!.detail ?? "", /Skipped one scheduled tick/);
+  assert.equal(cron!.informational, true, "expected informational flag set on single-skip note");
+  assert.equal(out.overall, "ok");
+});
+
+test("rollup: long uptime + persistent recent misses still degrades (no false 'ok' from windowing)", () => {
+  // Boot was 60 days ago — long enough that the route-level enumeration
+  // window slides off the boot. The rollup should still flip to degraded
+  // when it's given recent missed fires after the last successful run.
+  const ancientBoot = new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const lastRun = new Date(NOW.getTime() - 90 * 60 * 1000);
+  const recentMisses = [
+    new Date(NOW.getTime() - 75 * 60 * 1000),
+    new Date(NOW.getTime() - 60 * 60 * 1000),
+    new Date(NOW.getTime() - 45 * 60 * 1000),
+    new Date(NOW.getTime() - 30 * 60 * 1000),
+    new Date(NOW.getTime() - 15 * 60 * 1000),
+  ];
+  const out = computeRollup({
+    now: NOW,
+    bootTime: ancientBoot,
+    connectors: [],
+    knownJobs: [knownJob(
+      "outlook_heartbeat",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      recentMisses,
+    )],
+    lastRunByJob: lastRunMap([
+      { jobName: "outlook_heartbeat", startedAt: lastRun, status: "ok", message: "0 checked" },
+    ]),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:outlook_heartbeat");
+  assert.equal(cron!.status, "degraded", `expected degraded for persistent misses, got ${cron!.status}: ${cron!.detail}`);
+  assert.match(cron!.detail ?? "", /missed \d+ consecutive scheduled fires/);
+  assert.equal(out.overall, "degraded");
+});
+
+test("rollup: missed ticks all fall before server boot → cron stays ok (no blame for downtime)", () => {
+  // Server booted 2 minutes ago. The "missed" expected fires are all from
+  // before the boot, so they shouldn't count against the job.
+  const recentBoot = new Date(NOW.getTime() - 2 * 60 * 1000);
+  const lastRun = new Date(NOW.getTime() - 6 * 60 * 60 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: recentBoot,
+    connectors: [],
+    knownJobs: [knownJob(
+      "response_tracker",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      // No expected fires since boot — too soon.
+      [],
+    )],
+    lastRunByJob: lastRunMap([
+      { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "ok" },
+    ]),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:response_tracker");
+  assert.equal(cron!.status, "ok", `expected ok, got ${cron!.status}: ${cron!.detail}`);
+  assert.equal(out.overall, "ok");
+});
+
+test("rollup: missed-tick threshold is configurable (threshold=3 keeps 2 misses as ok)", () => {
+  const lastRun = new Date(NOW.getTime() - 90 * 60 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: BOOT,
+    missedTickThreshold: 3,
+    connectors: [],
+    knownJobs: [knownJob(
+      "response_tracker",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      [
+        new Date(NOW.getTime() - 60 * 60 * 1000),
+        new Date(NOW.getTime() - 30 * 60 * 1000),
+      ],
+    )],
+    lastRunByJob: lastRunMap([
+      { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "ok" },
+    ]),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:response_tracker");
+  // 2 missed ticks but threshold is 3 → still ok (no recovering note since
+  // we only attach one for exactly-1 misses, but degraded is the contract).
+  assert.equal(cron!.status, "ok");
+});
+
+test("rollup: stuck-running detection still fires even with boot-aware tolerances", () => {
+  // Sanity check that the new tolerances don't undermine real signals.
+  const out = computeRollup({
+    now: NOW,
+    bootTime: BOOT,
+    connectors: [],
+    knownJobs: [knownJob(
+      "portal_batch_sweeper",
+      new Date(NOW.getTime() - 5 * 60 * 1000),
+      [],
+    )],
+    lastRunByJob: lastRunMap([
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "running", message: null },
+    ]),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  const cron = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
+  assert.equal(cron!.status, "degraded");
+  assert.match(cron!.detail ?? "", /still "running"/);
+});
+
+test("rollup: connector failure stays failed regardless of boot-aware tolerances", () => {
+  const recentBoot = new Date(NOW.getTime() - 30 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: recentBoot,
+    connectors: [{ connectorName: "outlook", status: "unhealthy", lastError: "401" }],
+    knownJobs: [knownJob("daily_brief", null, [])],
+    lastRunByJob: new Map(),
+    overdueCount: 0,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  assert.equal(out.overall, "failed");
+});
+
+test("rollup: overdue submissions stay degraded even right after boot", () => {
+  const recentBoot = new Date(NOW.getTime() - 30 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: recentBoot,
+    connectors: [],
+    knownJobs: [],
+    lastRunByJob: new Map(),
+    overdueCount: 4,
+    overdueThresholdMinutes: 15,
+    lastWorkerRun: workerOk(),
+  });
+  assert.equal(out.overall, "degraded");
+  const worker = out.components.find((c) => c.name === "portal_worker");
+  assert.match(worker!.detail ?? "", /4 pending submission\(s\) overdue/);
 });

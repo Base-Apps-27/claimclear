@@ -1629,6 +1629,14 @@ export interface SystemHealthRollupComponent {
   name: string;
   status: SystemHealthRollupComponentStatus;
   detail: string | null;
+  /** True when `detail` is a transient informational note from the
+rollup itself (e.g. "Awaiting first scheduled run since server
+boot", "Skipped one scheduled tick — recovering"). The UI
+surfaces only these as informational notes, so normal "ok"
+runs whose `detail` is just the last run's message are not
+treated as alerts.
+ */
+  informational?: boolean;
 }
 
 export type SystemHealthRollupResponseOverall =
@@ -1648,6 +1656,8 @@ export interface SystemHealthRollupResponse {
   overdueCount: number;
   overdueThresholdMinutes: number;
   generatedAt: string;
+  /** ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes. */
+  bootedAt: string;
 }
 
 export type GetCurrentAuthUser200 = {
