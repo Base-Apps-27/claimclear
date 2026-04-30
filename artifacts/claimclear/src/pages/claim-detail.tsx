@@ -1422,6 +1422,18 @@ export default function ClaimDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ClosureIntakeDialog
+        open={!!closureDialog}
+        onOpenChange={(open) => {
+          if (!open) setClosureDialog(null);
+        }}
+        target={{ kind: "claim", id: claimId }}
+        reason={closureDialog?.reason ?? "non_issue"}
+        onSuccess={() => {
+          setClosureDialog(null);
+        }}
+      />
     </div>
   );
 }

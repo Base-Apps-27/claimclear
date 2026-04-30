@@ -173,6 +173,7 @@ export function ClosureIntakeDialog({
   const [tagOther, setTagOther] = useState("");
   const [drivers, setDrivers] = useState<PersonEntry[]>([newPersonEntry()]);
   const [dispatchers, setDispatchers] = useState<PersonEntry[]>([newPersonEntry()]);
+  const [communicatedTo, setCommunicatedTo] = useState("");
   const [uploads, setUploads] = useState<UploadedEvidence[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -197,6 +198,7 @@ export function ClosureIntakeDialog({
     setTagOther("");
     setDrivers([newPersonEntry()]);
     setDispatchers([newPersonEntry()]);
+    setCommunicatedTo("");
     setUploads([]);
     setSubmitError(null);
   }, [open, reason, prefill?.category, prefill?.rootCause]);
@@ -314,6 +316,7 @@ export function ClosureIntakeDialog({
     const closureDispatchers = tags.includes("dispatcher")
       ? personListToPayload(dispatchers)
       : null;
+    const closureCommunicatedTo = communicatedTo.trim() ? communicatedTo.trim() : null;
 
     const outcome = reason === "non_issue" ? "Non-Issue" : "Withdrawn";
 
@@ -333,6 +336,7 @@ export function ClosureIntakeDialog({
             closureAccountabilityOther,
             closureDrivers,
             closureDispatchers,
+            closureCommunicatedTo,
           },
         });
         queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(target.id) });
@@ -357,6 +361,7 @@ export function ClosureIntakeDialog({
             closureAccountabilityOther,
             closureDrivers,
             closureDispatchers,
+            closureCommunicatedTo,
           },
         });
         queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(target.id) });
@@ -536,6 +541,21 @@ export function ClosureIntakeDialog({
               testIdPrefix="closure-dispatcher"
             />
           )}
+
+          <div>
+            <Label className="text-xs">Communicated to (optional)</Label>
+            <Input
+              className="mt-1"
+              value={communicatedTo}
+              onChange={(e) => setCommunicatedTo(e.target.value)}
+              placeholder="e.g. Driver Jane Doe (notified 4/30), dispatch lead Carlos"
+              data-testid="closure-communicated-to"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Who has already been told about this closure? Can be edited later from the Withdrawals
+              Review.
+            </p>
+          </div>
 
           <div>
             <Label className="text-xs">Supporting evidence (optional)</Label>
