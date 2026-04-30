@@ -95,23 +95,18 @@ export default function Queue() {
   // Real totals from the API — not the (possibly capped) array length.
   // These drive the badge counts so they're always honest.
   const actionableTotal = (newQuery.data?.total ?? 0) + (needsEvidenceQuery.data?.total ?? 0);
-  const needsReviewTotal = needsReviewQuery.data?.total ?? 0;
   const portalQueuedTotal = portalQueuedQuery.data?.total ?? 0;
   const awaitingTotal = awaitingQuery.data?.total ?? 0;
   const onHoldTotal = onHoldQuery.data?.total ?? 0;
 
-  // "Needs Review" is set by two unrelated flows:
-  //   1. Import without an error type — group has no errorTypeId, needs the
-  //      operator to label it (true classification work).
-  //   2. Portal response received (especially info_request) — group is
-  //      already classified; operator needs a post-response decision
-  //      (re-dispute, accept loss, resolve, etc.) which lives on the
-  //      detail page, NOT the classification panel.
-  // The QueueNeedsReviewPanel only does (1), so mixing both into one inbox
-  // confused operators — they'd see classified items they couldn't act on
-  // here. Split them so each section has a single, honest meaning.
+  // The Classification Inbox is strictly for items missing a classification
+  // (no errorTypeId). "Needs Review" status also gets set when a payer
+  // response comes back via the email response matcher (see
+  // lib/response-matcher.ts) — those items are already classified and
+  // belong to a separate "response received → action required" surface
+  // that hasn't been redesigned yet. Filtering by !errorTypeId keeps this
+  // inbox honest until that redesign happens.
   const unclassifiedGroups = needsReviewGroups.filter(g => !g.errorTypeId);
-  const postResponseGroups = needsReviewGroups.filter(g => !!g.errorTypeId);
 
   // Within each on-clock list, sort urgent rows to the top, then by remaining
   // days asc. The API already returns rows in service-date asc order, which is
@@ -275,13 +270,12 @@ export default function Queue() {
         </div>
       )}
 
-      {/* Classification Inbox + Post-Response Review.
-          Both pull from status="Needs Review" but represent different work:
-          unclassified items need an Error Type assigned (handled inline by
-          QueueNeedsReviewPanel), while already-classified items came back
-          via portal response and need a post-response decision (handled on
-          the detail page). Splitting them keeps each section honest about
-          what action the operator should take. */}
+      {/* Classification Inbox — strictly items missing an Error Type.
+          Already-classified groups whose payer responded also live in the
+          "Needs Review" status, but they're a separate concept (action
+          required on a real response) and don't belong here. They're
+          filtered out above and will be surfaced elsewhere once that
+          flow is redesigned. */}
       <div className="space-y-3" data-testid="triage-inbox">
         <Card>
           <CardContent className="p-4 space-y-3">
@@ -322,63 +316,6 @@ export default function Queue() {
               }}
             />
           </div>
-        )}
-
-        {postResponseGroups.length > 0 && (
-          <Card data-testid="post-response-review">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Inbox className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold">Post-Response Review</h3>
-                  <Badge variant="secondary" data-testid="badge-post-response-count">
-                    {postResponseGroups.length} awaiting decision
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground max-w-md text-right">
-                  Already classified — payer has responded. Open the detail page to re-dispute, accept loss, or resolve.
-                </p>
-              </div>
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-post-response">
-                {postResponseGroups.map(g => (
-                  <Link
-                    key={g.id}
-                    href={`/invoice-groups/${g.id}`}
-                    data-testid={`post-response-row-${g.invoiceNumber}`}
-                    className="block w-full text-left rounded-lg border bg-card transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="py-3 px-6 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 min-w-0 shrink-0">
-                        <div className="whitespace-nowrap flex items-center gap-2">
-                          <UrgentTodayBadge isUrgent={g.isUrgent} />
-                          <span className="font-mono font-semibold">{g.invoiceNumber}</span>
-                          <span className="text-muted-foreground ml-1 text-sm">
-                            {g.rideCount} ride{g.rideCount !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-                        <StatusBadge status={g.status} />
-                      </div>
-                      <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
-                        {g.errorTypeName && (
-                          <span className="text-muted-foreground truncate min-w-0" title={g.errorTypeName}>
-                            {g.errorTypeName}
-                          </span>
-                        )}
-                        <span className="font-medium whitespace-nowrap">{formatCurrency(g.totalAmount)}</span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {needsReviewGroups.length < needsReviewTotal && (
-          <p className="text-xs text-muted-foreground" data-testid="needs-review-overflow-note">
-            Showing the first {needsReviewGroups.length} of {needsReviewTotal} Needs Review groups. Process some to reveal the rest.
-          </p>
         )}
       </div>
 
