@@ -24,6 +24,25 @@ export interface YesterdayActivity {
   decisionsLogged: number;
 }
 
+// Action keys counted by `getYesterdayActivity`. Exported so tests can lock the
+// whitelist in place — the daily brief silently broke once when the app stopped
+// writing some of these keys, so renames here should be intentional and tested.
+export const YESTERDAY_CLAIMS_CREATED_ACTIONS = ["claim_created", "claims_imported"] as const;
+export const YESTERDAY_DRAFTS_SUBMITTED_ACTIONS = ["portal_submission_confirmed"] as const;
+export const YESTERDAY_RESPONSES_RECEIVED_ACTIONS = ["response_received"] as const;
+export const YESTERDAY_DECISIONS_LOGGED_ACTIONS = [
+  "outcome_changed",
+  "group_outcome_changed",
+  "group_status_and_outcome_changed",
+] as const;
+
+const YESTERDAY_ACTION_WHITELIST = [
+  ...YESTERDAY_CLAIMS_CREATED_ACTIONS,
+  ...YESTERDAY_DRAFTS_SUBMITTED_ACTIONS,
+  ...YESTERDAY_RESPONSES_RECEIVED_ACTIONS,
+  ...YESTERDAY_DECISIONS_LOGGED_ACTIONS,
+] as const;
+
 export async function getYesterdayActivity(yesterdayStart: Date, todayStart: Date): Promise<YesterdayActivity> {
   const rows = await db
     .select({ action: auditLogsTable.action, count: sql<number>`count(*)::int` })
@@ -32,13 +51,7 @@ export async function getYesterdayActivity(yesterdayStart: Date, todayStart: Dat
       and(
         gte(auditLogsTable.timestamp, yesterdayStart),
         lt(auditLogsTable.timestamp, todayStart),
-        inArray(auditLogsTable.action, [
-          "claim_created",
-          "portal_submission_submitted",
-          "outcome_changed",
-          "group_resolved",
-          "group_denied",
-        ]),
+        inArray(auditLogsTable.action, [...YESTERDAY_ACTION_WHITELIST]),
       ),
     )
     .groupBy(auditLogsTable.action);
@@ -46,31 +59,38 @@ export async function getYesterdayActivity(yesterdayStart: Date, todayStart: Dat
   const counts: Record<string, number> = {};
   for (const r of rows) counts[r.action] = r.count;
 
-  const responseRows = await db
-    .select({ count: sql<number>`count(*)::int` })
+  // Bulk imports don't write a per-claim `claim_created` audit row; they write a
+  // single `claims_imported` event whose metadata holds the row count. Sum that
+  // in so big imports aren't invisible in "claims created".
+  const importedRows = await db
+    .select({
+      total: sql<number>`coalesce(sum(((${auditLogsTable.metadata})->>'created')::int), 0)::int`,
+    })
     .from(auditLogsTable)
     .where(
       and(
         gte(auditLogsTable.timestamp, yesterdayStart),
         lt(auditLogsTable.timestamp, todayStart),
-        inArray(auditLogsTable.action, [
-          "response_reassigned",
-          "response_unmatched",
-          "outbound_sent",
-        ]),
+        eq(auditLogsTable.action, "claims_imported"),
       ),
     );
-  const responsesReceived = responseRows[0]?.count ?? 0;
+  const importedCreated = importedRows[0]?.total ?? 0;
 
-  return {
-    claimsCreated: counts["claim_created"] ?? 0,
-    draftsSubmitted: counts["portal_submission_submitted"] ?? 0,
-    responsesReceived,
-    decisionsLogged:
-      (counts["outcome_changed"] ?? 0) +
-      (counts["group_resolved"] ?? 0) +
-      (counts["group_denied"] ?? 0),
-  };
+  const claimsCreated = (counts["claim_created"] ?? 0) + importedCreated;
+  const draftsSubmitted = YESTERDAY_DRAFTS_SUBMITTED_ACTIONS.reduce(
+    (sum, k) => sum + (counts[k] ?? 0),
+    0,
+  );
+  const responsesReceived = YESTERDAY_RESPONSES_RECEIVED_ACTIONS.reduce(
+    (sum, k) => sum + (counts[k] ?? 0),
+    0,
+  );
+  const decisionsLogged = YESTERDAY_DECISIONS_LOGGED_ACTIONS.reduce(
+    (sum, k) => sum + (counts[k] ?? 0),
+    0,
+  );
+
+  return { claimsCreated, draftsSubmitted, responsesReceived, decisionsLogged };
 }
 
 export interface NeedsYouItem {

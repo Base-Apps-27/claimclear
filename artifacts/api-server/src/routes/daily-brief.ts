@@ -139,7 +139,12 @@ function renderWeeklyDigestSection(d: WeeklyDigest): string {
 }
 
 function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDigest: WeeklyDigest | null): string {
-  const expiringRows = m.expiring
+  // The "Expiring Claims" action table only lists rows that are still actionable
+  // (deadline today or in the future). Already-expired claims are surfaced by
+  // the "Expired" KPI tile and the at-risk dollar totals — repeating them here
+  // just buries the rows staff can still do something about today.
+  const actionableExpiring = m.expiring.filter(c => c.daysLeft >= 0);
+  const expiringRows = actionableExpiring
     .map(c => `<tr>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.confNumber}</td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.date}</td>
@@ -211,7 +216,7 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
 
       <div style="margin-bottom:24px;">
         <h2 style="font-size:16px;color:#1e293b;margin:0 0 8px;">Portal Submissions</h2>
-        <p style="margin:0;color:#64748b;font-size:14px;">${m.submitted} submitted, ${m.failed} failed</p>
+        <p style="margin:0;color:#64748b;font-size:14px;">${m.submitted} submitted, ${m.failed} failed yesterday</p>
       </div>
 
       <div style="margin-bottom:24px;padding:16px;background:#f8fafc;border-radius:8px;">
@@ -228,9 +233,9 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
 
       ${automationFooter}
 
-      ${m.expiring.length > 0 ? `
+      ${actionableExpiring.length > 0 ? `
       <div>
-        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Expiring Claims (${m.expiring.length})</h2>
+        <h2 style="font-size:16px;color:#1e293b;margin:0 0 12px;">Expiring Claims (${actionableExpiring.length})</h2>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           <thead>
             <tr style="background:#f8fafc;">
@@ -284,7 +289,7 @@ function renderOperatorBody(needs: NeedsYouToday, weeklyDigest: WeeklyDigest | n
       ${weeklyDigest ? renderWeeklyDigestSection(weeklyDigest) : ""}`;
 }
 
-async function gatherAdminMetrics(): Promise<AdminMetrics> {
+async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promise<AdminMetrics> {
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
 
   const [openCountResult] = await db
@@ -317,19 +322,34 @@ async function gatherAdminMetrics(): Promise<AdminMetrics> {
   const claimAmountAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
   const totalAtRisk = claimAmountAtRisk * (1 + VENDOR_PREPAY_RATE);
 
-  const submissionCountsRaw = await db
-    .select({ status: portalSubmissionsTable.status, count: count() })
+  // Portal submissions, scoped to the same yesterday window as the rest of the
+  // brief. Previously this was an unfiltered GROUP BY status over the whole
+  // table, so the "submitted" number was a lifetime total that climbed forever
+  // and the label "X submitted, Y failed" was misleading.
+  const [submittedRow] = await db
+    .select({ count: count() })
+    .from(auditLogsTable)
+    .where(
+      and(
+        gte(auditLogsTable.timestamp, yesterdayStart),
+        lt(auditLogsTable.timestamp, todayStart),
+        eq(auditLogsTable.action, "portal_submission_confirmed"),
+      ),
+    );
+  const submitted = submittedRow?.count ?? 0;
+
+  const [failedRow] = await db
+    .select({ count: count() })
     .from(portalSubmissionsTable)
-    .groupBy(portalSubmissionsTable.status);
+    .where(
+      and(
+        eq(portalSubmissionsTable.status, "failed"),
+        gte(portalSubmissionsTable.updatedAt, yesterdayStart),
+        lt(portalSubmissionsTable.updatedAt, todayStart),
+      ),
+    );
+  const failed = failedRow?.count ?? 0;
 
-  const subCounts = Object.fromEntries(submissionCountsRaw.map(r => [r.status, r.count]));
-  const submitted = subCounts["submitted"] || 0;
-  const failed = subCounts["failed"] || 0;
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const yesterdayStart = new Date(todayStart);
-  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
   const automationRows = await db
     .select({ jobName: cronRunsTable.jobName, status: cronRunsTable.status, count: count() })
     .from(cronRunsTable)
@@ -445,12 +465,12 @@ async function gatherAdminMetrics(): Promise<AdminMetrics> {
 router.post("/", asyncHandler(async (req, res): Promise<void> => {
   const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
 
-  const metrics = await gatherAdminMetrics();
   const now = new Date();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const yesterdayStart = new Date(todayStart);
   yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  const metrics = await gatherAdminMetrics(yesterdayStart, todayStart);
 
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const subject = `Agape ClaimClear Daily Brief - ${metrics.openCount} open claims, ${metrics.expired.length} expired`;
