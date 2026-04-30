@@ -1142,7 +1142,7 @@ export default function ClaimDetail() {
                 } else if (status === "Needs Evidence") {
                   recommended = { label: "Gather evidence", description: "Add supporting documents, then queue for portal." };
                 } else if (status === "Ready to Review") {
-                  recommended = { label: "Review payer response", description: "Process the response and choose an outcome below." };
+                  recommended = { label: "Review payer response", description: "Tag the response with what you read, then pick a verdict below — the AI hint is just a suggestion, the human decides." };
                 } else if (status === "On Hold") {
                   recommended = { label: "Resume when ready", description: "Remove the hold to continue processing this claim." };
                 }

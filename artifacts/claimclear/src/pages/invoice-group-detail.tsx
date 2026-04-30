@@ -873,40 +873,48 @@ export default function InvoiceGroupDetail() {
                       <div className="flex items-center gap-2 pt-1 flex-wrap">
                         {!resp.processed && (
                           <PresenceLockWrapper reason={lockReason}>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Button
-                                size="sm" variant="outline"
-                                className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
-                                disabled={processResponseMutation.isPending || othersPresent}
-                                onClick={async () => {
-                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
-                                  invalidateAfterResponseChange();
-                                }}
-                              >
-                                <CheckCircle className="h-3 w-3 mr-1" /> Approve
-                              </Button>
-                              <Button
-                                size="sm" variant="outline"
-                                className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
-                                disabled={processResponseMutation.isPending || othersPresent}
-                                onClick={async () => {
-                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
-                                  invalidateAfterResponseChange();
-                                }}
-                              >
-                                <X className="h-3 w-3 mr-1" /> Deny
-                              </Button>
-                              <Button
-                                size="sm" variant="outline"
-                                className="text-xs h-7"
-                                disabled={processResponseMutation.isPending || othersPresent}
-                                onClick={async () => {
-                                  await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as ProcessResponseBodyResponseType } });
-                                  invalidateAfterResponseChange();
-                                }}
-                              >
-                                <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
-                              </Button>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="text-xs text-muted-foreground">
+                                Tag this response so a human can review it. The verdict still happens via the actions below — these buttons don&apos;t resolve or deny the group.
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
+                                  disabled={processResponseMutation.isPending || othersPresent}
+                                  title="Tag this response as an Approval hint and send it to human review. Does not resolve the group."
+                                  onClick={async () => {
+                                    await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
+                                    invalidateAfterResponseChange();
+                                  }}
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" /> Tag as Approval
+                                </Button>
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                                  disabled={processResponseMutation.isPending || othersPresent}
+                                  title="Tag this response as a Denial hint and send it to human review. Does not deny the group."
+                                  onClick={async () => {
+                                    await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
+                                    invalidateAfterResponseChange();
+                                  }}
+                                >
+                                  <X className="h-3 w-3 mr-1" /> Tag as Denial
+                                </Button>
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="text-xs h-7"
+                                  disabled={processResponseMutation.isPending || othersPresent}
+                                  title="Keep the existing tag and mark the response reviewed. The group stays in Needs Review until you pick a verdict below."
+                                  onClick={async () => {
+                                    await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as ProcessResponseBodyResponseType } });
+                                    invalidateAfterResponseChange();
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
+                                </Button>
+                              </div>
                             </div>
                           </PresenceLockWrapper>
                         )}
@@ -951,7 +959,7 @@ export default function InvoiceGroupDetail() {
                 } else if (group.status === "Needs Evidence") {
                   recommended = { label: "Add evidence", description: "Gather supporting documents for this group." };
                 } else if (group.status === "Ready to Review") {
-                  recommended = { label: "Record outcome", description: "Process the payer response below." };
+                  recommended = { label: "Review payer response", description: "Tag the response with what you read, then pick a verdict below — the AI hint is just a suggestion, the human decides." };
                 }
                 return recommended ? (
                   <ActionsRailRecommended variant="group" label="Recommended next" description={recommended.description}>

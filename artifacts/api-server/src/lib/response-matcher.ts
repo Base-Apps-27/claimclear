@@ -423,7 +423,7 @@ export function shouldTransitionToNeedsReview(responseType: ClassifiedDecision):
   return responseType !== "acknowledgment";
 }
 
-function typeLabelFor(t: ClassifiedDecision): string {
+export function typeLabelFor(t: ClassifiedDecision): string {
   switch (t) {
     case "approval": return "Approval";
     case "denial": return "Denial";

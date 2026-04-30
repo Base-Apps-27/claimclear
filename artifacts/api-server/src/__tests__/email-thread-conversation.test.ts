@@ -26,6 +26,7 @@ import {
   notesTable,
   portalResponsesTable,
   outboundEmailsTable,
+  invoiceGroupsTable,
 } from "@workspace/db";
 
 let server: http.Server;
@@ -719,5 +720,301 @@ test("GET email-thread: keeps current-claim messages with no conversationId visi
     assert.ok(grouped.includes("Threaded"), "Threaded message must still appear");
   } finally {
     await cleanupClaim(claim.id);
+  }
+});
+
+// /responses/:id/process — tagging is a hint, never a verdict.
+
+test("PATCH /responses/:id/process with approval keeps the claim in Needs Review (no auto-resolve) and records the AI hint", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-approval-${Date.now()}`,
+      externalMessageId: `msg-tag-${Date.now()}`,
+      subject: "Approved",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Looks good — approved.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "approval" } },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.json.responseType, "approval");
+    assert.equal(res.json.processed, true);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const tagged = audits.find((a) => a.action === "response_tagged");
+    assert.ok(tagged);
+    assert.match(tagged!.details ?? "", /AI hint: Approval/);
+    const taggedMeta = tagged!.metadata as { responseId?: number; responseType?: string; hint?: string } | null;
+    assert.equal(taggedMeta?.responseId, resp.id);
+    assert.equal(taggedMeta?.responseType, "approval");
+    assert.equal(taggedMeta?.hint, "Approval");
+
+    const noteRows = await db.select().from(notesTable).where(eq(notesTable.claimId, claim.id));
+    const tagNote = noteRows.find((n) => /AI hint: Approval/.test(n.content ?? ""));
+    assert.ok(tagNote);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process with denial does NOT auto-deny — claim stays in Needs Review", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-denial-${Date.now()}`,
+      externalMessageId: `msg-tag-d-${Date.now()}`,
+      subject: "Denied",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Sorry, denied.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "denial" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const tagged = audits.find((a) => a.action === "response_tagged");
+    assert.ok(tagged);
+    assert.match(tagged!.details ?? "", /AI hint: Denial/);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process with partial_approval does NOT auto-resolve as Partially Approved", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-partial-${Date.now()}`,
+      externalMessageId: `msg-tag-p-${Date.now()}`,
+      subject: "Partially Approved",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Approved $20 of $45.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "partial_approval" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process with 'other' still pushes the claim into Needs Review (only acknowledgments are silent)", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-other-${Date.now()}`,
+      externalMessageId: `msg-tag-o-${Date.now()}`,
+      subject: "Misc",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Could you re-check this?",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "other" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const tagged = audits.find((a) => a.action === "response_tagged");
+    assert.ok(tagged);
+    assert.match(tagged!.details ?? "", /AI hint: Other/);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process with acknowledgment leaves the claim's status untouched (ack is silent)", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-ack-${Date.now()}`,
+      externalMessageId: `msg-tag-a-${Date.now()}`,
+      subject: "We received your dispute",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Acknowledged — under review.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "acknowledgment" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Awaiting Response");
+    assert.equal(after.outcome, "Pending");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const tagged = audits.find((a) => a.action === "response_tagged");
+    assert.equal(tagged, undefined);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process resets a non-pending claim outcome back to Pending", async () => {
+  const claim = await createSeedClaim({ status: "Resolved", outcome: "Approved" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-reset-${Date.now()}`,
+      externalMessageId: `msg-tag-reset-${Date.now()}`,
+      subject: "Actually denied on review",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Re-reviewed and the line item is denied.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "denial" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process rejects an unknown responseType with 400", async () => {
+  const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      claimId: claim.id,
+      conversationId: `conv-tag-bad-${Date.now()}`,
+      externalMessageId: `msg-tag-bad-${Date.now()}`,
+      subject: "x",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "x",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<{ error: string }>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "totally_made_up" } },
+    );
+    assert.equal(res.status, 400);
+    assert.match(res.json.error, /Invalid responseType/);
+
+    const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(after.status, "Awaiting Response");
+    const [respAfter] = await db.select().from(portalResponsesTable).where(eq(portalResponsesTable.id, resp.id));
+    assert.equal(respAfter.processed, false);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("PATCH /responses/:id/process with approval on an invoice group keeps it in Needs Review with outcome Pending", async () => {
+  const [group] = await db.insert(invoiceGroupsTable).values({
+    invoiceNumber: `INV-TAG-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    status: "Resolved",
+    outcome: "Approved",
+  }).returning();
+
+  try {
+    const [resp] = await db.insert(portalResponsesTable).values({
+      source: "email",
+      invoiceGroupId: group.id,
+      conversationId: `conv-tag-grp-${Date.now()}`,
+      externalMessageId: `msg-tag-grp-${Date.now()}`,
+      subject: "Approved",
+      senderName: "Payer",
+      senderEmail: "payer@example.com",
+      content: "Looks good.",
+      responseType: "other",
+      processed: false,
+      receivedAt: new Date(),
+    }).returning();
+
+    const res = await fetchJson<typeof portalResponsesTable.$inferSelect>(
+      `/api/responses/${resp.id}/process`,
+      { method: "PATCH", body: { responseType: "approval" } },
+    );
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(after.status, "Needs Review");
+    assert.equal(after.outcome, "Pending");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, group.id));
+    const tagged = audits.find((a) => a.action === "response_tagged");
+    assert.ok(tagged);
+    assert.match(tagged!.details ?? "", /AI hint: Approval/);
+    const taggedMeta = tagged!.metadata as { responseId?: number } | null;
+    assert.equal(taggedMeta?.responseId, resp.id);
+  } finally {
+    await db.delete(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, group.id)).catch(() => undefined);
+    await db.delete(notesTable).where(eq(notesTable.invoiceGroupId, group.id)).catch(() => undefined);
+    await db.delete(portalResponsesTable).where(eq(portalResponsesTable.invoiceGroupId, group.id)).catch(() => undefined);
+    await db.delete(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id)).catch(() => undefined);
   }
 });

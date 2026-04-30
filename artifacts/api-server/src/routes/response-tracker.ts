@@ -6,7 +6,8 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
 import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
-import { matchEmailToClaim, processEmailResponse, processPortalResponse } from "../lib/response-matcher";
+import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor } from "../lib/response-matcher";
+import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
@@ -65,11 +66,25 @@ router.get("/responses/:id", asyncHandler(async (req, res): Promise<void> => {
   res.json(response);
 }));
 
+const VALID_RESPONSE_TYPES = [
+  "approval", "denial", "partial_approval", "info_request", "acknowledgment", "other",
+] as const satisfies readonly ClassifiedDecision[];
+const VALID_RESPONSE_TYPE_SET: ReadonlySet<string> = new Set(VALID_RESPONSE_TYPES);
+const isClassifiedDecision = (v: unknown): v is ClassifiedDecision =>
+  typeof v === "string" && VALID_RESPONSE_TYPE_SET.has(v);
+
 router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const { responseType, claimId, invoiceGroupId } = req.body;
+
+  if (responseType !== undefined && !isClassifiedDecision(responseType)) {
+    res.status(400).json({
+      error: `Invalid responseType "${responseType}". Must be one of: ${VALID_RESPONSE_TYPES.join(", ")}.`,
+    });
+    return;
+  }
 
   const updates: Record<string, unknown> = { processed: true };
   if (responseType) updates.responseType = responseType;
@@ -79,37 +94,76 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
   const [response] = await db.update(portalResponsesTable).set(updates).where(eq(portalResponsesTable.id, id)).returning();
   if (!response) { res.status(404).json({ error: "Response not found" }); return; }
 
-  if (responseType) {
-    const statusMap: Record<string, { status: string; outcome: string }> = {
-      approval: { status: "Resolved", outcome: "Approved" },
-      denial: { status: "Denied", outcome: "Denied" },
-      partial_approval: { status: "Resolved", outcome: "Partially Approved" },
-      info_request: { status: "Needs Review", outcome: "Pending" },
-    };
+  // Tagging is a hint, never a verdict: route every non-ack tag to Needs
+  // Review + Pending. Mirrors response-matcher's shouldTransitionToNeedsReview.
+  const NEEDS_REVIEW: typeof claimsTable.status.enumValues[number] = "Needs Review";
+  const PENDING_OUTCOME: typeof claimsTable.outcome.enumValues[number] = "Pending";
 
-    const mapping = statusMap[responseType];
-    if (mapping) {
-      if (response.invoiceGroupId) {
-        const { transitionGroupStatus } = await import("../lib/group-transitions");
-        await transitionGroupStatus({
-          groupId: response.invoiceGroupId,
-          newStatus: "Needs Review",
-          source: "response_tracker",
-          reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
-          actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
-          systemOverride: true,
-        });
-      } else if (response.claimId) {
-        const { transitionClaimStatus } = await import("../lib/claim-transitions");
-        await transitionClaimStatus({
-          claimId: response.claimId,
-          newStatus: "Needs Review",
-          source: "response_tracker",
-          reason: `Response #${response.id} processed as ${responseType} — awaiting staff post-response action`,
-          actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? "Response Tracker" },
-          systemOverride: true,
-        });
-      }
+  if (responseType && shouldTransitionToNeedsReview(responseType)) {
+    const hint = typeLabelFor(responseType);
+    const tagDetails = `Response #${response.id} tagged as ${responseType} — AI hint: ${hint}, awaiting human review`;
+    const actorEmail = req.user?.email ?? null;
+    const actorName = req.user?.displayName ?? "Response Tracker";
+
+    if (response.invoiceGroupId) {
+      await db.insert(notesTable).values({
+        claimId: null,
+        invoiceGroupId: response.invoiceGroupId,
+        type: "reply_parsed",
+        content: tagDetails,
+        author: actorName,
+      });
+      await db.insert(auditLogsTable).values({
+        invoiceGroupId: response.invoiceGroupId,
+        action: "response_tagged",
+        details: tagDetails,
+        metadata: { responseId: response.id, responseType, hint, source: "response_tracker" },
+        userEmail: actorEmail,
+        userName: actorName,
+      });
+
+      await transitionGroupStatus({
+        groupId: response.invoiceGroupId,
+        newStatus: NEEDS_REVIEW,
+        source: "response_tracker",
+        reason: tagDetails,
+        actor: { userEmail: actorEmail, userName: actorName },
+        systemOverride: true,
+      });
+
+      // Reset outcome — transition helper only touches status.
+      await db.update(invoiceGroupsTable)
+        .set({ outcome: PENDING_OUTCOME })
+        .where(eq(invoiceGroupsTable.id, response.invoiceGroupId));
+    } else if (response.claimId) {
+      await db.insert(notesTable).values({
+        claimId: response.claimId,
+        type: "reply_parsed",
+        content: tagDetails,
+        author: actorName,
+      });
+      await db.insert(auditLogsTable).values({
+        claimId: response.claimId,
+        action: "response_tagged",
+        details: tagDetails,
+        metadata: { responseId: response.id, responseType, hint, source: "response_tracker" },
+        userEmail: actorEmail,
+        userName: actorName,
+      });
+
+      await transitionClaimStatus({
+        claimId: response.claimId,
+        newStatus: NEEDS_REVIEW,
+        source: "response_tracker",
+        reason: tagDetails,
+        actor: { userEmail: actorEmail, userName: actorName },
+        systemOverride: true,
+      });
+
+      // Reset outcome — transition helper only touches status.
+      await db.update(claimsTable)
+        .set({ outcome: PENDING_OUTCOME })
+        .where(eq(claimsTable.id, response.claimId));
     }
   }
 

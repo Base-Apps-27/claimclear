@@ -108,18 +108,7 @@ What's the verdict?
 
 ### Backend changes required
 
-1. **Fix `artifacts/api-server/src/routes/response-tracker.ts`.** The manual classification endpoint (hit when staff tag a response in the Response Tracker UI) currently auto-transitions, which directly contradicts the verdict rule:
-
-   ```ts
-   const statusMap = {
-     approval:         { status: "Resolved", outcome: "Approved" },          // WRONG — must be Needs Review
-     denial:           { status: "Denied",   outcome: "Denied" },            // WRONG — must be Needs Review
-     partial_approval: { status: "Resolved", outcome: "Partially Approved" },// WRONG — must be Needs Review
-     info_request:     { status: "Needs Review", outcome: "Pending" },       // OK
-   };
-   ```
-
-   Every entry must map to `status: "Needs Review"` and keep the AI's read as a *hint string* (e.g., `outcome: "AI hint: Approved"`), preserving the responseType field for UI prioritization. The auto-email matcher (`artifacts/api-server/src/lib/response-matcher.ts`) already does this correctly — only acknowledgments skip the status change; everything else lands in Needs Review.
+1. **Fixed in Task #161.** `artifacts/api-server/src/routes/response-tracker.ts` no longer auto-transitions on manual tagging. All four `responseType` values (`approval`, `denial`, `partial_approval`, `info_request`) now map to `{ status: "Needs Review", outcome: "Pending" }`, and the chosen tag is recorded as a hint string in the audit log (action `response_tagged`, details `Response #N tagged as <type> — AI hint: <Hint>, awaiting human review`) and as a matching timeline note. The UI buttons now read **Tag as Approval / Tag as Denial / Mark Reviewed** with tooltips clarifying that tagging never decides the verdict, and the recommended-action banners on both the claim and invoice-group detail pages explain that the AI hint is a suggestion only — the human still picks the verdict from the action rail. The auto-email matcher (`artifacts/api-server/src/lib/response-matcher.ts`) already followed this rule and was not changed.
 
 2. **Trim the closure-reason set.** In `lib/closure-options/src/index.ts`: remove `accepted_loss` from `ClosureReasonKey` and from `CLOSURE_REASON_BANNER`. Rename `not_contestable` → `cannot_dispute` for accuracy. Add `denied_by_payor` as the third reason. Final set: `cannot_dispute | non_issue | denied_by_payor`.
 

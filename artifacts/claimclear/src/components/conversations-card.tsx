@@ -357,31 +357,34 @@ function ConversationThread({
         </div>
       )}
 
-      {/* Approve / Deny / Mark Reviewed — anchored to latest unprocessed inbound. */}
+      {/* Tagging only classifies the response; verdict happens below. */}
       {expanded && actionableInbound && actionableResp && (
         <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-3 bg-white/60 dark:bg-slate-950/30">
           <div className="text-xs text-muted-foreground mb-2">
-            Process the latest payer message:
+            Tag the latest payer message so a human can review it. The verdict still happens below — these buttons don&apos;t resolve or deny the claim.
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm" variant="outline"
               className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
               onClick={() => onApprove(actionableResp.id)}
+              title="Tag this response as an Approval hint and send it to human review. Does not resolve the claim."
             >
-              <CheckCircle className="h-3 w-3 mr-1" /> Approve
+              <CheckCircle className="h-3 w-3 mr-1" /> Tag as Approval
             </Button>
             <Button
               size="sm" variant="outline"
               className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
               onClick={() => onDeny(actionableResp.id)}
+              title="Tag this response as a Denial hint and send it to human review. Does not deny the claim."
             >
-              <X className="h-3 w-3 mr-1" /> Deny
+              <X className="h-3 w-3 mr-1" /> Tag as Denial
             </Button>
             <Button
               size="sm" variant="outline"
               className="text-xs h-7"
               onClick={() => onMarkReviewed(actionableResp)}
+              title="Keep the existing tag and mark the response reviewed. The claim stays in Needs Review until you pick a verdict below."
             >
               <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
             </Button>
