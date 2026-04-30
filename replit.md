@@ -50,34 +50,45 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript.
 ## Terminology: "Classify" (UI) vs "Triage" (code)
 The first stage of the claim workflow is shown to users as **"Classify"** — the action of deciding whether a Needs-Review claim/group is a real issue or a non-issue. Earlier copy called this "Triage" everywhere; the user-visible label was renamed to "Classify" / "Classification queue" / "Classification completed" across the live app, api-server audit reasons, mockups on the canvas, and the training-guide slide deck. **Internal code symbols intentionally still use the word `triage`** to avoid a churny refactor of stable APIs and persisted data: API routes (`POST /claims/:id/triage`, `POST /invoice-groups/:id/triage`), React hooks/handlers (`useTriageInvoiceGroup`, `handleTriage`, `triageGroup`, `triageAction`, `triageOutcome`, `triageNotes`, `triagedAt`), the audit event key `group_triaged`, the DB enum value `source: "triage"`, the stage object key `"triage"` in `CLAIM_STAGES`, the form mode `submit("triage")`, the dashboard `ACTION_BUCKETS` entry `"triaged"`, slide file names `TriageNonIssue.tsx` / `TriageIssueFound.tsx`, and Playwright `testId`s like `action-group-triage-non-issue` all stay as-is. When adding new code in this area, prefer "Classify" in any user-visible string and "triage" in code symbols. Existing audit-log rows in production written before the rename still read "Triaged as non-issue …"; new rows say "Classified as non-issue …" — both are valid historical records.
 
-## Design decisions in flight: Queue page responses + closure model
+## Design decision in flight: claim lifecycle, payor responses, and the verdict model
 
-Two design conversations have been agreed in principle but **not yet shipped**. Both are pinned here so any agent picking this up can act without re-litigating. The code today does NOT reflect these decisions.
+A unified design has been agreed in principle but **not yet shipped**. The code today does NOT reflect it. This section is the single source of truth for the model and its consequences — any agent picking this up should read it end-to-end before touching response handling, closure reasons, or the Queue page.
 
-### 1. Responses are hints, never verdicts (Queue page redesign)
+### The mental model: two stages, two distinct decision sets
 
-**The rule.** Every payer response is a *hint*, not a final state. The human always reviews and picks the verdict. The system can suggest based on AI/keyword classification, but it must never auto-resolve, auto-deny, or otherwise decide on the operator's behalf. Even an apparent "approval" is a hint — at least one off-platform step is always required (re-attestation, payment confirmation, follow-up calls), so it must still land in front of a human.
+A claim has exactly two stages, and where it sits determines what verdicts can apply to it. Conflating these stages is the root cause of the current UI overload and backend bugs.
 
-**The bug this exposes.** `artifacts/api-server/src/routes/response-tracker.ts` (the manual classification endpoint hit when staff manually tag a response in the Response Tracker UI) currently auto-transitions:
+**Stage 1 — Front-end gate (before any dispute submission exists).** Three exclusive paths, decided by a human during classification:
+- **Disputing** → we work it. (The default path; everything else here closes the claim out.)
+- **Cannot Dispute** → closes out. No evidence, no path forward, we never tried.
+- **Non-Issue** → closes out. Wasn't actually a billing error.
 
-```ts
-const statusMap = {
-  approval:         { status: "Resolved", outcome: "Approved" },          // WRONG — must be Needs Review
-  denial:           { status: "Denied",   outcome: "Denied" },            // WRONG — must be Needs Review
-  partial_approval: { status: "Resolved", outcome: "Partially Approved" },// WRONG — must be Needs Review
-  info_request:     { status: "Needs Review", outcome: "Pending" },       // OK
-};
-```
+**Stage 2 — Back-end results (only reachable after a dispute submission exists).** Three possible payor outcomes, none of which the system may decide on its own:
+- **Approved** (paid in full)
+- **Partially Approved** (paid some)
+- **Denied by Payor** (rejected)
 
-Every entry must map to `status: "Needs Review"` and keep the AI's read as a *hint string* (e.g., `outcome: "AI hint: Approved"`), preserving the responseType field for UI prioritization. The auto-email matcher (`artifacts/api-server/src/lib/response-matcher.ts`) already does this correctly — only acknowledgments skip the status change; everything else lands in Needs Review.
+`Cannot Dispute` and `Non-Issue` can only be set in Stage 1; `Denied by Payor` can only be set in Stage 2 with a recorded payor response on file. The transition rules in the API must enforce this.
 
-**Why "Needs Review" feels overloaded today.** Status `Needs Review` is set by two unrelated paths:
-1. Import without an Error Type → operator action: classify it.
-2. Real payer response arrived → operator action: pick a verdict (continuation / resolution / closure).
+### The verdict rule: every payor response is a hint, not a final state
 
-Today the Queue page lumped both into one "Classification Inbox", which confused operators because classified items showed up in the classify lane with no useful action. As of commit `e0d51d3`, the Classification Inbox now filters to `!errorTypeId` — so it's strictly items missing classification. The post-response items currently fall through the cracks (only visible from the detail page) and need a dedicated surface (below).
+In Stage 2, the human always picks the verdict. The system may *suggest* an outcome based on AI/keyword classification of the response email, but it must never auto-resolve, auto-deny, or otherwise decide on the operator's behalf. Even an apparent "approval" is a hint — at least one off-platform step is always required (re-attestation, payment confirmation, follow-up calls), so it must still land in front of a human. Acknowledgments (proof of receipt) are the only exception: they don't change status because no decision is owed.
 
-**Agreed surface for the post-response items: a "Responses Awaiting Review" card sitting next to Classification Inbox.** Each row shows: invoice#, urgency badges, response-type pill (Denial / Approval / Partial / Info Request / Other), AI summary if available, $amount, status. Click → inline panel with response context plus three lanes of verdicts:
+### "Accepted Loss" doesn't exist as a closure reason
+
+It's a *description* that applies to any claim ending in less than full approval — Partially Approved, Denied by Payor, and Cannot Dispute all qualify. Calling it out as its own closure reason was noise and is being removed. Task #156 just added "Accept as Loss" as a first-class trigger in the shared `<ClosureActions>` component; that addition needs to be reverted in line with this model.
+
+The final closure-reason set is exactly three: `cannot_dispute`, `non_issue`, `denied_by_payor`. The six outcomes (Pending / Approved / Partially Approved / Denied / Withdrawn / Non-Issue) are unchanged; we're trimming reasons, not outcomes. `cannot_dispute` continues mapping to outcome `Withdrawn`; `denied_by_payor` maps to outcome `Denied`.
+
+### What this means for the Queue page
+
+Status `Needs Review` is currently overloaded because two unrelated workflow stages feed it:
+1. **Stage 1 item not yet classified** (no `errorTypeId`) → operator action: classify it.
+2. **Stage 2 substantive payor response received** → operator action: pick a verdict (continuation / resolution / closure).
+
+These deserve separate surfaces because the operator's mental task is completely different in each case. As of commit `e0d51d3`, the **Classification Inbox** is now strictly Stage 1 items (filters to `!errorTypeId`). The Stage 2 items currently fall through the cracks (only findable from the detail page) and need their own surface.
+
+**Agreed surface: a "Responses Awaiting Review" card sitting next to Classification Inbox.** Each row shows invoice#, urgency badges, response-type pill (Denial / Approval / Partial / Info Request / Other), AI summary if available, $amount, status. Click opens an inline panel with the response context plus three lanes of verdicts, organized by what they do to the workflow:
 
 ```
 Response from <sender>, <when>     [AI hint pill: Denial / 87% conf]
@@ -88,50 +99,43 @@ Response from <sender>, <when>     [AI hint pill: Denial / 87% conf]
 What's the verdict?
   Continuation:    [Re-dispute]  [Re-attest]  [Submit new invoice]
   Resolution:      [Mark paid]
-  Closure:         [Cannot Dispute]  [Non-Issue]   ← uses shared <ClosureActions> (Task #156)
+  Closure:         [Denied by Payor]
 ```
 
-Continuation actions reuse the existing `postResponseActions` returned by the API (`re_dispute`, `resolve_reattest`, `resolve_new_invoice`). Closure actions reuse the centralized `<ClosureActions>` component merged in Task #156. "Mark paid" is a new resolution path — see open question below.
+- **Continuation** reuses the existing `postResponseActions` returned by the API (`re_dispute`, `resolve_reattest`, `resolve_new_invoice`).
+- **Resolution** is a new "Mark paid" path — see open question below.
+- **Closure** on this surface offers only `Denied by Payor`, because `Cannot Dispute` and `Non-Issue` are Stage 1 decisions and can't legitimately fire here. This means the shared `<ClosureActions>` component needs to be aware of context (Stage 1 vs Stage 2) when rendering its triggers, or the response-review panel uses a thinner closure trigger that only exposes `Denied by Payor`. Either is fine — implementer's call when scoping the task.
 
-**Open question still on the table:** Does "Payer agreed and we got paid offline" need a first-class "Mark paid" action that flips status to `Resolved` with outcome `Approved`? Or should this case be handled by manually setting status → Resolved without a dedicated button? The proposal above includes "Mark paid"; user has not yet confirmed.
+### Backend changes required
 
-### 2. Closure model cleanup: drop "Accepted Loss"
+1. **Fix `artifacts/api-server/src/routes/response-tracker.ts`.** The manual classification endpoint (hit when staff tag a response in the Response Tracker UI) currently auto-transitions, which directly contradicts the verdict rule:
 
-The user clarified that the real-world closure model has only **three reasons**, organized by *when* they can apply, not as a flat list:
+   ```ts
+   const statusMap = {
+     approval:         { status: "Resolved", outcome: "Approved" },          // WRONG — must be Needs Review
+     denial:           { status: "Denied",   outcome: "Denied" },            // WRONG — must be Needs Review
+     partial_approval: { status: "Resolved", outcome: "Partially Approved" },// WRONG — must be Needs Review
+     info_request:     { status: "Needs Review", outcome: "Pending" },       // OK
+   };
+   ```
 
-**Front-end gate (before any dispute submission exists)** — three exclusive paths:
-- Disputing → we work it (the default path)
-- Cannot Dispute → closes out (no evidence / no path forward)
-- Non-Issue → closes out (wasn't actually a billing error)
+   Every entry must map to `status: "Needs Review"` and keep the AI's read as a *hint string* (e.g., `outcome: "AI hint: Approved"`), preserving the responseType field for UI prioritization. The auto-email matcher (`artifacts/api-server/src/lib/response-matcher.ts`) already does this correctly — only acknowledgments skip the status change; everything else lands in Needs Review.
 
-**Back-end results (only possible after a dispute submission exists)** — payor responses:
-- Approved (paid in full)
-- Partially Approved (paid some)
-- Denied by Payor (rejected)
+2. **Trim the closure-reason set.** In `lib/closure-options/src/index.ts`: remove `accepted_loss` from `ClosureReasonKey` and from `CLOSURE_REASON_BANNER`. Rename `not_contestable` → `cannot_dispute` for accuracy. Add `denied_by_payor` as the third reason. Final set: `cannot_dispute | non_issue | denied_by_payor`.
 
-**"Accepted Loss" is not a distinct closure reason** — it's a description that applies to *any* claim ending in less than full approval (Partially Approved, Denied, Cannot Dispute all qualify). Calling it out as its own reason was noise.
+3. **Revert the "Accept as Loss" trigger in `<ClosureActions>`** (Task #156's addition).
 
-**Required cleanups (not yet done):**
-1. Remove `accepted_loss` from `ClosureReasonKey` in `lib/closure-options/src/index.ts` and from `CLOSURE_REASON_BANNER`.
-2. Remove "Accept as Loss" from the shared `<ClosureActions>` component (Task #156 just *added* it as a first-class trigger — that needs to be reverted in line with this model).
-3. Tighten the closure-reason set to three: `cannot_dispute` (renamed from `not_contestable`), `non_issue`, `denied_by_payor`.
-4. Tighten transition rules in the API: `cannot_dispute` and `non_issue` may only be set when no dispute submission exists; `denied_by_payor` may only be set when there's a recorded payor response.
-5. Update DB enum / validation / UI labels / training-guide / intake dialog accordingly.
-6. Migrate existing rows currently marked `accepted_loss` — most likely re-bucket as `denied_by_payor` (since by definition they followed a denial response).
+4. **Tighten transition rules in the API.** `cannot_dispute` and `non_issue` may only be set when no dispute submission exists for the claim/group; `denied_by_payor` may only be set when there's a recorded payor response on file. Both `transitionClaimStatus` and `transitionGroupStatus` need to enforce this.
 
-**Open questions still on the table** (from the side conversation, awaiting user confirmation):
-- Re-bucket existing `accepted_loss` rows to `denied_by_payor`? (Leaning yes.)
-- Outcome alignment: `cannot_dispute` continues mapping to `Withdrawn`; `denied_by_payor` maps to `Denied`. Keeps the 6 outcomes intact, just trims reasons. (Leaning yes.)
+5. **Update DB enum / validation / UI labels / training-guide / intake dialog** to match the new reason set.
 
-### How these two decisions interact
+6. **Migrate existing rows.** Re-bucket any existing `accepted_loss` rows as `denied_by_payor` (since by the new definition they always followed a denial response).
 
-The Responses Awaiting Review surface (decision 1) reuses `<ClosureActions>` for its closure lane. After decision 2 is implemented, the closure lane will offer two buttons (`Cannot Dispute`, `Non-Issue`) plus a separate `Denied by Payor` action that's only available when a recorded response exists — which is always true on this surface. So the post-cleanup closure lane on the response-review panel becomes:
+### Open questions still on the table
 
-```
-Closure: [Cannot Dispute (rare here)]  [Non-Issue (rare here)]  [Denied by Payor]
-```
-
-`Cannot Dispute` and `Non-Issue` are mostly front-end-gate decisions and should rarely fire from the response-review panel; `Denied by Payor` is the natural closure when the AI hint says denial and the human agrees.
+- **First-class "Mark paid" action?** Does "Payer agreed and we got paid offline" need a dedicated button on the response-review panel that flips status to `Resolved` with outcome `Approved`? Or is manual status → Resolved good enough? The proposal above includes "Mark paid"; user has not yet confirmed.
+- **Re-bucket confirmation.** Existing `accepted_loss` → `denied_by_payor` is the leaning, but user hasn't confirmed.
+- **Outcome alignment confirmation.** `cannot_dispute` → `Withdrawn`, `denied_by_payor` → `Denied`. User leaning yes; not yet confirmed.
 
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.
