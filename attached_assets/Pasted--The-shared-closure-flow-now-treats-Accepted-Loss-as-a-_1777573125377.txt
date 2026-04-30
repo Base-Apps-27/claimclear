@@ -1,0 +1,61 @@
+"The shared closure flow now treats "Accepted Loss" as a first-class closure reason (alongside "Cannot Dispute"..."
+
+How many outcomes do we have? Accepted loss is the result of "cannot dispute" in the real world.
+8 minutes ago
+Here's the current shape of closures in your system:
+
+Outcomes (6 total) — the final result of a claim/group:
+
+Pending
+Approved
+Partially Approved
+Denied
+Withdrawn
+Non-Issue
+Closure reasons (4 total) — the "why" behind a closure:
+
+Reason	Maps to outcome	When it's used today
+Denied by payer	Denied	Payer formally rejected — requires a recorded response
+Cannot Dispute	Withdrawn	Evidence missing/unrecoverable, so we never disputed
+Accepted Loss	Withdrawn	We did dispute, got denied, and chose not to re-dispute
+Non-Issue	Non-Issue	Triage showed it wasn't actually a billing error
+On your point about "Accepted Loss" vs "Cannot Dispute"
+You're right that in plain English they sound like cause and effect — and that's worth flagging. But the code today treats them as two different paths, not a cause/effect pair:
+
+Cannot Dispute = "We never had the evidence, so we didn't even try." (closes straight from triage)
+Accepted Loss = "We tried, the payer denied us, and we're not going to keep fighting." (closes after a denial response is on file)
+Both land at the Withdrawn outcome, but they describe different stories about what happened.
+
+So a few ways you could think about this — want me to plan any of these?
+
+Keep both, but make the labels clearer so it's obvious one is "couldn't fight" and the other is "fought and stopped." (e.g., rename Accepted Loss to "Stopped Disputing After Denial" or similar.)
+Collapse to one reason ("Cannot Dispute") and let the presence/absence of a payer denial response tell the rest of the story implicitly.
+Restructure: treat "Accepted Loss" purely as an outcome modifier rather than a closure reason — e.g., a Withdrawn claim simply records whether we ever disputed.
+Which direction feels right to you? Or is your question more about understanding what's there before deciding?
+No no, Denied by Payor is the denial conclusion. And its an "accepted loss" in the sense that we cannot take additional action, but that's true of every claim that isn't fully approved and processed. At the front end we are Disputing, not disputing or its a non issue. At the back end we can only have follow up responses to us submitting a dispute since Cannot and Non already close out the claim all together.
+2 minutes ago
+Got it — that's a much cleaner model. Let me play it back to make sure I have it right:
+
+Front-end gate (before we ever submit a dispute) — three paths:
+
+Disputing → we work it
+Cannot Dispute → closes out (no evidence/no path forward)
+Non-Issue → closes out (wasn't actually a billing error)
+Back-end results (only possible after we submitted a dispute) — payor responses:
+
+Approved (paid in full)
+Partially Approved (paid some)
+Denied by Payor (rejected)
+And "Accepted Loss" shouldn't be its own closure reason at all — it's just a description of any claim that ended in less than full approval. Every Partially Approved, Denied, and Cannot Dispute claim is "an accepted loss" in that sense, so calling it out as a separate reason is noise.
+
+That implies a few cleanups:
+
+Remove "Accepted Loss" as a closure reason everywhere it appears (DB enum, validation, UI labels, banners, training guide, intake dialog options).
+Tighten the closure-reason set to three: Cannot Dispute, Non-Issue, Denied by Payor.
+Tighten the transition rules: Cannot Dispute and Non-Issue can only be set before any dispute submission exists; Denied by Payor can only be set when there's a recorded payor response.
+Migrate any existing claims/groups currently marked Accepted Loss — most likely re-bucket them as Denied by Payor (since by your definition they came after a denial response).
+A couple of things I'd want you to confirm before I write the plan:
+
+For existing Accepted Loss records: re-bucket them to Denied by Payor? Or leave their reason blank and just update the outcome to Withdrawn/Denied as appropriate? (I'd lean toward Denied by Payor since you said they always followed a denial.)
+Outcome alignment: today both Cannot Dispute and Accepted Loss roll up to the Withdrawn outcome. After the change, should Cannot Dispute still map to Withdrawn, and Denied by Payor stay mapped to Denied? (That keeps your 6 outcomes intact and just trims the reasons.)
+Once you confirm those two, I'll draft a single task to do the cleanup end-to-end.
