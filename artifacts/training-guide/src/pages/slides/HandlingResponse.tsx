@@ -55,7 +55,7 @@ export default function HandlingResponse() {
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
         <Callout number="1" title="Read the payor's exact response in Email Thread" body="The banner snippets the latest message; click 'Open thread' to see the full back-and-forth and reply directly to the payor." />
-        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = payer_denied. 'Withdrawn' (Accept Loss, not contestable, non-issue) is when WE close it. Either way, a short note is required." color="orange" />
+        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = payer_denied. 'Withdrawn' (Accept Loss, Cannot Dispute, Non-Issue) is when WE close it. Closures need a reason and lessons-learned in Withdrawals Review." color="orange" />
         <Callout number="3" title="Submit New Invoice fixes data problems" body="If the payor denied because of a member-name mismatch and you can re-bill correctly, this is the right call." />
         <Callout number="4" title="Re-dispute adds firepower" body="Pulled a better GPS log? Got a corrected signature? Re-dispute. Status goes back to Needs Evidence and you run the workflow again." color="primary" />
       </div>

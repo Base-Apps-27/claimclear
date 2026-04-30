@@ -15,9 +15,9 @@ const ROUTINE = [
     time: "9:15",
     page: "Review Queue",
     tasks: [
-      "Classify every Needs Review group",
-      "Non-Issue → resolve at $0 with a one-line reason",
-      "Issue Found → assign error type, send to Work Queue",
+      "Read the raw MAS error on every Needs Review group",
+      "Classify: pick the Error Type that matches",
+      "Don't take closure exits here — just send it on for processing",
     ],
   },
   {
@@ -45,6 +45,15 @@ const ROUTINE = [
       "Re-check Action Required for new payor responses (Email Thread)",
       "Handle each: Accept Loss (Withdrawn), Submit New Invoice, or Re-dispute",
       "Add a note on anything you couldn't finish",
+    ],
+  },
+  {
+    time: "4:00",
+    page: "Withdrawals Review",
+    tasks: [
+      "Open today's Cannot Dispute / Non-Issue / Accepted Loss closures",
+      "Fill 'Communicated to' and 'Review notes / lessons learned' on each",
+      "Mark Addressed (bulk where the row is already complete)",
     ],
   },
   {

@@ -9,6 +9,7 @@ import {
   ACTION_CATEGORY_LABELS,
   type ActionCategory,
 } from "@/lib/audit-action-meta";
+import { closureReasonLabel } from "@/lib/closure-reasons";
 
 type ActivityAuditLog = {
   id: number;
@@ -20,7 +21,48 @@ type ActivityAuditLog = {
   viaGroup?: boolean;
   invoiceGroupId?: number | null;
   invoiceNumber?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
+
+type ClosureMetadata = {
+  closureReason?: string | null;
+  closureCategory?: string | null;
+  closureCategoryOther?: string | null;
+  closureRootCause?: string | null;
+  closureRootCauseOther?: string | null;
+  closureNarrative?: string | null;
+  closureAccountabilityTags?: string[] | null;
+  closureAccountabilityOther?: string | null;
+  closureDrivers?: Array<{ name?: string | null; id?: string | null }> | null;
+  closureDispatchers?: Array<{ name?: string | null; id?: string | null }> | null;
+  closureCommunicatedTo?: string | null;
+};
+
+function readClosureBlock(metadata: unknown): ClosureMetadata | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const c = (metadata as Record<string, unknown>).closure;
+  if (!c || typeof c !== "object") return null;
+  return c as ClosureMetadata;
+}
+
+function readReviewBlock(metadata: unknown): { closureCommunicatedTo?: string | null; closureReviewNotes?: string | null } | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const m = metadata as Record<string, unknown>;
+  const communicatedTo = typeof m.closureCommunicatedTo === "string" ? m.closureCommunicatedTo : null;
+  const reviewNotes = typeof m.closureReviewNotes === "string" ? m.closureReviewNotes : null;
+  if (!communicatedTo && !reviewNotes) return null;
+  return { closureCommunicatedTo: communicatedTo, closureReviewNotes: reviewNotes };
+}
+
+function namesList(
+  people: Array<{ name?: string | null; id?: string | null }> | null | undefined,
+): string {
+  if (!people || people.length === 0) return "";
+  return people
+    .map((p) => (p?.name ?? "").trim())
+    .filter((n) => n.length > 0)
+    .join(", ");
+}
 
 type ActivityNote = {
   id: number;
@@ -145,6 +187,26 @@ export function ActivityFeed({
                 const meta = humanizeAuditAction(item.log.action, item.sourceKind);
                 const Icon = meta.icon;
                 const isViaGroup = !!item.log.viaGroup;
+                const closure =
+                  item.log.action === "outcome_changed"
+                    ? readClosureBlock(item.log.metadata)
+                    : null;
+                const review =
+                  item.log.action === "closure_addressed" ||
+                  item.log.action === "closure_review_updated"
+                    ? readReviewBlock(item.log.metadata)
+                    : null;
+                const driverNames = closure ? namesList(closure.closureDrivers) : "";
+                const dispatcherNames = closure ? namesList(closure.closureDispatchers) : "";
+                const reasonLabel = closure?.closureReason
+                  ? closureReasonLabel(closure.closureReason)
+                  : "";
+                const categoryLabel = closure?.closureCategory === "other"
+                  ? (closure.closureCategoryOther?.trim() || "Other")
+                  : (closure?.closureCategory ?? "");
+                const rootCauseLabel = closure?.closureRootCause === "other"
+                  ? (closure.closureRootCauseOther?.trim() || "Other")
+                  : (closure?.closureRootCause ?? "");
                 return (
                   <div
                     key={`audit-${item.id}`}
@@ -172,6 +234,96 @@ export function ActivityFeed({
                       </p>
                       {item.log.details && (
                         <p className="text-xs text-muted-foreground break-words">{item.log.details}</p>
+                      )}
+                      {closure && (
+                        <div
+                          className="mt-1.5 rounded border border-muted bg-muted/30 px-2 py-1.5 text-xs space-y-1"
+                          data-testid={`activity-closure-${item.id}`}
+                        >
+                          {reasonLabel && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Reason:</span>
+                              <span className="text-foreground">{reasonLabel}</span>
+                            </div>
+                          )}
+                          {categoryLabel && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Category:</span>
+                              <span className="text-foreground">{categoryLabel}</span>
+                            </div>
+                          )}
+                          {rootCauseLabel && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Root cause:</span>
+                              <span className="text-foreground">{rootCauseLabel}</span>
+                            </div>
+                          )}
+                          {closure.closureAccountabilityTags && closure.closureAccountabilityTags.length > 0 && (
+                            <div className="flex gap-1.5 flex-wrap items-center">
+                              <span className="font-semibold text-muted-foreground">Tags:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {closure.closureAccountabilityTags.map((t) => (
+                                  <Badge
+                                    key={t}
+                                    variant="outline"
+                                    className="text-[10px] py-0 px-1.5 font-normal"
+                                  >
+                                    {t === "other" && closure.closureAccountabilityOther
+                                      ? closure.closureAccountabilityOther
+                                      : t}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {closure.closureNarrative && (
+                            <div>
+                              <div className="font-semibold text-muted-foreground">Narrative:</div>
+                              <p className="font-mono text-[11px] leading-snug text-muted-foreground whitespace-pre-wrap break-words">
+                                {closure.closureNarrative}
+                              </p>
+                            </div>
+                          )}
+                          {driverNames && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Driver:</span>
+                              <span className="text-foreground">{driverNames}</span>
+                            </div>
+                          )}
+                          {dispatcherNames && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Dispatcher:</span>
+                              <span className="text-foreground">{dispatcherNames}</span>
+                            </div>
+                          )}
+                          {closure.closureCommunicatedTo && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Communicated to:</span>
+                              <span className="text-foreground">{closure.closureCommunicatedTo}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {review && (review.closureCommunicatedTo || review.closureReviewNotes) && (
+                        <div
+                          className="mt-1.5 rounded border border-muted bg-muted/30 px-2 py-1.5 text-xs space-y-1"
+                          data-testid={`activity-closure-review-${item.id}`}
+                        >
+                          {review.closureCommunicatedTo && (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <span className="font-semibold text-muted-foreground">Communicated to:</span>
+                              <span className="text-foreground">{review.closureCommunicatedTo}</span>
+                            </div>
+                          )}
+                          {review.closureReviewNotes && (
+                            <div>
+                              <div className="font-semibold text-muted-foreground">Review notes:</div>
+                              <p className="font-mono text-[11px] leading-snug text-muted-foreground whitespace-pre-wrap break-words">
+                                {review.closureReviewNotes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       )}
                       <p className="text-[10px] text-muted-foreground/60">
                         <span>{item.log.userName || item.log.userEmail || "System"} · </span>

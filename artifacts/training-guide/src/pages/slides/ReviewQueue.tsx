@@ -3,10 +3,10 @@ import { AppSidebar, Browser, Callout, SlideShell, StatusPill } from "@/componen
 export default function ReviewQueue() {
   return (
     <SlideShell
-      step={3}
-      totalSteps={22}
-      title="Classify New Uploads in the Review Queue"
-      subtitle="Every freshly imported invoice group lands here as 'Needs Review'. Your first decision: is this actually an issue?"
+      step={5}
+      totalSteps={24}
+      title="Triage New Uploads in the Review Queue"
+      subtitle="Every freshly imported invoice group lands here as 'Needs Review'. Read the raw MAS error first — your only job here is to send it on for classification."
     >
       <div style={{ flex: 1.5 }}>
         <Browser url="/review">
@@ -41,20 +41,18 @@ export default function ReviewQueue() {
                 </div>
               </div>
               <div className="bg-white rounded-[0.5vw] border border-primary/10 flex-1" style={{ padding: "1.2vh 1vw" }}>
-                <p className="font-display text-primary font-bold" style={{ fontSize: "1vw" }}>Classify INV-89421</p>
-                <p className="font-body text-muted" style={{ fontSize: "0.7vw", marginTop: "0.3vh" }}>4 rides · $268 · Raw error: "Member name mismatch"</p>
-                <div style={{ marginTop: "1.5vh" }}>
-                  <p className="font-display text-primary font-semibold" style={{ fontSize: "0.85vw" }}>What did you find?</p>
-                  <div className="flex gap-[0.6vw]" style={{ marginTop: "0.8vh" }}>
-                    <div className="flex-1 bg-[#16A34A] text-white rounded-[0.4vw] text-center font-display font-bold" style={{ padding: "1.5vh 0.5vw", fontSize: "0.85vw" }}>
-                      Non-Issue
-                      <div className="font-body font-normal text-white/80" style={{ fontSize: "0.6vw", marginTop: "0.2vh" }}>Resolve all rides at $0</div>
-                    </div>
-                    <div className="flex-1 bg-orange text-white rounded-[0.4vw] text-center font-display font-bold" style={{ padding: "1.5vh 0.5vw", fontSize: "0.85vw" }}>
-                      Issue Found
-                      <div className="font-body font-normal text-white/80" style={{ fontSize: "0.6vw", marginTop: "0.2vh" }}>Assign error type</div>
-                    </div>
-                  </div>
+                <p className="font-display text-primary font-bold" style={{ fontSize: "1vw" }}>INV-89421 · Triage</p>
+                <p className="font-body text-muted" style={{ fontSize: "0.7vw", marginTop: "0.3vh" }}>4 rides · $268</p>
+
+                <div className="bg-bg border border-primary/10 rounded-[0.4vw]" style={{ padding: "0.8vh 0.7vw", marginTop: "1vh" }}>
+                  <p className="font-body text-muted uppercase tracking-wider" style={{ fontSize: "0.55vw" }}>Raw payor error</p>
+                  <p className="font-mono text-primary" style={{ fontSize: "0.72vw", marginTop: "0.2vh", lineHeight: "1.4" }}>"Member name mismatch — record on file does not match submitted documentation"</p>
+                </div>
+
+                <div style={{ marginTop: "1.2vh" }}>
+                  <p className="font-display text-primary font-semibold" style={{ fontSize: "0.8vw" }}>Send this group on</p>
+                  <p className="font-body text-muted" style={{ fontSize: "0.7vw", marginTop: "0.2vh", lineHeight: "1.4" }}>Pick the matching Error Type to send the group to Build Case. Walking away (Non-Issue / Cannot Dispute / Accepted Loss) is a closure exit you take later.</p>
+                  <button className="bg-orange text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.8vh 0", fontSize: "0.85vw", marginTop: "0.8vh" }}>Classify this claim →</button>
                 </div>
               </div>
             </div>
@@ -64,8 +62,8 @@ export default function ReviewQueue() {
       <div className="flex flex-col gap-[1vh]" style={{ flex: 1 }}>
         <Callout number="1" title="Open Review Queue" body="Click 'Review Queue' in the sidebar. The badge number tells you how many groups are waiting." />
         <Callout number="2" title="Pick a group from the left" body="The list shows the invoice number, ride count, and dollar amount. The selected group highlights in blue." color="orange" />
-        <Callout number="3" title="Read the raw error from MAS" body="The right pane shows what MAS rejected. Use it to decide which path to take next." />
-        <Callout number="4" title="Choose Non-Issue or Issue Found" body="Two big buttons. Non-Issue closes the group at $0 impact. Issue Found sends it forward for processing." color="orange" />
+        <Callout number="3" title="Read the raw error from MAS" body="That single sentence drives everything. It tells you which Error Type to pick on the next screen." />
+        <Callout number="4" title="Hit Classify" body="The triage screen has one path forward: Classify. Closure exits — Non-Issue, Cannot Dispute, Accepted Loss — happen later from Build Case or the claim page once you've actually looked at the data." color="orange" />
       </div>
     </SlideShell>
   );

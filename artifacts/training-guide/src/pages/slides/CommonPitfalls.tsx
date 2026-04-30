@@ -12,9 +12,9 @@ const PITFALLS = [
     fix: "Use Re-dispute (after a denial) or post a Note. Never Send to Portal a second time on a claim that's still Awaiting.",
   },
   {
-    bad: "Withdrawing claims you could have fought",
-    why: "Withdrawn (accepted_loss / not_contestable / non_issue) closes at $0 and counts against your team. The Closure Breakdown on the dashboard makes the trend visible.",
-    fix: "When in doubt, Re-dispute or place On Hold and ask. You can't easily un-withdraw, and a high Withdrawn % is the first thing supervisors look at.",
+    bad: "Closing claims as Cannot Dispute / Non-Issue without lessons learned",
+    why: "Every closure exit (Cannot Dispute, Non-Issue, Accepted Loss) lands in Withdrawals Review. If 'Communicated to' and 'Review notes / lessons learned' are blank, supervisors can't sign off and the team learns nothing from the loss.",
+    fix: "Fill in who you told (driver / dispatcher / supervisor) and one line about why. Then mark Addressed. Don't take a closure exit at all if you can't articulate the reason.",
   },
   {
     bad: "Editing a claim while a bot is working it",

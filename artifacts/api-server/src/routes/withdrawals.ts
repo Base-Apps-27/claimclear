@@ -314,7 +314,7 @@ router.post("/withdrawals/bulk-address", asyncHandler(async (req, res): Promise<
     for (const c of updatedClaims) {
       await db.insert(auditLogsTable).values({
         claimId: c.id,
-        action: "closure_review_state_changed",
+        action: addressed ? "closure_addressed" : "closure_review_state_changed",
         details: addressed ? "Marked addressed (bulk)" : "Cleared addressed (bulk)",
         userEmail,
         userName,
@@ -333,7 +333,7 @@ router.post("/withdrawals/bulk-address", asyncHandler(async (req, res): Promise<
     for (const g of updatedGroups) {
       await db.insert(auditLogsTable).values({
         invoiceGroupId: g.id,
-        action: "closure_review_state_changed",
+        action: addressed ? "closure_addressed" : "closure_review_state_changed",
         details: addressed ? "Marked addressed (bulk)" : "Cleared addressed (bulk)",
         userEmail,
         userName,

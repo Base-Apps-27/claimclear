@@ -1,23 +1,23 @@
 const STAGES = [
   {
     n: "1",
-    label: "Classify",
+    label: "Triage",
     where: "Review Queue",
-    desc: "Decide if a new invoice group is a real issue or a non-issue",
+    desc: "First look at every freshly imported group — read the raw MAS error",
     color: "bg-[#F4A23E]",
   },
   {
     n: "2",
     label: "Classify",
     where: "Review Queue",
-    desc: "Assign the correct error type so the right SOP runs",
+    desc: "Name the error: pick the Error Type so the right SOP and AI letter run",
     color: "bg-orange",
   },
   {
     n: "3",
     label: "Process",
     where: "Work Queue",
-    desc: "Follow the guided workflow, edit data, attach evidence",
+    desc: "Run the workflow, edit data, attach evidence — or take a closure exit",
     color: "bg-accent",
   },
   {
@@ -30,8 +30,8 @@ const STAGES = [
   {
     n: "5",
     label: "Outcome",
-    where: "Claim Detail",
-    desc: "Resolved (won), Denied (payor said no), or Withdrawn (we closed it)",
+    where: "Claim Detail · Withdrawals",
+    desc: "Resolved (won), Denied (payor said no), or Withdrawn — supervisor signs off in Withdrawals Review",
     color: "bg-[#16A34A]",
   },
 ];

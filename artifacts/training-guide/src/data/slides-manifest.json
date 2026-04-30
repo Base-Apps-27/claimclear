@@ -36,28 +36,20 @@
     "position": 5,
     "filepath": "src/pages/slides/ReviewQueue.tsx",
     "title": "Triage New Uploads in the Review Queue",
-    "description": "First decision: real issue or non-issue",
+    "description": "First look at every freshly imported group",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0006-4000-8000-000000000006",
     "position": 6,
-    "filepath": "src/pages/slides/TriageNonIssue.tsx",
-    "title": "The Non-Issue Path",
-    "description": "Resolve at $0 with reason",
-    "speakerNotes": ""
-  },
-  {
-    "id": "a1b2c3d4-0007-4000-8000-000000000007",
-    "position": 7,
-    "filepath": "src/pages/slides/TriageIssueFound.tsx",
-    "title": "The Issue Found Path",
-    "description": "Assigning the right error type",
+    "filepath": "src/pages/slides/Classify.tsx",
+    "title": "Classify: Name the Error",
+    "description": "Pick the Error Type that runs the right workflow",
     "speakerNotes": ""
   },
   {
     "id": "a1b2c3d4-0008-4000-8000-000000000008",
-    "position": 8,
+    "position": 7,
     "filepath": "src/pages/slides/WorkQueueTabs.tsx",
     "title": "Open the Work Queue",
     "description": "Action Required, Portal Queued, Awaiting, On Hold",
@@ -65,7 +57,7 @@
   },
   {
     "id": "a1b2c3d4-0009-4000-8000-000000000009",
-    "position": 9,
+    "position": 8,
     "filepath": "src/pages/slides/WorkflowPlayer.tsx",
     "title": "Follow the Guided Workflow",
     "description": "Decision tree per error type",
@@ -73,7 +65,7 @@
   },
   {
     "id": "a1b2c3d4-0010-4000-8000-000000000010",
-    "position": 10,
+    "position": 9,
     "filepath": "src/pages/slides/ClaimDetailTour.tsx",
     "title": "The Claim Detail Page",
     "description": "Layout tour: header, columns, presence",
@@ -81,7 +73,7 @@
   },
   {
     "id": "a1b2c3d4-0011-4000-8000-000000000011",
-    "position": 11,
+    "position": 10,
     "filepath": "src/pages/slides/EditingFields.tsx",
     "title": "Edit the Claim Data",
     "description": "Conf #, dates, amounts and how they save",
@@ -89,7 +81,7 @@
   },
   {
     "id": "a1b2c3d4-0012-4000-8000-000000000012",
-    "position": 12,
+    "position": 11,
     "filepath": "src/pages/slides/AddEvidence.tsx",
     "title": "Attach Evidence",
     "description": "Drag/drop GPS logs, signatures, auth screenshots",
@@ -97,7 +89,7 @@
   },
   {
     "id": "a1b2c3d4-0013-4000-8000-000000000013",
-    "position": 13,
+    "position": 12,
     "filepath": "src/pages/slides/DisputeLetter.tsx",
     "title": "Review the AI Dispute Letter",
     "description": "Auto-generated dispute text and how to edit it",
@@ -105,7 +97,7 @@
   },
   {
     "id": "a1b2c3d4-0014-4000-8000-000000000014",
-    "position": 14,
+    "position": 13,
     "filepath": "src/pages/slides/NotesAudit.tsx",
     "title": "Notes and the Audit Trail",
     "description": "Team comments + system-recorded history",
@@ -113,7 +105,7 @@
   },
   {
     "id": "a1b2c3d4-0015-4000-8000-000000000015",
-    "position": 15,
+    "position": 14,
     "filepath": "src/pages/slides/SubmitDispute.tsx",
     "title": "Send the Dispute to the Portal",
     "description": "Pre-flight checklist and Sandbox Run",
@@ -121,7 +113,7 @@
   },
   {
     "id": "a1b2c3d4-0016-4000-8000-000000000016",
-    "position": 16,
+    "position": 15,
     "filepath": "src/pages/slides/BotFleet.tsx",
     "title": "Monitor the Bot Fleet",
     "description": "Portal Submissions live view and retries",
@@ -129,7 +121,7 @@
   },
   {
     "id": "a1b2c3d4-0017-4000-8000-000000000017",
-    "position": 17,
+    "position": 16,
     "filepath": "src/pages/slides/AwaitingResponse.tsx",
     "title": "What Happens Next: Awaiting Response",
     "description": "MAS reply window and follow-up rules",
@@ -137,10 +129,18 @@
   },
   {
     "id": "a1b2c3d4-0018-4000-8000-000000000018",
-    "position": 18,
+    "position": 17,
     "filepath": "src/pages/slides/HandlingResponse.tsx",
     "title": "Handling the MAS Response",
     "description": "Accept Loss, Submit New Invoice, or Re-dispute",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0025-4000-8000-000000000025",
+    "position": 18,
+    "filepath": "src/pages/slides/WithdrawalsReview.tsx",
+    "title": "Withdrawals Review: Where Closures Land",
+    "description": "Supervisor sign-off for Cannot Dispute, Non-Issue, and Accepted Loss",
     "speakerNotes": ""
   },
   {

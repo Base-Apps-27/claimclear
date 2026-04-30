@@ -793,7 +793,27 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
 
   const [updated] = await db.update(invoiceGroupsTable).set(updates).where(eq(invoiceGroupsTable.id, id)).returning();
 
-  if (stateChange && stateChange.from !== stateChange.to) {
+  // Audit-write rules mirror /claims/:id/closure-review — see that handler
+  // for why "addressed" gets its own audit action while reopen and notes-only
+  // edits use lower-key actions.
+  const becameAddressed =
+    stateChange != null &&
+    stateChange.from !== stateChange.to &&
+    (stateChange.to === "acknowledged" || stateChange.to === "resolved");
+  if (becameAddressed) {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "closure_addressed",
+      details: "Marked addressed",
+      metadata: {
+        from: stateChange!.from,
+        to: stateChange!.to,
+        closureCommunicatedTo: (updates.closureCommunicatedTo ?? (existing as any).closureCommunicatedTo) ?? null,
+        closureReviewNotes: (updates.closureReviewNotes ?? (existing as any).closureReviewNotes) ?? null,
+      },
+      ...actorFromReq(req),
+    });
+  } else if (stateChange && stateChange.from !== stateChange.to) {
     await db.insert(auditLogsTable).values({
       invoiceGroupId: id,
       action: "closure_review_state_changed",
@@ -806,6 +826,10 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
       invoiceGroupId: id,
       action: "closure_review_updated",
       details: "Closure review notes / communicated-to updated",
+      metadata: {
+        closureCommunicatedTo: (updates.closureCommunicatedTo ?? (existing as any).closureCommunicatedTo) ?? null,
+        closureReviewNotes: (updates.closureReviewNotes ?? (existing as any).closureReviewNotes) ?? null,
+      },
       ...actorFromReq(req),
     });
   }

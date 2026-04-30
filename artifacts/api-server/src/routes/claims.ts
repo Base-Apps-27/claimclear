@@ -872,7 +872,35 @@ router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promis
 
   const [updated] = await db.update(claimsTable).set(updates).where(eq(claimsTable.id, id)).returning();
 
-  if (stateChange && stateChange.from !== stateChange.to) {
+  // Audit-write rules:
+  //   * Transitioning the closure-review row INTO an "addressed" terminal
+  //     state (acknowledged/resolved) is the supervisor's sign-off, so we
+  //     write `closure_addressed` with the communicated-to + review notes
+  //     baked into metadata. The activity feed renders this as a green
+  //     "Addressed" entry without re-querying the row.
+  //   * Reopening (back to pending) and other state churn falls through to
+  //     `closure_review_state_changed` (no dedicated UI affordance).
+  //   * Plain notes / communicated-to edits without a state flip stay on
+  //     `closure_review_updated` so the timeline shows the supervisor was
+  //     iterating on the write-up without claiming sign-off.
+  const becameAddressed =
+    stateChange != null &&
+    stateChange.from !== stateChange.to &&
+    (stateChange.to === "acknowledged" || stateChange.to === "resolved");
+  if (becameAddressed) {
+    await createAuditLog(
+      id,
+      "closure_addressed",
+      "Marked addressed",
+      req,
+      {
+        from: stateChange!.from,
+        to: stateChange!.to,
+        closureCommunicatedTo: (updates.closureCommunicatedTo ?? (existing as any).closureCommunicatedTo) ?? null,
+        closureReviewNotes: (updates.closureReviewNotes ?? (existing as any).closureReviewNotes) ?? null,
+      },
+    );
+  } else if (stateChange && stateChange.from !== stateChange.to) {
     await createAuditLog(
       id,
       "closure_review_state_changed",
@@ -881,7 +909,10 @@ router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promis
       { from: stateChange.from, to: stateChange.to },
     );
   } else if (Object.prototype.hasOwnProperty.call(updates, "closureReviewNotes") || Object.prototype.hasOwnProperty.call(updates, "closureCommunicatedTo")) {
-    await createAuditLog(id, "closure_review_updated", "Closure review notes / communicated-to updated", req);
+    await createAuditLog(id, "closure_review_updated", "Closure review notes / communicated-to updated", req, {
+      closureCommunicatedTo: (updates.closureCommunicatedTo ?? (existing as any).closureCommunicatedTo) ?? null,
+      closureReviewNotes: (updates.closureReviewNotes ?? (existing as any).closureReviewNotes) ?? null,
+    });
   }
 
   emitClaimEvent(id, "claim_edited", req);

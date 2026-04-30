@@ -65,7 +65,7 @@ const STATUSES = [
     label: "Withdrawn",
     kind: "muted" as const,
     when: "We closed it on our side",
-    means: "Closure reason: not_contestable, accepted_loss, or non_issue. A short note is required.",
+    means: "Closure exit: Cannot Dispute, Accepted Loss, or Non-Issue. The row lands in Withdrawals Review for supervisor sign-off and lessons-learned.",
   },
 ];
 
