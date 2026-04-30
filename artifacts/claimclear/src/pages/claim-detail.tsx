@@ -58,6 +58,7 @@ import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/c
 import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
 import type { ClosureReasonKey } from "@/components/closure/closure-options";
 import { XCircle, FileX } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const CLAIM_STAGES: Stage[] = [
   { key: "triage", label: "Classify", desc: "Identify the error" },
@@ -257,6 +258,7 @@ export default function ClaimDetail() {
   const updateClaim = useUpdateClaim();
   const updateStatus = useUpdateClaimStatus();
   const updateOutcome = useUpdateClaimOutcome();
+  const { toast } = useToast();
   const updateEvidence = useUpdateClaimEvidence();
   const placeHold = usePlaceClaimOnHold();
   const removeHold = useRemoveClaimHold();
@@ -373,13 +375,40 @@ export default function ClaimDetail() {
   const handleAssignErrorType = async (errorType: ErrorTypeResponse) => {
     setErrorTypeAssigning(true);
     setErrorTypeError("");
+    const wasFirstClassification = !claim.errorTypeId;
+    const fromClassifyStatus = claim.status === "New" || claim.status === "Needs Review";
     try {
-      await updateClaim.mutateAsync({
+      const updated = await updateClaim.mutateAsync({
         id: claimId,
         data: { errorTypeId: String(errorType.id), errorTypeName: errorType.name },
       });
       invalidate();
       setShowErrorTypeSelector(false);
+
+      // Defensive auto-advance: the closure-data foundation server hook should
+      // have moved us to "Needs Evidence" already. If for any reason it didn't
+      // (e.g. server-side regression), force the transition client-side so the
+      // user still sees the new "Build Case" UI without a second click.
+      if (
+        wasFirstClassification &&
+        fromClassifyStatus &&
+        (updated?.status === "New" || updated?.status === "Needs Review")
+      ) {
+        try {
+          await updateStatus.mutateAsync({ id: claimId, data: { status: "Needs Evidence" } });
+          invalidate();
+        } catch {
+          toast({
+            title: "Couldn't move to Build Case",
+            description: "Error type was saved, but the status update failed. Please refresh.",
+            variant: "destructive",
+          });
+        }
+      }
+
+      if (wasFirstClassification && fromClassifyStatus) {
+        toast({ title: "Classified — moved to Build Case" });
+      }
     } catch {
       setErrorTypeError("Failed to assign error type. Please try again.");
     } finally {
@@ -1302,7 +1331,7 @@ export default function ClaimDetail() {
                 const status = claim.status;
                 let recommended: { label: string; description: string } | null = null;
                 if (status === "Needs Review" || status === "New") {
-                  recommended = { label: "Classify this claim", description: "Confirm the dispute reason and prepare the case." };
+                  recommended = { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
                 } else if (status === "Needs Evidence") {
                   recommended = { label: "Gather evidence", description: "Add supporting documents, then queue for portal." };
                 } else if (status === "Ready to Review") {

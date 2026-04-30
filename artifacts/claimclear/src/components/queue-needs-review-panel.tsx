@@ -3,12 +3,14 @@ import { Link } from "wouter";
 import {
   useListErrorTypes,
   useTriageInvoiceGroup,
+  useUpdateInvoiceGroupStatus,
   useCreateErrorType,
   getListInvoiceGroupsQueryKey,
   getListErrorTypesQueryKey,
 } from "@workspace/api-client-react";
 import type { InvoiceGroupResponse, ErrorTypeResponse } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,8 +20,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency } from "@/lib/format";
 import {
-  CheckCircle2,
-  XCircle,
   AlertTriangle,
   ChevronRight,
   Tag,
@@ -35,7 +35,6 @@ interface QueueNeedsReviewPanelProps {
 export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPanelProps) {
   const queryClient = useQueryClient();
 
-  const [triageAction, setTriageAction] = useState<"non_issue" | "issue_found" | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedErrorTypeId, setSelectedErrorTypeId] = useState("");
   const [showCreateErrorType, setShowCreateErrorType] = useState(false);
@@ -44,30 +43,22 @@ export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPa
   const { data: errorTypesData } = useListErrorTypes();
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
   const triageGroup = useTriageInvoiceGroup();
+  const updateGroupStatus = useUpdateInvoiceGroupStatus();
   const createErrorType = useCreateErrorType();
+  const { toast } = useToast();
 
   useEffect(() => {
-    setTriageAction(null);
     setNotes("");
     setSelectedErrorTypeId("");
     setShowCreateErrorType(false);
     setNewErrorType({ name: "", category: "", description: "" });
   }, [group.id]);
 
-  const handleNonIssue = async () => {
-    await triageGroup.mutateAsync({
-      id: group.id,
-      data: { triageOutcome: "non_issue", notes: notes || undefined },
-    });
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    onCompleted(`Invoice group marked as non-issue — all rides resolved with $0 impact`);
-  };
-
-  const handleIssueFound = async () => {
+  const handleAssignErrorType = async () => {
     if (!selectedErrorTypeId) return;
     const et = errorTypes.find(t => String(t.id) === selectedErrorTypeId);
     if (!et) return;
-    await triageGroup.mutateAsync({
+    const triaged = await triageGroup.mutateAsync({
       id: group.id,
       data: {
         triageOutcome: "issue_found",
@@ -76,8 +67,27 @@ export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPa
         notes: notes || undefined,
       },
     });
+
+    // The /triage endpoint sets status to "New" for issue_found; the closure
+    // foundation auto-advance only fires on PATCH. Force the move to
+    // "Needs Evidence" so the group lands in Build Case immediately.
+    if (triaged?.status === "Needs Review" || triaged?.status === "New") {
+      try {
+        await updateGroupStatus.mutateAsync({
+          id: group.id,
+          data: { status: "Needs Evidence" },
+        });
+      } catch {
+        toast({
+          title: "Couldn't move to Build Case",
+          description: "Error type was saved, but the status update failed. Please refresh.",
+          variant: "destructive",
+        });
+      }
+    }
+
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    onCompleted(`Issue identified — invoice group moved to workflow with error type "${et.name}"`);
+    onCompleted(`Classified as "${et.name}" — moved to Build Case`);
   };
 
   const handleCreateAndSelect = async () => {
@@ -93,7 +103,12 @@ export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPa
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">Review Invoice Group</CardTitle>
+          <div className="space-y-1">
+            <CardTitle className="text-lg">Classify this claim</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Pick the Error Type that matches the rejection reason. The claim moves to Build Case automatically.
+            </p>
+          </div>
           <Link href={`/invoice-groups/${group.id}`}>
             <Button variant="ghost" size="sm">
               Full Details <ChevronRight className="h-4 w-4 ml-1" />
@@ -139,7 +154,7 @@ export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPa
               No error details on file
             </div>
             <p className="text-xs text-amber-600 mt-1">
-              Check the portal for this invoice group and determine if there is an actual issue or if this is a non-issue.
+              Check the portal for this invoice group to confirm the rejection reason before assigning an Error Type.
             </p>
           </div>
         )}
@@ -157,156 +172,87 @@ export function QueueNeedsReviewPanel({ group, onCompleted }: QueueNeedsReviewPa
           />
         </div>
 
-        {!triageAction && (
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">What did you find?</Label>
-            <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
+          {!showCreateErrorType ? (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Error Type</Label>
+                <Select value={selectedErrorTypeId} onValueChange={setSelectedErrorTypeId}>
+                  <SelectTrigger className="mt-1 bg-white" data-testid="select-needs-review-error-type">
+                    <SelectValue placeholder="Choose error type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {errorTypes.map((et) => (
+                      <SelectItem key={et.id} value={String(et.id)}>
+                        <div>
+                          <span>{et.name}</span>
+                          {et.category && <span className="text-muted-foreground ml-2 text-xs">({et.category})</span>}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Button
                 variant="outline"
-                className="h-auto py-4 flex flex-col items-center gap-2 border-green-200 hover:bg-green-50 hover:border-green-300"
-                onClick={() => setTriageAction("non_issue")}
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setShowCreateErrorType(true)}
               >
-                <XCircle className="h-6 w-6 text-green-600" />
-                <span className="font-medium text-green-700">Non-Issue</span>
-                <span className="text-[11px] text-muted-foreground text-center leading-tight">
-                  No action needed. Resolve group and all rides.
-                </span>
+                <Plus className="h-3 w-3 mr-1" />
+                Create New Error Type
               </Button>
+
               <Button
-                variant="outline"
-                className="h-auto py-4 flex flex-col items-center gap-2 border-red-200 hover:bg-red-50 hover:border-red-300"
-                onClick={() => setTriageAction("issue_found")}
+                onClick={handleAssignErrorType}
+                disabled={!selectedErrorTypeId || triageGroup.isPending}
+                className="w-full"
+                data-testid="button-needs-review-assign-error-type"
               >
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-                <span className="font-medium text-red-700">Issue Found</span>
-                <span className="text-[11px] text-muted-foreground text-center leading-tight">
-                  Define the error type and process.
-                </span>
+                {triageGroup.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
+                ) : (
+                  <><Tag className="h-4 w-4 mr-2" />Assign Error Type</>
+                )}
               </Button>
-            </div>
-          </div>
-        )}
-
-        {triageAction === "non_issue" && (
-          <div className="space-y-3 p-3 bg-green-50 border border-green-200 rounded-md">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-green-800 font-medium text-sm">
-                <XCircle className="h-4 w-4" />
-                Mark as Non-Issue
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
+                <Input
+                  value={newErrorType.name}
+                  onChange={e => setNewErrorType({ ...newErrorType, name: e.target.value })}
+                  placeholder="e.g. Duplicate Charge"
+                  className="mt-1 bg-white"
+                />
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setTriageAction(null)} className="h-6 px-2 text-xs">
-                Back
-              </Button>
-            </div>
-            <p className="text-xs text-green-700">
-              This will resolve the invoice group and all {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}, setting financial impact to $0.
-            </p>
-            <Button
-              onClick={handleNonIssue}
-              disabled={triageGroup.isPending}
-              className="w-full bg-green-600 hover:bg-green-700"
-            >
-              {triageGroup.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
-              ) : (
-                <><CheckCircle2 className="h-4 w-4 mr-2" />Confirm Non-Issue</>
-              )}
-            </Button>
-          </div>
-        )}
-
-        {triageAction === "issue_found" && (
-          <div className="space-y-3 p-3 bg-red-50 border border-red-200 rounded-md">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-red-800 font-medium text-sm">
-                <AlertTriangle className="h-4 w-4" />
-                Define the Issue
+              <div>
+                <Label className="text-xs">Category</Label>
+                <Input
+                  value={newErrorType.category}
+                  onChange={e => setNewErrorType({ ...newErrorType, category: e.target.value })}
+                  placeholder="e.g. Billing"
+                  className="mt-1 bg-white"
+                />
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setTriageAction(null)} className="h-6 px-2 text-xs">
-                Back
-              </Button>
-            </div>
-
-            {!showCreateErrorType ? (
-              <>
-                <div>
-                  <Label className="text-xs text-red-700">Select Error Type</Label>
-                  <Select value={selectedErrorTypeId} onValueChange={setSelectedErrorTypeId}>
-                    <SelectTrigger className="mt-1 bg-white">
-                      <SelectValue placeholder="Choose error type..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {errorTypes.map((et) => (
-                        <SelectItem key={et.id} value={String(et.id)}>
-                          <div>
-                            <span>{et.name}</span>
-                            {et.category && <span className="text-muted-foreground ml-2 text-xs">({et.category})</span>}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
+              <div className="flex gap-2">
                 <Button
-                  variant="outline"
+                  onClick={handleCreateAndSelect}
+                  disabled={!newErrorType.name.trim() || createErrorType.isPending}
+                  className="flex-1"
                   size="sm"
-                  className="w-full text-xs"
-                  onClick={() => setShowCreateErrorType(true)}
                 >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Create New Error Type
+                  {createErrorType.isPending ? "Creating..." : "Create & Select"}
                 </Button>
-
-                <Button
-                  onClick={handleIssueFound}
-                  disabled={!selectedErrorTypeId || triageGroup.isPending}
-                  className="w-full bg-red-600 hover:bg-red-700"
-                >
-                  {triageGroup.isPending ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
-                  ) : (
-                    <><Tag className="h-4 w-4 mr-2" />Assign & Move to Workflow</>
-                  )}
+                <Button variant="ghost" size="sm" onClick={() => setShowCreateErrorType(false)}>
+                  Back
                 </Button>
-              </>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
-                  <Input
-                    value={newErrorType.name}
-                    onChange={e => setNewErrorType({ ...newErrorType, name: e.target.value })}
-                    placeholder="e.g. Duplicate Charge"
-                    className="mt-1 bg-white"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Category</Label>
-                  <Input
-                    value={newErrorType.category}
-                    onChange={e => setNewErrorType({ ...newErrorType, category: e.target.value })}
-                    placeholder="e.g. Billing"
-                    className="mt-1 bg-white"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleCreateAndSelect}
-                    disabled={!newErrorType.name.trim() || createErrorType.isPending}
-                    className="flex-1"
-                    size="sm"
-                  >
-                    {createErrorType.isPending ? "Creating..." : "Create & Select"}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setShowCreateErrorType(false)}>
-                    Back
-                  </Button>
-                </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

@@ -19,6 +19,9 @@ import {
   useGetInvoiceGroupValidTransitions,
   usePlaceClaimOnHold,
   useRemoveClaimHold,
+  useListErrorTypes,
+  useCreateErrorType,
+  getListErrorTypesQueryKey,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { usePresence } from "@/hooks/use-presence";
@@ -26,7 +29,8 @@ import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { PresenceLockWrapper, formatViewerNames } from "@/components/presence-lock";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason } from "@workspace/api-client-react";
+import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason, ErrorTypeResponse } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import DOMPurify from "dompurify";
@@ -59,6 +63,8 @@ import {
   Play,
   Send,
   SplitSquareHorizontal,
+  Tag,
+  Plus,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -150,6 +156,10 @@ export default function InvoiceGroupDetail() {
     query: { enabled: id > 0, queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) },
   });
   const triageGroup = useTriageInvoiceGroup();
+  const createErrorType = useCreateErrorType();
+  const { data: errorTypesData } = useListErrorTypes();
+  const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
+  const { toast } = useToast();
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
   const placeLegHold = usePlaceClaimOnHold();
@@ -183,6 +193,12 @@ export default function InvoiceGroupDetail() {
   const lockReason = othersPresent
     ? `Disabled — ${formatViewerNames(otherViewers)} ${otherViewers.length === 1 ? "is" : "are"} currently working on this group. Wait for them to leave or coordinate directly.`
     : null;
+
+  const [showGroupErrorTypeSelector, setShowGroupErrorTypeSelector] = useState(false);
+  const [showCreateGroupErrorType, setShowCreateGroupErrorType] = useState(false);
+  const [newGroupErrorType, setNewGroupErrorType] = useState({ name: "", category: "", description: "" });
+  const [groupErrorTypeAssigning, setGroupErrorTypeAssigning] = useState(false);
+  const [groupErrorTypeError, setGroupErrorTypeError] = useState("");
 
   const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
   const [reassignTab, setReassignTab] = useState<"group" | "claim">("group");
@@ -250,12 +266,56 @@ export default function InvoiceGroupDetail() {
   const heldLegCount = rides.filter((r) => r.status === "On Hold").length;
   const isPartial: boolean = (group as any).isPartial ?? (heldLegCount > 0 && heldLegCount < rides.length);
 
-  const handleTriage = async (outcome: "non_issue" | "issue_found") => {
-    await triageGroup.mutateAsync({
-      id,
-      data: { triageOutcome: outcome },
-    });
-    invalidate();
+  const handleAssignGroupErrorType = async (errorType: ErrorTypeResponse) => {
+    setGroupErrorTypeAssigning(true);
+    setGroupErrorTypeError("");
+    try {
+      await triageGroup.mutateAsync({
+        id,
+        data: {
+          triageOutcome: "issue_found",
+          errorTypeId: String(errorType.id),
+          errorTypeName: errorType.name,
+        },
+      });
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) });
+      if (group && (group.status === "Needs Review" || group.status === "New")) {
+        try {
+          await updateStatus.mutateAsync({ id, data: { status: "Needs Evidence" } });
+          invalidate();
+        } catch {
+          toast({
+            title: "Couldn't move to Build Case",
+            description: "Error type was saved, but the status update failed. Please try again.",
+            variant: "destructive",
+          });
+        }
+      }
+      setShowGroupErrorTypeSelector(false);
+      toast({ title: "Classified — moved to Build Case" });
+    } catch {
+      setGroupErrorTypeError("Failed to assign error type. Please try again.");
+    } finally {
+      setGroupErrorTypeAssigning(false);
+    }
+  };
+
+  const handleCreateAndAssignGroupErrorType = async () => {
+    if (!newGroupErrorType.name.trim()) return;
+    setGroupErrorTypeAssigning(true);
+    setGroupErrorTypeError("");
+    try {
+      const created = await createErrorType.mutateAsync({ data: newGroupErrorType });
+      queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
+      await handleAssignGroupErrorType(created);
+      setShowCreateGroupErrorType(false);
+      setNewGroupErrorType({ name: "", category: "", description: "" });
+    } catch {
+      setGroupErrorTypeError("Failed to create or assign error type. Please try again.");
+    } finally {
+      setGroupErrorTypeAssigning(false);
+    }
   };
 
   const handleOutcome = async (
@@ -863,7 +923,7 @@ export default function InvoiceGroupDetail() {
               {(() => {
                 let recommended: { label: string; description: string } | null = null;
                 if (group.status === "Needs Review") {
-                  recommended = { label: "Classify this group", description: "Decide whether this is a real issue or non-issue." };
+                  recommended = { label: "Classify this claim", description: "Pick the Error Type that matches the rejection reason." };
                 } else if (group.status === "On Hold") {
                   recommended = { label: "Resume when ready", description: "Remove the hold to continue processing." };
                 } else if (group.status === "Needs Evidence") {
@@ -913,20 +973,12 @@ export default function InvoiceGroupDetail() {
                 <ActionGroup label="Classify">
                   <PresenceLockWrapper reason={lockReason} className="w-full">
                     <ActionRow
-                      label="Non-Issue (Resolve)"
-                      sub="Mark as non-issue and resolve"
+                      icon={<Tag className="h-4 w-4" />}
+                      label="Assign Error Type"
+                      sub="Pick the Error Type — moves to Build Case automatically"
                       disabled={triageGroup.isPending || othersPresent}
-                      onClick={() => handleTriage("non_issue")}
-                      testId="action-group-triage-non-issue"
-                    />
-                  </PresenceLockWrapper>
-                  <PresenceLockWrapper reason={lockReason} className="w-full">
-                    <ActionRow
-                      label="Issue Found"
-                      sub="Continue dispute workflow"
-                      disabled={triageGroup.isPending || othersPresent}
-                      onClick={() => handleTriage("issue_found")}
-                      testId="action-group-triage-issue-found"
+                      onClick={() => setShowGroupErrorTypeSelector(true)}
+                      testId="action-group-assign-error-type"
                     />
                   </PresenceLockWrapper>
                 </ActionGroup>
@@ -1188,6 +1240,109 @@ export default function InvoiceGroupDetail() {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showGroupErrorTypeSelector} onOpenChange={(open) => {
+        setShowGroupErrorTypeSelector(open);
+        if (!open) {
+          setShowCreateGroupErrorType(false);
+          setNewGroupErrorType({ name: "", category: "", description: "" });
+          setGroupErrorTypeError("");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Error Type</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Pick the Error Type that matches the rejection reason. The group moves to Build Case automatically.
+            </p>
+          </DialogHeader>
+          {groupErrorTypeError && (
+            <div className="bg-red-50 text-red-800 text-sm p-2 rounded border border-red-200">
+              {groupErrorTypeError}
+            </div>
+          )}
+          {!showCreateGroupErrorType ? (
+            <div className="space-y-3">
+              <div className="max-h-[300px] overflow-y-auto space-y-1">
+                {errorTypes.map((et) => (
+                  <button
+                    key={et.id}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-muted transition-colors flex items-center justify-between ${
+                      String(group.errorTypeId) === String(et.id) ? "bg-primary/10 border border-primary/30" : "border border-transparent"
+                    }`}
+                    onClick={() => handleAssignGroupErrorType(et)}
+                    disabled={groupErrorTypeAssigning}
+                    data-testid={`button-group-pick-error-type-${et.id}`}
+                  >
+                    <div>
+                      <p className="font-medium">{et.name}</p>
+                      {et.category && <p className="text-xs text-muted-foreground">{et.category}</p>}
+                    </div>
+                    {String(group.errorTypeId) === String(et.id) && (
+                      <CheckCircle className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                ))}
+                {errorTypes.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No error types defined yet.</p>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setShowCreateGroupErrorType(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Create New Error Type
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <Label>Name <span className="text-destructive">*</span></Label>
+                <Input
+                  value={newGroupErrorType.name}
+                  onChange={e => setNewGroupErrorType({ ...newGroupErrorType, name: e.target.value })}
+                  placeholder="e.g. Duplicate Charge"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Input
+                  value={newGroupErrorType.category}
+                  onChange={e => setNewGroupErrorType({ ...newGroupErrorType, category: e.target.value })}
+                  placeholder="e.g. Billing"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea
+                  value={newGroupErrorType.description}
+                  onChange={e => setNewGroupErrorType({ ...newGroupErrorType, description: e.target.value })}
+                  placeholder="Describe this error type..."
+                  className="mt-1"
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCreateAndAssignGroupErrorType}
+                  disabled={!newGroupErrorType.name.trim() || groupErrorTypeAssigning}
+                  className="flex-1"
+                >
+                  {groupErrorTypeAssigning ? "Saving..." : "Create & Assign"}
+                </Button>
+                <Button variant="ghost" onClick={() => setShowCreateGroupErrorType(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
