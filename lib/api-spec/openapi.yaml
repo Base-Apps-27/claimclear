@@ -3092,6 +3092,12 @@ components:
           type: string
         updatedAt:
           type: string
+        effectiveDaysLeft:
+          type: ["integer", "null"]
+          description: "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints."
+        isUrgent:
+          type: boolean
+          description: "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints."
       required:
         - id
         - confNumber
@@ -3233,6 +3239,15 @@ components:
           type: string
         updatedAt:
           type: string
+        earliestDate:
+          type: ["string", "null"]
+          description: "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints."
+        effectiveDaysLeft:
+          type: ["integer", "null"]
+          description: "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints."
+        isUrgent:
+          type: boolean
+          description: "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints."
       required:
         - id
         - invoiceNumber

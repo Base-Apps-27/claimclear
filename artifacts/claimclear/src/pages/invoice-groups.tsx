@@ -28,6 +28,7 @@ import {
   Recommended, ToneButton, CrossPageNudge, TONE_STYLE,
 } from "@/components/cohesion";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
+import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -238,7 +239,7 @@ export default function InvoiceGroupsList() {
       result.push({ key: "amount", label, onRemove: () => set({ amountMin: null, amountMax: null, page: null }, false) });
     }
     if (filterExpiring) {
-      const label = filterExpiring === "urgent" ? "Urgent (≤ 3 days)" : "Expiring soon (≤ 10 days)";
+      const label = filterExpiring === "urgent" ? "Must file today" : "Expiring soon (≤ 10 days)";
       result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
     }
     return result;
@@ -464,7 +465,7 @@ export default function InvoiceGroupsList() {
                         <SelectContent>
                           <SelectItem value="__all__">All deadlines</SelectItem>
                           <SelectItem value="soon">Expiring soon (≤ 10 days)</SelectItem>
-                          <SelectItem value="urgent">Urgent (≤ 3 days)</SelectItem>
+                          <SelectItem value="urgent">Must file today</SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">Only counts groups with actionable status; weekend deadlines are shifted to Friday.</p>
@@ -613,7 +614,10 @@ export default function InvoiceGroupsList() {
                             </td>
                             {visibleCols.has("invoiceNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.purple.fg }}>
-                                <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
+                                <div className="flex items-center gap-2">
+                                  <UrgentTodayBadge isUrgent={group.isUrgent} />
+                                  <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
+                                </div>
                               </td>
                             )}
                             {visibleCols.has("rideCount") && (

@@ -214,6 +214,24 @@ export const ListInvoiceGroupsResponse = zod.object({
       importBatch: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
+      earliestDate: zod
+        .string()
+        .nullish()
+        .describe(
+          "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+        ),
+      effectiveDaysLeft: zod
+        .number()
+        .nullish()
+        .describe(
+          "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+        ),
+      isUrgent: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
     }),
   ),
   total: zod.number(),
@@ -351,6 +369,24 @@ export const GetInvoiceGroupResponse = zod
     importBatch: zod.string().nullish(),
     createdAt: zod.string().optional(),
     updatedAt: zod.string().optional(),
+    earliestDate: zod
+      .string()
+      .nullish()
+      .describe(
+        "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+      ),
+    effectiveDaysLeft: zod
+      .number()
+      .nullish()
+      .describe(
+        "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+      ),
+    isUrgent: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+      ),
   })
   .and(
     zod.object({
@@ -468,6 +504,18 @@ export const GetInvoiceGroupResponse = zod
             holdPlacedAt: zod.string().nullish(),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
+            effectiveDaysLeft: zod
+              .number()
+              .nullish()
+              .describe(
+                "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+              ),
+            isUrgent: zod
+              .boolean()
+              .optional()
+              .describe(
+                "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+              ),
           }),
         )
         .optional(),
@@ -800,6 +848,24 @@ export const UpdateInvoiceGroupResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -923,6 +989,24 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1094,6 +1178,24 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1212,6 +1314,24 @@ export const TriageInvoiceGroupResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1327,6 +1447,24 @@ export const HoldInvoiceGroupResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1438,6 +1576,24 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1589,6 +1745,24 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -1841,6 +2015,18 @@ export const ListClaimsResponse = zod.object({
       holdPlacedAt: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
+      effectiveDaysLeft: zod
+        .number()
+        .nullish()
+        .describe(
+          "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+        ),
+      isUrgent: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
     }),
   ),
   total: zod.number(),
@@ -2000,6 +2186,18 @@ export const GetClaimResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2132,6 +2330,18 @@ export const UpdateClaimResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2280,6 +2490,18 @@ export const UpdateClaimStatusResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2456,6 +2678,18 @@ export const UpdateClaimOutcomeResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2577,6 +2811,18 @@ export const UpdateClaimEvidenceResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2697,6 +2943,18 @@ export const PlaceClaimOnHoldResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2812,6 +3070,18 @@ export const RemoveClaimHoldResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -2931,6 +3201,18 @@ export const UpdateClaimWorkflowResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -3053,6 +3335,18 @@ export const TriageClaimResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -3178,6 +3472,18 @@ export const PostResponseActionResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -3316,6 +3622,18 @@ export const GenerateClaimEmailResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -4791,6 +5109,24 @@ export const GetDashboardSummaryResponse = zod.object({
       importBatch: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
+      earliestDate: zod
+        .string()
+        .nullish()
+        .describe(
+          "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+        ),
+      effectiveDaysLeft: zod
+        .number()
+        .nullish()
+        .describe(
+          "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+        ),
+      isUrgent: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
     }),
   ),
   portalStats: zod.object({
@@ -6563,6 +6899,18 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   holdPlacedAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -6696,6 +7044,24 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   importBatch: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**

@@ -14,6 +14,7 @@ import {
 } from "../lib/claim-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
+import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 
 const router: IRouter = Router();
 
@@ -178,10 +179,17 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
   const orderBy = buildClaimsOrderBy(sort as string, dir as string);
 
   const [totalResult] = await db.select({ count: count() }).from(claimsTable).where(where);
-  const claims = await db.select().from(claimsTable).where(where)
+  const claimsRaw = await db.select().from(claimsTable).where(where)
     .orderBy(orderBy)
     .limit(limitVal)
     .offset(offsetVal);
+
+  const today = new Date();
+  const claims = claimsRaw.map(claim => ({
+    ...claim,
+    effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
+    isUrgent: isUrgentDeadline(claim.date, today),
+  }));
 
   res.json({ claims, total: totalResult.count });
 }));

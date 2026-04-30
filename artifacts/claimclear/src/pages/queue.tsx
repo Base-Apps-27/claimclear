@@ -13,9 +13,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
-import { CheckCircle2, ChevronRight, Eye, FileText } from "lucide-react";
+import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle } from "lucide-react";
 import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
+import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatViewerNames } from "@/components/presence-lock";
@@ -75,7 +76,15 @@ export default function Queue() {
   const awaitingGroups = awaitingQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
 
-  const actionableGroups = [...newGroups, ...needsGroups];
+  const actionableGroups = [...newGroups, ...needsGroups].sort((a, b) => {
+    const aUrgent = a.isUrgent ? 1 : 0;
+    const bUrgent = b.isUrgent ? 1 : 0;
+    if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+    const aDays = a.effectiveDaysLeft ?? Number.POSITIVE_INFINITY;
+    const bDays = b.effectiveDaysLeft ?? Number.POSITIVE_INFINITY;
+    return aDays - bDays;
+  });
+  const actionableUrgentCount = actionableGroups.filter(g => g.isUrgent).length;
 
   const allGroups = [
     ...actionableGroups,
@@ -109,9 +118,10 @@ export default function Queue() {
       >
         <div className="py-3 px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0 shrink-0">
-            <div className="whitespace-nowrap">
+            <div className="whitespace-nowrap flex items-center gap-2">
+              <UrgentTodayBadge isUrgent={group.isUrgent} />
               <span className="font-mono font-semibold">{group.invoiceNumber}</span>
-              <span className="text-muted-foreground ml-3 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
+              <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
             <StatusBadge status={group.status} />
           </div>
@@ -137,6 +147,24 @@ export default function Queue() {
         <h2 className="text-2xl font-bold tracking-tight">Work Queue</h2>
         <p className="text-muted-foreground">Invoice groups requiring attention — select a group to process</p>
       </div>
+
+      {actionableUrgentCount > 0 && (
+        <div
+          className="rounded-lg border px-4 py-3 flex items-center gap-3"
+          style={{
+            background: "hsl(var(--cc-red-bg))",
+            borderColor: "hsl(var(--cc-red-border))",
+            color: "hsl(var(--cc-red-fg))",
+          }}
+          data-testid="queue-urgent-banner"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0" style={{ color: "hsl(var(--destructive))" }} />
+          <div className="text-sm">
+            <span className="font-bold">{actionableUrgentCount} {actionableUrgentCount === 1 ? "group" : "groups"} must file today</span>
+            <span className="opacity-80"> · sorted to the top of the Action Required list</span>
+          </div>
+        </div>
+      )}
 
       {successMessage && (
         <div className="bg-green-50 border border-green-200 rounded-md px-4 py-3 flex items-center gap-2">

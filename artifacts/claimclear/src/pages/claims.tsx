@@ -28,6 +28,7 @@ import {
   Recommended, ToneButton, CrossPageNudge, TONE_STYLE,
 } from "@/components/cohesion";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
+import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -253,7 +254,7 @@ export default function ClaimsList() {
       result.push({ key: "clientNumber", label: `Member: ${filterClientNumber}`, onRemove: () => set({ clientNumber: null, page: null }, false) });
     }
     if (filterExpiring) {
-      const label = filterExpiring === "urgent" ? "Urgent (≤ 3 days)" : "Expiring soon (≤ 10 days)";
+      const label = filterExpiring === "urgent" ? "Must file today" : "Expiring soon (≤ 10 days)";
       result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
     }
     return result;
@@ -480,7 +481,7 @@ export default function ClaimsList() {
                         <SelectContent>
                           <SelectItem value="__all__">All deadlines</SelectItem>
                           <SelectItem value="soon">Expiring soon (≤ 10 days)</SelectItem>
-                          <SelectItem value="urgent">Urgent (≤ 3 days)</SelectItem>
+                          <SelectItem value="urgent">Must file today</SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">Only counts claims with actionable status; weekend deadlines are shifted to Friday.</p>
@@ -635,7 +636,10 @@ export default function ClaimsList() {
                             </td>
                             {visibleCols.has("confNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.blue.fg }}>
-                                <Link href={`/claims/${claim.id}`}>{claim.confNumber}</Link>
+                                <div className="flex items-center gap-2">
+                                  <UrgentTodayBadge isUrgent={claim.isUrgent} />
+                                  <Link href={`/claims/${claim.id}`}>{claim.confNumber}</Link>
+                                </div>
                               </td>
                             )}
                             {visibleCols.has("date") && (

@@ -15,6 +15,7 @@ import {
 } from "../lib/group-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
+import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 
 const router: IRouter = Router();
 
@@ -158,10 +159,37 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
 
   const [totalResult] = await db.select({ count: count() }).from(invoiceGroupsTable).where(where);
-  const groups = await db.select().from(invoiceGroupsTable).where(where)
+  const groupsRaw = await db.select().from(invoiceGroupsTable).where(where)
     .orderBy(orderBy)
     .limit(limitVal)
     .offset(offsetVal);
+
+  const groupIds = groupsRaw.map(g => g.id);
+  const earliestByGroup = new Map<number, string | null>();
+  if (groupIds.length > 0) {
+    const earliestRows = await db
+      .select({
+        invoiceGroupId: claimsTable.invoiceGroupId,
+        earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+      })
+      .from(claimsTable)
+      .where(inArray(claimsTable.invoiceGroupId, groupIds))
+      .groupBy(claimsTable.invoiceGroupId);
+    for (const row of earliestRows) {
+      if (row.invoiceGroupId !== null) earliestByGroup.set(row.invoiceGroupId, row.earliestDate);
+    }
+  }
+
+  const today = new Date();
+  const groups = groupsRaw.map(g => {
+    const earliestDate = earliestByGroup.get(g.id) ?? null;
+    return {
+      ...g,
+      earliestDate,
+      effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
+      isUrgent: isUrgentDeadline(earliestDate, today),
+    };
+  });
 
   res.json({ groups, total: totalResult.count });
 }));

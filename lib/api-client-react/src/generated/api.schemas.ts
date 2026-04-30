@@ -192,6 +192,13 @@ export interface ClaimResponse {
   holdPlacedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.
+   * @nullable
+   */
+  effectiveDaysLeft?: number | null;
+  /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
+  isUrgent?: boolean;
 }
 
 export interface ValidTransitionsResponse {
@@ -366,6 +373,18 @@ export interface InvoiceGroupResponse {
   importBatch?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.
+   * @nullable
+   */
+  earliestDate?: string | null;
+  /**
+   * Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.
+   * @nullable
+   */
+  effectiveDaysLeft?: number | null;
+  /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
+  isUrgent?: boolean;
 }
 
 export type PortalSubmissionResponseStatus =
