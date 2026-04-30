@@ -253,6 +253,32 @@ export default function Dashboard() {
             />
           </div>
 
+          {/* Awaiting attestation — Approved verdicts that still need to be
+              re-attested in the payor portal off-system. Surfaces as a small
+              banner so it never gets lost behind the bigger pipeline tiles. */}
+          {(stats.awaitingAttestation ?? 0) > 0 && (
+            <Link
+              href="/attestation-queue"
+              className="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
+              data-testid="tile-awaiting-attestation"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-bold tabular-nums text-amber-900" data-testid="stat-awaiting-attestation">
+                    {stats.awaitingAttestation}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-amber-900">Awaiting attestation</div>
+                    <div className="text-xs text-amber-800/80">
+                      Approved invoice groups still owed a re-attestation in the payor portal
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-amber-900 hover:underline">Open queue →</span>
+              </div>
+            </Link>
+          )}
+
           {/* Expiring Soon — the loud block */}
           <div
             className="rounded-md overflow-hidden bg-card"

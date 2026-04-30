@@ -960,6 +960,136 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
 
+  /claims/attestation-pending:
+    get:
+      operationId: listAttestationPending
+      tags: [attestation]
+      summary: List claims by attestation state (queue review surface)
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["pending", "queued", "completed"]
+            default: "queued"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        "200":
+          description: List of claims in the requested attestation state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [claims, extras]
+                properties:
+                  claims:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClaimResponse"
+                  extras:
+                    type: object
+                    description: |
+                      Per-claim review-pane context, keyed by claim id (as a
+                      string). Surfaces the data the queue-review UI needs
+                      without forcing a second roundtrip per row.
+                    additionalProperties:
+                      $ref: "#/components/schemas/AttestationPendingExtras"
+
+  /claims/{id}/attest:
+    post:
+      operationId: attestClaim
+      tags: [attestation]
+      summary: Confirm the operator just re-attested in the payor portal (immediate flow)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttestationActionBody"
+      responses:
+        "200":
+          description: Claim marked as attested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/attest/queue:
+    post:
+      operationId: queueAttestationForClaim
+      tags: [attestation]
+      summary: Park the claim for someone with portal access to attest later
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttestationActionBody"
+      responses:
+        "200":
+          description: Claim queued for attestation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /claims/{id}/attest/confirm:
+    post:
+      operationId: confirmQueuedAttestation
+      tags: [attestation]
+      summary: Confirm attestation for a previously-queued claim (queue-review flow)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttestationActionBody"
+      responses:
+        "200":
+          description: Queued claim marked as attested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+
+  /attestation/counts:
+    get:
+      operationId: getAttestationCounts
+      tags: [attestation]
+      summary: Counts of claims awaiting attestation, broken down by state
+      responses:
+        "200":
+          description: Attestation counts for the nav badge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttestationCountsResponse"
+
   /claims/{id}/evidence:
     patch:
       operationId: updateClaimEvidence
@@ -3133,6 +3263,20 @@ components:
           type: ["string", "null"]
         holdPlacedAt:
           type: ["string", "null"]
+        attestationState:
+          type: string
+          enum: ["not_required", "pending", "queued", "completed"]
+          description: "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal."
+        attestedAt:
+          type: ["string", "null"]
+        attestedBy:
+          type: ["string", "null"]
+        attestationNote:
+          type: ["string", "null"]
+        attestationQueuedAt:
+          type: ["string", "null"]
+        attestationQueuedBy:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -3149,6 +3293,7 @@ components:
         - status
         - outcome
         - disputeEmailSent
+        - attestationState
 
     ValidTransitionsResponse:
       type: object
@@ -3807,6 +3952,50 @@ components:
           type: string
       required:
         - holdReason
+
+    AttestationActionBody:
+      type: object
+      description: |
+        Optional metadata for any of the `/claims/{id}/attest*` endpoints.
+        `note` is free-form text recorded on the claim and audit log.
+      properties:
+        note:
+          type: ["string", "null"]
+
+    AttestationCountsResponse:
+      type: object
+      required: [pending, queued]
+      properties:
+        pending:
+          type: integer
+          description: Approved-family claims that just landed and have not been actioned.
+        queued:
+          type: integer
+          description: Approved-family claims parked for someone with payor-portal access.
+
+    AttestationPendingExtras:
+      type: object
+      description: |
+        Review-pane context joined onto a claim in the attestation queue
+        listing. Surfaces "when did the verdict land?" and "what was the
+        most recent payor response?" so the operator can decide what to do
+        without opening the full claim detail.
+      properties:
+        verdictRecordedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Timestamp of the most recent outcome change for this claim (from the audit log).
+        lastResponseAt:
+          type: ["string", "null"]
+          format: date-time
+          description: When the latest payor response (portal or email) was recorded.
+        lastResponseSubject:
+          type: ["string", "null"]
+          description: Subject of the latest payor response, if any.
+        lastResponseSource:
+          type: ["string", "null"]
+          enum: ["email", "portal", "manual", null]
+          description: Channel the latest payor response came in on.
 
     UpdateWorkflowBody:
       type: object
@@ -4581,6 +4770,9 @@ components:
               type: integer
             onHold:
               type: integer
+            awaitingAttestation:
+              type: integer
+              description: "Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal."
             withdrawnByReason:
               type: object
               description: "Counts of Withdrawn invoice groups broken down by closure_reason."

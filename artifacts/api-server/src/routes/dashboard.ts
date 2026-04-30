@@ -90,9 +90,37 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const total = statusCountsRaw.reduce((s, r) => s + r.count, 0);
   const newCount = statusCounts["New"] || 0;
   const resolvedAll = statusCounts["Resolved"] || 0;
-  const resolved = Math.max(0, resolvedAll - withdrawn);
   const denied = statusCounts["Denied"] || 0;
   const onHold = statusCounts["On Hold"] || 0;
+
+  // "Awaiting attestation" = Approved-family CLAIMS whose off-system
+  // re-attestation step in the payor portal is still owed (state=pending)
+  // or parked for someone with portal access (state=queued). Counted at
+  // the CLAIM level so multi-claim groups don't undercount the workload —
+  // each outstanding attestation step is its own unit of work for the team.
+  const [{ value: awaitingAttestation } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(claimsTable)
+    .where(and(
+      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+      inArray(claimsTable.attestationState, ["pending", "queued"]),
+    ));
+
+  // Resolved tile excludes groups that still have outstanding attestation
+  // claims, so an Approved group only counts as fully resolved once every
+  // claim has been attested. Groups (not claims) are the unit here so the
+  // math lines up with the rest of the dashboard, which is group-keyed.
+  const resolvedAttestationGroupRows = await db
+    .select({ id: invoiceGroupsTable.id })
+    .from(invoiceGroupsTable)
+    .innerJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(and(
+      eq(invoiceGroupsTable.status, "Resolved"),
+      inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
+      inArray(claimsTable.attestationState, ["pending", "queued"]),
+    ))
+    .groupBy(invoiceGroupsTable.id);
+  const resolved = Math.max(0, resolvedAll - withdrawn - resolvedAttestationGroupRows.length);
 
   const [amountsResult] = await db
     .select({
@@ -184,7 +212,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
-    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, withdrawnByReason, deniedByReason },
+    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, withdrawnByReason, deniedByReason },
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
     urgentCount,

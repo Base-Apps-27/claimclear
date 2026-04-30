@@ -4,6 +4,7 @@ import { claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portal
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastClaimEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
+import { computeAttestationDelta } from "./attestation";
 
 // A "DB executor" is anything with the same select/update/insert surface as
 // the top-level `db` handle. The drizzle transaction object passed to
@@ -216,6 +217,7 @@ export async function transitionClaimOutcome(opts: {
     updateData.approvedAmount = cleaned === "" ? null : cleaned ? String(cleaned) : null;
   }
   if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
+  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome));
   updateData.closureReason = closureReason ?? null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
@@ -340,6 +342,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
     ...extraFields,
   };
   if (closureReason !== undefined) updateData.closureReason = closureReason ?? null;
+  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome));
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;

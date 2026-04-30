@@ -5,6 +5,7 @@ import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import type { DbExecutor } from "./claim-transitions";
+import { computeAttestationDelta } from "./attestation";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
 type GroupOutcome = typeof invoiceGroupsTable.outcome.enumValues[number];
@@ -374,6 +375,22 @@ export async function transitionGroupOutcome(opts: {
 
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
+  // Cascade the attestation flip to all disputed children so the queue
+  // counter and dashboard math stay in sync. The group itself does not
+  // carry attestation state (the claim is the source of truth) but the
+  // children inherit the outcome via syncChildRides on the next cascade.
+  const childAttestation = computeAttestationDelta(old.outcome, newOutcome);
+  if (Object.keys(childAttestation).length > 0) {
+    await ex
+      .update(claimsTable)
+      .set(childAttestation)
+      .where(and(
+        eq(claimsTable.invoiceGroupId, groupId),
+        ne(claimsTable.status, "On Hold"),
+        isNotNull(claimsTable.errorTypeId),
+      ));
+  }
+
   const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
   await ex.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
@@ -512,6 +529,20 @@ export async function transitionGroupStatusAndOutcome(opts: {
   applyHoldFields(updateData, old.status, newStatus, extraFields?.holdReason);
 
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
+
+  // Cascade attestation flip to disputed children — see note in
+  // transitionGroupOutcome.
+  const childAttestation = computeAttestationDelta(old.outcome, newOutcome);
+  if (Object.keys(childAttestation).length > 0) {
+    await ex
+      .update(claimsTable)
+      .set(childAttestation)
+      .where(and(
+        eq(claimsTable.invoiceGroupId, groupId),
+        ne(claimsTable.status, "On Hold"),
+        isNotNull(claimsTable.errorTypeId),
+      ));
+  }
 
   const changes: string[] = [];
   if (old.status !== newStatus) changes.push(`status: ${old.status} → ${newStatus}`);

@@ -91,6 +91,19 @@ export type ClaimResponseEvidenceChecklist = { [key: string]: unknown } | null;
 export type ClaimResponseWorkflowProgress = { [key: string]: unknown } | null;
 
 /**
+ * Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.
+ */
+export type ClaimResponseAttestationState =
+  (typeof ClaimResponseAttestationState)[keyof typeof ClaimResponseAttestationState];
+
+export const ClaimResponseAttestationState = {
+  not_required: "not_required",
+  pending: "pending",
+  queued: "queued",
+  completed: "completed",
+} as const;
+
+/**
  * A person referenced from a structured closure (driver/dispatcher).
  */
 export interface ClosurePersonRef {
@@ -189,6 +202,18 @@ export interface ClaimResponse {
   holdPendingFrom?: string | null;
   /** @nullable */
   holdPlacedAt?: string | null;
+  /** Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal. */
+  attestationState: ClaimResponseAttestationState;
+  /** @nullable */
+  attestedAt?: string | null;
+  /** @nullable */
+  attestedBy?: string | null;
+  /** @nullable */
+  attestationNote?: string | null;
+  /** @nullable */
+  attestationQueuedAt?: string | null;
+  /** @nullable */
+  attestationQueuedBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -1163,6 +1188,67 @@ export interface PlaceHoldBody {
   holdPendingFrom?: string;
 }
 
+/**
+ * Optional metadata for any of the `/claims/{id}/attest*` endpoints.
+`note` is free-form text recorded on the claim and audit log.
+
+ */
+export interface AttestationActionBody {
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface AttestationCountsResponse {
+  /** Approved-family claims that just landed and have not been actioned. */
+  pending: number;
+  /** Approved-family claims parked for someone with payor-portal access. */
+  queued: number;
+}
+
+/**
+ * Channel the latest payor response came in on.
+ * @nullable
+ */
+export type AttestationPendingExtrasLastResponseSource =
+  | (typeof AttestationPendingExtrasLastResponseSource)[keyof typeof AttestationPendingExtrasLastResponseSource]
+  | null;
+
+export const AttestationPendingExtrasLastResponseSource = {
+  email: "email",
+  portal: "portal",
+  manual: "manual",
+} as const;
+
+/**
+ * Review-pane context joined onto a claim in the attestation queue
+listing. Surfaces "when did the verdict land?" and "what was the
+most recent payor response?" so the operator can decide what to do
+without opening the full claim detail.
+
+ */
+export interface AttestationPendingExtras {
+  /**
+   * Timestamp of the most recent outcome change for this claim (from the audit log).
+   * @nullable
+   */
+  verdictRecordedAt?: string | null;
+  /**
+   * When the latest payor response (portal or email) was recorded.
+   * @nullable
+   */
+  lastResponseAt?: string | null;
+  /**
+   * Subject of the latest payor response, if any.
+   * @nullable
+   */
+  lastResponseSubject?: string | null;
+  /**
+   * Channel the latest payor response came in on.
+   * @nullable
+   */
+  lastResponseSource?: AttestationPendingExtrasLastResponseSource;
+}
+
 export type UpdateWorkflowBodyWorkflowProgress = { [key: string]: unknown };
 
 export interface UpdateWorkflowBody {
@@ -1606,6 +1692,8 @@ export type DashboardSummaryStats = {
   denied: number;
   withdrawn: number;
   onHold: number;
+  /** Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal. */
+  awaitingAttestation?: number;
   /** Counts of Withdrawn invoice groups broken down by closure_reason. */
   withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
   /** Counts of Denied invoice groups broken down by closure_reason. */
@@ -2656,6 +2744,42 @@ export type GetClaimValidTransitions200 = {
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this claim. */
   hasResponse?: boolean;
+};
+
+export type ListAttestationPendingParams = {
+  state?: ListAttestationPendingState;
+  /**
+   * @maximum 500
+   */
+  limit?: number;
+};
+
+export type ListAttestationPendingState =
+  (typeof ListAttestationPendingState)[keyof typeof ListAttestationPendingState];
+
+export const ListAttestationPendingState = {
+  pending: "pending",
+  queued: "queued",
+  completed: "completed",
+} as const;
+
+/**
+ * Per-claim review-pane context, keyed by claim id (as a
+string). Surfaces the data the queue-review UI needs
+without forcing a second roundtrip per row.
+
+ */
+export type ListAttestationPending200Extras = {
+  [key: string]: AttestationPendingExtras;
+};
+
+export type ListAttestationPending200 = {
+  claims: ClaimResponse[];
+  /** Per-claim review-pane context, keyed by claim id (as a
+string). Surfaces the data the queue-review UI needs
+without forcing a second roundtrip per row.
+ */
+  extras: ListAttestationPending200Extras;
 };
 
 export type ListPortalSubmissionsParams = {

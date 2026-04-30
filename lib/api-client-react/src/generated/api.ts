@@ -28,6 +28,8 @@ import type {
   AnthropicMessage,
   AppSettingsResponse,
   AttachClosureEvidenceBody,
+  AttestationActionBody,
+  AttestationCountsResponse,
   AuditLogResponse,
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
@@ -86,6 +88,8 @@ import type {
   InvoiceGroupsListResponse,
   LinkResponseBody,
   LintResult,
+  ListAttestationPending200,
+  ListAttestationPendingParams,
   ListClaimEvidence200,
   ListClaimsParams,
   ListEvidenceTypes200,
@@ -2619,6 +2623,450 @@ export const useUpdateClaimOutcome = <
 > => {
   return useMutation(getUpdateClaimOutcomeMutationOptions(options));
 };
+
+/**
+ * @summary List claims by attestation state (queue review surface)
+ */
+export const getListAttestationPendingUrl = (
+  params?: ListAttestationPendingParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/claims/attestation-pending?${stringifiedParams}`
+    : `/api/claims/attestation-pending`;
+};
+
+export const listAttestationPending = async (
+  params?: ListAttestationPendingParams,
+  options?: RequestInit,
+): Promise<ListAttestationPending200> => {
+  return customFetch<ListAttestationPending200>(
+    getListAttestationPendingUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAttestationPendingQueryKey = (
+  params?: ListAttestationPendingParams,
+) => {
+  return [
+    `/api/claims/attestation-pending`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListAttestationPendingQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAttestationPending>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAttestationPendingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAttestationPending>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAttestationPendingQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAttestationPending>>
+  > = ({ signal }) =>
+    listAttestationPending(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAttestationPending>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAttestationPendingQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAttestationPending>>
+>;
+export type ListAttestationPendingQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List claims by attestation state (queue review surface)
+ */
+
+export function useListAttestationPending<
+  TData = Awaited<ReturnType<typeof listAttestationPending>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAttestationPendingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAttestationPending>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAttestationPendingQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Confirm the operator just re-attested in the payor portal (immediate flow)
+ */
+export const getAttestClaimUrl = (id: number) => {
+  return `/api/claims/${id}/attest`;
+};
+
+export const attestClaim = async (
+  id: number,
+  attestationActionBody?: AttestationActionBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getAttestClaimUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attestationActionBody),
+  });
+};
+
+export const getAttestClaimMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof attestClaim>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof attestClaim>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  const mutationKey = ["attestClaim"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof attestClaim>>,
+    { id: number; data: BodyType<AttestationActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return attestClaim(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AttestClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof attestClaim>>
+>;
+export type AttestClaimMutationBody = BodyType<AttestationActionBody>;
+export type AttestClaimMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Confirm the operator just re-attested in the payor portal (immediate flow)
+ */
+export const useAttestClaim = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof attestClaim>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof attestClaim>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  return useMutation(getAttestClaimMutationOptions(options));
+};
+
+/**
+ * @summary Park the claim for someone with portal access to attest later
+ */
+export const getQueueAttestationForClaimUrl = (id: number) => {
+  return `/api/claims/${id}/attest/queue`;
+};
+
+export const queueAttestationForClaim = async (
+  id: number,
+  attestationActionBody?: AttestationActionBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getQueueAttestationForClaimUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attestationActionBody),
+  });
+};
+
+export const getQueueAttestationForClaimMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof queueAttestationForClaim>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof queueAttestationForClaim>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  const mutationKey = ["queueAttestationForClaim"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof queueAttestationForClaim>>,
+    { id: number; data: BodyType<AttestationActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return queueAttestationForClaim(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type QueueAttestationForClaimMutationResult = NonNullable<
+  Awaited<ReturnType<typeof queueAttestationForClaim>>
+>;
+export type QueueAttestationForClaimMutationBody =
+  BodyType<AttestationActionBody>;
+export type QueueAttestationForClaimMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Park the claim for someone with portal access to attest later
+ */
+export const useQueueAttestationForClaim = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof queueAttestationForClaim>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof queueAttestationForClaim>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  return useMutation(getQueueAttestationForClaimMutationOptions(options));
+};
+
+/**
+ * @summary Confirm attestation for a previously-queued claim (queue-review flow)
+ */
+export const getConfirmQueuedAttestationUrl = (id: number) => {
+  return `/api/claims/${id}/attest/confirm`;
+};
+
+export const confirmQueuedAttestation = async (
+  id: number,
+  attestationActionBody?: AttestationActionBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getConfirmQueuedAttestationUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attestationActionBody),
+  });
+};
+
+export const getConfirmQueuedAttestationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmQueuedAttestation>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmQueuedAttestation>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  const mutationKey = ["confirmQueuedAttestation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmQueuedAttestation>>,
+    { id: number; data: BodyType<AttestationActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return confirmQueuedAttestation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmQueuedAttestationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmQueuedAttestation>>
+>;
+export type ConfirmQueuedAttestationMutationBody =
+  BodyType<AttestationActionBody>;
+export type ConfirmQueuedAttestationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Confirm attestation for a previously-queued claim (queue-review flow)
+ */
+export const useConfirmQueuedAttestation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmQueuedAttestation>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmQueuedAttestation>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  return useMutation(getConfirmQueuedAttestationMutationOptions(options));
+};
+
+/**
+ * @summary Counts of claims awaiting attestation, broken down by state
+ */
+export const getGetAttestationCountsUrl = () => {
+  return `/api/attestation/counts`;
+};
+
+export const getAttestationCounts = async (
+  options?: RequestInit,
+): Promise<AttestationCountsResponse> => {
+  return customFetch<AttestationCountsResponse>(getGetAttestationCountsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAttestationCountsQueryKey = () => {
+  return [`/api/attestation/counts`] as const;
+};
+
+export const getGetAttestationCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAttestationCounts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttestationCounts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAttestationCountsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAttestationCounts>>
+  > = ({ signal }) => getAttestationCounts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAttestationCounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAttestationCountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAttestationCounts>>
+>;
+export type GetAttestationCountsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Counts of claims awaiting attestation, broken down by state
+ */
+
+export function useGetAttestationCounts<
+  TData = Awaited<ReturnType<typeof getAttestationCounts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttestationCounts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAttestationCountsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Update claim evidence

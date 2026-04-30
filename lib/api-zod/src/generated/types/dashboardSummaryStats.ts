@@ -15,6 +15,8 @@ export type DashboardSummaryStats = {
   denied: number;
   withdrawn: number;
   onHold: number;
+  /** Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal. */
+  awaitingAttestation?: number;
   /** Counts of Withdrawn invoice groups broken down by closure_reason. */
   withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
   /** Counts of Denied invoice groups broken down by closure_reason. */

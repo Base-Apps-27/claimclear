@@ -26,6 +26,7 @@ import {
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, PostResponseActionBodyAction } from "@workspace/api-client-react";
 import { ConversationsCard } from "@/components/conversations-card";
+import { AttestationPrompt } from "@/components/attestation-prompt";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -522,6 +523,8 @@ export default function ClaimDetail() {
           </Link>
         </div>
       )}
+
+      <AttestationPrompt claim={claim} />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

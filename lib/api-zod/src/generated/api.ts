@@ -499,6 +499,16 @@ export const GetInvoiceGroupResponse = zod
             holdReason: zod.string().nullish(),
             holdPendingFrom: zod.string().nullish(),
             holdPlacedAt: zod.string().nullish(),
+            attestationState: zod
+              .enum(["not_required", "pending", "queued", "completed"])
+              .describe(
+                "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+              ),
+            attestedAt: zod.string().nullish(),
+            attestedBy: zod.string().nullish(),
+            attestationNote: zod.string().nullish(),
+            attestationQueuedAt: zod.string().nullish(),
+            attestationQueuedBy: zod.string().nullish(),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
             effectiveDaysLeft: zod
@@ -2025,6 +2035,16 @@ export const ListClaimsResponse = zod.object({
       holdReason: zod.string().nullish(),
       holdPendingFrom: zod.string().nullish(),
       holdPlacedAt: zod.string().nullish(),
+      attestationState: zod
+        .enum(["not_required", "pending", "queued", "completed"])
+        .describe(
+          "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+        ),
+      attestedAt: zod.string().nullish(),
+      attestedBy: zod.string().nullish(),
+      attestationNote: zod.string().nullish(),
+      attestationQueuedAt: zod.string().nullish(),
+      attestationQueuedBy: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -2195,6 +2215,16 @@ export const GetClaimResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2338,6 +2368,16 @@ export const UpdateClaimResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2503,6 +2543,16 @@ export const UpdateClaimStatusResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2690,6 +2740,16 @@ export const UpdateClaimOutcomeResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2703,6 +2763,642 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary List claims by attestation state (queue review surface)
+ */
+export const listAttestationPendingQueryStateDefault = `queued`;
+export const listAttestationPendingQueryLimitDefault = 100;
+export const listAttestationPendingQueryLimitMax = 500;
+
+export const ListAttestationPendingQueryParams = zod.object({
+  state: zod
+    .enum(["pending", "queued", "completed"])
+    .default(listAttestationPendingQueryStateDefault),
+  limit: zod.coerce
+    .number()
+    .max(listAttestationPendingQueryLimitMax)
+    .default(listAttestationPendingQueryLimitDefault),
+});
+
+export const ListAttestationPendingResponse = zod.object({
+  claims: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceGroupId: zod.number().nullish(),
+      confNumber: zod.string(),
+      date: zod.string().nullish(),
+      refNumber: zod.string().nullish(),
+      clientNumber: zod.string().nullish(),
+      carNumber: zod.string().nullish(),
+      errorDetails: zod.string().nullish(),
+      errorTypeId: zod.string().nullish(),
+      errorTypeName: zod.string().nullish(),
+      claimAmount: zod.string().nullish(),
+      status: zod.enum([
+        "New",
+        "Needs Review",
+        "Needs Evidence",
+        "Portal Queued",
+        "Generating Email",
+        "Ready to Review",
+        "Awaiting Response",
+        "On Hold",
+        "Resolved",
+        "Denied",
+      ]),
+      outcome: zod.enum([
+        "Pending",
+        "Approved",
+        "Denied",
+        "Partially Approved",
+        "Non-Issue",
+        "Withdrawn",
+      ]),
+      closureReason: zod
+        .union([
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      closureCategory: zod.string().nullish(),
+      closureCategoryOther: zod.string().nullish(),
+      closureRootCause: zod.string().nullish(),
+      closureRootCauseOther: zod.string().nullish(),
+      closureNarrative: zod.string().nullish(),
+      closureAccountabilityTags: zod.array(zod.string()).nullish(),
+      closureAccountabilityOther: zod.string().nullish(),
+      closureDrivers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureDispatchers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureCommunicatedTo: zod.string().nullish(),
+      closureReviewState: zod
+        .union([
+          zod.literal("pending"),
+          zod.literal("acknowledged"),
+          zod.literal("needs_revisit"),
+          zod.literal("resolved"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      closureAddressedAt: zod.string().nullish(),
+      closureAddressedBy: zod.string().nullish(),
+      closureAddressedByEmail: zod.string().nullish(),
+      closureReviewNotes: zod.string().nullish(),
+      triageNotes: zod.string().nullish(),
+      triagedAt: zod.string().nullish(),
+      approvedAmount: zod.string().nullish(),
+      invoiceNumbers: zod.string().nullish(),
+      payorEmail: zod.string().nullish(),
+      disputeEmailSent: zod.boolean(),
+      disputeEmailSentAt: zod.string().nullish(),
+      importBatch: zod.string().nullish(),
+      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceNotes: zod.string().nullish(),
+      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      generatedEmailSubject: zod.string().nullish(),
+      generatedEmailBody: zod.string().nullish(),
+      generatedEmailAt: zod.string().nullish(),
+      workflowProgress: zod.object({}).passthrough().nullish(),
+      holdReason: zod.string().nullish(),
+      holdPendingFrom: zod.string().nullish(),
+      holdPlacedAt: zod.string().nullish(),
+      attestationState: zod
+        .enum(["not_required", "pending", "queued", "completed"])
+        .describe(
+          "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+        ),
+      attestedAt: zod.string().nullish(),
+      attestedBy: zod.string().nullish(),
+      attestationNote: zod.string().nullish(),
+      attestationQueuedAt: zod.string().nullish(),
+      attestationQueuedBy: zod.string().nullish(),
+      createdAt: zod.string().optional(),
+      updatedAt: zod.string().optional(),
+      effectiveDaysLeft: zod
+        .number()
+        .nullish()
+        .describe(
+          "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+        ),
+      isUrgent: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
+    }),
+  ),
+  extras: zod
+    .record(
+      zod.string(),
+      zod
+        .object({
+          verdictRecordedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "Timestamp of the most recent outcome change for this claim (from the audit log).",
+            ),
+          lastResponseAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "When the latest payor response (portal or email) was recorded.",
+            ),
+          lastResponseSubject: zod
+            .string()
+            .nullish()
+            .describe("Subject of the latest payor response, if any."),
+          lastResponseSource: zod
+            .union([
+              zod.literal("email"),
+              zod.literal("portal"),
+              zod.literal("manual"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe("Channel the latest payor response came in on."),
+        })
+        .describe(
+          'Review-pane context joined onto a claim in the attestation queue\nlisting. Surfaces \"when did the verdict land?\" and \"what was the\nmost recent payor response?\" so the operator can decide what to do\nwithout opening the full claim detail.\n',
+        ),
+    )
+    .describe(
+      "Per-claim review-pane context, keyed by claim id (as a\nstring). Surfaces the data the queue-review UI needs\nwithout forcing a second roundtrip per row.\n",
+    ),
+});
+
+/**
+ * @summary Confirm the operator just re-attested in the payor portal (immediate flow)
+ */
+export const AttestClaimParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AttestClaimBody = zod
+  .object({
+    note: zod.string().nullish(),
+  })
+  .describe(
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
+  );
+
+export const AttestClaimResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary Park the claim for someone with portal access to attest later
+ */
+export const QueueAttestationForClaimParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const QueueAttestationForClaimBody = zod
+  .object({
+    note: zod.string().nullish(),
+  })
+  .describe(
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
+  );
+
+export const QueueAttestationForClaimResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary Confirm attestation for a previously-queued claim (queue-review flow)
+ */
+export const ConfirmQueuedAttestationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ConfirmQueuedAttestationBody = zod
+  .object({
+    note: zod.string().nullish(),
+  })
+  .describe(
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
+  );
+
+export const ConfirmQueuedAttestationResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  workflowProgress: zod.object({}).passthrough().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary Counts of claims awaiting attestation, broken down by state
+ */
+export const GetAttestationCountsResponse = zod.object({
+  pending: zod
+    .number()
+    .describe(
+      "Approved-family claims that just landed and have not been actioned.",
+    ),
+  queued: zod
+    .number()
+    .describe(
+      "Approved-family claims parked for someone with payor-portal access.",
     ),
 });
 
@@ -2822,6 +3518,16 @@ export const UpdateClaimEvidenceResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2953,6 +3659,16 @@ export const PlaceClaimOnHoldResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3079,6 +3795,16 @@ export const RemoveClaimHoldResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3209,6 +3935,16 @@ export const UpdateClaimWorkflowResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3342,6 +4078,16 @@ export const TriageClaimResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3478,6 +4224,16 @@ export const PostResponseActionResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3627,6 +4383,16 @@ export const GenerateClaimEmailResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5191,6 +5957,12 @@ export const GetDashboardSummaryResponse = zod.object({
     denied: zod.number(),
     withdrawn: zod.number(),
     onHold: zod.number(),
+    awaitingAttestation: zod
+      .number()
+      .optional()
+      .describe(
+        "Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal.",
+      ),
     withdrawnByReason: zod
       .object({
         cannot_dispute: zod.number(),
@@ -7189,6 +7961,16 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   holdReason: zod.string().nullish(),
   holdPendingFrom: zod.string().nullish(),
   holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod

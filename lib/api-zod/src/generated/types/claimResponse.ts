@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClaimResponseAttestationState } from "./claimResponseAttestationState";
 import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
 import type { ClaimResponseClosureReviewState } from "./claimResponseClosureReviewState";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
@@ -104,6 +105,18 @@ export interface ClaimResponse {
   holdPendingFrom?: string | null;
   /** @nullable */
   holdPlacedAt?: string | null;
+  /** Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal. */
+  attestationState: ClaimResponseAttestationState;
+  /** @nullable */
+  attestedAt?: string | null;
+  /** @nullable */
+  attestedBy?: string | null;
+  /** @nullable */
+  attestationNote?: string | null;
+  /** @nullable */
+  attestationQueuedAt?: string | null;
+  /** @nullable */
+  attestationQueuedBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /**

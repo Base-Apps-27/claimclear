@@ -278,6 +278,91 @@ router.post("/claims", asyncHandler(async (req, res): Promise<void> => {
   res.status(201).json(claim);
 }));
 
+// Re-attestation queue list. Registered ahead of `/claims/:id` so the
+// literal "attestation-pending" segment isn't swallowed by the parametric
+// route (Express routes match in registration order). Filters by the
+// caller-supplied `state` (pending | queued | completed) and only ever
+// returns claims that have an Approved-family outcome — anything else
+// implies attestationState=not_required.
+router.get("/claims/attestation-pending", asyncHandler(async (req, res): Promise<void> => {
+  const stateRaw = typeof req.query.state === "string" ? req.query.state : "queued";
+  if (!["pending", "queued", "completed"].includes(stateRaw)) {
+    res.status(400).json({ error: "state must be one of pending | queued | completed" });
+    return;
+  }
+  const limit = Math.min(parseInt(String(req.query.limit ?? "100"), 10) || 100, 500);
+
+  const rows = await db
+    .select()
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.attestationState, stateRaw),
+      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+    ))
+    .orderBy(asc(claimsTable.attestationQueuedAt), asc(claimsTable.id))
+    .limit(limit);
+
+  // Build the per-claim "extras" payload that the queue review pane needs:
+  // when the verdict was recorded (latest outcome_changed audit) and the
+  // most recent payor response (portal/email). Both are looked up in two
+  // batched queries instead of N+1, then collapsed in JS.
+  const ids = rows.map((r) => r.id);
+  const extras: Record<string, {
+    verdictRecordedAt: string | null;
+    lastResponseAt: string | null;
+    lastResponseSubject: string | null;
+    lastResponseSource: "email" | "portal" | "manual" | null;
+  }> = {};
+  for (const r of rows) {
+    extras[String(r.id)] = {
+      verdictRecordedAt: null,
+      lastResponseAt: null,
+      lastResponseSubject: null,
+      lastResponseSource: null,
+    };
+  }
+  if (ids.length > 0) {
+    const [verdictLogs, lastResponses] = await Promise.all([
+      db.select({
+        claimId: auditLogsTable.claimId,
+        timestamp: auditLogsTable.timestamp,
+      }).from(auditLogsTable)
+        .where(and(
+          inArray(auditLogsTable.claimId, ids),
+          inArray(auditLogsTable.action, ["outcome_changed", "claim_outcome_changed"]),
+        ))
+        .orderBy(desc(auditLogsTable.timestamp)),
+      db.select({
+        claimId: portalResponsesTable.claimId,
+        createdAt: portalResponsesTable.createdAt,
+        subject: portalResponsesTable.subject,
+        source: portalResponsesTable.source,
+      }).from(portalResponsesTable)
+        .where(inArray(portalResponsesTable.claimId, ids))
+        .orderBy(desc(portalResponsesTable.createdAt)),
+    ]);
+    // Both result sets are sorted desc, so the first hit per claimId wins.
+    for (const log of verdictLogs) {
+      if (log.claimId == null) continue;
+      const key = String(log.claimId);
+      if (extras[key] && extras[key].verdictRecordedAt == null) {
+        extras[key].verdictRecordedAt = log.timestamp ? new Date(log.timestamp).toISOString() : null;
+      }
+    }
+    for (const r of lastResponses) {
+      if (r.claimId == null) continue;
+      const key = String(r.claimId);
+      if (extras[key] && extras[key].lastResponseAt == null) {
+        extras[key].lastResponseAt = r.createdAt ? new Date(r.createdAt).toISOString() : null;
+        extras[key].lastResponseSubject = r.subject ?? null;
+        extras[key].lastResponseSource = (r.source as "email" | "portal" | "manual" | null) ?? null;
+      }
+    }
+  }
+
+  res.json({ claims: rows, extras });
+}));
+
 router.get("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -551,6 +636,160 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
     if (msg.includes("in progress")) { res.status(409).json({ error: msg }); return; }
     res.status(400).json({ error: msg });
   }
+}));
+
+// --- Re-attestation tracking ---------------------------------------------
+// Three POST endpoints share the same idea: confirm or queue an off-system
+// re-attestation in the payor portal. They differ only in (a) the resulting
+// state and (b) the audit-log action key, so a reviewer can distinguish
+// "attested at the moment of verdict" from "attested after the queue
+// review" later. Auth is via the existing app middleware — no role gating
+// (per task spec, accountability is preserved through the audit log).
+type AttestActionKey =
+  | "attestation_self_confirmed"
+  | "attestation_queued"
+  | "attestation_queue_confirmed";
+
+// Per-action source-state contract. Each endpoint must only fire from the
+// state it's meant to advance, otherwise the audit story (self-confirmed
+// vs queue-confirmed) drifts from reality. Cross-state misuse → 409.
+const ALLOWED_SOURCE_STATES: Record<AttestActionKey, ReadonlyArray<string>> = {
+  attestation_self_confirmed: ["pending"],
+  attestation_queued: ["pending"],
+  attestation_queue_confirmed: ["queued"],
+};
+
+async function applyAttestationAction(opts: {
+  claimId: number;
+  action: AttestActionKey;
+  note: string | null;
+  req: Request;
+}) {
+  const { claimId, action, note, req } = opts;
+  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  if (!old) return { status: 404 as const, body: { error: "Claim not found" } };
+  if (old.outcome !== "Approved" && old.outcome !== "Partially Approved") {
+    return {
+      status: 409 as const,
+      body: { error: `Attestation is only meaningful for an Approved verdict. Current outcome is ${old.outcome}.` },
+    };
+  }
+  if (old.attestationState === "completed") {
+    return {
+      status: 409 as const,
+      body: { error: "This claim has already been marked as attested. Re-attestation is not reversible in v1." },
+    };
+  }
+  const allowed = ALLOWED_SOURCE_STATES[action];
+  if (!allowed.includes(old.attestationState)) {
+    // Map each action to a user-readable description of where it can fire
+    // from, so the 409 message helps the operator pick the right endpoint
+    // instead of guessing.
+    const expected = action === "attestation_queue_confirmed"
+      ? "queued (use the queue-review confirm flow)"
+      : action === "attestation_queued"
+        ? "pending (the claim must be freshly Approved)"
+        : "pending (the claim must be freshly Approved)";
+    return {
+      status: 409 as const,
+      body: {
+        error: `This endpoint can only be used when attestationState is ${expected}. Current state is "${old.attestationState}".`,
+      },
+    };
+  }
+
+  const actor = actorFromReq(req);
+  const actorIdentity = actor.userEmail || actor.userName || "unknown";
+  const now = new Date();
+
+  let updateData: Partial<typeof claimsTable.$inferInsert>;
+  let newState: "queued" | "completed";
+  let detailLine: string;
+
+  if (action === "attestation_queued") {
+    newState = "queued";
+    updateData = {
+      attestationState: "queued",
+      attestationQueuedAt: now,
+      attestationQueuedBy: actorIdentity,
+      attestationNote: note,
+    };
+    detailLine = `Queued for re-attestation by ${actorIdentity}`;
+  } else {
+    // Both self-confirm flows resolve to completed; the action key is what
+    // distinguishes them in the audit log.
+    newState = "completed";
+    updateData = {
+      attestationState: "completed",
+      attestedAt: now,
+      attestedBy: actorIdentity,
+      attestationNote: note,
+    };
+    detailLine = action === "attestation_self_confirmed"
+      ? `Re-attested in payor portal by ${actorIdentity}`
+      : `Queued attestation confirmed by ${actorIdentity}`;
+  }
+
+  const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
+
+  await db.insert(auditLogsTable).values({
+    claimId,
+    action,
+    details: note ? `${detailLine} — ${note}` : detailLine,
+    metadata: {
+      from: old.attestationState,
+      to: newState,
+      note: note ?? null,
+    },
+    userEmail: actor.userEmail,
+    userName: actor.userName,
+  });
+
+  emitClaimEvent(claimId, "attestation_updated", req);
+  return { status: 200 as const, body: claim };
+}
+
+function parseAttestNote(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+router.post("/claims/:id/attest", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const result = await applyAttestationAction({
+    claimId: id,
+    action: "attestation_self_confirmed",
+    note: parseAttestNote(req.body?.note),
+    req,
+  });
+  res.status(result.status).json(result.body);
+}));
+
+router.post("/claims/:id/attest/queue", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const result = await applyAttestationAction({
+    claimId: id,
+    action: "attestation_queued",
+    note: parseAttestNote(req.body?.note),
+    req,
+  });
+  res.status(result.status).json(result.body);
+}));
+
+router.post("/claims/:id/attest/confirm", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const result = await applyAttestationAction({
+    claimId: id,
+    action: "attestation_queue_confirmed",
+    note: parseAttestNote(req.body?.note),
+    req,
+  });
+  res.status(result.status).json(result.body);
 }));
 
 router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
@@ -949,6 +1188,26 @@ router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promis
 
   emitClaimEvent(id, "claim_edited", req);
   res.json(updated);
+}));
+
+// Counts for the Responses Awaiting Review nav badge — one number per
+// attestation state we care about. Lives under /attestation rather than
+// /claims so the path doesn't clash with parametric /claims/:id routes.
+router.get("/attestation/counts", asyncHandler(async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({ state: claimsTable.attestationState, count: count() })
+    .from(claimsTable)
+    .where(and(
+      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+      inArray(claimsTable.attestationState, ["pending", "queued"]),
+    ))
+    .groupBy(claimsTable.attestationState);
+  const out = { pending: 0, queued: 0 };
+  for (const r of rows) {
+    if (r.state === "pending") out.pending = r.count;
+    else if (r.state === "queued") out.queued = r.count;
+  }
+  res.json(out);
 }));
 
 

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@workspace/replit-auth-web";
+import { useGetAttestationCounts, getGetAttestationCountsQueryKey } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
 import {
   Sidebar,
@@ -35,13 +36,18 @@ import {
   ShieldX,
   FolderOpen,
   HeartPulse,
-  FileMinus
+  FileMinus,
+  ShieldCheck
 } from "lucide-react";
 
+type NavBadge = { count: number; tone: "amber" | "blue"; label: string };
 type NavItem = {
   label: string;
   href: string;
   icon: typeof LayoutDashboard;
+  badgeCount?: number;
+  badgeTone?: "amber" | "blue";
+  badges?: NavBadge[];
 };
 
 type NavSection = {
@@ -69,6 +75,33 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const isAdmin = user?.role === "admin";
 
+  // Nav badge for the Attestation Queue: pending = approved verdicts that
+  // landed and have not been actioned (amber, urgent), queued = parked for a
+  // user with portal access (blue, less urgent). We surface them as a single
+  // composite "amber+blue" pill, so the team always knows there's something
+  // owed off-system without the layout having to compute math.
+  const { data: attestationCounts } = useGetAttestationCounts({
+    query: {
+      queryKey: getGetAttestationCountsQueryKey(),
+      refetchInterval: 60_000,
+      enabled: isAuthenticated && user?.status === "active",
+    },
+  });
+  const pendingAttest = attestationCounts?.pending ?? 0;
+  const queuedAttest = attestationCounts?.queued ?? 0;
+  // Show both counts side-by-side so the user can read at a glance which
+  // bucket is non-zero — pending (amber: verdicts that still need a decision)
+  // vs queued (blue: parked for the user with portal access). A single total
+  // would lose that split.
+  const attestBadges: NavBadge[] = [
+    ...(pendingAttest > 0
+      ? [{ count: pendingAttest, tone: "amber" as const, label: "Pending re-attestation" }]
+      : []),
+    ...(queuedAttest > 0
+      ? [{ count: queuedAttest, tone: "blue" as const, label: "Queued for review" }]
+      : []),
+  ];
+
   const adminItems: NavItem[] = [
     { label: "Insights", href: "/insights", icon: BarChart3 },
     ...(isAdmin ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }] : []),
@@ -80,6 +113,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "Queue", href: "/queue", icon: ListTodo },
+        {
+          label: "Attestation Queue",
+          href: "/attestation-queue",
+          icon: ShieldCheck,
+          badges: attestBadges,
+        },
       ],
     },
     {
@@ -253,7 +292,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                             >
                               <Link href={item.href} className="flex items-center gap-3">
                                 <item.icon className="w-5 h-5" />
-                                <span>{item.label}</span>
+                                <span className="flex-1">{item.label}</span>
+                                {item.badges && item.badges.length > 0 ? (
+                                  <span className="ml-auto inline-flex items-center gap-1">
+                                    {item.badges.map((b, i) => (
+                                      <span
+                                        key={i}
+                                        title={b.label}
+                                        aria-label={`${b.label}: ${b.count}`}
+                                        className={
+                                          "inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none px-1.5 min-w-[20px] h-5 " +
+                                          (b.tone === "amber"
+                                            ? "bg-amber-500 text-amber-50"
+                                            : "bg-blue-500 text-blue-50")
+                                        }
+                                        data-testid={`nav-badge-${item.href.replace(/\//g, "")}-${b.tone}`}
+                                      >
+                                        {b.count > 99 ? "99+" : b.count}
+                                      </span>
+                                    ))}
+                                  </span>
+                                ) : item.badgeCount && item.badgeCount > 0 ? (
+                                  <span
+                                    className={
+                                      "ml-auto inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none px-1.5 min-w-[20px] h-5 " +
+                                      (item.badgeTone === "amber"
+                                        ? "bg-amber-500 text-amber-50"
+                                        : "bg-blue-500 text-blue-50")
+                                    }
+                                    data-testid={`nav-badge-${item.href.replace(/\//g, "")}`}
+                                  >
+                                    {item.badgeCount > 99 ? "99+" : item.badgeCount}
+                                  </span>
+                                ) : null}
                               </Link>
                             </SidebarMenuButton>
                           </WrapTooltip>

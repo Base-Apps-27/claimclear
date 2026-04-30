@@ -29,6 +29,17 @@ export type ClosureAccountabilityTag = typeof CLOSURE_ACCOUNTABILITY_TAGS[number
 export const CLOSURE_REVIEW_STATES = ["pending", "addressed"] as const;
 export type ClosureReviewState = typeof CLOSURE_REVIEW_STATES[number];
 
+// Re-attestation tracking. When an Approved verdict is recorded, the
+// real-world next step happens off-system (operator re-attests in the payor
+// portal). The state machine here lets the system know whether that step is
+// still owed, parked for someone else, or complete.
+//   not_required → outcome is not Approved (default for everything else).
+//   pending      → outcome just became Approved, no one has acted yet.
+//   queued       → operator parked it for someone with portal access to handle.
+//   completed    → an operator confirmed they re-attested in the portal.
+export const ATTESTATION_STATES = ["not_required", "pending", "queued", "completed"] as const;
+export type AttestationState = typeof ATTESTATION_STATES[number];
+
 export const claimsTable = pgTable("claims", {
   id: serial("id").primaryKey(),
   invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
@@ -77,6 +88,16 @@ export const claimsTable = pgTable("claims", {
   closureAddressedBy: text("closure_addressed_by"),
   closureAddressedByEmail: text("closure_addressed_by_email"),
   closureReviewNotes: text("closure_review_notes"),
+  // Re-attestation tracking — see ATTESTATION_STATES for the state machine.
+  // attestationState is the source of truth; the timestamps/identities are
+  // pure audit-trail fields kept on the row so the timeline and queue UIs
+  // can render without joining the audit log.
+  attestationState: text("attestation_state").notNull().default("not_required"),
+  attestedAt: timestamp("attested_at", { withTimezone: true }),
+  attestedBy: text("attested_by"),
+  attestationNote: text("attestation_note"),
+  attestationQueuedAt: timestamp("attestation_queued_at", { withTimezone: true }),
+  attestationQueuedBy: text("attestation_queued_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
