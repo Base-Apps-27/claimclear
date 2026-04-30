@@ -115,7 +115,7 @@ test("rollup: all-green inputs → overall ok", () => {
       { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "ok", `expected overall=ok, got ${out.overall}: ${JSON.stringify(out.components)}`);
@@ -131,7 +131,7 @@ test("rollup: degraded cron status from DB propagates to overall=degraded", () =
       { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "degraded", message: "1 failed of 3" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "degraded");
@@ -150,7 +150,7 @@ test("rollup: failed cron run → overall=failed (hard alert wins over partial)"
       { jobName: "daily_brief", startedAt: new Date(NOW.getTime() - 60 * 60 * 1000), status: "failed", message: "outlook 5xx" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "failed");
@@ -166,7 +166,7 @@ test("rollup: a 'running' cron row past 2x its interval is flagged as stuck", ()
       { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "running", message: null },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
@@ -186,7 +186,7 @@ test("rollup: a 'running' cron within the grace window stays ok", () => {
       { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 60 * 1000), status: "running", message: null },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
@@ -212,7 +212,7 @@ test("rollup: multiple consecutive missed scheduled fires → degraded with miss
       { jobName: "portal_batch_sweeper", startedAt: lastRun, status: "ok", message: "done" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
@@ -221,7 +221,7 @@ test("rollup: multiple consecutive missed scheduled fires → degraded with miss
   assert.match(sweeper!.detail ?? "", /missed 3 consecutive/);
 });
 
-test("rollup: overdueCount > 0 escalates the portal_worker component to degraded", () => {
+test("rollup: overdueCount > 0 escalates the portal_worker component to degraded with cycle wording", () => {
   const out = computeRollup({
     now: NOW,
     bootTime: BOOT,
@@ -229,14 +229,70 @@ test("rollup: overdueCount > 0 escalates the portal_worker component to degraded
     knownJobs: [],
     lastRunByJob: new Map(),
     overdueCount: 3,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const worker = out.components.find((c) => c.name === "portal_worker");
   assert.ok(worker);
   assert.equal(worker!.status, "degraded");
-  assert.match(worker!.detail ?? "", /3 pending submission\(s\) overdue/);
+  // Cycle-aware wording: no longer "overdue (>15 min)" — the new rule is
+  // about whether the row has missed an expected batch cycle.
+  assert.match(worker!.detail ?? "", /3 pending submission\(s\) past their expected batch cycle/);
+  assert.doesNotMatch(worker!.detail ?? "", /min\)/, "should not mention a minutes threshold under the cycle rule");
   assert.equal(out.overall, "degraded");
+});
+
+test("rollup: a single missed portal_batch_sweeper fire degrades overall (cron tile owns the alert)", () => {
+  // Scenario: sweep was due 10 min ago and never ran. The worker tile
+  // correctly reports overdueCount=0 (caller's `canFlag` was false), so
+  // the cron tile must catch the failure on its own — otherwise both
+  // tiles would stay green even with stale pending rows on the floor.
+  const dueFire = new Date(NOW.getTime() - 10 * 60 * 1000);
+  const out = computeRollup({
+    now: NOW,
+    bootTime: BOOT,
+    connectors: [],
+    knownJobs: [{
+      name: "portal_batch_sweeper",
+      prevExpected: dueFire,
+      expectedFiresSinceBoot: [dueFire],
+      // Per-job override that ships with PORTAL_BATCH_SWEEPER — a single
+      // missed fire is enough to degrade because sweeps are hours apart.
+      missedTickThreshold: 1,
+    }],
+    lastRunByJob: lastRunMap([
+      // Last sweep before the missed one — well before `dueFire`.
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 4 * 60 * 60 * 1000), status: "ok", message: "done" },
+    ]),
+    overdueCount: 0,
+    overdueGraceMinutes: 5,
+    lastWorkerRun: workerOk(),
+  });
+  const sweeper = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
+  assert.ok(sweeper, "expected cron component for portal_batch_sweeper");
+  assert.equal(sweeper!.status, "degraded", `expected degraded, got ${sweeper!.status} (detail=${sweeper!.detail ?? "<none>"})`);
+  assert.match(sweeper!.detail ?? "", /missed 1 consecutive scheduled fires/);
+  assert.equal(out.overall, "degraded");
+});
+
+test("rollup: still healthy when waiting for the next scheduled cycle (overdueCount=0)", () => {
+  // Caller hasn't flagged any rows because the sweep hasn't been due yet
+  // (or hasn't had its grace window). The worker component should stay ok.
+  const out = computeRollup({
+    now: NOW,
+    bootTime: BOOT,
+    connectors: [],
+    knownJobs: [knownJob("portal_batch_sweeper", new Date(NOW.getTime() - 60 * 60 * 1000))],
+    lastRunByJob: lastRunMap([
+      { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "ok", message: "done" },
+    ]),
+    overdueCount: 0,
+    overdueGraceMinutes: 5,
+    lastWorkerRun: workerOk(),
+  });
+  const worker = out.components.find((c) => c.name === "portal_worker");
+  assert.equal(worker!.status, "ok");
+  assert.equal(out.overall, "ok");
 });
 
 test("rollup: lastWorkerRun status='failed' surfaces lastError as the worker detail", () => {
@@ -247,7 +303,7 @@ test("rollup: lastWorkerRun status='failed' surfaces lastError as the worker det
     knownJobs: [],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: {
       status: "failed",
       finishedAt: NOW.toISOString(),
@@ -269,7 +325,7 @@ test("rollup: connector unhealthy → component=failed → overall=failed", () =
     knownJobs: [],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const conn = out.components.find((c) => c.name === "connector:outlook");
@@ -305,23 +361,28 @@ test("isSubmissionDue: non-pending statuses are never claimed", () => {
   }
 });
 
-const OVERDUE_CUTOFF = new Date(NOW.getTime() - 15 * 60 * 1000);
+// Cycle-aware overdue rule. The "cutoff" passed to `isSubmissionOverdue`
+// is now the last expected sweep time (8/11/14/18 ET) plus its grace
+// window — not "now − 15 min". Plus the sweep must have actually run.
+const LAST_DUE_SWEEP = new Date(NOW.getTime() - 30 * 60 * 1000);
 
 test("isSubmissionOverdue: fresh row (nextRetryAt=null, createdAt=NOW) is not overdue", () => {
   assert.equal(
     isSubmissionOverdue(
       { status: "pending", nextRetryAt: null, createdAt: NOW },
-      OVERDUE_CUTOFF,
+      LAST_DUE_SWEEP,
+      true,
     ),
     false,
   );
 });
 
-test("isSubmissionOverdue: unscheduled row older than the cutoff is overdue", () => {
+test("isSubmissionOverdue: unscheduled row created before the last due sweep is overdue", () => {
   assert.equal(
     isSubmissionOverdue(
-      { status: "pending", nextRetryAt: null, createdAt: new Date(NOW.getTime() - 20 * 60 * 1000) },
-      OVERDUE_CUTOFF,
+      { status: "pending", nextRetryAt: null, createdAt: new Date(LAST_DUE_SWEEP.getTime() - 60 * 1000) },
+      LAST_DUE_SWEEP,
+      true,
     ),
     true,
   );
@@ -335,35 +396,71 @@ test("isSubmissionOverdue: future nextRetryAt is not overdue regardless of row a
         nextRetryAt: new Date(NOW.getTime() + 5 * 60 * 1000),
         createdAt: new Date(NOW.getTime() - 60 * 60 * 1000),
       },
-      OVERDUE_CUTOFF,
+      LAST_DUE_SWEEP,
+      true,
     ),
     false,
   );
 });
 
-test("isSubmissionOverdue: nextRetryAt past the cutoff is overdue", () => {
+test("isSubmissionOverdue: nextRetryAt before the last due sweep is overdue", () => {
   assert.equal(
     isSubmissionOverdue(
       {
         status: "pending",
-        nextRetryAt: new Date(NOW.getTime() - 30 * 60 * 1000),
+        nextRetryAt: new Date(LAST_DUE_SWEEP.getTime() - 60 * 1000),
         createdAt: new Date(NOW.getTime() - 60 * 60 * 1000),
       },
-      OVERDUE_CUTOFF,
+      LAST_DUE_SWEEP,
+      true,
     ),
     true,
   );
 });
 
-test("isSubmissionOverdue: nextRetryAt within the cutoff window is not overdue", () => {
+test("isSubmissionOverdue: nextRetryAt after the last due sweep is not overdue (waiting on next cycle)", () => {
   assert.equal(
     isSubmissionOverdue(
       {
         status: "pending",
-        nextRetryAt: new Date(NOW.getTime() - 5 * 60 * 1000),
+        nextRetryAt: new Date(LAST_DUE_SWEEP.getTime() + 60 * 1000),
         createdAt: new Date(NOW.getTime() - 60 * 60 * 1000),
       },
-      OVERDUE_CUTOFF,
+      LAST_DUE_SWEEP,
+      true,
+    ),
+    false,
+  );
+});
+
+test("isSubmissionOverdue: never overdue when the sweep has not yet run (cron tile owns that signal)", () => {
+  // Even a row that's been pending forever isn't flagged as worker-overdue
+  // when the sweep itself hasn't fired — otherwise both the cron tile and
+  // the worker tile would alert on the same root cause.
+  assert.equal(
+    isSubmissionOverdue(
+      {
+        status: "pending",
+        nextRetryAt: null,
+        createdAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+      },
+      LAST_DUE_SWEEP,
+      false,
+    ),
+    false,
+  );
+});
+
+test("isSubmissionOverdue: never overdue when no sweep has been due yet (e.g. before the 8am ET fire)", () => {
+  assert.equal(
+    isSubmissionOverdue(
+      {
+        status: "pending",
+        nextRetryAt: null,
+        createdAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+      },
+      null,
+      true,
     ),
     false,
   );
@@ -374,7 +471,8 @@ test("isSubmissionOverdue: non-pending statuses are never overdue", () => {
     assert.equal(
       isSubmissionOverdue(
         { status, nextRetryAt: null, createdAt: new Date(NOW.getTime() - 60 * 60 * 1000) },
-        OVERDUE_CUTOFF,
+        LAST_DUE_SWEEP,
+        true,
       ),
       false,
     );
@@ -467,7 +565,7 @@ test("rollup: lastWorkerRun status='aborted' surfaces stop in worker detail and 
     knownJobs: [],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: {
       status: "aborted",
       finishedAt: NOW.toISOString(),
@@ -496,7 +594,7 @@ test("rollup: a known cron with zero recorded runs but server up long enough →
     )],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
@@ -518,7 +616,7 @@ test("rollup: server just booted with no runs yet → cron is ok with 'awaiting 
     knownJobs: [knownJob("daily_brief", null, [])],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:daily_brief");
@@ -544,7 +642,7 @@ test("rollup: one missed scheduled tick → ok with 'recovering' note (transient
       { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "0 checked" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:response_tracker");
@@ -580,7 +678,7 @@ test("rollup: long uptime + persistent recent misses still degrades (no false 'o
       { jobName: "outlook_heartbeat", startedAt: lastRun, status: "ok", message: "0 checked" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:outlook_heartbeat");
@@ -608,7 +706,7 @@ test("rollup: missed ticks all fall before server boot → cron stays ok (no bla
       { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "ok" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:response_tracker");
@@ -635,7 +733,7 @@ test("rollup: missed-tick threshold is configurable (threshold=3 keeps 2 misses 
       { jobName: "response_tracker", startedAt: lastRun, status: "ok", message: "ok" },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:response_tracker");
@@ -659,7 +757,7 @@ test("rollup: stuck-running detection still fires even with boot-aware tolerance
       { jobName: "portal_batch_sweeper", startedAt: new Date(NOW.getTime() - 30 * 60 * 1000), status: "running", message: null },
     ]),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   const cron = out.components.find((c) => c.name === "cron:portal_batch_sweeper");
@@ -676,7 +774,7 @@ test("rollup: connector failure stays failed regardless of boot-aware tolerances
     knownJobs: [knownJob("daily_brief", null, [])],
     lastRunByJob: new Map(),
     overdueCount: 0,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "failed");
@@ -691,10 +789,10 @@ test("rollup: overdue submissions stay degraded even right after boot", () => {
     knownJobs: [],
     lastRunByJob: new Map(),
     overdueCount: 4,
-    overdueThresholdMinutes: 15,
+    overdueGraceMinutes: 5,
     lastWorkerRun: workerOk(),
   });
   assert.equal(out.overall, "degraded");
   const worker = out.components.find((c) => c.name === "portal_worker");
-  assert.match(worker!.detail ?? "", /4 pending submission\(s\) overdue/);
+  assert.match(worker!.detail ?? "", /4 pending submission\(s\) past their expected batch cycle/);
 });

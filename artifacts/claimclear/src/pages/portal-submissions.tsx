@@ -561,7 +561,7 @@ export default function PortalSubmissions() {
 // =====================================================================
 // Status strip — collapses worker health + last batch + recent runs link
 // =====================================================================
-function StatusStrip({ health, lastRun, loading }: { health?: { overall: string; overdueCount: number; overdueThresholdMinutes: number; components: Array<{ name: string; status: string; detail?: string | null }> } | null; lastRun?: BatchRunHistoryEntry; loading?: boolean }) {
+function StatusStrip({ health, lastRun, loading }: { health?: { overall: string; overdueCount: number; overdueGraceMinutes: number; components: Array<{ name: string; status: string; detail?: string | null }> } | null; lastRun?: BatchRunHistoryEntry; loading?: boolean }) {
   const isHealthy = !health || health.overall === "ok";
   const isFailed = health?.overall === "failed";
   const dotClass = isFailed ? "bg-red-500" : isHealthy ? "bg-green-500" : "bg-amber-500";
@@ -575,7 +575,7 @@ function StatusStrip({ health, lastRun, loading }: { health?: { overall: string;
       </a>
       {!isHealthy && health && (
         <span className="text-amber-700 dark:text-amber-300">
-          {health.overdueCount > 0 ? `${health.overdueCount} overdue` : ""}
+          {health.overdueCount > 0 ? `${health.overdueCount} past cycle` : ""}
           {health.overdueCount > 0 ? " · " : ""}
           {health.components.filter(c => c.status !== "ok").length} component{health.components.filter(c => c.status !== "ok").length === 1 ? "" : "s"} need attention
         </span>

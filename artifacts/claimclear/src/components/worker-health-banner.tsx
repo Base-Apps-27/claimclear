@@ -47,7 +47,7 @@ export function WorkerHealthBanner({ variant = "compact" }: Props) {
           ) : (
             <p className="text-xs mt-0.5">
               {data.overdueCount > 0
-                ? `${data.overdueCount} pending submission(s) overdue (>${data.overdueThresholdMinutes} min). `
+                ? `${data.overdueCount} pending submission(s) past their expected batch cycle. `
                 : null}
               {failingComponents.length} component(s) need attention.
             </p>

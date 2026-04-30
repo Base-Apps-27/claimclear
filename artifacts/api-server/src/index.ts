@@ -9,6 +9,13 @@ import { recordCronRun } from "./lib/cron-runs";
 import { isOutlookConnected, probeOutlook } from "./lib/outlook";
 import { recordConnectorHealth } from "./lib/connector-health";
 import { resetStuckSubmissions } from "./lib/stuck-submissions";
+import {
+  PORTAL_BATCH_SWEEPER,
+  DAILY_BRIEF,
+  RESPONSE_TRACKER,
+  OUTLOOK_HEARTBEAT,
+  STUCK_SUBMISSION_RESET,
+} from "./lib/cron-schedule";
 
 // Cap on how long a cron-triggered worker run blocks its cron lane. On
 // timeout the cron row is recorded as degraded and the worker continues in
@@ -474,8 +481,8 @@ if (!process.env.BOT_SERVICE_TOKEN) {
   logger.warn("BOT_SERVICE_TOKEN not set; cron jobs that call internal HTTP endpoints will fail authentication.");
 }
 
-cron.schedule("0 7 * * 1-5", async () => {
-  await recordCronRun("daily_brief", async () => {
+cron.schedule(DAILY_BRIEF.cron, async () => {
+  await recordCronRun(DAILY_BRIEF.name, async () => {
     logger.info("Daily brief cron: sending morning brief");
     const res = await fetch(`http://localhost:${port}/api/daily-brief`, {
       method: "POST",
@@ -488,10 +495,10 @@ cron.schedule("0 7 * * 1-5", async () => {
     logger.info({ result: data }, "Daily brief sent");
     return { message: data?.message ?? "Daily brief sent", metadata: data };
   });
-}, { timezone: "America/New_York" });
+}, { timezone: DAILY_BRIEF.tz });
 
-cron.schedule("*/30 8-18 * * 1-5", async () => {
-  await recordCronRun("response_tracker", async () => {
+cron.schedule(RESPONSE_TRACKER.cron, async () => {
+  await recordCronRun(RESPONSE_TRACKER.name, async () => {
     logger.info("Response tracker cron: checking email inbox for responses");
     const res = await fetch(`http://localhost:${port}/api/responses/check-email`, {
       method: "POST",
@@ -508,10 +515,10 @@ cron.schedule("*/30 8-18 * * 1-5", async () => {
       metadata: data,
     };
   });
-}, { timezone: "America/New_York" });
+}, { timezone: RESPONSE_TRACKER.tz });
 
-cron.schedule("*/15 * * * *", async () => {
-  await recordCronRun("outlook_heartbeat", async () => {
+cron.schedule(OUTLOOK_HEARTBEAT.cron, async () => {
+  await recordCronRun(OUTLOOK_HEARTBEAT.name, async () => {
     const tokenOk = await isOutlookConnected();
     if (!tokenOk) {
       await recordConnectorHealth("outlook", "unhealthy", "No valid OAuth token / not connected");
@@ -525,10 +532,10 @@ cron.schedule("*/15 * * * *", async () => {
     await recordConnectorHealth("outlook", "healthy", null, { email: probe.email });
     return { message: `Outlook healthy (${probe.email ?? "unknown mailbox"})` };
   });
-}, { timezone: "America/New_York" });
+}, { timezone: OUTLOOK_HEARTBEAT.tz });
 
-cron.schedule("*/30 * * * *", async () => {
-  await recordCronRun("stuck_submission_reset", async () => {
+cron.schedule(STUCK_SUBMISSION_RESET.cron, async () => {
+  await recordCronRun(STUCK_SUBMISSION_RESET.name, async () => {
     const result = await resetStuckSubmissions();
     return {
       message: result.reset === 0
@@ -537,7 +544,7 @@ cron.schedule("*/30 * * * *", async () => {
       metadata: { reset: result.reset, ids: result.ids },
     };
   });
-}, { timezone: "America/New_York" });
+}, { timezone: STUCK_SUBMISSION_RESET.tz });
 
 // Scheduled portal batch sweeper. Runs four times each business day at
 // 8am, 11am, 2pm, and 6pm America/New_York, Monday through Friday; if any
@@ -546,8 +553,13 @@ cron.schedule("*/30 * * * *", async () => {
 // from the Portal Submissions page via "Process Pending" / "Process
 // Selected" — that path uses the same triggerWorkerRun gate, so concurrent
 // sweeps + admin batches coalesce into one in-flight Playwright session.
-cron.schedule("0 8,11,14,18 * * 1-5", async () => {
-  await recordCronRun("portal_batch_sweeper", async () => {
+//
+// The cron expression + timezone live in `lib/cron-schedule.ts` so the
+// system-health rollup, the cycle-aware overdue check, and the Portal
+// Submissions queue-status pill all reason about the exact same schedule
+// that actually fires here.
+cron.schedule(PORTAL_BATCH_SWEEPER.cron, async () => {
+  await recordCronRun(PORTAL_BATCH_SWEEPER.name, async () => {
     const [{ value: dueCount } = { value: 0 }] = await db
       .select({ value: count() })
       .from(portalSubmissionsTable)
@@ -595,7 +607,7 @@ cron.schedule("0 8,11,14,18 * * 1-5", async () => {
       metadata: { batchId: job.id, total: job.total, succeeded: job.succeeded, failed: job.failed, dueCount, jobStatus: job.status },
     };
   });
-}, { timezone: "America/New_York" });
+}, { timezone: PORTAL_BATCH_SWEEPER.tz });
 
 // Run an initial heartbeat shortly after boot so System Health has data immediately.
 setTimeout(() => {

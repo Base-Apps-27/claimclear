@@ -25,6 +25,11 @@ export interface KnownCronJob {
   // ignoring expected fires that "should have" happened before the process
   // existed (deploys, container recycles, etc.).
   expectedFiresSinceBoot: Date[];
+  // Optional per-job override for the missed-tick streak length that
+  // flips this job to "degraded". Falls back to `RollupInput.missedTickThreshold`
+  // and then `DEFAULT_MISSED_TICK_THRESHOLD`. Low-frequency sweeps (e.g.
+  // 4x/day) should set this to 1 so a single missed fire isn't tolerated.
+  missedTickThreshold?: number;
 }
 
 export interface WorkerSnapshot {
@@ -54,7 +59,11 @@ export interface RollupInput {
   knownJobs: KnownCronJob[];
   lastRunByJob: Map<string, CronRunRow>;
   overdueCount: number;
-  overdueThresholdMinutes: number;
+  // Grace period (in minutes) we wait after a scheduled sweep fires
+  // before flagging still-pending rows as having missed that cycle.
+  // Surfaced on the API response so the UI can render an accurate
+  // tooltip/copy without hardcoding the value.
+  overdueGraceMinutes: number;
   lastWorkerRun: WorkerSnapshot | null;
   // Minimum number of consecutive missed scheduled fires before the rollup
   // flips a job to "degraded". A single skip (e.g. a brief restart) is
@@ -151,13 +160,19 @@ export function computeRollup(input: RollupInput): RollupOutput {
         const missedFires = dueExpectedFires.filter(
           (t) => t.getTime() > lastStartMs + TICK_TOLERANCE_MS,
         );
-        if (missedFires.length >= missedTickThreshold) {
+        // Per-job override (set on `KnownCronJob`) wins over the global
+        // input default. Low-frequency sweeps like portal_batch_sweeper
+        // ship with `missedTickThreshold: 1` so a single missed sweep
+        // immediately degrades, ensuring the cron tile alone catches the
+        // case the worker tile defers to it.
+        const jobThreshold = known.missedTickThreshold ?? missedTickThreshold;
+        if (missedFires.length >= jobThreshold) {
           if (status === "ok") status = "degraded";
           detail = `Last run ${last.startedAt.toISOString()} is older than previous expected run ${known.prevExpected.toISOString()} — missed ${missedFires.length} consecutive scheduled fires`;
         } else if (missedFires.length === 1) {
-          // One missed tick: keep status ok but surface a neutral note so the
-          // detail page can show "we noticed, it's recovering" without raising
-          // the degraded banner.
+          // One missed tick under a higher threshold: keep status ok but
+          // surface a neutral note so the detail page can show "we
+          // noticed, it's recovering" without raising the banner.
           if (status === "ok") {
             detail = `Skipped one scheduled tick at ${missedFires[0].toISOString()} — recovering`;
             informational = true;
@@ -175,7 +190,7 @@ export function computeRollup(input: RollupInput): RollupOutput {
     : "No worker runs since boot";
   if (input.overdueCount > 0) {
     workerStatus = "degraded";
-    workerDetail = `${input.overdueCount} pending submission(s) overdue (>${input.overdueThresholdMinutes} min)`;
+    workerDetail = `${input.overdueCount} pending submission(s) past their expected batch cycle`;
   }
   if (input.lastWorkerRun?.status === "failed") {
     if (workerStatus === "ok") workerStatus = "degraded";

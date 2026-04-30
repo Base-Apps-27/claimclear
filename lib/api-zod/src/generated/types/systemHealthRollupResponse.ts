@@ -15,7 +15,14 @@ export interface SystemHealthRollupResponse {
   lastWorkerRun: WorkerRunSummary | null;
   workerRunning: boolean;
   overdueCount: number;
-  overdueThresholdMinutes: number;
+  /** Minutes of grace allowed after a scheduled sweep fires before
+still-pending rows are flagged as past their cycle.
+ */
+  overdueGraceMinutes: number;
+  /** ISO-8601 timestamp of the next scheduled portal_batch_sweeper fire. Mirrors the worker-activity field so banner/UI consumers don't need a second request. */
+  nextSweepAt: string | null;
+  /** ISO-8601 timestamp of the most recent expected portal_batch_sweeper fire (already past its grace window). Null when no past fire has had its grace window yet. */
+  lastSweepAt: string | null;
   generatedAt: string;
   /** ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes. */
   bootedAt: string;

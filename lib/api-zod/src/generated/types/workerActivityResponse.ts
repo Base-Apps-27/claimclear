@@ -14,10 +14,20 @@ export interface WorkerActivityResponse {
   lastRun: WorkerRunSummary | null;
   recentRuns: WorkerRunSummary[];
   pendingDueCount: number;
+  /** Pending submissions that have missed an expected scheduled
+sweep (8/11/14/18 ET) plus the grace window. Always 0 when
+the most recent expected sweep hasn't actually run — that
+condition is reported by the cron tile, not the worker tile.
+ */
   overdueCount: number;
-  overdueThresholdMinutes: number;
-  /** ISO-8601 timestamp of the next scheduled portal_retry_sweeper fire, derived from the cron expression. Null if the cron expression cannot be parsed. */
+  /** Minutes of grace allowed after a scheduled sweep fires before
+still-pending rows are flagged as past their cycle.
+ */
+  overdueGraceMinutes: number;
+  /** ISO-8601 timestamp of the next scheduled portal_batch_sweeper fire, derived from the locked cron expression. Null if the expression cannot be parsed. */
   nextSweepAt: string | null;
+  /** ISO-8601 timestamp of the most recent expected portal_batch_sweeper fire (already past its grace window). Null when no past fire has had its grace window yet. */
+  lastSweepAt: string | null;
   lastSuccessfulSubmission: WorkerSubmissionEvent | null;
   lastFailedSubmission: WorkerFailedSubmissionEvent | null;
 }

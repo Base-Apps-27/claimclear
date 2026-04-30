@@ -6629,13 +6629,27 @@ export const GetSystemHealthWorkerActivityResponse = zod.object({
     }),
   ),
   pendingDueCount: zod.number(),
-  overdueCount: zod.number(),
-  overdueThresholdMinutes: zod.number(),
+  overdueCount: zod
+    .number()
+    .describe(
+      "Pending submissions that have missed an expected scheduled\nsweep (8\/11\/14\/18 ET) plus the grace window. Always 0 when\nthe most recent expected sweep hasn't actually run — that\ncondition is reported by the cron tile, not the worker tile.\n",
+    ),
+  overdueGraceMinutes: zod
+    .number()
+    .describe(
+      "Minutes of grace allowed after a scheduled sweep fires before\nstill-pending rows are flagged as past their cycle.\n",
+    ),
   nextSweepAt: zod
     .string()
     .nullable()
     .describe(
-      "ISO-8601 timestamp of the next scheduled portal_retry_sweeper fire, derived from the cron expression. Null if the cron expression cannot be parsed.",
+      "ISO-8601 timestamp of the next scheduled portal_batch_sweeper fire, derived from the locked cron expression. Null if the expression cannot be parsed.",
+    ),
+  lastSweepAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO-8601 timestamp of the most recent expected portal_batch_sweeper fire (already past its grace window). Null when no past fire has had its grace window yet.",
     ),
   lastSuccessfulSubmission: zod.union([
     zod.object({
@@ -6695,7 +6709,23 @@ export const GetSystemHealthRollupResponse = zod.object({
   ]),
   workerRunning: zod.boolean(),
   overdueCount: zod.number(),
-  overdueThresholdMinutes: zod.number(),
+  overdueGraceMinutes: zod
+    .number()
+    .describe(
+      "Minutes of grace allowed after a scheduled sweep fires before\nstill-pending rows are flagged as past their cycle.\n",
+    ),
+  nextSweepAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO-8601 timestamp of the next scheduled portal_batch_sweeper fire. Mirrors the worker-activity field so banner\/UI consumers don't need a second request.",
+    ),
+  lastSweepAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO-8601 timestamp of the most recent expected portal_batch_sweeper fire (already past its grace window). Null when no past fire has had its grace window yet.",
+    ),
   generatedAt: zod.string(),
   bootedAt: zod
     .string()

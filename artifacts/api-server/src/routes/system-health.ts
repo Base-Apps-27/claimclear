@@ -15,20 +15,23 @@ import {
 import { computeRollup } from "../lib/system-health-rollup";
 import { getBootTime } from "../lib/boot-time";
 import { enumerateExpectedFiresSinceBoot } from "../lib/cron-fire-enumeration";
+import {
+  KNOWN_CRON_JOBS,
+  PORTAL_BATCH_SWEEPER,
+  getSweepBoundaries,
+} from "../lib/cron-schedule";
+import {
+  OVERDUE_GRACE_MINUTES,
+  resolveOverdueQueryInputs,
+  countOverdueRows,
+} from "../lib/overdue-submissions";
 
 const router: IRouter = Router();
 
-// Cron job names + their cron expressions, kept in sync with index.ts
-const KNOWN_JOBS: { name: string; cron: string; tz: string }[] = [
-  { name: "portal_batch_sweeper", cron: "0 8,11,14,18 * * 1-5", tz: "America/New_York" },
-  { name: "daily_brief", cron: "0 7 * * 1-5", tz: "America/New_York" },
-  { name: "response_tracker", cron: "*/30 8-18 * * 1-5", tz: "America/New_York" },
-  { name: "outlook_heartbeat", cron: "*/15 * * * *", tz: "America/New_York" },
-  { name: "stuck_submission_reset", cron: "*/30 * * * *", tz: "America/New_York" },
-];
-
-// How long a pending submission can sit "due" before we treat it as overdue.
-const OVERDUE_THRESHOLD_MINUTES = 15;
+// Locked cron schedules — imported from the shared module that the actual
+// `cron.schedule(...)` registrations in index.ts also use, so the rollup
+// can never reason about a cron string that drifted from what's running.
+const KNOWN_JOBS = KNOWN_CRON_JOBS;
 
 router.get("/admin/system-health/cron-runs", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -154,7 +157,14 @@ router.get("/admin/system-health/bounces", requireAdmin, asyncHandler(async (req
 
 router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
   const now = new Date();
-  const overdueCutoff = new Date(now.getTime() - OVERDUE_THRESHOLD_MINUTES * 60 * 1000);
+  // Cycle-aware overdue cutoff: the most recent scheduled sweep that
+  // already had its grace window to run. Rows whose ready time is at or
+  // before this point should have been drained; if they're still pending,
+  // they've missed a cycle.
+  const overdueInputs = await resolveOverdueQueryInputs(now);
+  const overdueCount = overdueInputs.canFlag
+    ? await countOverdueRows(overdueInputs.cutoff!)
+    : 0;
 
   const [{ value: pendingDueCount } = { value: 0 }] = await db
     .select({ value: count() })
@@ -164,22 +174,6 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
       or(
         isNull(portalSubmissionsTable.nextRetryAt),
         lte(portalSubmissionsTable.nextRetryAt, now),
-      ),
-    ));
-
-  // Overdue rule mirrors `isSubmissionOverdue`: scheduled retry past cutoff,
-  // or no scheduled retry and createdAt past cutoff.
-  const [{ value: overdueCount } = { value: 0 }] = await db
-    .select({ value: count() })
-    .from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.status, "pending"),
-      or(
-        lte(portalSubmissionsTable.nextRetryAt, overdueCutoff),
-        and(
-          isNull(portalSubmissionsTable.nextRetryAt),
-          lte(portalSubmissionsTable.createdAt, overdueCutoff),
-        ),
       ),
     ));
 
@@ -213,17 +207,12 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     .orderBy(desc(portalSubmissionsTable.updatedAt))
     .limit(1);
 
-  // Next scheduled retry sweeper fire — derived from the cron expression so
-  // the UI can show "next sweep in 2m" without polling cron internals.
-  let nextSweepAt: string | null = null;
-  try {
-    const sweeper = KNOWN_JOBS.find((j) => j.name === "portal_batch_sweeper");
-    if (sweeper) {
-      const it = CronExpressionParser.parse(sweeper.cron, { tz: sweeper.tz, currentDate: now });
-      nextSweepAt = it.next().toDate().toISOString();
-    }
-  } catch (err) {
-    logger.warn({ err }, "worker-activity: failed to compute nextSweepAt");
+  // Next + previous scheduled sweeper fires — derived from the locked
+  // schedule so the UI can render "next sweep in 2m" / "last sweep was
+  // 18m ago" without polling cron internals.
+  const { prev: prevSweepFire, next: nextSweepFire } = getSweepBoundaries(now, PORTAL_BATCH_SWEEPER);
+  if (nextSweepFire === null) {
+    logger.warn("worker-activity: failed to compute nextSweepAt");
   }
 
   res.json({
@@ -232,8 +221,9 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     recentRuns: getRecentWorkerRuns(),
     pendingDueCount,
     overdueCount,
-    overdueThresholdMinutes: OVERDUE_THRESHOLD_MINUTES,
-    nextSweepAt,
+    overdueGraceMinutes: OVERDUE_GRACE_MINUTES,
+    nextSweepAt: nextSweepFire?.toISOString() ?? null,
+    lastSweepAt: prevSweepFire?.toISOString() ?? null,
     lastSuccessfulSubmission: lastSuccess
       ? {
           submissionId: lastSuccess.id,
@@ -310,25 +300,27 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     } catch (err) {
       logger.warn({ err, cron: known.cron }, "Cron parse failed enumerating fires since boot");
     }
-    return { name: known.name, prevExpected, expectedFiresSinceBoot };
+    return {
+      name: known.name,
+      prevExpected,
+      expectedFiresSinceBoot,
+      // Pass per-job override through so low-frequency sweeps can opt
+      // out of the global "tolerate one missed tick" behavior.
+      missedTickThreshold: known.missedTickThreshold,
+    };
   });
 
-  // Same overdue rule as the worker-activity endpoint and dashboard tile.
+  // Same cycle-aware overdue rule as the worker-activity endpoint and the
+  // dashboard tile. When the most recent scheduled sweep didn't actually
+  // run, we deliberately leave overdueCount at 0 — the cron tile already
+  // flags the missed sweep, and double-counting on the worker tile just
+  // duplicates the alert.
   const now = new Date();
-  const overdueCutoff = new Date(now.getTime() - OVERDUE_THRESHOLD_MINUTES * 60 * 1000);
-  const [{ value: overdueCount } = { value: 0 }] = await db
-    .select({ value: count() })
-    .from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.status, "pending"),
-      or(
-        lte(portalSubmissionsTable.nextRetryAt, overdueCutoff),
-        and(
-          isNull(portalSubmissionsTable.nextRetryAt),
-          lte(portalSubmissionsTable.createdAt, overdueCutoff),
-        ),
-      ),
-    ));
+  const overdueInputs = await resolveOverdueQueryInputs(now);
+  const overdueCount = overdueInputs.canFlag
+    ? await countOverdueRows(overdueInputs.cutoff!)
+    : 0;
+  const { prev: prevSweepFire, next: nextSweepFire } = getSweepBoundaries(now, PORTAL_BATCH_SWEEPER);
 
   const lastWorkerRun = getLastWorkerRun();
 
@@ -343,7 +335,7 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     knownJobs,
     lastRunByJob,
     overdueCount,
-    overdueThresholdMinutes: OVERDUE_THRESHOLD_MINUTES,
+    overdueGraceMinutes: OVERDUE_GRACE_MINUTES,
     lastWorkerRun: lastWorkerRun
       ? {
           status: lastWorkerRun.status,
@@ -361,7 +353,9 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     lastWorkerRun,
     workerRunning: isWorkerRunInProgress(),
     overdueCount,
-    overdueThresholdMinutes: OVERDUE_THRESHOLD_MINUTES,
+    overdueGraceMinutes: OVERDUE_GRACE_MINUTES,
+    nextSweepAt: nextSweepFire?.toISOString() ?? null,
+    lastSweepAt: prevSweepFire?.toISOString() ?? null,
     generatedAt: now.toISOString(),
     bootedAt: bootTime.toISOString(),
   });

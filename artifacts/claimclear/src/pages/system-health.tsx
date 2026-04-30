@@ -256,7 +256,7 @@ export default function SystemHealth() {
                   <div className="text-lg font-semibold mt-1">{workerData.pendingDueCount}</div>
                 </div>
                 <div className="rounded-md border p-3">
-                  <div className="text-xs text-muted-foreground">Overdue (&gt;{workerData.overdueThresholdMinutes}m)</div>
+                  <div className="text-xs text-muted-foreground">Past expected cycle</div>
                   <div className={`text-lg font-semibold mt-1 ${workerData.overdueCount > 0 ? "text-amber-600" : ""}`}>
                     {workerData.overdueCount}
                   </div>

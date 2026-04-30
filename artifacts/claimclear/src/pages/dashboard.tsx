@@ -195,7 +195,7 @@ export default function Dashboard() {
           }
         </span>
         <span className="text-muted-foreground">
-          · {portalWorker.pendingDueCount} due · {portalWorker.overdueCount} overdue
+          · {portalWorker.pendingDueCount} due · {portalWorker.overdueCount} past cycle
           {portalWorker.lastRun?.triggeredBy && (
             <> · last triggered by {portalWorker.lastRun.triggeredBy}</>
           )}
@@ -375,7 +375,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-xs mt-1 text-muted-foreground">
-                {portalWorker.pendingDueCount} pending due · {portalWorker.overdueCount} overdue
+                {portalWorker.pendingDueCount} pending due · {portalWorker.overdueCount} past cycle
               </div>
             </div>
             <div className="rounded-md border border-border bg-card p-3.5">

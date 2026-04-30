@@ -16,12 +16,14 @@ import {
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
 import { addGlobalBatchClient } from "../lib/sse";
+import { PORTAL_BATCH_SWEEPER } from "../lib/cron-schedule";
 
-// Cron expression mirrors `portal_batch_sweeper` in system-health.ts. If the
-// scheduler changes there, update this too — the header pill and the admin
-// system-health endpoint must agree on when the next batch fires.
-const PORTAL_BATCH_CRON = "0 8,11,14,18 * * 1-5";
-const PORTAL_BATCH_TZ = "America/New_York";
+// Locked sweeper schedule — single source of truth shared with index.ts
+// (the actual `cron.schedule(...)` registration) and the system-health
+// rollup. The header pill, admin system-health endpoint, and the cron
+// itself can never disagree on when the next batch fires.
+const PORTAL_BATCH_CRON = PORTAL_BATCH_SWEEPER.cron;
+const PORTAL_BATCH_TZ = PORTAL_BATCH_SWEEPER.tz;
 
 const router: IRouter = Router();
 

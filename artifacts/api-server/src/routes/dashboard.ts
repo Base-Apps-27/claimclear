@@ -7,6 +7,7 @@ import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline } from "../lib/
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
+import { getOverdueCount } from "../lib/overdue-submissions";
 
 const router: IRouter = Router();
 
@@ -24,7 +25,6 @@ export const EXPIRING_ACTIONABLE_STATUSES = [
   "Ready to Review",
   "On Hold",
 ] as const;
-const OVERDUE_THRESHOLD_MINUTES = 15;
 
 export function parseDays(raw: unknown, fallback: number, max = 365): number {
   const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
@@ -167,7 +167,6 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const successRate = totalSubs > 0 ? ((submitted / totalSubs) * 100).toFixed(1) : "0";
 
   const now = new Date();
-  const overdueCutoff = new Date(now.getTime() - OVERDUE_THRESHOLD_MINUTES * 60 * 1000);
 
   const [{ value: pendingDueCount } = { value: 0 }] = await db
     .select({ value: count() })
@@ -180,20 +179,10 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       ),
     ));
 
-  // Overdue rule mirrors `isSubmissionOverdue`.
-  const [{ value: overdueCount } = { value: 0 }] = await db
-    .select({ value: count() })
-    .from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.status, "pending"),
-      or(
-        lte(portalSubmissionsTable.nextRetryAt, overdueCutoff),
-        and(
-          isNull(portalSubmissionsTable.nextRetryAt),
-          lte(portalSubmissionsTable.createdAt, overdueCutoff),
-        ),
-      ),
-    ));
+  // Cycle-aware overdue count: shared with the worker-activity endpoint
+  // and the system-health rollup so the dashboard tile, the System Health
+  // page, and the worker banner can never disagree.
+  const overdueCount = await getOverdueCount(now);
 
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },

@@ -379,22 +379,51 @@ export function isSubmissionDue(
 }
 
 /**
- * Pure predicate: a pending submission is overdue when it should already have
- * been processed by `overdueCutoff` but hasn't been. A row is overdue if
- * either its scheduled `nextRetryAt` is older than the cutoff, or it has no
- * scheduled retry but its `createdAt` is older than the cutoff. Freshly
- * queued rows (`nextRetryAt = null`, recent `createdAt`) are not overdue.
+ * Pure predicate: a pending submission is overdue when it has *missed* its
+ * expected batch cycle. The sweeper only fires at fixed scheduled times
+ * (e.g. 8:00, 11:00, 14:00, 18:00 ET), so a row that's been waiting since
+ * 8:20 for the next 11:00 sweep is *not* overdue — the system is behaving
+ * exactly as designed. The row only becomes overdue once the next
+ * scheduled sweep that should have picked it up has already fired (plus a
+ * small grace window for the sweep to actually run and complete).
+ *
+ * Inputs:
+ * - `row.createdAt` / `row.nextRetryAt` — when the row became eligible.
+ * - `lastDueSweep` — the most recent expected sweeper fire whose firing
+ *   was at least the configured grace period before "now". Computed by
+ *   `getLastDueSweep(...)` in `lib/cron-schedule.ts` so all callers agree
+ *   on the cycle definition. Pass `null` when no past sweep has had time
+ *   to run yet (server brand-new) — in that case nothing is overdue.
+ * - `sweepActuallyRan` — true when the most recent recorded
+ *   `portal_batch_sweeper` cron run started at or after `lastDueSweep`.
+ *   When the sweeper itself didn't fire, the cron-tile rollup already
+ *   flags it; we deliberately don't double-count by also flagging rows on
+ *   the worker tile.
+ *
+ * The function stays pure so it's trivially unit-testable; the caller is
+ * responsible for resolving the schedule-derived inputs.
  */
 export function isSubmissionOverdue(
   row: { status: string; nextRetryAt: Date | null; createdAt: Date },
-  overdueCutoff: Date,
+  lastDueSweep: Date | null,
+  sweepActuallyRan: boolean,
 ): boolean {
   if (row.status !== "pending") return false;
-  if (row.nextRetryAt !== null) {
-    return row.nextRetryAt.getTime() <= overdueCutoff.getTime();
-  }
-  // No scheduled retry → use the row's age.
-  return row.createdAt.getTime() <= overdueCutoff.getTime();
+  if (lastDueSweep === null) return false;
+  if (!sweepActuallyRan) return false;
+  // The row is "ready" at max(createdAt, nextRetryAt ?? createdAt). A
+  // retry scheduled for the future means the system is intentionally
+  // holding the row; it can't be overdue until that ready time is in the
+  // past. We take the max with createdAt so a (rare) nextRetryAt that
+  // somehow predates createdAt — backfills, clock corrections — never
+  // makes a freshly-created row look overdue retroactively.
+  const candidate = row.nextRetryAt ?? row.createdAt;
+  const readyAt = candidate.getTime() > row.createdAt.getTime() ? candidate : row.createdAt;
+  // The row is overdue iff the relevant sweep landed STRICTLY AFTER the
+  // ready time. A row created exactly at the sweep timestamp could have
+  // been picked up by that sweep, but we don't punish it on the
+  // boundary — the next cycle owns it.
+  return readyAt.getTime() < lastDueSweep.getTime();
 }
 
 export async function startBatchJob(
