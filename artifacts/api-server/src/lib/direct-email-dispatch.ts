@@ -1,8 +1,6 @@
-import path from "path";
-import { Readable } from "stream";
-import { ObjectStorageService } from "./objectStorage";
 import { sendEmailWithContext } from "./email-send";
 import type { EmailAttachment } from "./outlook";
+import { downloadAttachment } from "./email-attachments";
 import { logger } from "./logger";
 
 export interface DirectEmailRecipientConfig {
@@ -24,110 +22,6 @@ export interface DirectEmailResult {
   messageId: string | null;
   conversationId: string | null;
   attachmentCount: number;
-}
-
-/**
- * Pull an evidence URL into memory as an EmailAttachment. Uses the same
- * GCS-first / HTTP-fallback strategy as the portal worker's downloadToTemp
- * helper (see batch-worker.ts), but returns Buffers because Microsoft Graph
- * needs base64-encoded fileAttachment payloads.
- */
-async function downloadAttachment(url: string, index: number, label: string): Promise<EmailAttachment> {
-  // GCS path: /objects/<entity-key>
-  if (url.startsWith("/objects/")) {
-    try {
-      const storage = new ObjectStorageService();
-      const file = await storage.getObjectEntityFile(url);
-      const [metadata] = await file.getMetadata();
-      const chunks: Buffer[] = [];
-      await new Promise<void>((resolve, reject) => {
-        file.createReadStream()
-          .on("data", (chunk: Buffer | string) => {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          })
-          .on("end", () => resolve())
-          .on("error", (err) => reject(err));
-      });
-      const filename = pickFilename(url, label, index, (metadata.contentType as string | undefined) ?? null);
-      return {
-        name: filename,
-        content: Buffer.concat(chunks),
-        contentType: (metadata.contentType as string | undefined) ?? guessMimeFromName(filename),
-      };
-    } catch (objErr) {
-      logger.warn(
-        { url, err: objErr instanceof Error ? objErr.message : String(objErr) },
-        "direct-email: object storage download failed, trying HTTP fallback",
-      );
-      const apiBase = `http://localhost:${process.env.PORT || 8080}`;
-      const httpUrl = `${apiBase}${url.replace(/^\/objects\//, "/api/storage/objects/")}`;
-      const response = await fetch(httpUrl);
-      if (!response.ok || !response.body) {
-        throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
-      }
-      const buf = Buffer.from(await response.arrayBuffer());
-      const contentType = response.headers.get("content-type") || undefined;
-      const filename = pickFilename(url, label, index, contentType ?? null);
-      return { name: filename, content: buf, contentType: contentType ?? guessMimeFromName(filename) };
-    }
-  }
-
-  // External URL fallback — download directly via fetch.
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}: ${response.status}`);
-  }
-  const buf = Buffer.from(await response.arrayBuffer());
-  const contentType = response.headers.get("content-type") || undefined;
-  const filename = pickFilename(url, label, index, contentType ?? null);
-  // Touch Readable so the import is preserved in case of future streaming refactors.
-  void Readable;
-  return { name: filename, content: buf, contentType: contentType ?? guessMimeFromName(filename) };
-}
-
-function pickFilename(url: string, label: string, index: number, contentType: string | null): string {
-  const last = url.split("/").pop() || "";
-  const cleaned = last.split("?")[0] || "";
-  const hasExt = cleaned.includes(".") && !cleaned.startsWith(".");
-  if (hasExt) return cleaned;
-  const ext = mimeToExt(contentType) || ".bin";
-  return `${label}-evidence-${index + 1}${ext}`;
-}
-
-function mimeToExt(contentType: string | null): string | null {
-  if (!contentType) return null;
-  const type = contentType.split(";")[0].trim().toLowerCase();
-  switch (type) {
-    case "image/png": return ".png";
-    case "image/jpeg": return ".jpg";
-    case "image/gif": return ".gif";
-    case "image/webp": return ".webp";
-    case "application/pdf": return ".pdf";
-    case "text/plain": return ".txt";
-    case "text/csv": return ".csv";
-    case "application/json": return ".json";
-    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": return ".xlsx";
-    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": return ".docx";
-    default: return null;
-  }
-}
-
-function guessMimeFromName(filename: string): string {
-  const ext = path.extname(filename).toLowerCase();
-  switch (ext) {
-    case ".png": return "image/png";
-    case ".jpg":
-    case ".jpeg": return "image/jpeg";
-    case ".gif": return "image/gif";
-    case ".webp": return "image/webp";
-    case ".pdf": return "application/pdf";
-    case ".txt": return "text/plain";
-    case ".csv": return "text/csv";
-    case ".json": return "application/json";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    default: return "application/octet-stream";
-  }
 }
 
 /**

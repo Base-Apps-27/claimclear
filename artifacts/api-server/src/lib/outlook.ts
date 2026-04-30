@@ -159,6 +159,12 @@ export interface ReplyToMessageOptions {
    */
   to?: string[];
   cc?: string[];
+  /**
+   * Files to attach to the reply. Same `EmailAttachment` shape as `sendEmail`.
+   * Total payload must stay under the 3 MB inline cap; we POST each one to
+   * the draft's `/attachments` collection before sending.
+   */
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -199,7 +205,29 @@ export async function replyToMessage(options: ReplyToMessageOptions): Promise<Se
   }
   await client.api(`/me/messages/${messageId}`).patch(patch);
 
-  // 3. Send. Graph returns 202 Accepted with no body.
+  // 3. Attachments — POST one at a time onto the draft. Graph rejects
+  //    fileAttachments included in a PATCH body, so the dedicated
+  //    `/attachments` collection endpoint is the supported route.
+  if (options.attachments && options.attachments.length > 0) {
+    const totalAttachmentBytes = options.attachments.reduce((sum, a) => sum + a.content.length, 0);
+    if (totalAttachmentBytes > INLINE_ATTACHMENT_LIMIT_BYTES) {
+      throw new Error(
+        `Reply attachments total ${totalAttachmentBytes} bytes which exceeds the ` +
+        `${INLINE_ATTACHMENT_LIMIT_BYTES}-byte inline cap. Use a smaller attachment set ` +
+        `or implement the Graph upload-session flow.`,
+      );
+    }
+    for (const attachment of options.attachments) {
+      await client.api(`/me/messages/${messageId}/attachments`).post({
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        name: attachment.name,
+        contentType: attachment.contentType || "application/octet-stream",
+        contentBytes: attachment.content.toString("base64"),
+      });
+    }
+  }
+
+  // 4. Send. Graph returns 202 Accepted with no body.
   await client.api(`/me/messages/${messageId}/send`).post({});
 
   return { messageId, conversationId };

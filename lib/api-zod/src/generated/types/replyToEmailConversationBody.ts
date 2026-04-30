@@ -12,4 +12,12 @@ export type ReplyToEmailConversationBody = {
   bodyText: string;
   to: string[];
   cc?: string[];
+  /** Optional list of `claim_evidence` ids to attach to this reply.
+The server validates that each id belongs to the same claim,
+downloads the underlying file from object storage, and POSTs
+each one to the Outlook draft as a `fileAttachment` before
+sending. Total attachment payload must stay under the 3 MB
+Graph inline cap.
+ */
+  evidenceIds?: number[];
 };

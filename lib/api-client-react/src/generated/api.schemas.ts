@@ -2085,6 +2085,12 @@ export interface EmailThreadMessage {
   siblingClaimRef?: string | null;
   /** Numeric id companion to siblingClaimRef, for navigation. */
   siblingClaimId?: number | null;
+  /** Outbound only. Filenames of files attached to this message in send
+order, so the thread bubble can render an "Attached: foo.pdf,
+bar.png" line. Null on inbound messages and on outbound rows sent
+before attachment names were tracked.
+ */
+  attachmentNames?: string[] | null;
 }
 
 /**
@@ -2743,6 +2749,14 @@ export type ReplyToEmailConversationBody = {
   bodyText: string;
   to: string[];
   cc?: string[];
+  /** Optional list of `claim_evidence` ids to attach to this reply.
+The server validates that each id belongs to the same claim,
+downloads the underlying file from object storage, and POSTs
+each one to the Outlook draft as a `fileAttachment` before
+sending. Total attachment payload must stay under the 3 MB
+Graph inline cap.
+ */
+  evidenceIds?: number[];
 };
 
 export type ReplyToEmailConversation400 = {

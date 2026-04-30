@@ -36,6 +36,13 @@
       "when": 1777550329974,
       "tag": "0006_closure_data_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777559999999,
+      "tag": "0007_outbound_email_attachment_names",
+      "breakpoints": true
     }
   ]
 }

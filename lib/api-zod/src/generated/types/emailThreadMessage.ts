@@ -35,4 +35,10 @@ export interface EmailThreadMessage {
   siblingClaimRef?: string | null;
   /** Numeric id companion to siblingClaimRef, for navigation. */
   siblingClaimId?: number | null;
+  /** Outbound only. Filenames of files attached to this message in send
+order, so the thread bubble can render an "Attached: foo.pdf,
+bar.png" line. Null on inbound messages and on outbound rows sent
+before attachment names were tracked.
+ */
+  attachmentNames?: string[] | null;
 }

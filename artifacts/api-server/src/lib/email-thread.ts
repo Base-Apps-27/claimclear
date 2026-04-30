@@ -46,6 +46,13 @@ export interface ThreadMessage {
   claimId: number | null;
   siblingClaimRef: string | null;
   siblingClaimId: number | null;
+
+  // Outbound-only: filenames of files attached to this message, in send
+  // order. Lets the thread bubble render an "Attached: foo.pdf, bar.png"
+  // line so staff can see what evidence shipped with each reply without
+  // hopping back to Outlook. Null on inbound (we don't track payer
+  // attachments today) and on outbound rows sent before this column existed.
+  attachmentNames: string[] | null;
 }
 
 export interface ThreadConversation {
@@ -105,6 +112,7 @@ export function inboundToMessage(
     claimId: r.claimId,
     siblingClaimRef: siblingRef,
     siblingClaimId: isSibling ? r.claimId : null,
+    attachmentNames: null,
   };
 }
 
@@ -137,6 +145,9 @@ export function outboundToMessage(
     claimId: o.claimId,
     siblingClaimRef: siblingRef,
     siblingClaimId: isSibling ? o.claimId : null,
+    attachmentNames: Array.isArray(o.attachmentNames) && o.attachmentNames.length > 0
+      ? o.attachmentNames
+      : null,
   };
 }
 

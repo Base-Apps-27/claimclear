@@ -922,6 +922,32 @@ export default function ClaimDetail() {
             conversations={conversations}
             claimResponses={claimResponses}
             claim={claim}
+            availableEvidence={(() => {
+              // Mirror the Evidence card list, but drop:
+              //   - notes-only rows (no imageUrl)
+              //   - rows whose imageUrl is anything other than an
+              //     `/objects/...` reference. The reply API rejects
+              //     arbitrary http(s) URLs (SSRF guard), so legacy or
+              //     externally-hosted evidence shouldn't be selectable
+              //     here — otherwise staff could pick a row only to get
+              //     a confusing 400 back at send time.
+              const items = Array.isArray(collectedEvidence?.evidence) ? collectedEvidence.evidence : [];
+              return items
+                .filter((ev) => typeof ev.imageUrl === "string" && (ev.imageUrl as string).trim().startsWith("/objects/"))
+                .map((ev) => {
+                  const url = (ev.imageUrl as string).trim();
+                  // Best-effort filename: take everything after the last "/",
+                  // strip any querystring. Falls back to the typed name
+                  // when the URL has no usable basename.
+                  const tail = url.split("?")[0]?.split("/").pop() ?? "";
+                  const fileName = tail && tail !== "" ? decodeURIComponent(tail) : null;
+                  return {
+                    id: ev.id as number,
+                    label: ev.evidenceTypeName as string,
+                    fileName,
+                  };
+                });
+            })()}
             isReplying={replyMutation.isPending}
             onApprove={async (responseId) => {
               await processResponseMutation.mutateAsync({ id: responseId, data: { responseType: "approval" } });
@@ -956,6 +982,7 @@ export default function ClaimDetail() {
                   bodyText: input.bodyText,
                   to: input.to,
                   cc: input.cc,
+                  evidenceIds: input.evidenceIds,
                 },
               });
               queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });

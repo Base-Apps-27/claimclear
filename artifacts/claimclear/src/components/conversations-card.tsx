@@ -8,6 +8,7 @@ import DOMPurify from "dompurify";
 import {
   Mail, Send, MessagesSquare, CheckCircle, X, Eye, Reply,
   ArrowRightLeft, AlertTriangle, Loader2, ChevronDown, ChevronUp,
+  Paperclip,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,11 +28,29 @@ import type {
 
 type ThreadStatus = EmailThreadConversation["status"];
 
+/**
+ * One row in the Reply composer's "Attach files" picker. We pull these from
+ * the claim's collected evidence on the parent page (see claim-detail.tsx)
+ * so the picker mirrors what staff see in the Evidence card. Items without
+ * an `imageUrl` (e.g. notes-only evidence) are filtered out by the parent
+ * so they never appear here.
+ */
+export interface ReplyEvidenceOption {
+  id: number;
+  label: string;
+  fileName: string | null;
+}
+
 interface ConversationsCardProps {
   conversations: EmailThreadConversation[];
   /** Used to look up full body / rawContent / bodyFormat for THIS claim's inbound messages. */
   claimResponses: PortalResponseItem[];
   claim: Pick<ClaimResponse, "closureReason">;
+  /**
+   * Evidence files available to attach to a reply. Empty when the claim has
+   * no file-backed evidence; the picker collapses to a hint in that case.
+   */
+  availableEvidence: ReplyEvidenceOption[];
   isReplying: boolean;
   onApprove: (responseId: number) => Promise<void> | void;
   onDeny: (responseId: number) => Promise<void> | void;
@@ -43,6 +62,7 @@ interface ConversationsCardProps {
     bodyText: string;
     to: string[];
     cc: string[];
+    evidenceIds: number[];
   }) => Promise<EmailThreadMessage>;
 }
 
@@ -150,6 +170,7 @@ function ConversationThread({
   conversation,
   initiallyExpanded,
   claimResponses,
+  availableEvidence,
   isReplying,
   onApprove,
   onDeny,
@@ -208,6 +229,10 @@ function ConversationThread({
   const [replySubject, setReplySubject] = useState(`Re: ${stripReplyPrefixes(lastSubject)}`);
   const [replyBody, setReplyBody] = useState("");
   const [replyError, setReplyError] = useState<string | null>(null);
+  // Selected evidence ids for the Attach files picker. Stored as a Set for
+  // cheap toggling in the UI; serialized to an array when we hand off to
+  // the reply mutation.
+  const [replyEvidenceIds, setReplyEvidenceIds] = useState<Set<number>>(new Set());
 
   const openReply = () => {
     setReplyOpen(true);
@@ -217,6 +242,16 @@ function ConversationThread({
     setReplySubject(`Re: ${stripReplyPrefixes(lastSubject)}`);
     setReplyBody("");
     setReplyError(null);
+    setReplyEvidenceIds(new Set());
+  };
+
+  const toggleEvidenceId = (id: number) => {
+    setReplyEvidenceIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const submitReply = async () => {
@@ -236,6 +271,7 @@ function ConversationThread({
         bodyText: replyBody,
         to,
         cc,
+        evidenceIds: Array.from(replyEvidenceIds),
       });
       // Append immediately so the user sees the reply before refetch lands.
       // The useEffect above clears it once the next fetch returns the row.
@@ -397,6 +433,50 @@ function ConversationThread({
               placeholder="Write your reply…"
               className="text-sm font-sans"
             />
+          </div>
+          <div className="space-y-1.5" data-testid="reply-attach-picker">
+            <Label className="text-xs flex items-center gap-1.5">
+              <Paperclip className="h-3 w-3" />
+              Attach files
+              {replyEvidenceIds.size > 0 && (
+                <span className="text-muted-foreground font-normal">
+                  ({replyEvidenceIds.size} selected)
+                </span>
+              )}
+            </Label>
+            {availableEvidence.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                No file-backed evidence on this claim yet. Add evidence in the
+                Evidence card to attach it to a reply.
+              </p>
+            ) : (
+              <ul className="border rounded-md bg-white/70 dark:bg-slate-900/40 divide-y max-h-40 overflow-y-auto">
+                {availableEvidence.map((ev) => {
+                  const checked = replyEvidenceIds.has(ev.id);
+                  return (
+                    <li key={ev.id}>
+                      <label className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 shrink-0"
+                          checked={checked}
+                          onChange={() => toggleEvidenceId(ev.id)}
+                          data-testid={`reply-attach-checkbox-${ev.id}`}
+                        />
+                        <span className="font-medium truncate" title={ev.label}>
+                          {ev.label}
+                        </span>
+                        {ev.fileName && (
+                          <span className="text-muted-foreground truncate" title={ev.fileName}>
+                            — {ev.fileName}
+                          </span>
+                        )}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
           {replyError && (
             <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
@@ -566,6 +646,21 @@ function MessageBubble({ msg, fullResp, onReassign }: MessageBubbleProps) {
               {msg.extractedDeadline && (<span><strong>Deadline:</strong> {msg.extractedDeadline}</span>)}
             </div>
           )}
+        </div>
+      )}
+
+      {isOutbound && msg.attachmentNames && msg.attachmentNames.length > 0 && (
+        <div
+          className="mt-2 flex items-start gap-1.5 text-xs text-blue-900 bg-blue-100/60 border border-blue-200 rounded px-2 py-1.5"
+          data-testid="reply-attached-files"
+        >
+          <Paperclip className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <span className="font-medium">
+              Attached {msg.attachmentNames.length} file{msg.attachmentNames.length === 1 ? "" : "s"}:
+            </span>{" "}
+            <span className="break-all">{msg.attachmentNames.join(", ")}</span>
+          </div>
         </div>
       )}
 

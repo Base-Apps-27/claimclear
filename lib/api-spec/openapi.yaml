@@ -2424,6 +2424,17 @@ paths:
                   type: array
                   items:
                     type: string
+                evidenceIds:
+                  type: array
+                  items:
+                    type: integer
+                  description: |
+                    Optional list of `claim_evidence` ids to attach to this reply.
+                    The server validates that each id belongs to the same claim,
+                    downloads the underlying file from object storage, and POSTs
+                    each one to the Outlook draft as a `fileAttachment` before
+                    sending. Total attachment payload must stay under the 3 MB
+                    Graph inline cap.
       responses:
         '200':
           description: Reply sent — returns the persisted outbound row so the UI can optimistically render it.
@@ -5464,6 +5475,16 @@ components:
           type: integer
           nullable: true
           description: Numeric id companion to siblingClaimRef, for navigation.
+        attachmentNames:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: |
+            Outbound only. Filenames of files attached to this message in send
+            order, so the thread bubble can render an "Attached: foo.pdf,
+            bar.png" line. Null on inbound messages and on outbound rows sent
+            before attachment names were tracked.
 
     EmailThreadConversation:
       type: object

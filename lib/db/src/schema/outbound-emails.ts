@@ -20,6 +20,10 @@ export const outboundEmailsTable = pgTable("outbound_emails", {
   subject: text("subject"),
   recipients: jsonb("recipients"),
   bodyPreview: text("body_preview"),
+  // Names of the files attached to this outbound message, in send order.
+  // jsonb of `string[]` so the thread bubble can render "Attached: foo.pdf,
+  // bar.png" without a join. Null when no attachments were sent.
+  attachmentNames: jsonb("attachment_names").$type<string[] | null>(),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   sentByUserEmail: text("sent_by_user_email"),
   sentByUserName: text("sent_by_user_name"),

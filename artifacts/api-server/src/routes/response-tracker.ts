@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable } from "@workspace/db";
+import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
+import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
+import { ObjectStorageService } from "../lib/objectStorage";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse } from "../lib/response-matcher";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
@@ -591,7 +593,7 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
   const conversationId = String(req.params.conversationId || "").trim();
   if (!conversationId) { res.status(400).json({ error: "Missing conversationId" }); return; }
 
-  const { subject, bodyText, to, cc } = req.body ?? {};
+  const { subject, bodyText, to, cc, evidenceIds } = req.body ?? {};
   if (typeof subject !== "string" || subject.trim().length === 0) {
     res.status(400).json({ error: "subject is required" });
     return;
@@ -610,6 +612,19 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     res.status(400).json({ error: "At least one 'to' recipient is required" });
     return;
   }
+
+  // Evidence ids → unique positive ints. Anything else (negatives, NaN,
+  // non-array) is treated as "no attachments" so a malformed picker payload
+  // can never leak unrelated evidence into the outgoing reply.
+  const evidenceIdList = Array.isArray(evidenceIds)
+    ? Array.from(
+        new Set(
+          (evidenceIds as unknown[])
+            .map((v) => Number(v))
+            .filter((n) => Number.isInteger(n) && n > 0),
+        ),
+      )
+    : [];
 
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -647,6 +662,89 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     return;
   }
 
+  // Resolve evidence ids → downloadable URLs. We require every requested
+  // id to belong to the current claim so a malicious or stale picker can't
+  // attach evidence from a different claim onto an outgoing reply. We also
+  // restrict the URLs we'll fetch from: only object-storage references
+  // (`/objects/...`) are accepted — never arbitrary http(s) URLs that some
+  // legacy evidence row might be carrying. This blocks an authenticated
+  // staff account from steering the server into fetching internal
+  // metadata services or private network resources via the reply path
+  // (i.e. SSRF / data-exfiltration).
+  let attachmentNamesForRow: string[] = [];
+  let attachmentsForGraph: Awaited<ReturnType<typeof downloadAttachmentsWithRetry>> = [];
+  if (evidenceIdList.length > 0) {
+    const evidenceRows = await db.select()
+      .from(claimEvidenceTable)
+      .where(and(
+        inArray(claimEvidenceTable.id, evidenceIdList),
+        eq(claimEvidenceTable.claimId, claimId),
+      ));
+    if (evidenceRows.length !== evidenceIdList.length) {
+      res.status(400).json({
+        error: "One or more evidence ids do not belong to this claim",
+      });
+      return;
+    }
+    const orderedRows = evidenceIdList
+      .map((id) => evidenceRows.find((r) => r.id === id))
+      .filter((r): r is typeof evidenceRows[number] => Boolean(r));
+    const urls: string[] = [];
+    // Mirror the inline cap enforced inside `outlook.replyToMessage` so we
+    // can fail before touching the network when staff pick a single file
+    // that's already known to be too large for Graph's inline path.
+    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+    const objectStorage = new ObjectStorageService();
+    for (const row of orderedRows) {
+      if (!row.imageUrl || row.imageUrl.trim().length === 0) {
+        res.status(400).json({
+          error: `Evidence #${row.id} (${row.evidenceTypeName}) has no file to attach`,
+        });
+        return;
+      }
+      const trimmedUrl = row.imageUrl.trim();
+      if (!trimmedUrl.startsWith("/objects/")) {
+        res.status(400).json({
+          error: `Evidence #${row.id} (${row.evidenceTypeName}) cannot be attached: only files stored in app object storage are allowed.`,
+        });
+        return;
+      }
+      // Pre-flight size check via object metadata so we never buffer a
+      // multi-megabyte (or attacker-suggested huge) blob just to reject
+      // it after the bytes have already arrived.
+      try {
+        const file = await objectStorage.getObjectEntityFile(trimmedUrl);
+        const [metadata] = await file.getMetadata();
+        const size = typeof metadata.size === "number"
+          ? metadata.size
+          : Number(metadata.size ?? 0);
+        if (size > MAX_ATTACHMENT_BYTES) {
+          res.status(400).json({
+            error: `Evidence #${row.id} (${row.evidenceTypeName}) is ${(size / (1024 * 1024)).toFixed(1)}MB. Max attachment size is 3MB.`,
+          });
+          return;
+        }
+      } catch (metaErr) {
+        logger.error({ err: metaErr, evidenceId: row.id, url: trimmedUrl }, "Failed to stat evidence object before reply");
+        res.status(502).json({
+          error: `Could not read evidence #${row.id} (${row.evidenceTypeName}) — try again in a moment.`,
+        });
+        return;
+      }
+      urls.push(trimmedUrl);
+    }
+    try {
+      attachmentsForGraph = await downloadAttachmentsWithRetry(urls, `claim-${claim.confNumber || claim.id}`);
+    } catch (err) {
+      logger.error({ err, claimId, evidenceIdList }, "Failed to download evidence for reply");
+      res.status(502).json({
+        error: err instanceof Error ? err.message : "Failed to download evidence",
+      });
+      return;
+    }
+    attachmentNamesForRow = attachmentsForGraph.map((a) => a.name);
+  }
+
   // Send via Graph. Failures bubble up as 502 so the composer can retry.
   let sendResult: { messageId: string | null; conversationId: string | null };
   try {
@@ -656,6 +754,7 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
       bodyText,
       to: toList,
       cc: ccList.length > 0 ? ccList : undefined,
+      attachments: attachmentsForGraph.length > 0 ? attachmentsForGraph : undefined,
     });
   } catch (err) {
     logger.error({ err, claimId, conversationId }, "Failed to send reply via Outlook");
@@ -679,6 +778,7 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     subject,
     recipients: [...toList, ...ccList],
     bodyPreview,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
     sentByUserEmail: req.user?.email ?? null,
     sentByUserName: req.user?.displayName ?? null,
   }).returning();
@@ -695,6 +795,8 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
       to: toList,
       cc: ccList,
       subject,
+      attachmentNames: attachmentNamesForRow,
+      evidenceIds: evidenceIdList,
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? "User",
@@ -723,6 +825,7 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     claimId,
     siblingClaimRef: null,
     siblingClaimId: null,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
   };
 
   res.json(message);

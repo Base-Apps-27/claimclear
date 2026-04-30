@@ -6147,6 +6147,12 @@ export const GetClaimEmailThreadResponse = zod.object({
           .number()
           .nullish()
           .describe("Numeric id companion to siblingClaimRef, for navigation."),
+        attachmentNames: zod
+          .array(zod.string())
+          .nullish()
+          .describe(
+            'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+          ),
       }),
     )
     .describe(
@@ -6245,6 +6251,12 @@ export const GetClaimEmailThreadResponse = zod.object({
               .describe(
                 "Numeric id companion to siblingClaimRef, for navigation.",
               ),
+            attachmentNames: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+              ),
           }),
         ),
       }),
@@ -6277,6 +6289,12 @@ export const ReplyToEmailConversationBody = zod.object({
     ),
   to: zod.array(zod.string()),
   cc: zod.array(zod.string()).optional(),
+  evidenceIds: zod
+    .array(zod.number())
+    .optional()
+    .describe(
+      "Optional list of `claim_evidence` ids to attach to this reply.\nThe server validates that each id belongs to the same claim,\ndownloads the underlying file from object storage, and POSTs\neach one to the Outlook draft as a `fileAttachment` before\nsending. Total attachment payload must stay under the 3 MB\nGraph inline cap.\n",
+    ),
 });
 
 export const ReplyToEmailConversationResponse = zod.object({
@@ -6333,6 +6351,12 @@ export const ReplyToEmailConversationResponse = zod.object({
     .number()
     .nullish()
     .describe("Numeric id companion to siblingClaimRef, for navigation."),
+  attachmentNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+    ),
 });
 
 /**
