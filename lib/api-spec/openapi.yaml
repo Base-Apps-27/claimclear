@@ -353,17 +353,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                outcome:
-                  type: string
-                closureReason:
-                  type: string
-                  enum: ["payer_denied", "not_contestable", "accepted_loss"]
-                approvedAmount:
-                  type: string
-              required:
-                - outcome
+              $ref: "#/components/schemas/UpdateInvoiceGroupOutcomeBody"
       responses:
         "200":
           description: Updated
@@ -2172,6 +2162,31 @@ paths:
         '200':
           description: Deleted
 
+  /claim-evidence/closure:
+    post:
+      tags: [claimEvidence]
+      operationId: attachClosureEvidence
+      summary: Attach an evidence item collected during a structured closure
+      description: |
+        Records evidence that staff uploaded as part of a Withdraw or Non-Issue
+        closure flow. Tags the row with `closureScope` and the closure reason
+        at the moment of attach so the audit trail captures exactly what was
+        on file when the closure was filed. Supply exactly one of `claimId`
+        or `invoiceGroupId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachClosureEvidenceBody'
+      responses:
+        '201':
+          description: Evidence attached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimEvidenceResponse'
+
   /responses:
     get:
       operationId: listResponses
@@ -2727,6 +2742,43 @@ components:
         closureReason:
           type: ["string", "null"]
           enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+        closureCategory:
+          type: ["string", "null"]
+        closureCategoryOther:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureRootCauseOther:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+        closureAccountabilityOther:
+          type: ["string", "null"]
+        closureDrivers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureDispatchers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureReviewState:
+          type: ["string", "null"]
+          enum: ["pending", "acknowledged", "needs_revisit", "resolved", null]
+        closureAddressedAt:
+          type: ["string", "null"]
+        closureAddressedBy:
+          type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
         triageNotes:
           type: ["string", "null"]
         triagedAt:
@@ -2829,6 +2881,43 @@ components:
         closureReason:
           type: ["string", "null"]
           enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+        closureCategory:
+          type: ["string", "null"]
+        closureCategoryOther:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureRootCauseOther:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+        closureAccountabilityOther:
+          type: ["string", "null"]
+        closureDrivers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureDispatchers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureReviewState:
+          type: ["string", "null"]
+          enum: ["pending", "acknowledged", "needs_revisit", "resolved", null]
+        closureAddressedAt:
+          type: ["string", "null"]
+        closureAddressedBy:
+          type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
         approvedAmount:
           type: ["string", "null"]
         rideCount:
@@ -3020,18 +3109,221 @@ components:
 
     UpdateClaimOutcomeBody:
       type: object
+      description: |
+        Body for `PATCH /claims/{id}/outcome`. The closure detail fields
+        (closureCategory, closureRootCause, closureNarrative,
+        closureAccountabilityTags, etc.) are required when the outcome is
+        "Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+        validated by the canonical `CreateClosureRequest` payload.
       properties:
         outcome:
           type: string
         closureReason:
           type: string
-          enum: ["payer_denied", "not_contestable", "accepted_loss"]
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue"]
         approvedAmount:
           type: string
         invoiceNumbers:
           type: string
+        closureCategory:
+          type: ["string", "null"]
+        closureCategoryOther:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureRootCauseOther:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+        closureAccountabilityOther:
+          type: ["string", "null"]
+        closureDrivers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureDispatchers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureAddressedAt:
+          type: ["string", "null"]
+          format: date-time
+        closureAddressedBy:
+          type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
       required:
         - outcome
+
+    UpdateInvoiceGroupOutcomeBody:
+      type: object
+      description: |
+        Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
+        contract as `UpdateClaimOutcomeBody`.
+      properties:
+        outcome:
+          type: string
+        closureReason:
+          type: string
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue"]
+        approvedAmount:
+          type: string
+        closureCategory:
+          type: ["string", "null"]
+        closureCategoryOther:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureRootCauseOther:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+        closureAccountabilityOther:
+          type: ["string", "null"]
+        closureDrivers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureDispatchers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureAddressedAt:
+          type: ["string", "null"]
+          format: date-time
+        closureAddressedBy:
+          type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
+      required:
+        - outcome
+
+    ClosurePersonRef:
+      type: object
+      description: A person referenced from a structured closure (driver/dispatcher).
+      properties:
+        name:
+          type: string
+        id:
+          type: ["string", "null"]
+      required:
+        - name
+
+    CreateClosureRequest:
+      type: object
+      description: |
+        Canonical payload for filing a structured closure (Withdraw or
+        Non-Issue). Used by `PATCH /claims/{id}/outcome` and
+        `PATCH /invoice-groups/{id}/outcome` when staff are recording
+        a structured closure (vs. a bare outcome change).
+
+        Required fields when `closureReason` is `not_contestable` or `non_issue`:
+          - closureCategory (string; if "other", closureCategoryOther required)
+          - closureRootCause (string; if "other", closureRootCauseOther required)
+          - closureNarrative (string, ≥80 chars)
+          - closureAccountabilityTags (≥1 entry; if includes "other",
+            closureAccountabilityOther required)
+          - closureDrivers (≥1 with name) when tags includes "driver"
+          - closureDispatchers (≥1 with name) when tags includes "dispatcher"
+
+        For `accepted_loss`, the structured detail fields stay optional.
+      properties:
+        outcome:
+          type: string
+          enum: ["Withdrawn", "Non-Issue"]
+        closureReason:
+          type: string
+          enum: ["not_contestable", "accepted_loss", "non_issue"]
+        closureCategory:
+          type: ["string", "null"]
+        closureCategoryOther:
+          type: ["string", "null"]
+        closureRootCause:
+          type: ["string", "null"]
+        closureRootCauseOther:
+          type: ["string", "null"]
+        closureNarrative:
+          type: ["string", "null"]
+        closureAccountabilityTags:
+          type: ["array", "null"]
+          items:
+            type: string
+            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+        closureAccountabilityOther:
+          type: ["string", "null"]
+        closureDrivers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureDispatchers:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ClosurePersonRef"
+        closureCommunicatedTo:
+          type: ["string", "null"]
+        closureAddressedAt:
+          type: ["string", "null"]
+          format: date-time
+        closureAddressedBy:
+          type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+        closureReviewNotes:
+          type: ["string", "null"]
+        approvedAmount:
+          type: ["string", "null"]
+        invoiceNumbers:
+          type: ["string", "null"]
+      required:
+        - outcome
+        - closureReason
+
+    AttachClosureEvidenceBody:
+      type: object
+      description: |
+        Body for `POST /claim-evidence/closure`. Provide exactly one of `claimId`
+        or `invoiceGroupId`. The server always writes `closureScope = "closure"`
+        for rows created here; tree-scoped evidence belongs on
+        `POST /claim-evidence`. `imageUrl` is required.
+      properties:
+        claimId:
+          type: ["integer", "null"]
+        invoiceGroupId:
+          type: ["integer", "null"]
+        evidenceTypeId:
+          type: ["integer", "null"]
+        evidenceTypeName:
+          type: string
+        treeNodeId:
+          type: ["string", "null"]
+        imageUrl:
+          type: string
+        notes:
+          type: ["string", "null"]
+        closureReasonAtAttach:
+          type: ["string", "null"]
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+      required:
+        - evidenceTypeName
+        - imageUrl
 
     UpdateClaimEvidenceBody:
       type: object
@@ -4556,12 +4848,16 @@ components:
 
     ClaimEvidenceResponse:
       type: object
-      required: [id, claimId, evidenceTypeName, collectedAt]
+      required: [id, evidenceTypeName, collectedAt]
       properties:
         id:
           type: integer
         claimId:
           type: integer
+          nullable: true
+        invoiceGroupId:
+          type: integer
+          nullable: true
         evidenceTypeId:
           type: integer
           nullable: true
@@ -4581,6 +4877,12 @@ components:
           nullable: true
         collectedAt:
           type: string
+        closureScope:
+          type: ["string", "null"]
+          enum: ["tree", "closure", null]
+        closureReasonAtAttach:
+          type: ["string", "null"]
+          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
 
     PortalResponseItem:
       type: object

@@ -5,11 +5,51 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClosurePersonRef } from "./closurePersonRef";
+import type { UpdateClaimOutcomeBodyClosureAccountabilityTagsItem } from "./updateClaimOutcomeBodyClosureAccountabilityTagsItem";
 import type { UpdateClaimOutcomeBodyClosureReason } from "./updateClaimOutcomeBodyClosureReason";
 
+/**
+ * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
+(closureCategory, closureRootCause, closureNarrative,
+closureAccountabilityTags, etc.) are required when the outcome is
+"Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+validated by the canonical `CreateClosureRequest` payload.
+
+ */
 export interface UpdateClaimOutcomeBody {
   outcome: string;
   closureReason?: UpdateClaimOutcomeBodyClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?:
+    | UpdateClaimOutcomeBodyClosureAccountabilityTagsItem[]
+    | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureAddressedAt?: Date | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
 }

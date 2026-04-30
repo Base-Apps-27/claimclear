@@ -16,9 +16,14 @@ export const claimEvidenceTable = pgTable("claim_evidence", {
   notes: text("notes"),
   collectedBy: text("collected_by"),
   collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+  closureScope: text("closure_scope"),
+  closureReasonAtAttach: text("closure_reason_at_attach"),
 }, (table) => [
   index("claim_evidence_claim_id_idx").on(table.claimId),
 ]);
+
+export const CLAIM_EVIDENCE_CLOSURE_SCOPES = ["tree", "closure"] as const;
+export type ClaimEvidenceClosureScope = typeof CLAIM_EVIDENCE_CLOSURE_SCOPES[number];
 
 export const insertClaimEvidenceSchema = createInsertSchema(claimEvidenceTable).omit({ id: true, collectedAt: true });
 export type InsertClaimEvidence = z.infer<typeof insertClaimEvidenceSchema>;

@@ -5,10 +5,13 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClaimEvidenceResponseClosureReasonAtAttach } from "./claimEvidenceResponseClosureReasonAtAttach";
+import type { ClaimEvidenceResponseClosureScope } from "./claimEvidenceResponseClosureScope";
 
 export interface ClaimEvidenceResponse {
   id: number;
-  claimId: number;
+  claimId?: number | null;
+  invoiceGroupId?: number | null;
   evidenceTypeId?: number | null;
   evidenceTypeName: string;
   treeNodeId?: string | null;
@@ -16,4 +19,8 @@ export interface ClaimEvidenceResponse {
   notes?: string | null;
   collectedBy?: string | null;
   collectedAt: string;
+  /** @nullable */
+  closureScope?: ClaimEvidenceResponseClosureScope;
+  /** @nullable */
+  closureReasonAtAttach?: ClaimEvidenceResponseClosureReasonAtAttach;
 }

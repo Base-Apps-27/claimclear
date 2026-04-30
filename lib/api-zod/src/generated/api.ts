@@ -142,6 +142,51 @@ export const ListInvoiceGroupsResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureCategory: zod.string().nullish(),
+      closureCategoryOther: zod.string().nullish(),
+      closureRootCause: zod.string().nullish(),
+      closureRootCauseOther: zod.string().nullish(),
+      closureNarrative: zod.string().nullish(),
+      closureAccountabilityTags: zod.array(zod.string()).nullish(),
+      closureAccountabilityOther: zod.string().nullish(),
+      closureDrivers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureDispatchers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureCommunicatedTo: zod.string().nullish(),
+      closureReviewState: zod
+        .union([
+          zod.literal("pending"),
+          zod.literal("acknowledged"),
+          zod.literal("needs_revisit"),
+          zod.literal("resolved"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      closureAddressedAt: zod.string().nullish(),
+      closureAddressedBy: zod.string().nullish(),
+      closureAddressedByEmail: zod.string().nullish(),
+      closureReviewNotes: zod.string().nullish(),
       approvedAmount: zod.string().nullish(),
       rideCount: zod.number(),
       totalAmount: zod.string().nullish(),
@@ -233,6 +278,51 @@ export const GetInvoiceGroupResponse = zod
         zod.literal(null),
       ])
       .nullish(),
+    closureCategory: zod.string().nullish(),
+    closureCategoryOther: zod.string().nullish(),
+    closureRootCause: zod.string().nullish(),
+    closureRootCauseOther: zod.string().nullish(),
+    closureNarrative: zod.string().nullish(),
+    closureAccountabilityTags: zod.array(zod.string()).nullish(),
+    closureAccountabilityOther: zod.string().nullish(),
+    closureDrivers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureDispatchers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureReviewState: zod
+      .union([
+        zod.literal("pending"),
+        zod.literal("acknowledged"),
+        zod.literal("needs_revisit"),
+        zod.literal("resolved"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    closureAddressedAt: zod.string().nullish(),
+    closureAddressedBy: zod.string().nullish(),
+    closureAddressedByEmail: zod.string().nullish(),
+    closureReviewNotes: zod.string().nullish(),
     approvedAmount: zod.string().nullish(),
     rideCount: zod.number(),
     totalAmount: zod.string().nullish(),
@@ -306,6 +396,51 @@ export const GetInvoiceGroupResponse = zod
                 zod.literal(null),
               ])
               .nullish(),
+            closureCategory: zod.string().nullish(),
+            closureCategoryOther: zod.string().nullish(),
+            closureRootCause: zod.string().nullish(),
+            closureRootCauseOther: zod.string().nullish(),
+            closureNarrative: zod.string().nullish(),
+            closureAccountabilityTags: zod.array(zod.string()).nullish(),
+            closureAccountabilityOther: zod.string().nullish(),
+            closureDrivers: zod
+              .array(
+                zod
+                  .object({
+                    name: zod.string(),
+                    id: zod.string().nullish(),
+                  })
+                  .describe(
+                    "A person referenced from a structured closure (driver\/dispatcher).",
+                  ),
+              )
+              .nullish(),
+            closureDispatchers: zod
+              .array(
+                zod
+                  .object({
+                    name: zod.string(),
+                    id: zod.string().nullish(),
+                  })
+                  .describe(
+                    "A person referenced from a structured closure (driver\/dispatcher).",
+                  ),
+              )
+              .nullish(),
+            closureCommunicatedTo: zod.string().nullish(),
+            closureReviewState: zod
+              .union([
+                zod.literal("pending"),
+                zod.literal("acknowledged"),
+                zod.literal("needs_revisit"),
+                zod.literal("resolved"),
+                zod.literal(null),
+              ])
+              .nullish(),
+            closureAddressedAt: zod.string().nullish(),
+            closureAddressedBy: zod.string().nullish(),
+            closureAddressedByEmail: zod.string().nullish(),
+            closureReviewNotes: zod.string().nullish(),
             triageNotes: zod.string().nullish(),
             triagedAt: zod.string().nullish(),
             approvedAmount: zod.string().nullish(),
@@ -551,6 +686,51 @@ export const UpdateInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -629,6 +809,51 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -659,13 +884,65 @@ export const UpdateInvoiceGroupOutcomeParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const UpdateInvoiceGroupOutcomeBody = zod.object({
-  outcome: zod.string(),
-  closureReason: zod
-    .enum(["payer_denied", "not_contestable", "accepted_loss"])
-    .optional(),
-  approvedAmount: zod.string().optional(),
-});
+export const UpdateInvoiceGroupOutcomeBody = zod
+  .object({
+    outcome: zod.string(),
+    closureReason: zod
+      .enum(["payer_denied", "not_contestable", "accepted_loss", "non_issue"])
+      .optional(),
+    approvedAmount: zod.string().optional(),
+    closureCategory: zod.string().nullish(),
+    closureCategoryOther: zod.string().nullish(),
+    closureRootCause: zod.string().nullish(),
+    closureRootCauseOther: zod.string().nullish(),
+    closureNarrative: zod.string().nullish(),
+    closureAccountabilityTags: zod
+      .array(
+        zod.enum([
+          "driver",
+          "dispatcher",
+          "member",
+          "it_system",
+          "our_staff",
+          "external_payor",
+          "other",
+        ]),
+      )
+      .nullish(),
+    closureAccountabilityOther: zod.string().nullish(),
+    closureDrivers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureDispatchers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureAddressedAt: zod.coerce.date().nullish(),
+    closureAddressedBy: zod.string().nullish(),
+    closureAddressedByEmail: zod.string().nullish(),
+    closureReviewNotes: zod.string().nullish(),
+  })
+  .describe(
+    "Body for `PATCH \/invoice-groups\/{id}\/outcome`. Same closure detail\ncontract as `UpdateClaimOutcomeBody`.\n",
+  );
 
 export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   id: zod.number(),
@@ -703,6 +980,51 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -776,6 +1098,51 @@ export const TriageInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -846,6 +1213,51 @@ export const HoldInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -912,6 +1324,51 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -1018,6 +1475,51 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
   rideCount: zod.number(),
   totalAmount: zod.string().nullish(),
@@ -1052,7 +1554,8 @@ export const ListInvoiceGroupEvidenceResponse = zod.object({
   evidence: zod.array(
     zod.object({
       id: zod.number(),
-      claimId: zod.number(),
+      claimId: zod.number().nullish(),
+      invoiceGroupId: zod.number().nullish(),
       evidenceTypeId: zod.number().nullish(),
       evidenceTypeName: zod.string(),
       treeNodeId: zod.string().nullish(),
@@ -1060,6 +1563,18 @@ export const ListInvoiceGroupEvidenceResponse = zod.object({
       notes: zod.string().nullish(),
       collectedBy: zod.string().nullish(),
       collectedAt: zod.string(),
+      closureScope: zod
+        .union([zod.literal("tree"), zod.literal("closure"), zod.literal(null)])
+        .nullish(),
+      closureReasonAtAttach: zod
+        .union([
+          zod.literal("payer_denied"),
+          zod.literal("not_contestable"),
+          zod.literal("accepted_loss"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
     }),
   ),
 });
@@ -1207,6 +1722,51 @@ export const ListClaimsResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureCategory: zod.string().nullish(),
+      closureCategoryOther: zod.string().nullish(),
+      closureRootCause: zod.string().nullish(),
+      closureRootCauseOther: zod.string().nullish(),
+      closureNarrative: zod.string().nullish(),
+      closureAccountabilityTags: zod.array(zod.string()).nullish(),
+      closureAccountabilityOther: zod.string().nullish(),
+      closureDrivers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureDispatchers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureCommunicatedTo: zod.string().nullish(),
+      closureReviewState: zod
+        .union([
+          zod.literal("pending"),
+          zod.literal("acknowledged"),
+          zod.literal("needs_revisit"),
+          zod.literal("resolved"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      closureAddressedAt: zod.string().nullish(),
+      closureAddressedBy: zod.string().nullish(),
+      closureAddressedByEmail: zod.string().nullish(),
+      closureReviewNotes: zod.string().nullish(),
       triageNotes: zod.string().nullish(),
       triagedAt: zod.string().nullish(),
       approvedAmount: zod.string().nullish(),
@@ -1320,6 +1880,51 @@ export const GetClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1407,6 +2012,51 @@ export const UpdateClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1510,6 +2160,51 @@ export const UpdateClaimStatusResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1539,14 +2234,66 @@ export const UpdateClaimOutcomeParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const UpdateClaimOutcomeBody = zod.object({
-  outcome: zod.string(),
-  closureReason: zod
-    .enum(["payer_denied", "not_contestable", "accepted_loss"])
-    .optional(),
-  approvedAmount: zod.string().optional(),
-  invoiceNumbers: zod.string().optional(),
-});
+export const UpdateClaimOutcomeBody = zod
+  .object({
+    outcome: zod.string(),
+    closureReason: zod
+      .enum(["payer_denied", "not_contestable", "accepted_loss", "non_issue"])
+      .optional(),
+    approvedAmount: zod.string().optional(),
+    invoiceNumbers: zod.string().optional(),
+    closureCategory: zod.string().nullish(),
+    closureCategoryOther: zod.string().nullish(),
+    closureRootCause: zod.string().nullish(),
+    closureRootCauseOther: zod.string().nullish(),
+    closureNarrative: zod.string().nullish(),
+    closureAccountabilityTags: zod
+      .array(
+        zod.enum([
+          "driver",
+          "dispatcher",
+          "member",
+          "it_system",
+          "our_staff",
+          "external_payor",
+          "other",
+        ]),
+      )
+      .nullish(),
+    closureAccountabilityOther: zod.string().nullish(),
+    closureDrivers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureDispatchers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureAddressedAt: zod.coerce.date().nullish(),
+    closureAddressedBy: zod.string().nullish(),
+    closureAddressedByEmail: zod.string().nullish(),
+    closureReviewNotes: zod.string().nullish(),
+  })
+  .describe(
+    'Body for `PATCH \/claims\/{id}\/outcome`. The closure detail fields\n(closureCategory, closureRootCause, closureNarrative,\nclosureAccountabilityTags, etc.) are required when the outcome is\n\"Withdrawn\" with reason \"not_contestable\" or \"Non-Issue\" and are\nvalidated by the canonical `CreateClosureRequest` payload.\n',
+  );
 
 export const UpdateClaimOutcomeResponse = zod.object({
   id: zod.number(),
@@ -1589,6 +2336,51 @@ export const UpdateClaimOutcomeResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1665,6 +2457,51 @@ export const UpdateClaimEvidenceResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1740,6 +2577,51 @@ export const PlaceClaimOnHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1810,6 +2692,51 @@ export const RemoveClaimHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1884,6 +2811,51 @@ export const UpdateClaimWorkflowResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -1961,6 +2933,51 @@ export const TriageClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -2041,6 +3058,51 @@ export const PostResponseActionResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -2134,6 +3196,51 @@ export const GenerateClaimEmailResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
   triageNotes: zod.string().nullish(),
   triagedAt: zod.string().nullish(),
   approvedAmount: zod.string().nullish(),
@@ -3563,6 +4670,51 @@ export const GetDashboardSummaryResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureCategory: zod.string().nullish(),
+      closureCategoryOther: zod.string().nullish(),
+      closureRootCause: zod.string().nullish(),
+      closureRootCauseOther: zod.string().nullish(),
+      closureNarrative: zod.string().nullish(),
+      closureAccountabilityTags: zod.array(zod.string()).nullish(),
+      closureAccountabilityOther: zod.string().nullish(),
+      closureDrivers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureDispatchers: zod
+        .array(
+          zod
+            .object({
+              name: zod.string(),
+              id: zod.string().nullish(),
+            })
+            .describe(
+              "A person referenced from a structured closure (driver\/dispatcher).",
+            ),
+        )
+        .nullish(),
+      closureCommunicatedTo: zod.string().nullish(),
+      closureReviewState: zod
+        .union([
+          zod.literal("pending"),
+          zod.literal("acknowledged"),
+          zod.literal("needs_revisit"),
+          zod.literal("resolved"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      closureAddressedAt: zod.string().nullish(),
+      closureAddressedBy: zod.string().nullish(),
+      closureAddressedByEmail: zod.string().nullish(),
+      closureReviewNotes: zod.string().nullish(),
       approvedAmount: zod.string().nullish(),
       rideCount: zod.number(),
       totalAmount: zod.string().nullish(),
@@ -4014,7 +5166,8 @@ export const ListClaimEvidenceResponse = zod.object({
   evidence: zod.array(
     zod.object({
       id: zod.number(),
-      claimId: zod.number(),
+      claimId: zod.number().nullish(),
+      invoiceGroupId: zod.number().nullish(),
       evidenceTypeId: zod.number().nullish(),
       evidenceTypeName: zod.string(),
       treeNodeId: zod.string().nullish(),
@@ -4022,6 +5175,18 @@ export const ListClaimEvidenceResponse = zod.object({
       notes: zod.string().nullish(),
       collectedBy: zod.string().nullish(),
       collectedAt: zod.string(),
+      closureScope: zod
+        .union([zod.literal("tree"), zod.literal("closure"), zod.literal(null)])
+        .nullish(),
+      closureReasonAtAttach: zod
+        .union([
+          zod.literal("payer_denied"),
+          zod.literal("not_contestable"),
+          zod.literal("accepted_loss"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish(),
     }),
   ),
 });
@@ -4048,6 +5213,38 @@ export const DeleteClaimEvidenceParams = zod.object({
   claimId: zod.coerce.number(),
   evidenceId: zod.coerce.number(),
 });
+
+/**
+ * Records evidence that staff uploaded as part of a Withdraw or Non-Issue
+closure flow. Tags the row with `closureScope` and the closure reason
+at the moment of attach so the audit trail captures exactly what was
+on file when the closure was filed. Supply exactly one of `claimId`
+or `invoiceGroupId`.
+
+ * @summary Attach an evidence item collected during a structured closure
+ */
+export const AttachClosureEvidenceBody = zod
+  .object({
+    claimId: zod.number().nullish(),
+    invoiceGroupId: zod.number().nullish(),
+    evidenceTypeId: zod.number().nullish(),
+    evidenceTypeName: zod.string(),
+    treeNodeId: zod.string().nullish(),
+    imageUrl: zod.string(),
+    notes: zod.string().nullish(),
+    closureReasonAtAttach: zod
+      .union([
+        zod.literal("payer_denied"),
+        zod.literal("not_contestable"),
+        zod.literal("accepted_loss"),
+        zod.literal("non_issue"),
+        zod.literal(null),
+      ])
+      .nullish(),
+  })
+  .describe(
+    'Body for `POST \/claim-evidence\/closure`. Provide exactly one of `claimId`\nor `invoiceGroupId`. The server always writes `closureScope = \"closure\"`\nfor rows created here; tree-scoped evidence belongs on\n`POST \/claim-evidence`. `imageUrl` is required.\n',
+  );
 
 /**
  * @summary List portal/email responses

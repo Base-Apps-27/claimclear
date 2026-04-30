@@ -22,6 +22,14 @@ export const CLOSURE_REASON_LABELS: Record<ClosureReason, string> = {
   non_issue: "Resolved — non-issue at triage",
 };
 
+export const CLOSURE_ACCOUNTABILITY_TAGS = [
+  "driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other",
+] as const;
+export type ClosureAccountabilityTag = typeof CLOSURE_ACCOUNTABILITY_TAGS[number];
+
+export const CLOSURE_REVIEW_STATES = ["pending", "addressed"] as const;
+export type ClosureReviewState = typeof CLOSURE_REVIEW_STATES[number];
+
 export const claimsTable = pgTable("claims", {
   id: serial("id").primaryKey(),
   invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
@@ -55,6 +63,21 @@ export const claimsTable = pgTable("claims", {
   triageNotes: text("triage_notes"),
   triagedAt: text("triaged_at"),
   closureReason: text("closure_reason"),
+  closureCategory: text("closure_category"),
+  closureCategoryOther: text("closure_category_other"),
+  closureRootCause: text("closure_root_cause"),
+  closureRootCauseOther: text("closure_root_cause_other"),
+  closureNarrative: text("closure_narrative"),
+  closureAccountabilityTags: jsonb("closure_accountability_tags"),
+  closureAccountabilityOther: text("closure_accountability_other"),
+  closureDrivers: jsonb("closure_drivers"),
+  closureDispatchers: jsonb("closure_dispatchers"),
+  closureCommunicatedTo: text("closure_communicated_to"),
+  closureReviewState: text("closure_review_state"),
+  closureAddressedAt: timestamp("closure_addressed_at", { withTimezone: true }),
+  closureAddressedBy: text("closure_addressed_by"),
+  closureAddressedByEmail: text("closure_addressed_by_email"),
+  closureReviewNotes: text("closure_review_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

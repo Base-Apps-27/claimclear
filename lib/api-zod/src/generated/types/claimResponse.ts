@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
+import type { ClaimResponseClosureReviewState } from "./claimResponseClosureReviewState";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
 import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
 import type { ClaimResponseWorkflowProgress } from "./claimResponseWorkflowProgress";
+import type { ClosurePersonRef } from "./closurePersonRef";
 
 export interface ClaimResponse {
   id: number;
@@ -37,6 +39,36 @@ export interface ClaimResponse {
   outcome: ClaimResponseOutcome;
   /** @nullable */
   closureReason?: ClaimResponseClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewState?: ClaimResponseClosureReviewState;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
   /** @nullable */
   triageNotes?: string | null;
   /** @nullable */

@@ -65,6 +65,20 @@ export const ClaimResponseClosureReason = {
 /**
  * @nullable
  */
+export type ClaimResponseClosureReviewState =
+  | (typeof ClaimResponseClosureReviewState)[keyof typeof ClaimResponseClosureReviewState]
+  | null;
+
+export const ClaimResponseClosureReviewState = {
+  pending: "pending",
+  acknowledged: "acknowledged",
+  needs_revisit: "needs_revisit",
+  resolved: "resolved",
+} as const;
+
+/**
+ * @nullable
+ */
 export type ClaimResponseEvidenceFiles = { [key: string]: unknown } | null;
 
 /**
@@ -76,6 +90,15 @@ export type ClaimResponseEvidenceChecklist = { [key: string]: unknown } | null;
  * @nullable
  */
 export type ClaimResponseWorkflowProgress = { [key: string]: unknown } | null;
+
+/**
+ * A person referenced from a structured closure (driver/dispatcher).
+ */
+export interface ClosurePersonRef {
+  name: string;
+  /** @nullable */
+  id?: string | null;
+}
 
 export interface ClaimResponse {
   id: number;
@@ -102,6 +125,36 @@ export interface ClaimResponse {
   outcome: ClaimResponseOutcome;
   /** @nullable */
   closureReason?: ClaimResponseClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewState?: ClaimResponseClosureReviewState;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
   /** @nullable */
   triageNotes?: string | null;
   /** @nullable */
@@ -198,6 +251,20 @@ export const InvoiceGroupResponseClosureReason = {
 /**
  * @nullable
  */
+export type InvoiceGroupResponseClosureReviewState =
+  | (typeof InvoiceGroupResponseClosureReviewState)[keyof typeof InvoiceGroupResponseClosureReviewState]
+  | null;
+
+export const InvoiceGroupResponseClosureReviewState = {
+  pending: "pending",
+  acknowledged: "acknowledged",
+  needs_revisit: "needs_revisit",
+  resolved: "resolved",
+} as const;
+
+/**
+ * @nullable
+ */
 export type InvoiceGroupResponseWorkflowProgress = {
   [key: string]: unknown;
 } | null;
@@ -231,6 +298,36 @@ export interface InvoiceGroupResponse {
   outcome: InvoiceGroupResponseOutcome;
   /** @nullable */
   closureReason?: InvoiceGroupResponseClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewState?: InvoiceGroupResponseClosureReviewState;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
   /** @nullable */
   approvedAmount?: string | null;
   rideCount: number;
@@ -603,13 +700,254 @@ export const UpdateClaimOutcomeBodyClosureReason = {
   payer_denied: "payer_denied",
   not_contestable: "not_contestable",
   accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
 } as const;
 
+export type UpdateClaimOutcomeBodyClosureAccountabilityTagsItem =
+  (typeof UpdateClaimOutcomeBodyClosureAccountabilityTagsItem)[keyof typeof UpdateClaimOutcomeBodyClosureAccountabilityTagsItem];
+
+export const UpdateClaimOutcomeBodyClosureAccountabilityTagsItem = {
+  driver: "driver",
+  dispatcher: "dispatcher",
+  member: "member",
+  it_system: "it_system",
+  our_staff: "our_staff",
+  external_payor: "external_payor",
+  other: "other",
+} as const;
+
+/**
+ * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
+(closureCategory, closureRootCause, closureNarrative,
+closureAccountabilityTags, etc.) are required when the outcome is
+"Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+validated by the canonical `CreateClosureRequest` payload.
+
+ */
 export interface UpdateClaimOutcomeBody {
   outcome: string;
   closureReason?: UpdateClaimOutcomeBodyClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?:
+    | UpdateClaimOutcomeBodyClosureAccountabilityTagsItem[]
+    | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+}
+
+export type UpdateInvoiceGroupOutcomeBodyClosureReason =
+  (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
+
+export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
+} as const;
+
+export type UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem =
+  (typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem];
+
+export const UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem = {
+  driver: "driver",
+  dispatcher: "dispatcher",
+  member: "member",
+  it_system: "it_system",
+  our_staff: "our_staff",
+  external_payor: "external_payor",
+  other: "other",
+} as const;
+
+/**
+ * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
+contract as `UpdateClaimOutcomeBody`.
+
+ */
+export interface UpdateInvoiceGroupOutcomeBody {
+  outcome: string;
+  closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
+  approvedAmount?: string;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?:
+    | UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem[]
+    | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+}
+
+export type CreateClosureRequestOutcome =
+  (typeof CreateClosureRequestOutcome)[keyof typeof CreateClosureRequestOutcome];
+
+export const CreateClosureRequestOutcome = {
+  Withdrawn: "Withdrawn",
+  "Non-Issue": "Non-Issue",
+} as const;
+
+export type CreateClosureRequestClosureReason =
+  (typeof CreateClosureRequestClosureReason)[keyof typeof CreateClosureRequestClosureReason];
+
+export const CreateClosureRequestClosureReason = {
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
+} as const;
+
+export type CreateClosureRequestClosureAccountabilityTagsItem =
+  (typeof CreateClosureRequestClosureAccountabilityTagsItem)[keyof typeof CreateClosureRequestClosureAccountabilityTagsItem];
+
+export const CreateClosureRequestClosureAccountabilityTagsItem = {
+  driver: "driver",
+  dispatcher: "dispatcher",
+  member: "member",
+  it_system: "it_system",
+  our_staff: "our_staff",
+  external_payor: "external_payor",
+  other: "other",
+} as const;
+
+/**
+ * Canonical payload for filing a structured closure (Withdraw or
+Non-Issue). Used by `PATCH /claims/{id}/outcome` and
+`PATCH /invoice-groups/{id}/outcome` when staff are recording
+a structured closure (vs. a bare outcome change).
+
+Required fields when `closureReason` is `not_contestable` or `non_issue`:
+  - closureCategory (string; if "other", closureCategoryOther required)
+  - closureRootCause (string; if "other", closureRootCauseOther required)
+  - closureNarrative (string, ≥80 chars)
+  - closureAccountabilityTags (≥1 entry; if includes "other",
+    closureAccountabilityOther required)
+  - closureDrivers (≥1 with name) when tags includes "driver"
+  - closureDispatchers (≥1 with name) when tags includes "dispatcher"
+
+For `accepted_loss`, the structured detail fields stay optional.
+
+ */
+export interface CreateClosureRequest {
+  outcome: CreateClosureRequestOutcome;
+  closureReason: CreateClosureRequestClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?:
+    | CreateClosureRequestClosureAccountabilityTagsItem[]
+    | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+  /** @nullable */
+  approvedAmount?: string | null;
+  /** @nullable */
+  invoiceNumbers?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type AttachClosureEvidenceBodyClosureReasonAtAttach =
+  | (typeof AttachClosureEvidenceBodyClosureReasonAtAttach)[keyof typeof AttachClosureEvidenceBodyClosureReasonAtAttach]
+  | null;
+
+export const AttachClosureEvidenceBodyClosureReasonAtAttach = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
+} as const;
+
+/**
+ * Body for `POST /claim-evidence/closure`. Provide exactly one of `claimId`
+or `invoiceGroupId`. The server always writes `closureScope = "closure"`
+for rows created here; tree-scoped evidence belongs on
+`POST /claim-evidence`. `imageUrl` is required.
+
+ */
+export interface AttachClosureEvidenceBody {
+  /** @nullable */
+  claimId?: number | null;
+  /** @nullable */
+  invoiceGroupId?: number | null;
+  /** @nullable */
+  evidenceTypeId?: number | null;
+  evidenceTypeName: string;
+  /** @nullable */
+  treeNodeId?: string | null;
+  imageUrl: string;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  closureReasonAtAttach?: AttachClosureEvidenceBodyClosureReasonAtAttach;
 }
 
 export type UpdateClaimEvidenceBodyEvidenceFiles = { [key: string]: unknown };
@@ -1472,9 +1810,36 @@ export interface AddClaimEvidenceBody {
   notes?: string;
 }
 
+/**
+ * @nullable
+ */
+export type ClaimEvidenceResponseClosureScope =
+  | (typeof ClaimEvidenceResponseClosureScope)[keyof typeof ClaimEvidenceResponseClosureScope]
+  | null;
+
+export const ClaimEvidenceResponseClosureScope = {
+  tree: "tree",
+  closure: "closure",
+} as const;
+
+/**
+ * @nullable
+ */
+export type ClaimEvidenceResponseClosureReasonAtAttach =
+  | (typeof ClaimEvidenceResponseClosureReasonAtAttach)[keyof typeof ClaimEvidenceResponseClosureReasonAtAttach]
+  | null;
+
+export const ClaimEvidenceResponseClosureReasonAtAttach = {
+  payer_denied: "payer_denied",
+  not_contestable: "not_contestable",
+  accepted_loss: "accepted_loss",
+  non_issue: "non_issue",
+} as const;
+
 export interface ClaimEvidenceResponse {
   id: number;
-  claimId: number;
+  claimId?: number | null;
+  invoiceGroupId?: number | null;
   evidenceTypeId?: number | null;
   evidenceTypeName: string;
   treeNodeId?: string | null;
@@ -1482,6 +1847,10 @@ export interface ClaimEvidenceResponse {
   notes?: string | null;
   collectedBy?: string | null;
   collectedAt: string;
+  /** @nullable */
+  closureScope?: ClaimEvidenceResponseClosureScope;
+  /** @nullable */
+  closureReasonAtAttach?: ClaimEvidenceResponseClosureReasonAtAttach;
 }
 
 export type EmailThreadMessageDirection =
@@ -1792,21 +2161,6 @@ export type ExportInvoiceGroupsCsvParams = {
 export type UpdateInvoiceGroupStatusBody = {
   status: string;
   reason?: string;
-};
-
-export type UpdateInvoiceGroupOutcomeBodyClosureReason =
-  (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
-
-export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
-} as const;
-
-export type UpdateInvoiceGroupOutcomeBody = {
-  outcome: string;
-  closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
-  approvedAmount?: string;
 };
 
 export type TriageInvoiceGroupBodyTriageOutcome =

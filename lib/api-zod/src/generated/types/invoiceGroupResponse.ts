@@ -5,7 +5,9 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClosurePersonRef } from "./closurePersonRef";
 import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
+import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupResponseClosureReviewState";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
 import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
@@ -27,6 +29,36 @@ export interface InvoiceGroupResponse {
   outcome: InvoiceGroupResponseOutcome;
   /** @nullable */
   closureReason?: InvoiceGroupResponseClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewState?: InvoiceGroupResponseClosureReviewState;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
   /** @nullable */
   approvedAmount?: string | null;
   rideCount: number;

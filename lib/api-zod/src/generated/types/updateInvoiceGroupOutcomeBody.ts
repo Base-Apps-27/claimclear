@@ -5,10 +5,47 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClosurePersonRef } from "./closurePersonRef";
+import type { UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem } from "./updateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem";
 import type { UpdateInvoiceGroupOutcomeBodyClosureReason } from "./updateInvoiceGroupOutcomeBodyClosureReason";
 
-export type UpdateInvoiceGroupOutcomeBody = {
+/**
+ * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
+contract as `UpdateClaimOutcomeBody`.
+
+ */
+export interface UpdateInvoiceGroupOutcomeBody {
   outcome: string;
   closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
   approvedAmount?: string;
-};
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureCategoryOther?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureRootCauseOther?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?:
+    | UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem[]
+    | null;
+  /** @nullable */
+  closureAccountabilityOther?: string | null;
+  /** @nullable */
+  closureDrivers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureDispatchers?: ClosurePersonRef[] | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureAddressedAt?: Date | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /** @nullable */
+  closureAddressedByEmail?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+}

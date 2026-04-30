@@ -12,6 +12,7 @@ import {
   VALID_OUTCOME_BY_STATUS,
   SYSTEM_CONTROLLED_STATUSES,
 } from "../lib/claim-transitions";
+import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 
 const router: IRouter = Router();
 
@@ -272,12 +273,54 @@ router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
     }
   }
 
-  const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, id)).returning();
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+  const [previous] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!previous) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  await createAuditLog(id, "claim_edited", `Claim ${claim.confNumber} updated`, req, { fields: Object.keys(updateData) });
+  // Atomic block: row edit + claim_edited audit + (when applicable) the
+  // auto_after_classify status transition all run in one drizzle
+  // transaction. If anything inside throws, the whole patch rolls back so
+  // we never leave the row updated without its audit trail or the audit
+  // written without the row update.
+  const { saved, advanced } = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(claimsTable).set(updateData).where(eq(claimsTable.id, id)).returning();
+    if (!updated) throw new Error("Claim not found");
+
+    await tx.insert(auditLogsTable).values({
+      claimId: id,
+      action: "claim_edited",
+      details: `Claim ${updated.confNumber} updated`,
+      metadata: { fields: Object.keys(updateData) },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+
+    // Auto-advance: when staff classifies a New / Needs Review claim by
+    // setting an errorTypeId for the first time, push it to "Needs Evidence"
+    // so the workflow keeps moving without an extra click.
+    const becameClassified =
+      Object.prototype.hasOwnProperty.call(updateData, "errorTypeId") &&
+      typeof updated.errorTypeId === "string" && updated.errorTypeId.length > 0 &&
+      (previous.errorTypeId === null || previous.errorTypeId === "") &&
+      (previous.status === "New" || previous.status === "Needs Review");
+
+    if (becameClassified) {
+      const result = await transitionClaimStatus({
+        claimId: id,
+        newStatus: "Needs Evidence",
+        source: "auto_after_classify",
+        reason: `Auto-advanced after error type classified (${updated.errorTypeName ?? updated.errorTypeId})`,
+        actor: actorFromReq(req),
+        systemOverride: true,
+        executor: tx,
+      });
+      return { saved: updated, advanced: result.claim };
+    }
+
+    return { saved: updated, advanced: null as typeof updated | null };
+  });
+
   emitClaimEvent(id, "claim_edited", req);
-  res.json(claim);
+  res.json(advanced ?? saved);
 }));
 
 router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
@@ -396,6 +439,34 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
     res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
     return;
   }
+  if (outcome === "Non-Issue" && closureReason !== undefined && closureReason !== "non_issue") {
+    res.status(400).json({ error: `Non-Issue outcome requires closureReason "non_issue".` });
+    return;
+  }
+
+  let closure: NormalizedClosure | null = null;
+  const effectiveReason = closureReason ?? (outcome === "Non-Issue" ? "non_issue" : closureReason);
+  const reasonRequiresClosure =
+    effectiveReason === "not_contestable" || effectiveReason === "non_issue";
+  const wantsStructuredClosure =
+    outcome === "Withdrawn" || outcome === "Non-Issue";
+  const hasClosureFields =
+    wantsStructuredClosure && CLOSURE_DETAIL_FIELDS.some((f) => req.body[f] !== undefined);
+  if (wantsStructuredClosure && (hasClosureFields || reasonRequiresClosure)) {
+    try {
+      closure = parseClosurePayload({
+        ...req.body,
+        outcome,
+        closureReason: effectiveReason,
+      });
+    } catch (err) {
+      if (err instanceof ClosureValidationError) {
+        res.status(400).json({ error: err.message, issues: err.issues });
+        return;
+      }
+      throw err;
+    }
+  }
 
   let newStatus: string | undefined;
   if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue" || outcome === "Withdrawn") {
@@ -416,7 +487,8 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
         extraFields: approvedAmount !== undefined
           ? { approvedAmount: approvedAmount === "" ? null : String(approvedAmount), ...(invoiceNumbers !== undefined ? { invoiceNumbers } : {}) }
           : (invoiceNumbers !== undefined ? { invoiceNumbers } : undefined),
-        closureReason,
+        closureReason: effectiveReason ?? closureReason,
+        closure,
       });
       res.json(result.claim);
       return;
@@ -431,7 +503,8 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
       systemOverride: _systemOverride,
       approvedAmount,
       invoiceNumbers,
-      closureReason,
+      closureReason: effectiveReason ?? closureReason,
+      closure,
     });
     res.json(result.claim);
   } catch (err: any) {

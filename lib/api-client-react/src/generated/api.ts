@@ -27,6 +27,7 @@ import type {
   AnthropicError,
   AnthropicMessage,
   AppSettingsResponse,
+  AttachClosureEvidenceBody,
   AuditLogResponse,
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
@@ -7789,6 +7790,99 @@ export const useDeleteClaimEvidence = <
   TContext
 > => {
   return useMutation(getDeleteClaimEvidenceMutationOptions(options));
+};
+
+/**
+ * Records evidence that staff uploaded as part of a Withdraw or Non-Issue
+closure flow. Tags the row with `closureScope` and the closure reason
+at the moment of attach so the audit trail captures exactly what was
+on file when the closure was filed. Supply exactly one of `claimId`
+or `invoiceGroupId`.
+
+ * @summary Attach an evidence item collected during a structured closure
+ */
+export const getAttachClosureEvidenceUrl = () => {
+  return `/api/claim-evidence/closure`;
+};
+
+export const attachClosureEvidence = async (
+  attachClosureEvidenceBody: AttachClosureEvidenceBody,
+  options?: RequestInit,
+): Promise<ClaimEvidenceResponse> => {
+  return customFetch<ClaimEvidenceResponse>(getAttachClosureEvidenceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attachClosureEvidenceBody),
+  });
+};
+
+export const getAttachClosureEvidenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof attachClosureEvidence>>,
+    TError,
+    { data: BodyType<AttachClosureEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof attachClosureEvidence>>,
+  TError,
+  { data: BodyType<AttachClosureEvidenceBody> },
+  TContext
+> => {
+  const mutationKey = ["attachClosureEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof attachClosureEvidence>>,
+    { data: BodyType<AttachClosureEvidenceBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return attachClosureEvidence(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AttachClosureEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof attachClosureEvidence>>
+>;
+export type AttachClosureEvidenceMutationBody =
+  BodyType<AttachClosureEvidenceBody>;
+export type AttachClosureEvidenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Attach an evidence item collected during a structured closure
+ */
+export const useAttachClosureEvidence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof attachClosureEvidence>>,
+    TError,
+    { data: BodyType<AttachClosureEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof attachClosureEvidence>>,
+  TError,
+  { data: BodyType<AttachClosureEvidenceBody> },
+  TContext
+> => {
+  return useMutation(getAttachClosureEvidenceMutationOptions(options));
 };
 
 /**

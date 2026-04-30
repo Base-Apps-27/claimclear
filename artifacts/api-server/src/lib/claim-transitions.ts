@@ -3,6 +3,15 @@ import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastClaimEvent } from "./sse";
+import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
+
+// A "DB executor" is anything with the same select/update/insert surface as
+// the top-level `db` handle. The drizzle transaction object passed to
+// `db.transaction(async tx => ...)` is structurally compatible (it just
+// lacks `$client` and a few pool-level helpers), so callers who want their
+// work to participate in an outer transaction can pass `tx` here and every
+// read/write inside the transition will join that tx.
+export type DbExecutor = Pick<typeof db, "select" | "update" | "insert" | "delete">;
 
 export type ClaimStatus = typeof claimsTable.status.enumValues[number];
 
@@ -56,10 +65,18 @@ export async function transitionClaimStatus(opts: {
   actor: TransitionActor;
   systemOverride?: boolean;
   extraFields?: Partial<typeof claimsTable.$inferInsert>;
+  /**
+   * Optional drizzle executor (the global `db` or a `tx` object from inside
+   * `db.transaction`). When provided, every read and write done by the
+   * transition runs against that executor so the caller can wrap the
+   * transition together with its own row edit + audit in one atomic unit.
+   */
+  executor?: DbExecutor;
 }): Promise<TransitionResult> {
-  const { claimId, newStatus, source, reason, actor, systemOverride = false, extraFields } = opts;
+  const { claimId, newStatus, source, reason, actor, systemOverride = false, extraFields, executor } = opts;
+  const ex: DbExecutor = executor ?? db;
 
-  const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  const [old] = await ex.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
   if (old.status === newStatus && !extraFields) {
@@ -67,7 +84,7 @@ export async function transitionClaimStatus(opts: {
   }
 
   if (!systemOverride) {
-    const activeSubmissions = await db.select().from(portalSubmissionsTable)
+    const activeSubmissions = await ex.select().from(portalSubmissionsTable)
       .where(and(
         eq(portalSubmissionsTable.claimId, claimId),
         inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
@@ -87,11 +104,11 @@ export async function transitionClaimStatus(opts: {
   }
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = { status: newStatus as any, ...extraFields };
-  const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
+  const [claim] = await ex.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
 
   const statusChanged = old.status !== newStatus;
   if (statusChanged) {
-    await db.insert(auditLogsTable).values({
+    await ex.insert(auditLogsTable).values({
       claimId,
       action: "status_changed",
       details: `Status changed from ${old.status} to ${newStatus}`,
@@ -100,7 +117,7 @@ export async function transitionClaimStatus(opts: {
       userName: actor.userName,
     });
 
-    await db.insert(notesTable).values({
+    await ex.insert(notesTable).values({
       claimId,
       type: "status_change",
       content: `Status changed from ${old.status} to ${newStatus} — ${reason}`,
@@ -129,8 +146,10 @@ export async function transitionClaimOutcome(opts: {
   approvedAmount?: string | null;
   invoiceNumbers?: string | null;
   closureReason?: ClosureReason | null;
+  /** Full validated closure detail payload, when the staff filed a structured closure. */
+  closure?: NormalizedClosure | null;
 }): Promise<TransitionResult> {
-  const { claimId, newOutcome, source, reason, actor, systemOverride = false, approvedAmount, invoiceNumbers } = opts;
+  const { claimId, newOutcome, source, reason, actor, systemOverride = false, approvedAmount, invoiceNumbers, closure } = opts;
   let { closureReason } = opts;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
@@ -180,6 +199,23 @@ export async function transitionClaimOutcome(opts: {
   }
   if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
   updateData.closureReason = closureReason ?? null;
+  if (closure) {
+    updateData.closureCategory = closure.closureCategory;
+    updateData.closureCategoryOther = closure.closureCategoryOther;
+    updateData.closureRootCause = closure.closureRootCause;
+    updateData.closureRootCauseOther = closure.closureRootCauseOther;
+    updateData.closureNarrative = closure.closureNarrative;
+    updateData.closureAccountabilityTags = closure.closureAccountabilityTags;
+    updateData.closureAccountabilityOther = closure.closureAccountabilityOther;
+    updateData.closureDrivers = closure.closureDrivers;
+    updateData.closureDispatchers = closure.closureDispatchers;
+    updateData.closureCommunicatedTo = closure.closureCommunicatedTo;
+    if (closure.closureAddressedAt !== null) updateData.closureAddressedAt = closure.closureAddressedAt;
+    if (closure.closureAddressedBy !== null) updateData.closureAddressedBy = closure.closureAddressedBy;
+    if (closure.closureAddressedByEmail !== null) updateData.closureAddressedByEmail = closure.closureAddressedByEmail;
+    if (closure.closureReviewNotes !== null) updateData.closureReviewNotes = closure.closureReviewNotes;
+    updateData.closureReviewState = "pending";
+  }
 
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
 
@@ -188,7 +224,16 @@ export async function transitionClaimOutcome(opts: {
     claimId,
     action: "outcome_changed",
     details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}`,
-    metadata: { from: old.outcome, to: newOutcome, source, reason, approvedAmount, closureReason: closureReason ?? null, closureReasonLabel: closureLabel },
+    metadata: {
+      from: old.outcome,
+      to: newOutcome,
+      source,
+      reason,
+      approvedAmount,
+      closureReason: closureReason ?? null,
+      closureReasonLabel: closureLabel,
+      ...(closure ? { closure: closureAuditPayload(closure) } : {}),
+    },
     userEmail: actor.userEmail,
     userName: actor.userName,
   });
@@ -220,8 +265,9 @@ export async function transitionClaimStatusAndOutcome(opts: {
   actor: TransitionActor;
   extraFields?: Partial<typeof claimsTable.$inferInsert>;
   closureReason?: ClosureReason | null;
+  closure?: NormalizedClosure | null;
 }): Promise<TransitionResult> {
-  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields } = opts;
+  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields, closure } = opts;
   let { closureReason } = opts;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
@@ -251,6 +297,23 @@ export async function transitionClaimStatusAndOutcome(opts: {
     ...extraFields,
   };
   if (closureReason !== undefined) updateData.closureReason = closureReason ?? null;
+  if (closure) {
+    updateData.closureCategory = closure.closureCategory;
+    updateData.closureCategoryOther = closure.closureCategoryOther;
+    updateData.closureRootCause = closure.closureRootCause;
+    updateData.closureRootCauseOther = closure.closureRootCauseOther;
+    updateData.closureNarrative = closure.closureNarrative;
+    updateData.closureAccountabilityTags = closure.closureAccountabilityTags;
+    updateData.closureAccountabilityOther = closure.closureAccountabilityOther;
+    updateData.closureDrivers = closure.closureDrivers;
+    updateData.closureDispatchers = closure.closureDispatchers;
+    updateData.closureCommunicatedTo = closure.closureCommunicatedTo;
+    if (closure.closureAddressedAt !== null) updateData.closureAddressedAt = closure.closureAddressedAt;
+    if (closure.closureAddressedBy !== null) updateData.closureAddressedBy = closure.closureAddressedBy;
+    if (closure.closureAddressedByEmail !== null) updateData.closureAddressedByEmail = closure.closureAddressedByEmail;
+    if (closure.closureReviewNotes !== null) updateData.closureReviewNotes = closure.closureReviewNotes;
+    updateData.closureReviewState = "pending";
+  }
 
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
 
@@ -271,6 +334,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
       source, reason,
       closureReason: closureReason ?? null,
       closureReasonLabel: closureLabel,
+      ...(closure ? { closure: closureAuditPayload(closure) } : {}),
     },
     userEmail: actor.userEmail,
     userName: actor.userName,

@@ -61,7 +61,7 @@ catalogs:
       specifier: ^7.3.0
       version: 7.3.1
     zod:
-      specifier: ^3.25.76
+      specifier: 3.25.76
       version: 3.25.76
 
 overrides:
@@ -125,7 +125,7 @@ importers:
         version: 8.0.4
       openai:
         specifier: ^6.33.0
-        version: 6.33.0(zod@4.3.6)
+        version: 6.33.0(zod@3.25.76)
       openid-client:
         specifier: ^6.8.2
         version: 6.8.2
@@ -138,6 +138,9 @@ importers:
       playwright:
         specifier: ^1.58.2
         version: 1.58.2
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -7575,9 +7578,9 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.33.0(zod@4.3.6):
+  openai@6.33.0(zod@3.25.76):
     optionalDependencies:
-      zod: 4.3.6
+      zod: 3.25.76
 
   openid-client@6.8.2:
     dependencies:

@@ -13,6 +13,7 @@ import {
   VALID_GROUP_OUTCOME_BY_STATUS,
   SYSTEM_CONTROLLED_GROUP_STATUSES,
 } from "../lib/group-transitions";
+import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 
 const router: IRouter = Router();
 
@@ -254,21 +255,53 @@ router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void>
     }
   }
 
-  const [group] = await db.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, id)).returning();
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  const [previous] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!previous) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
   const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_edited",
-    details: `Invoice group ${group.invoiceNumber} updated`,
-    metadata: { fields: Object.keys(updateData) },
-    ...actor,
+
+  // Atomic block — same shape as the claim PATCH: row update + group_edited
+  // audit + (when applicable) auto_after_classify transition all run in one
+  // drizzle transaction, so we never end up with the row updated but no
+  // audit row, or vice versa.
+  const { saved, advanced } = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, id)).returning();
+    if (!updated) throw new Error("Invoice group not found");
+
+    await tx.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "group_edited",
+      details: `Invoice group ${updated.invoiceNumber} updated`,
+      metadata: { fields: Object.keys(updateData) },
+      ...actor,
+    });
+
+    // Auto-advance: same as the per-claim hook — first-time errorTypeId on
+    // a New / Needs Review group pushes it to Needs Evidence.
+    const becameClassified =
+      Object.prototype.hasOwnProperty.call(updateData, "errorTypeId") &&
+      typeof updated.errorTypeId === "string" && updated.errorTypeId.length > 0 &&
+      (previous.errorTypeId === null || previous.errorTypeId === "") &&
+      (previous.status === "New" || previous.status === "Needs Review");
+
+    if (becameClassified) {
+      const result = await transitionGroupStatus({
+        groupId: id,
+        newStatus: "Needs Evidence",
+        source: "auto_after_classify",
+        reason: `Auto-advanced after error type classified (${updated.errorTypeName ?? updated.errorTypeId})`,
+        actor,
+        systemOverride: true,
+        executor: tx,
+      });
+      return { saved: updated, advanced: result.group };
+    }
+
+    return { saved: updated, advanced: null as typeof updated | null };
   });
 
   emitGroupEvent(id, "group_edited", req);
-
-  res.json(group);
+  res.json(advanced ?? saved);
 }));
 
 router.patch("/invoice-groups/:id/status", asyncHandler(async (req, res): Promise<void> => {
@@ -312,6 +345,34 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
     res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
     return;
   }
+  if (outcome === "Non-Issue" && closureReason !== undefined && closureReason !== "non_issue") {
+    res.status(400).json({ error: `Non-Issue outcome requires closureReason "non_issue".` });
+    return;
+  }
+
+  let closure: NormalizedClosure | null = null;
+  const effectiveReason = closureReason ?? (outcome === "Non-Issue" ? "non_issue" : closureReason);
+  const reasonRequiresClosure =
+    effectiveReason === "not_contestable" || effectiveReason === "non_issue";
+  const wantsStructuredClosure =
+    outcome === "Withdrawn" || outcome === "Non-Issue";
+  const hasClosureFields =
+    wantsStructuredClosure && CLOSURE_DETAIL_FIELDS.some((f) => req.body[f] !== undefined);
+  if (wantsStructuredClosure && (hasClosureFields || reasonRequiresClosure)) {
+    try {
+      closure = parseClosurePayload({
+        ...req.body,
+        outcome,
+        closureReason: effectiveReason,
+      });
+    } catch (err) {
+      if (err instanceof ClosureValidationError) {
+        res.status(400).json({ error: err.message, issues: err.issues });
+        return;
+      }
+      throw err;
+    }
+  }
 
   let newStatus: string | undefined;
   if (outcome === "Approved" || outcome === "Partially Approved" || outcome === "Non-Issue" || outcome === "Withdrawn") {
@@ -330,7 +391,8 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         reason: `Outcome set to ${outcome}`,
         actor: actorFromReq(req),
         extraFields: approvedAmount !== undefined ? { approvedAmount: String(approvedAmount) } : undefined,
-        closureReason,
+        closureReason: effectiveReason ?? closureReason,
+        closure,
       });
       res.json(result.group);
     } else {
@@ -341,7 +403,8 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         reason: `Outcome set to ${outcome}`,
         actor: actorFromReq(req),
         approvedAmount: approvedAmount !== undefined ? String(approvedAmount) : undefined,
-        closureReason,
+        closureReason: effectiveReason ?? closureReason,
+        closure,
       });
       res.json(result.group);
     }

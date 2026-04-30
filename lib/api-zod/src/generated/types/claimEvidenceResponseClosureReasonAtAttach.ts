@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UpdateInvoiceGroupOutcomeBodyClosureReason =
-  (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
+/**
+ * @nullable
+ */
+export type ClaimEvidenceResponseClosureReasonAtAttach =
+  | (typeof ClaimEvidenceResponseClosureReasonAtAttach)[keyof typeof ClaimEvidenceResponseClosureReasonAtAttach]
+  | null;
 
-export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
+export const ClaimEvidenceResponseClosureReasonAtAttach = {
   payer_denied: "payer_denied",
   not_contestable: "not_contestable",
   accepted_loss: "accepted_loss",
