@@ -1,7 +1,7 @@
 const STAGES = [
   {
     n: "1",
-    label: "Triage",
+    label: "Classify",
     where: "Review Queue",
     desc: "Decide if a new invoice group is a real issue or a non-issue",
     color: "bg-[#F4A23E]",

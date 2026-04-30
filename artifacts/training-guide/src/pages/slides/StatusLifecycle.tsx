@@ -5,12 +5,12 @@ const STATUSES = [
     label: "Needs Review",
     kind: "amber" as const,
     when: "Right after upload",
-    means: "We don't yet know if this is a real issue. Triage it in the Review Queue.",
+    means: "We don't yet know if this is a real issue. Classify it in the Review Queue.",
   },
   {
     label: "Needs Evidence",
     kind: "orange" as const,
-    when: "After triage = Issue Found",
+    when: "After classification = Issue Found",
     means: "Real dispute. You owe it data, evidence, and a workflow run.",
   },
   {

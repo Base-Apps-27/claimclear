@@ -44,7 +44,7 @@ export default function NotesAudit() {
                   { t: "10:14a", a: "Evidence added: gps-log-2026-04-14.pdf", u: "Maria C." },
                   { t: "10:08a", a: "Error type changed → GPS Out of Range", u: "Maria C." },
                   { t: "9:51a", a: "Workflow step 1 answered: Yes — within range", u: "Maria C." },
-                  { t: "Yesterday", a: "Triaged from Review → Issue Found", u: "Jamal R." },
+                  { t: "Yesterday", a: "Classified from Review → Issue Found", u: "Jamal R." },
                   { t: "Yesterday", a: "Imported from MAS denial export", u: "system" },
                 ].map((a, i) => (
                   <div key={i} className="flex gap-[0.5vw]">

@@ -88,7 +88,7 @@ const GROUP_LABELS: Record<string, string> = {
   group_deleted: "Group deleted",
   group_held: "Placed on hold",
   group_hold_removed: "Hold removed",
-  group_triaged: "Triage completed",
+  group_triaged: "Classification completed",
   group_resolved: "Group resolved",
   group_denied: "Group denied",
   portal_draft_created: "Dispute write-up generated",

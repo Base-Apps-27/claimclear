@@ -109,7 +109,7 @@ export function humanizeAuditRow(row: AuditRow): HumanizedEvent {
       break;
     }
     case "group_triaged":
-      summary = `${actor} finished triage on ${target}`;
+      summary = `${actor} finished classifying ${target}`;
       break;
     case "group_held":
       summary = `${actor} placed ${target} on hold`;

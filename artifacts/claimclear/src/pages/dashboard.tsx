@@ -459,7 +459,7 @@ export default function Dashboard() {
                   </div>
                 ) : activity.events.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
-                    No recent activity yet. Triage a claim or import a job-status report to get started.
+                    No recent activity yet. Classify a claim or import a job-status report to get started.
                   </div>
                 ) : (
                   activity.events.slice(0, 8).map((event, i, arr) => {
@@ -519,7 +519,7 @@ export default function Dashboard() {
               Quick actions
             </span>
             <QuickActionLink href="/queue?tab=needs-review" icon={Sparkles}>
-              Triage queue
+              Classification queue
             </QuickActionLink>
             <QuickActionLink href="/import" icon={Upload}>
               Import job-status report

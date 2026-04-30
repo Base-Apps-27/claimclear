@@ -15,7 +15,7 @@ const ROUTINE = [
     time: "9:15",
     page: "Review Queue",
     tasks: [
-      "Triage every Needs Review group",
+      "Classify every Needs Review group",
       "Non-Issue → resolve at $0 with a one-line reason",
       "Issue Found → assign error type, send to Work Queue",
     ],

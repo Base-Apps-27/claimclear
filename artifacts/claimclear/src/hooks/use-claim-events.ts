@@ -141,7 +141,7 @@ const GROUP_EVENT_LABELS: Record<string, string> = {
   group_hold_placed: "placed the group on hold",
   group_hold_removed: "removed the hold",
   group_workflow_updated: "updated the workflow",
-  group_triaged: "triaged the group",
+  group_triaged: "classified the group",
 };
 
 export function useInvoiceGroupEvents(groupId: number | undefined) {

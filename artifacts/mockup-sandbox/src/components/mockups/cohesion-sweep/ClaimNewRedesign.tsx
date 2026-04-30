@@ -73,9 +73,9 @@ export function ClaimNewRedesign() {
 
             <Recommended
               tone="blue"
-              title="Save and route to triage"
+              title="Save and route to classification"
               body="The claim will land on Claims · Needs Review with the suggested error type pre-applied."
-              cta={<PrimaryButton tone="blue"><Save className="w-4 h-4" />Save and triage</PrimaryButton>}
+              cta={<PrimaryButton tone="blue"><Save className="w-4 h-4" />Save and classify</PrimaryButton>}
             />
 
             <ActionGroup label="Other ways to save">

@@ -40,7 +40,7 @@ import {
 } from "./_shared";
 
 const stages = [
-  { key: "triage", label: "Triage", desc: "Identify the error" },
+  { key: "triage", label: "Classify", desc: "Identify the error" },
   { key: "build", label: "Build Case", desc: "Gather evidence" },
   { key: "submit", label: "Submit", desc: "Send to payer" },
   { key: "await", label: "Await Response", desc: "Track payer reply" },
@@ -204,7 +204,7 @@ export function VariantTieredRail() {
                 <div className="text-[10px] font-semibold" style={{ color: "var(--cc-blue-fg)", opacity: 0.7 }}>STEP 1 OF 5</div>
               </div>
               <button className="cc-btn cc-btn-primary w-full justify-center text-base py-2.5 shadow-sm">
-                <Play className="w-4 h-4 mr-1" /> Triage this claim
+                <Play className="w-4 h-4 mr-1" /> Classify this claim
               </button>
               <div className="text-xs text-center mt-3" style={{ color: "var(--cc-blue-fg)", opacity: 0.8 }}>
                 Confirm dispute reason and prepare the case

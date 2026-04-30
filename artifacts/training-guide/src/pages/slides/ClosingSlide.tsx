@@ -1,6 +1,6 @@
 export default function ClosingSlide() {
   const checks = [
-    "Triage every Needs Review group",
+    "Classify every Needs Review group",
     "Process Action Required, oldest first",
     "Attach evidence and read the AI letter before submit",
     "Watch Portal Submissions for Failed rows",
@@ -20,7 +20,7 @@ export default function ClosingSlide() {
           </div>
           <h2 className="font-display text-white font-extrabold tracking-tight" style={{ fontSize: "4vw", lineHeight: "1.05" }}>You're ready to process your first batch.</h2>
           <p className="font-body text-white/60" style={{ fontSize: "1.4vw", marginTop: "2vh", maxWidth: "32vw" }}>
-            Open ClaimClear, click <span className="text-white font-semibold">Sign In with Replit</span>, head to the Review Queue, and start triaging. The system tells you what to do next at every step — just follow the badges.
+            Open ClaimClear, click <span className="text-white font-semibold">Sign In with Replit</span>, head to the Review Queue, and start classifying. The system tells you what to do next at every step — just follow the badges.
           </p>
         </div>
         <div style={{ flex: 1 }} className="flex flex-col justify-center">

@@ -42,7 +42,7 @@ export default function TriageNonIssue() {
         </Browser>
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
-        <Callout number="1" title="Click Non-Issue" body='From the triage screen, the green "Non-Issue (Resolve)" button opens the confirm dialog.' color="primary" />
+        <Callout number="1" title="Click Non-Issue" body='From the Classify screen, the green "Non-Issue (Resolve)" button opens the confirm dialog.' color="primary" />
         <Callout number="2" title="Write a real reason" body="One sentence is fine, but be specific. It's stamped to the Activity Feed forever as closure_reason: non_issue." color="orange" />
         <Callout number="3" title="Confirm to close at $0" body="All rides in the group flip to Resolved. No money is recorded as recovered or lost." />
         <div className="bg-orange/10 border border-orange/30 rounded-[0.7vw]" style={{ padding: "1vh 1vw" }}>

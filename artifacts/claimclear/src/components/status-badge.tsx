@@ -15,7 +15,7 @@ const statusDescriptions: Record<string, string> = {
   "Pending": "Outcome has not yet been determined. The claim is still being processed.",
   "Approved": "The payor approved the dispute. Funds should be recovered.",
   "Partially Approved": "The payor approved part of the disputed amount. Review the approved amount vs. claimed.",
-  "Non-Issue": "Triaged as non-issue. No action needed — financial impact set to $0.",
+  "Non-Issue": "Classified as non-issue. No action needed — financial impact set to $0.",
 };
 
 type StatusBadgeProps = {

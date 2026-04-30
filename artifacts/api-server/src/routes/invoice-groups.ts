@@ -371,7 +371,7 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
         newStatus: "Resolved",
         newOutcome: "Non-Issue",
         source: "triage",
-        reason: `Triaged as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
+        reason: `Classified as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
         actor,
         extraFields: {
           triageNotes: triageNotes || null,
@@ -394,7 +394,7 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
         groupId: id,
         newStatus: "New",
         source: "triage",
-        reason: `Issue identified during triage: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
+        reason: `Issue identified during classification: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
         actor,
         extraFields: {
           errorTypeId: String(errorTypeId),
@@ -406,7 +406,7 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
       res.json(result.group);
     }
   } catch (err: any) {
-    const msg = err.message || "Failed to triage";
+    const msg = err.message || "Failed to classify";
     if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
     res.status(400).json({ error: msg });
   }

@@ -106,7 +106,7 @@ function buildGroupStages(rides: Array<{ status: string }>): Stage[] {
     return rides.filter((r) => stageIndex(getRideStageKey(r.status)) >= idx).length;
   });
   const labels: Record<GroupStageKey, string> = {
-    triage: "Triage",
+    triage: "Classify",
     build: "Build Case",
     submit: "Submit",
     await: "Await Response",
@@ -863,7 +863,7 @@ export default function InvoiceGroupDetail() {
               {(() => {
                 let recommended: { label: string; description: string } | null = null;
                 if (group.status === "Needs Review") {
-                  recommended = { label: "Triage this group", description: "Classify it as a real issue or non-issue." };
+                  recommended = { label: "Classify this group", description: "Decide whether this is a real issue or non-issue." };
                 } else if (group.status === "On Hold") {
                   recommended = { label: "Resume when ready", description: "Remove the hold to continue processing." };
                 } else if (group.status === "Needs Evidence") {
@@ -910,7 +910,7 @@ export default function InvoiceGroupDetail() {
               </ActionGroup>
 
               {group.status === "Needs Review" && (
-                <ActionGroup label="Triage">
+                <ActionGroup label="Classify">
                   <PresenceLockWrapper reason={lockReason} className="w-full">
                     <ActionRow
                       label="Non-Issue (Resolve)"

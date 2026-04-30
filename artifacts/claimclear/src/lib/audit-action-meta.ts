@@ -80,7 +80,7 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   group_deleted: { label: "Group deleted", icon: Trash, iconClass: "text-rose-600", category: "status" },
   group_held: { label: "Placed on hold", icon: PauseCircle, iconClass: "text-amber-600", category: "hold" },
   group_hold_removed: { label: "Hold removed", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
-  group_triaged: { label: "Triage completed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
+  group_triaged: { label: "Classification completed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
   group_resolved: { label: "Group resolved", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
   group_denied: { label: "Group denied", icon: XCircle, iconClass: "text-rose-600", category: "status" },
   portal_draft_created: { label: "Dispute write-up generated", icon: FilePlus2, iconClass: "text-blue-600", category: "draft" },

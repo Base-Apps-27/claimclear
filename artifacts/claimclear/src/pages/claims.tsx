@@ -284,7 +284,7 @@ export default function ClaimsList() {
     <div className="space-y-4" data-testid="page-claims">
       <PageHeader
         title="Claims"
-        sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "claim" : "claims"} · search and triage individual claims`}
+        sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "claim" : "claims"} · search and classify individual claims`}
         accent="blue"
         actions={
           <Button asChild data-testid="button-create-claim">
@@ -745,7 +745,7 @@ export default function ClaimsList() {
             ) : (
               <Recommended
                 tone="blue"
-                title="Open Queue to triage"
+                title="Open Queue to classify"
                 body="Step through claims one at a time with full evidence and decision tools."
                 cta={
                   <ToneButton tone="blue" onClick={() => navigate("/queue")} testId="button-rail-open-queue">

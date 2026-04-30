@@ -180,7 +180,7 @@ export function DashboardRedesign() {
       <div className="cc-card p-1 flex items-center gap-1 flex-wrap" style={{ background: "var(--cc-muted)" }}>
         <span className="text-[10px] uppercase font-semibold px-3" style={{ color: "var(--cc-muted-fg)" }}>Quick actions</span>
         <button className="cc-btn cc-btn-sm" style={{ background: "var(--cc-card)" }}>
-          <Sparkles className="w-3 h-3" />Triage 24 unreviewed
+          <Sparkles className="w-3 h-3" />Classify 24 unreviewed
         </button>
         <button className="cc-btn cc-btn-sm" style={{ background: "var(--cc-card)" }}>
           <Upload className="w-3 h-3" />Import job-status report

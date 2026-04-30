@@ -7,7 +7,7 @@ import {
 import { claim, evidenceItems, auditLog, responses, InvoiceContextBar, PresenceAvatars, StatusPill } from "./_shared";
 
 const stages = [
-  { key: "triage",  label: "Triage",         desc: "Identify the error" },
+  { key: "triage",  label: "Classify",       desc: "Identify the error" },
   { key: "build",   label: "Build Case",     desc: "Gather evidence" },
   { key: "submit",  label: "Submit",         desc: "Send to payer" },
   { key: "await",   label: "Await Response", desc: "Track payer reply" },

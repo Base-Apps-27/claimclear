@@ -98,7 +98,7 @@ export function VariantTabs() {
             {/* Workflow summary card — links into the relevant tab */}
             <div className="space-y-3">
               <div className="text-sm font-semibold">Where we are</div>
-              <ProgressRow done label="Triaged" sub="Identified mileage issue" />
+              <ProgressRow done label="Classified" sub="Identified mileage issue" />
               <ProgressRow done label="Evidence collected" sub="2 items attached" />
               <ProgressRow done label="Submitted to portal" sub="Apr 26 · MAS-2026-A8841" />
               <ProgressRow active label="Awaiting decision" sub="Response received Apr 27" />

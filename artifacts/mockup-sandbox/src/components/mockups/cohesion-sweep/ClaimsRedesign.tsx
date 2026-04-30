@@ -35,7 +35,7 @@ const selected = [1, 2];
 export function ClaimsRedesign() {
   return (
     <div className="cc-scope p-6 space-y-4" style={{ width: "100%" }}>
-      <PageHeader title="Claims" sub="187 active · search and triage individual claims" accent="blue" />
+      <PageHeader title="Claims" sub="187 active · search and classify individual claims" accent="blue" />
 
       <FilterStrip tabs={tabs} active="All" counts={counts} accent="blue" />
 
@@ -56,7 +56,7 @@ export function ClaimsRedesign() {
               <span style={{ color: "var(--cc-blue-fg)", opacity: 0.85 }}> All have a likely error type already suggested.</span>
             </div>
             <button className="cc-btn cc-btn-sm" style={{ background: "var(--cc-blue-fg)", color: "white", border: "none" }}>
-              Open triage
+              Open classification
             </button>
           </div>
 
@@ -117,9 +117,9 @@ export function ClaimsRedesign() {
 
             <Recommended
               tone="blue"
-              title="Triage 24 unreviewed claims"
+              title="Classify 24 unreviewed claims"
               body="Walk through reviewer-assist on each one. Average 35 sec per claim."
-              cta={<PrimaryButton tone="blue"><Sparkles className="w-4 h-4" />Start triage</PrimaryButton>}
+              cta={<PrimaryButton tone="blue"><Sparkles className="w-4 h-4" />Start classifying</PrimaryButton>}
             />
 
             <ActionGroup label="On selection">

@@ -60,7 +60,7 @@ export default function TitleSlide() {
           className="font-body text-white/70"
           style={{ fontSize: "1.4vw", marginTop: "2vh", maxWidth: "55vw" }}
         >
-          Everything you need to do after claims are uploaded — triage, decide,
+          Everything you need to do after claims are uploaded — classify, decide,
           submit, and recover. Follow this guide and you'll process your first
           batch successfully.
         </p>

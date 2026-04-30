@@ -34,7 +34,7 @@ import {
 } from "./_shared";
 
 const stages = [
-  { key: "triage", label: "Triage", desc: "Identify the error" },
+  { key: "triage", label: "Classify", desc: "Identify the error" },
   { key: "build", label: "Build Case", desc: "Gather evidence" },
   { key: "submit", label: "Submit", desc: "Send to payer" },
   { key: "await", label: "Await Response", desc: "Track payer reply" },
@@ -71,7 +71,7 @@ export function VariantCommandBar() {
         {/* Center: The SINGLE Primary Action */}
         <div className="flex-1 flex justify-center">
           <button className="cc-btn cc-btn-primary px-6 py-2 shadow-sm flex items-center gap-2">
-            <span>Triage this claim</span>
+            <span>Classify this claim</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
@@ -209,7 +209,7 @@ export function VariantCommandBar() {
           <Section title="Dispute Workflow" icon={<Activity className="w-4 h-4" />}>
             <div className="rounded p-4" style={{ background: "var(--cc-blue-bg)", border: "1px solid var(--cc-blue-border)" }}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="cc-badge" style={{ background: "white", color: "var(--cc-blue-fg)", border: "1px solid var(--cc-blue-border)" }}>Triage Step</span>
+                <span className="cc-badge" style={{ background: "white", color: "var(--cc-blue-fg)", border: "1px solid var(--cc-blue-border)" }}>Classify Step</span>
                 <span className="text-xs" style={{ color: "var(--cc-blue-fg)", opacity: 0.8 }}>Identify issue</span>
               </div>
               <div className="font-medium mb-3 text-base" style={{ color: "var(--cc-blue-fg)" }}>Is this claim actually contestable?</div>

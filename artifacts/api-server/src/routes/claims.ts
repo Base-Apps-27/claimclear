@@ -544,7 +544,7 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
         newStatus: "Resolved",
         newOutcome: "Non-Issue",
         source: "triage",
-        reason: `Triaged as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
+        reason: `Classified as non-issue${triageNotes ? `: ${triageNotes}` : ""}`,
         actor: actorFromReq(req),
         extraFields: {
           claimAmount: "0",
@@ -564,7 +564,7 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
         claimId: id,
         newStatus: "New",
         source: "triage",
-        reason: `Issue identified during triage: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
+        reason: `Issue identified during classification: ${errorTypeName}${triageNotes ? `. ${triageNotes}` : ""}`,
         actor: actorFromReq(req),
         systemOverride: true,
         extraFields: {
@@ -577,7 +577,7 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
       res.json(result.claim);
     }
   } catch (err: any) {
-    const msg = err.message || "Failed to triage";
+    const msg = err.message || "Failed to classify";
     if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
     res.status(400).json({ error: msg });
   }

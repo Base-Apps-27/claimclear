@@ -6,7 +6,7 @@ import {
 import { claim, evidenceItems, responses, auditLog, InvoiceContextBar, PresenceAvatars, StatusPill } from "./_shared";
 
 const stages = [
-  { key: "triage",   label: "Triage",         desc: "Identify the error" },
+  { key: "triage",   label: "Classify",       desc: "Identify the error" },
   { key: "build",    label: "Build Case",     desc: "Gather evidence" },
   { key: "submit",   label: "Submit",         desc: "Send to payer" },
   { key: "await",    label: "Await Response", desc: "Track payer reply" },
@@ -83,7 +83,7 @@ export function VariantStepper() {
                   <ActionTile icon={<PauseCircle className="w-4 h-4" />} label="Place on hold" sub="Pause while waiting on info" />
                 </div>
                 <div className="mt-3 text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                  Need to fix something earlier? <a href="#" style={{ color: "var(--cc-primary)" }}>Reopen Triage</a> · <a href="#" style={{ color: "var(--cc-primary)" }}>Reopen Submit</a>
+                  Need to fix something earlier? <a href="#" style={{ color: "var(--cc-primary)" }}>Reopen Classify</a> · <a href="#" style={{ color: "var(--cc-primary)" }}>Reopen Submit</a>
                 </div>
               </div>
             </div>

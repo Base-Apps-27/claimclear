@@ -57,7 +57,7 @@ import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
 
 const CLAIM_STAGES: Stage[] = [
-  { key: "triage", label: "Triage", desc: "Identify the error" },
+  { key: "triage", label: "Classify", desc: "Identify the error" },
   { key: "build", label: "Build Case", desc: "Gather evidence" },
   { key: "submit", label: "Submit", desc: "Send to payer" },
   { key: "await", label: "Await Response", desc: "Track payer reply" },
@@ -1267,7 +1267,7 @@ export default function ClaimDetail() {
                 const status = claim.status;
                 let recommended: { label: string; description: string } | null = null;
                 if (status === "Needs Review" || status === "New") {
-                  recommended = { label: "Triage this claim", description: "Confirm the dispute reason and prepare the case." };
+                  recommended = { label: "Classify this claim", description: "Confirm the dispute reason and prepare the case." };
                 } else if (status === "Needs Evidence") {
                   recommended = { label: "Gather evidence", description: "Add supporting documents, then queue for portal." };
                 } else if (status === "Ready to Review") {

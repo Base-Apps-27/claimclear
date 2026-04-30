@@ -27,7 +27,7 @@ const legAggregates = {
 };
 
 const stages = [
-  { key: "triage",  label: "Triage",         done: 12, total: 12 },
+  { key: "triage",  label: "Classify",       done: 12, total: 12 },
   { key: "build",   label: "Build Case",     done: 11, total: 12 },
   { key: "submit",  label: "Submit",         done: 9,  total: 12 },
   { key: "await",   label: "Await Response", done: 4,  total: 9  },
@@ -53,7 +53,7 @@ const childClaims = [
 const auditLog = [
   { id: 1, at: "Apr 27, 2:16pm", actor: "system",      action: "Response received for C-2026-04812 (denial)" },
   { id: 2, at: "Apr 27, 9:00am", actor: "M. Rivera",   action: "Bulk-queued 4 legs for portal submission" },
-  { id: 3, at: "Apr 26, 4:30pm", actor: "M. Rivera",   action: "Triaged 5 remaining legs" },
+  { id: 3, at: "Apr 26, 4:30pm", actor: "M. Rivera",   action: "Classified 5 remaining legs" },
   { id: 4, at: "Apr 25, 11:02am", actor: "M. Rivera",  action: "Added shared evidence: Authorization Letter" },
   { id: 5, at: "Apr 24, 4:30pm", actor: "system",      action: "Imported invoice with 12 legs" },
 ];
@@ -196,7 +196,7 @@ export function InvoiceVariantPinned() {
             action={<button className="cc-btn cc-btn-ghost cc-btn-sm"><Eye className="w-3 h-3" />View bot log</button>}
           >
             <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
-              Bot has submitted 9 of 12 legs. Last batch: Apr 26, 9:01am · 3 legs still in <span className="font-medium">Needs Review</span> require triage before submission.
+              Bot has submitted 9 of 12 legs. Last batch: Apr 26, 9:01am · 3 legs still in <span className="font-medium">Needs Review</span> require classification before submission.
             </div>
             <div className="grid grid-cols-3 gap-2">
               <SubmissionTile state="success" count={9} label="Submitted" />
@@ -234,7 +234,7 @@ export function InvoiceVariantPinned() {
             <div className="p-4" style={{ background: "var(--cc-purple-bg)", borderTop: "1px solid var(--cc-purple-border)" }}>
               <div className="text-xs uppercase font-semibold mb-2" style={{ color: "var(--cc-purple-fg)" }}>Recommended</div>
               <button className="cc-btn w-full justify-center" style={{ background: "var(--cc-purple-fg)", color: "white", border: "none", padding: "0.5rem 0.75rem" }}>
-                <AlertCircle className="w-4 h-4" />Triage 2 legs in Needs Review
+                <AlertCircle className="w-4 h-4" />Classify 2 legs in Needs Review
               </button>
               <div className="text-xs mt-2" style={{ color: "var(--cc-purple-fg)", opacity: 0.85 }}>
                 These legs can't be submitted until they have an error type assigned.

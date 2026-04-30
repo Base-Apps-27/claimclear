@@ -5,7 +5,7 @@ export default function ReviewQueue() {
     <SlideShell
       step={3}
       totalSteps={22}
-      title="Triage New Uploads in the Review Queue"
+      title="Classify New Uploads in the Review Queue"
       subtitle="Every freshly imported invoice group lands here as 'Needs Review'. Your first decision: is this actually an issue?"
     >
       <div style={{ flex: 1.5 }}>
@@ -41,7 +41,7 @@ export default function ReviewQueue() {
                 </div>
               </div>
               <div className="bg-white rounded-[0.5vw] border border-primary/10 flex-1" style={{ padding: "1.2vh 1vw" }}>
-                <p className="font-display text-primary font-bold" style={{ fontSize: "1vw" }}>Triage INV-89421</p>
+                <p className="font-display text-primary font-bold" style={{ fontSize: "1vw" }}>Classify INV-89421</p>
                 <p className="font-body text-muted" style={{ fontSize: "0.7vw", marginTop: "0.3vh" }}>4 rides · $268 · Raw error: "Member name mismatch"</p>
                 <div style={{ marginTop: "1.5vh" }}>
                   <p className="font-display text-primary font-semibold" style={{ fontSize: "0.85vw" }}>What did you find?</p>

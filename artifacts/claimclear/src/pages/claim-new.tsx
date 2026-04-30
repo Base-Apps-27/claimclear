@@ -327,9 +327,9 @@ export default function ClaimNew() {
           >
             <ActionsRailRecommended
               label="Recommended"
-              description="The claim will land on Claims · Needs Review with a triage prompt for the next user."
+              description="The claim will land on Claims · Needs Review with a classification prompt for the next user."
             >
-              <div className="text-sm font-semibold mb-2">Save and route to triage</div>
+              <div className="text-sm font-semibold mb-2">Save and route to classification</div>
               <ToneButton
                 tone="blue"
                 type="submit"
@@ -339,7 +339,7 @@ export default function ClaimNew() {
                 {saving ? (
                   <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
                 ) : (
-                  <><Save className="h-4 w-4" /> Save and triage</>
+                  <><Save className="h-4 w-4" /> Save and classify</>
                 )}
               </ToneButton>
             </ActionsRailRecommended>
@@ -357,9 +357,9 @@ export default function ClaimNew() {
               <ActionRow
                 icon={<Save className="w-3.5 h-3.5" />}
                 label="Save as draft"
-                sub="Stays out of the triage queue"
+                sub="Stays out of the classification queue"
                 disabled
-                disabledReason="Draft mode is coming soon — for now use Save and triage."
+                disabledReason="Draft mode is coming soon — for now use Save and classify."
                 muted
                 testId="action-save-as-draft"
               />

@@ -1145,7 +1145,7 @@ function ClassifyStep({
       >
         <p className="text-sm text-muted-foreground">
           No error details were found in the imported claims. Continue to import — claims will land
-          in the triage queue without an error type.
+          in the classification queue without an error type.
         </p>
       </Section>
     );
@@ -1208,7 +1208,7 @@ function ClassifyStep({
                 <div className="pr-3">
                   {group.isMultiError ? (
                     <span className="text-xs text-muted-foreground italic">
-                      Assigned per claim during triage
+                      Assigned per claim during classification
                     </span>
                   ) : (
                     <Select
@@ -1306,14 +1306,14 @@ function ConfirmStep({
               <div className="flex items-center justify-between px-3 py-2">
                 <dt className="text-muted-foreground">Unknown error types</dt>
                 <dd className="text-amber-700 dark:text-amber-300">
-                  {unknownGroups.length} group{unknownGroups.length === 1 ? "" : "s"} will land in triage without a type
+                  {unknownGroups.length} group{unknownGroups.length === 1 ? "" : "s"} will land in classification without a type
                 </dd>
               </div>
             )}
             {multiErrorGroups.length > 0 && (
               <div className="flex items-center justify-between px-3 py-2">
                 <dt className="text-muted-foreground">Multi-error rows</dt>
-                <dd>{multiErrorGroups.length} group{multiErrorGroups.length === 1 ? "" : "s"} — error type assigned per claim during triage</dd>
+                <dd>{multiErrorGroups.length} group{multiErrorGroups.length === 1 ? "" : "s"} — error type assigned per claim during classification</dd>
               </div>
             )}
           </dl>
@@ -1509,7 +1509,7 @@ function MapRail({
         <ActionRow
           icon={<ArrowRight className="w-3.5 h-3.5" />}
           label="Skip classification & import"
-          sub="Land everything in the triage queue without an error type"
+          sub="Land everything in the classification queue without an error type"
           onClick={onSkip}
           disabled={classifyLoading}
           testId="rail-action-skip-classify"
@@ -1719,9 +1719,9 @@ function ConfirmRail({
     <>
       <ActionsRailRecommended
         label="Recommended"
-        description="The new claims are ready to triage in the queue."
+        description="The new claims are ready to classify in the queue."
       >
-        <div className="text-sm font-semibold mb-2">Open the triage queue</div>
+        <div className="text-sm font-semibold mb-2">Open the classification queue</div>
         <ToneButton tone="blue" onClick={() => navigate("/queue")} testId="rail-button-open-queue">
           <ArrowRight className="w-4 h-4" /> Open Queue
         </ToneButton>
@@ -1788,7 +1788,7 @@ function ReviewDialog({
             {group.matched
               ? " Already matched by an existing coding rule."
               : group.isMultiError
-                ? " This is a multi-error row — error types are assigned per claim during triage."
+                ? " This is a multi-error row — error types are assigned per claim during classification."
                 : " Pick the right type to apply it to every row in the group."}
           </DialogDescription>
         </DialogHeader>
