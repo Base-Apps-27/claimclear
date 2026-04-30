@@ -87,6 +87,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .string()
     .optional()
     .describe("Filter groups with total amount <= this value"),
+  expiring: zod
+    .enum(["soon", "urgent"])
+    .optional()
+    .describe(
+      'Restrict to actionable groups whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
+    ),
   sort: zod
     .enum([
       "invoiceNumber",
@@ -226,6 +232,7 @@ export const ExportInvoiceGroupsCsvQueryParams = zod.object({
   createdTo: zod.coerce.string().optional(),
   amountMin: zod.coerce.string().optional(),
   amountMax: zod.coerce.string().optional(),
+  expiring: zod.enum(["soon", "urgent"]).optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -1703,6 +1710,12 @@ export const ListClaimsQueryParams = zod.object({
     .describe(
       "Filter claims to a specific client\/member number (exact match).",
     ),
+  expiring: zod
+    .enum(["soon", "urgent"])
+    .optional()
+    .describe(
+      'Restrict to actionable claims whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
+    ),
   sort: zod
     .enum([
       "confNumber",
@@ -1865,6 +1878,7 @@ export const ExportClaimsCsvQueryParams = zod.object({
   serviceDateTo: zod.coerce.string().optional(),
   carNumber: zod.coerce.string().optional(),
   clientNumber: zod.coerce.string().optional(),
+  expiring: zod.enum(["soon", "urgent"]).optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce

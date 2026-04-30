@@ -2137,6 +2137,10 @@ export type ListInvoiceGroupsParams = {
    */
   amountMax?: string;
   /**
+   * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+   */
+  expiring?: ListInvoiceGroupsExpiring;
+  /**
    * Column to sort by
    */
   sort?: ListInvoiceGroupsSort;
@@ -2154,6 +2158,14 @@ export type ListInvoiceGroupsErrorDetails =
 export const ListInvoiceGroupsErrorDetails = {
   empty: "empty",
   present: "present",
+} as const;
+
+export type ListInvoiceGroupsExpiring =
+  (typeof ListInvoiceGroupsExpiring)[keyof typeof ListInvoiceGroupsExpiring];
+
+export const ListInvoiceGroupsExpiring = {
+  soon: "soon",
+  urgent: "urgent",
 } as const;
 
 export type ListInvoiceGroupsSort =
@@ -2187,6 +2199,7 @@ export type ExportInvoiceGroupsCsvParams = {
   createdTo?: string;
   amountMin?: string;
   amountMax?: string;
+  expiring?: ExportInvoiceGroupsCsvExpiring;
   sort?: string;
   dir?: string;
   /**
@@ -2194,6 +2207,14 @@ export type ExportInvoiceGroupsCsvParams = {
    */
   columns?: string;
 };
+
+export type ExportInvoiceGroupsCsvExpiring =
+  (typeof ExportInvoiceGroupsCsvExpiring)[keyof typeof ExportInvoiceGroupsCsvExpiring];
+
+export const ExportInvoiceGroupsCsvExpiring = {
+  soon: "soon",
+  urgent: "urgent",
+} as const;
 
 export type UpdateInvoiceGroupStatusBody = {
   status: string;
@@ -2281,6 +2302,10 @@ export type ListClaimsParams = {
    */
   clientNumber?: string;
   /**
+   * Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+   */
+  expiring?: ListClaimsExpiring;
+  /**
    * Column to sort by
    */
   sort?: ListClaimsSort;
@@ -2291,6 +2316,14 @@ export type ListClaimsParams = {
   limit?: number;
   offset?: number;
 };
+
+export type ListClaimsExpiring =
+  (typeof ListClaimsExpiring)[keyof typeof ListClaimsExpiring];
+
+export const ListClaimsExpiring = {
+  soon: "soon",
+  urgent: "urgent",
+} as const;
 
 export type ListClaimsSort =
   (typeof ListClaimsSort)[keyof typeof ListClaimsSort];
@@ -2325,6 +2358,7 @@ export type ExportClaimsCsvParams = {
   serviceDateTo?: string;
   carNumber?: string;
   clientNumber?: string;
+  expiring?: ExportClaimsCsvExpiring;
   sort?: string;
   dir?: string;
   /**
@@ -2332,6 +2366,14 @@ export type ExportClaimsCsvParams = {
    */
   columns?: string;
 };
+
+export type ExportClaimsCsvExpiring =
+  (typeof ExportClaimsCsvExpiring)[keyof typeof ExportClaimsCsvExpiring];
+
+export const ExportClaimsCsvExpiring = {
+  soon: "soon",
+  urgent: "urgent",
+} as const;
 
 export type GetClaimValidTransitions200 = {
   currentStatus?: string;

@@ -14,6 +14,7 @@ import {
   SYSTEM_CONTROLLED_GROUP_STATUSES,
 } from "../lib/group-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
+import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 
 const router: IRouter = Router();
 
@@ -130,6 +131,11 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   }
   if (amountMax) {
     conditions.push(lte(sql`${invoiceGroupsTable.totalAmount}::numeric`, sql`${amountMax}::numeric`));
+  }
+
+  const expiringMode = parseExpiringMode(query.expiring);
+  if (expiringMode) {
+    conditions.push(buildInvoiceGroupExpiringCondition(expiringMode));
   }
 
   return conditions.length > 0 ? and(...conditions) : undefined;

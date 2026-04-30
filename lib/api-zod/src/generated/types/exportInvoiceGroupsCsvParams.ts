@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ExportInvoiceGroupsCsvExpiring } from "./exportInvoiceGroupsCsvExpiring";
 
 export type ExportInvoiceGroupsCsvParams = {
   status?: string;
@@ -16,6 +17,7 @@ export type ExportInvoiceGroupsCsvParams = {
   createdTo?: string;
   amountMin?: string;
   amountMax?: string;
+  expiring?: ExportInvoiceGroupsCsvExpiring;
   sort?: string;
   dir?: string;
   /**

@@ -116,6 +116,9 @@ export default function ClaimsList() {
   const filterServiceDateTo = get("serviceDateTo");
   const filterCarNumber = get("carNumber");
   const filterClientNumber = get("clientNumber");
+  const filterExpiringRaw = get("expiring");
+  const filterExpiring: "" | "soon" | "urgent" =
+    filterExpiringRaw === "soon" || filterExpiringRaw === "urgent" ? filterExpiringRaw : "";
 
   const activeTab: ClaimsTabKey = deriveActiveTab(filterStatuses);
 
@@ -148,6 +151,7 @@ export default function ClaimsList() {
     serviceDateTo: filterServiceDateTo || undefined,
     carNumber: filterCarNumber || undefined,
     clientNumber: filterClientNumber || undefined,
+    expiring: (filterExpiring || undefined) as ListClaimsParams["expiring"],
     sort: (sortCol || undefined) as typeof ListClaimsSort[keyof typeof ListClaimsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListClaimsDir[keyof typeof ListClaimsDir] | undefined,
     limit: pageSize,
@@ -210,10 +214,10 @@ export default function ClaimsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, clientNumber: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, clientNumber: null, expiring: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterServiceDateFrom || !!filterServiceDateTo || !!filterCarNumber || !!filterClientNumber;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterServiceDateFrom || !!filterServiceDateTo || !!filterCarNumber || !!filterClientNumber || !!filterExpiring;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -248,8 +252,12 @@ export default function ClaimsList() {
     if (filterClientNumber) {
       result.push({ key: "clientNumber", label: `Member: ${filterClientNumber}`, onRemove: () => set({ clientNumber: null, page: null }, false) });
     }
+    if (filterExpiring) {
+      const label = filterExpiring === "urgent" ? "Urgent (≤ 3 days)" : "Expiring soon (≤ 10 days)";
+      result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
+    }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterServiceDateFrom, filterServiceDateTo, filterCarNumber, filterClientNumber, errorTypes, activeTab, set]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterServiceDateFrom, filterServiceDateTo, filterCarNumber, filterClientNumber, filterExpiring, errorTypes, activeTab, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -463,6 +471,20 @@ export default function ClaimsList() {
                         </div>
                       </div>
                     </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-muted-foreground">Filing Deadline</Label>
+                      <Select value={filterExpiring || "__all__"} onValueChange={v => set({ expiring: v === "__all__" ? null : v, page: null }, false)}>
+                        <SelectTrigger className="h-8 text-sm" data-testid="select-filter-expiring">
+                          <SelectValue placeholder="All deadlines" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All deadlines</SelectItem>
+                          <SelectItem value="soon">Expiring soon (≤ 10 days)</SelectItem>
+                          <SelectItem value="urgent">Urgent (≤ 3 days)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Only counts claims with actionable status; weekend deadlines are shifted to Friday.</p>
+                    </div>
                     <div className="flex justify-between pt-2 border-t">
                       <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setFilterOpen(false); }} className="text-xs">Clear all</Button>
                       <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">Done</Button>
@@ -480,7 +502,7 @@ export default function ClaimsList() {
 
             <FilterChipStrip
               chips={chips}
-              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, page: null }, false); }}
+              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, clientNumber: null, expiring: null, page: null }, false); }}
             />
 
             <CardContent className="p-0">

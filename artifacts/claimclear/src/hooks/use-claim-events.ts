@@ -8,6 +8,7 @@ import {
   getGetInvoiceGroupQueryKey,
   getListInvoiceGroupEvidenceQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { toast } from "@/hooks/use-toast";
@@ -295,6 +296,68 @@ export function useClaimsListEvents() {
 
     return () => {
       es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [queryClient]);
+}
+
+// Dashboard summary/activity invalidation. Listens to both the claims-list
+// and invoice-groups-list SSE streams so any status/outcome change anywhere
+// in the app refreshes the "Expiring Soon" cards and KPIs in real time.
+export function useDashboardLiveUpdates() {
+  const queryClient = useQueryClient();
+  const retryCount = useRef(0);
+
+  useEffect(() => {
+    const sources: EventSource[] = [];
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    function invalidateDashboard() {
+      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
+        },
+      });
+    }
+
+    function connect() {
+      if (cancelled) return;
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+      const groupsEs = new EventSource(`${base}/api/invoice-groups/events`, { withCredentials: true });
+      groupsEs.addEventListener("group_update", invalidateDashboard);
+      groupsEs.onopen = () => { retryCount.current = 0; };
+      groupsEs.onerror = () => {
+        groupsEs.close();
+      };
+      sources.push(groupsEs);
+
+      const claimsEs = new EventSource(`${base}/api/claims/events`, { withCredentials: true });
+      claimsEs.addEventListener("claim_update", invalidateDashboard);
+      claimsEs.addEventListener("group_update", invalidateDashboard);
+      claimsEs.onopen = () => { retryCount.current = 0; };
+      claimsEs.onerror = () => {
+        claimsEs.close();
+        if (cancelled) return;
+        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
+        retryCount.current += 1;
+        reconnectTimer = setTimeout(() => {
+          // Close any leftover sources before reconnecting.
+          while (sources.length) sources.pop()?.close();
+          connect();
+        }, delay);
+      };
+      sources.push(claimsEs);
+    }
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      while (sources.length) sources.pop()?.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [queryClient]);

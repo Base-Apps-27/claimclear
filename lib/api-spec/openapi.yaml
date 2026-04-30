@@ -155,6 +155,12 @@ paths:
           description: Filter groups with total amount <= this value
           schema:
             type: string
+        - name: expiring
+          in: query
+          description: Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+          schema:
+            type: string
+            enum: [soon, urgent]
         - name: sort
           in: query
           description: Column to sort by
@@ -227,6 +233,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: expiring
+          in: query
+          schema:
+            type: string
+            enum: [soon, urgent]
         - name: sort
           in: query
           schema:
@@ -658,6 +669,12 @@ paths:
           description: Filter claims to a specific client/member number (exact match).
           schema:
             type: string
+        - name: expiring
+          in: query
+          description: Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+          schema:
+            type: string
+            enum: [soon, urgent]
         - name: sort
           in: query
           description: Column to sort by
@@ -759,6 +776,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: expiring
+          in: query
+          schema:
+            type: string
+            enum: [soon, urgent]
         - name: sort
           in: query
           schema:

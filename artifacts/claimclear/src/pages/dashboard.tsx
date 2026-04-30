@@ -22,6 +22,7 @@ import {
   type DashboardActivityEvent,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
 import { PageHeader, Section } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
@@ -122,6 +123,7 @@ function QuickActionLink({ href, icon: Icon, children }: { href: string; icon: R
 export default function Dashboard() {
   const { user } = useAuth();
   const firstName = firstNameFromUser(user);
+  useDashboardLiveUpdates();
   const { data: summary, isLoading } = useGetDashboardSummary({
     query: { queryKey: getGetDashboardSummaryQueryKey() },
   });
@@ -278,7 +280,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <Link
-                href="/invoice-groups"
+                href="/invoice-groups?expiring=soon"
                 className="text-xs font-medium"
                 style={{ color: "hsl(var(--cc-red-fg))" }}
               >

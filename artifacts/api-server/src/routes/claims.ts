@@ -13,6 +13,7 @@ import {
   SYSTEM_CONTROLLED_STATUSES,
 } from "../lib/claim-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
+import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 
 const router: IRouter = Router();
 
@@ -150,6 +151,11 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   }
   if (clientNumber && typeof clientNumber === "string") {
     conditions.push(eq(claimsTable.clientNumber, clientNumber));
+  }
+
+  const expiringMode = parseExpiringMode(query.expiring);
+  if (expiringMode) {
+    conditions.push(buildClaimExpiringCondition(expiringMode));
   }
 
   return conditions.length > 0 ? and(...conditions) : undefined;

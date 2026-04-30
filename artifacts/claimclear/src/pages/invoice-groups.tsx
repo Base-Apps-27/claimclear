@@ -111,6 +111,9 @@ export default function InvoiceGroupsList() {
   const filterCreatedTo = get("createdTo");
   const filterAmountMin = get("amountMin");
   const filterAmountMax = get("amountMax");
+  const filterExpiringRaw = get("expiring");
+  const filterExpiring: "" | "soon" | "urgent" =
+    filterExpiringRaw === "soon" || filterExpiringRaw === "urgent" ? filterExpiringRaw : "";
 
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
@@ -140,6 +143,7 @@ export default function InvoiceGroupsList() {
     createdTo: filterCreatedTo || undefined,
     amountMin: filterAmountMin || undefined,
     amountMax: filterAmountMax || undefined,
+    expiring: (filterExpiring || undefined) as ListInvoiceGroupsParams["expiring"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     limit: pageSize,
@@ -202,10 +206,10 @@ export default function InvoiceGroupsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -233,8 +237,12 @@ export default function InvoiceGroupsList() {
       const label = filterAmountMin && filterAmountMax ? `Amount: $${filterAmountMin} – $${filterAmountMax}` : filterAmountMin ? `Amount ≥ $${filterAmountMin}` : `Amount ≤ $${filterAmountMax}`;
       result.push({ key: "amount", label, onRemove: () => set({ amountMin: null, amountMax: null, page: null }, false) });
     }
+    if (filterExpiring) {
+      const label = filterExpiring === "urgent" ? "Urgent (≤ 3 days)" : "Expiring soon (≤ 10 days)";
+      result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
+    }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, errorTypes, activeTab]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, errorTypes, activeTab]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -447,6 +455,20 @@ export default function InvoiceGroupsList() {
                         </div>
                       </div>
                     </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-muted-foreground">Filing Deadline</Label>
+                      <Select value={filterExpiring || "__all__"} onValueChange={v => set({ expiring: v === "__all__" ? null : v, page: null }, false)}>
+                        <SelectTrigger className="h-8 text-sm" data-testid="select-filter-expiring">
+                          <SelectValue placeholder="All deadlines" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All deadlines</SelectItem>
+                          <SelectItem value="soon">Expiring soon (≤ 10 days)</SelectItem>
+                          <SelectItem value="urgent">Urgent (≤ 3 days)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Only counts groups with actionable status; weekend deadlines are shifted to Friday.</p>
+                    </div>
                     <div className="flex justify-between pt-2 border-t">
                       <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setFilterOpen(false); }} className="text-xs">Clear all</Button>
                       <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">Done</Button>
@@ -464,7 +486,7 @@ export default function InvoiceGroupsList() {
 
             <FilterChipStrip
               chips={chips}
-              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, page: null }, false); }}
+              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, page: null }, false); }}
             />
 
             <CardContent className="p-0">

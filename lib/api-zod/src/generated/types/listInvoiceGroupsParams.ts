@@ -7,6 +7,7 @@
  */
 import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
 import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
+import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
 import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
 
 export type ListInvoiceGroupsParams = {
@@ -43,6 +44,10 @@ export type ListInvoiceGroupsParams = {
    * Filter groups with total amount <= this value
    */
   amountMax?: string;
+  /**
+   * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+   */
+  expiring?: ListInvoiceGroupsExpiring;
   /**
    * Column to sort by
    */

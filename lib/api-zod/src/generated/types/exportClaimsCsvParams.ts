@@ -5,6 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ExportClaimsCsvExpiring } from "./exportClaimsCsvExpiring";
 
 export type ExportClaimsCsvParams = {
   status?: string;
@@ -19,6 +20,7 @@ export type ExportClaimsCsvParams = {
   serviceDateTo?: string;
   carNumber?: string;
   clientNumber?: string;
+  expiring?: ExportClaimsCsvExpiring;
   sort?: string;
   dir?: string;
   /**

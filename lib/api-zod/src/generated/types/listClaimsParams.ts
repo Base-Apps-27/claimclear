@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListClaimsDir } from "./listClaimsDir";
+import type { ListClaimsExpiring } from "./listClaimsExpiring";
 import type { ListClaimsSort } from "./listClaimsSort";
 
 export type ListClaimsParams = {
@@ -54,6 +55,10 @@ export type ListClaimsParams = {
    * Filter claims to a specific client/member number (exact match).
    */
   clientNumber?: string;
+  /**
+   * Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+   */
+  expiring?: ListClaimsExpiring;
   /**
    * Column to sort by
    */
