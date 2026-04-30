@@ -162,6 +162,8 @@ export * from "./placeHoldBody";
 export * from "./pollSubmissionsBody";
 export * from "./portalResponseItem";
 export * from "./portalResponseItemBodyFormat";
+export * from "./portalResponseItemClassifierConfidence";
+export * from "./portalResponseItemClassifierSource";
 export * from "./portalResponseItemMetadata";
 export * from "./portalResponseItemResponseType";
 export * from "./portalResponseItemSource";

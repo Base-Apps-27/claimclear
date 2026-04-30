@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PortalResponseItemBodyFormat } from "./portalResponseItemBodyFormat";
+import type { PortalResponseItemClassifierConfidence } from "./portalResponseItemClassifierConfidence";
+import type { PortalResponseItemClassifierSource } from "./portalResponseItemClassifierSource";
 import type { PortalResponseItemMetadata } from "./portalResponseItemMetadata";
 import type { PortalResponseItemResponseType } from "./portalResponseItemResponseType";
 import type { PortalResponseItemSource } from "./portalResponseItemSource";
@@ -33,6 +35,18 @@ with whitespace preserved.
   conversationId?: string | null;
   processed: boolean;
   autoLinked: boolean;
+  /** AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed. */
+  aiSummary?: string | null;
+  /** Dollar amount mentioned in the email (e.g. "$45.20"), if any. */
+  extractedAmount?: string | null;
+  /** Any deadline mentioned in the email body, in free-form text. */
+  extractedDeadline?: string | null;
+  /** Specific action the payor is requesting from the provider, if any. */
+  requestedAction?: string | null;
+  /** Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers. */
+  classifierSource?: PortalResponseItemClassifierSource;
+  /** AI's self-reported confidence in its classification, if classifierSource is "ai". */
+  classifierConfidence?: PortalResponseItemClassifierConfidence;
   metadata?: PortalResponseItemMetadata;
   receivedAt: string;
   createdAt: string;

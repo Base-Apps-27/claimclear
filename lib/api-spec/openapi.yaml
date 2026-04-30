@@ -4943,6 +4943,31 @@ components:
           type: boolean
         autoLinked:
           type: boolean
+        aiSummary:
+          type: string
+          nullable: true
+          description: AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.
+        extractedAmount:
+          type: string
+          nullable: true
+          description: Dollar amount mentioned in the email (e.g. "$45.20"), if any.
+        extractedDeadline:
+          type: string
+          nullable: true
+          description: Any deadline mentioned in the email body, in free-form text.
+        requestedAction:
+          type: string
+          nullable: true
+          description: Specific action the payor is requesting from the provider, if any.
+        classifierSource:
+          type: string
+          enum: [keyword, ai, manual]
+          description: Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.
+        classifierConfidence:
+          type: string
+          nullable: true
+          enum: [high, medium, low, null]
+          description: AI's self-reported confidence in its classification, if classifierSource is "ai".
         metadata:
           type: object
           nullable: true

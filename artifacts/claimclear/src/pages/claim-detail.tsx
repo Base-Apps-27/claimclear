@@ -918,6 +918,7 @@ export default function ClaimDetail() {
                     other: "Other",
                   };
                   const colorClass = typeColors[resp.responseType] || typeColors.other;
+                  const isAck = resp.responseType === "acknowledgment";
                   return (
                     <div key={resp.id} className={`border rounded-lg p-4 space-y-2 ${colorClass}`}>
                       <div className="flex items-center justify-between">
@@ -933,7 +934,17 @@ export default function ClaimDetail() {
                           <Badge variant="outline" className="text-xs">
                             {typeLabels[resp.responseType] || resp.responseType}
                           </Badge>
-                          {!resp.processed && (
+                          {isAck && (
+                            <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-300">
+                              Receipt only — no action
+                            </Badge>
+                          )}
+                          {resp.classifierSource === "ai" && (
+                            <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                              AI summarized
+                            </Badge>
+                          )}
+                          {!resp.processed && !isAck && (
                             <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
                               Needs Review
                             </Badge>
@@ -946,6 +957,26 @@ export default function ClaimDetail() {
 
                       {resp.subject && (
                         <p className="text-sm font-medium">{resp.subject}</p>
+                      )}
+
+                      {resp.aiSummary && (
+                        <div className="text-sm bg-white/70 border border-current/10 rounded-md p-3">
+                          <div className="text-[11px] uppercase tracking-wide opacity-60 mb-1">Summary</div>
+                          <div className="leading-snug">{resp.aiSummary}</div>
+                          {(resp.requestedAction || resp.extractedAmount || resp.extractedDeadline) && (
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-80">
+                              {resp.requestedAction && (
+                                <span><strong>They want:</strong> {resp.requestedAction}</span>
+                              )}
+                              {resp.extractedAmount && (
+                                <span><strong>Amount:</strong> {resp.extractedAmount}</span>
+                              )}
+                              {resp.extractedDeadline && (
+                                <span><strong>Deadline:</strong> {resp.extractedDeadline}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {(() => {

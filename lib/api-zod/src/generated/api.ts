@@ -623,6 +623,47 @@ export const GetInvoiceGroupResponse = zod
             conversationId: zod.string().nullish(),
             processed: zod.boolean(),
             autoLinked: zod.boolean(),
+            aiSummary: zod
+              .string()
+              .nullish()
+              .describe(
+                "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+              ),
+            extractedAmount: zod
+              .string()
+              .nullish()
+              .describe(
+                'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+              ),
+            extractedDeadline: zod
+              .string()
+              .nullish()
+              .describe(
+                "Any deadline mentioned in the email body, in free-form text.",
+              ),
+            requestedAction: zod
+              .string()
+              .nullish()
+              .describe(
+                "Specific action the payor is requesting from the provider, if any.",
+              ),
+            classifierSource: zod
+              .enum(["keyword", "ai", "manual"])
+              .optional()
+              .describe(
+                "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+              ),
+            classifierConfidence: zod
+              .union([
+                zod.literal("high"),
+                zod.literal("medium"),
+                zod.literal("low"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+              ),
             metadata: zod.object({}).passthrough().nullish(),
             receivedAt: zod.string(),
             createdAt: zod.string(),
@@ -5290,6 +5331,47 @@ export const ListResponsesResponse = zod.object({
         conversationId: zod.string().nullish(),
         processed: zod.boolean(),
         autoLinked: zod.boolean(),
+        aiSummary: zod
+          .string()
+          .nullish()
+          .describe(
+            "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+          ),
+        extractedAmount: zod
+          .string()
+          .nullish()
+          .describe(
+            'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+          ),
+        extractedDeadline: zod
+          .string()
+          .nullish()
+          .describe(
+            "Any deadline mentioned in the email body, in free-form text.",
+          ),
+        requestedAction: zod
+          .string()
+          .nullish()
+          .describe(
+            "Specific action the payor is requesting from the provider, if any.",
+          ),
+        classifierSource: zod
+          .enum(["keyword", "ai", "manual"])
+          .optional()
+          .describe(
+            "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+          ),
+        classifierConfidence: zod
+          .union([
+            zod.literal("high"),
+            zod.literal("medium"),
+            zod.literal("low"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+          ),
         metadata: zod.object({}).passthrough().nullish(),
         receivedAt: zod.string(),
         createdAt: zod.string(),
@@ -5336,6 +5418,45 @@ export const GetResponseResponse = zod.object({
   conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
+  aiSummary: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+    ),
+  extractedAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+    ),
+  extractedDeadline: zod
+    .string()
+    .nullish()
+    .describe("Any deadline mentioned in the email body, in free-form text."),
+  requestedAction: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific action the payor is requesting from the provider, if any.",
+    ),
+  classifierSource: zod
+    .enum(["keyword", "ai", "manual"])
+    .optional()
+    .describe(
+      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+    ),
+  classifierConfidence: zod
+    .union([
+      zod.literal("high"),
+      zod.literal("medium"),
+      zod.literal("low"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+    ),
   metadata: zod.object({}).passthrough().nullish(),
   receivedAt: zod.string(),
   createdAt: zod.string(),
@@ -5393,6 +5514,45 @@ export const ProcessResponseResponse = zod.object({
   conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
+  aiSummary: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+    ),
+  extractedAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+    ),
+  extractedDeadline: zod
+    .string()
+    .nullish()
+    .describe("Any deadline mentioned in the email body, in free-form text."),
+  requestedAction: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific action the payor is requesting from the provider, if any.",
+    ),
+  classifierSource: zod
+    .enum(["keyword", "ai", "manual"])
+    .optional()
+    .describe(
+      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+    ),
+  classifierConfidence: zod
+    .union([
+      zod.literal("high"),
+      zod.literal("medium"),
+      zod.literal("low"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+    ),
   metadata: zod.object({}).passthrough().nullish(),
   receivedAt: zod.string(),
   createdAt: zod.string(),
@@ -5440,6 +5600,45 @@ export const LinkResponseResponse = zod.object({
   conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
+  aiSummary: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+    ),
+  extractedAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+    ),
+  extractedDeadline: zod
+    .string()
+    .nullish()
+    .describe("Any deadline mentioned in the email body, in free-form text."),
+  requestedAction: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific action the payor is requesting from the provider, if any.",
+    ),
+  classifierSource: zod
+    .enum(["keyword", "ai", "manual"])
+    .optional()
+    .describe(
+      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+    ),
+  classifierConfidence: zod
+    .union([
+      zod.literal("high"),
+      zod.literal("medium"),
+      zod.literal("low"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+    ),
   metadata: zod.object({}).passthrough().nullish(),
   receivedAt: zod.string(),
   createdAt: zod.string(),
@@ -5489,6 +5688,45 @@ export const ReassignResponseResponse = zod.object({
   conversationId: zod.string().nullish(),
   processed: zod.boolean(),
   autoLinked: zod.boolean(),
+  aiSummary: zod
+    .string()
+    .nullish()
+    .describe(
+      "AI-extracted 1-2 sentence summary of the email content. Null if AI classification was not run or failed.",
+    ),
+  extractedAmount: zod
+    .string()
+    .nullish()
+    .describe(
+      'Dollar amount mentioned in the email (e.g. \"$45.20\"), if any.',
+    ),
+  extractedDeadline: zod
+    .string()
+    .nullish()
+    .describe("Any deadline mentioned in the email body, in free-form text."),
+  requestedAction: zod
+    .string()
+    .nullish()
+    .describe(
+      "Specific action the payor is requesting from the provider, if any.",
+    ),
+  classifierSource: zod
+    .enum(["keyword", "ai", "manual"])
+    .optional()
+    .describe(
+      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+    ),
+  classifierConfidence: zod
+    .union([
+      zod.literal("high"),
+      zod.literal("medium"),
+      zod.literal("low"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'AI\'s self-reported confidence in its classification, if classifierSource is \"ai\".',
+    ),
   metadata: zod.object({}).passthrough().nullish(),
   receivedAt: zod.string(),
   createdAt: zod.string(),

@@ -5,6 +5,7 @@ import type { InboxMessage } from "./outlook";
 import { logger } from "./logger";
 import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
+import { tryClassifyInboundEmail, type ClassifiedDecision, type InboundEmailContext } from "./inbound-email-classifier";
 
 interface MatchResult {
   claimId: number | null;
@@ -203,15 +204,72 @@ export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResul
   return null;
 }
 
+/**
+ * Build the small context payload the AI classifier uses to ground its output
+ * (payor name, conf number, amount, etc.). Best-effort; missing context is fine.
+ */
+async function loadInboundContext(match: MatchResult): Promise<InboundEmailContext> {
+  try {
+    if (match.claimId) {
+      const [row] = await db.select({
+        confNumber: claimsTable.confNumber,
+        claimAmount: claimsTable.claimAmount,
+        date: claimsTable.date,
+        errorTypeName: claimsTable.errorTypeName,
+        payorEmail: claimsTable.payorEmail,
+      }).from(claimsTable).where(eq(claimsTable.id, match.claimId)).limit(1);
+      if (row) {
+        return {
+          confNumber: row.confNumber,
+          claimAmount: row.claimAmount ?? null,
+          serviceDate: row.date ?? null,
+          errorTypeName: row.errorTypeName ?? null,
+          payorName: row.payorEmail ?? null,
+        };
+      }
+    }
+    if (match.invoiceGroupId) {
+      const [row] = await db.select({
+        payorEmail: invoiceGroupsTable.payorEmail,
+        errorTypeName: invoiceGroupsTable.errorTypeName,
+      }).from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, match.invoiceGroupId)).limit(1);
+      if (row) return { payorName: row.payorEmail ?? null, errorTypeName: row.errorTypeName ?? null };
+    }
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Failed to load inbound context for AI classifier");
+  }
+  return {};
+}
+
+/**
+ * Process a matched inbound email: persist it as a portal_response, run the AI
+ * classifier (best-effort), and decide whether to push the claim/group into
+ * Needs Review.
+ *
+ * Behavior split:
+ * - "acknowledgment" → silent receipt. Stored, an "Acknowledged" note is added
+ *   to the claim/group timeline as proof, but status is NOT moved to
+ *   Needs Review (otherwise every "we got your request" reply spams the queue).
+ * - everything else  → existing behavior: full note + Needs Review transition.
+ */
 export async function processEmailResponse(email: InboxMessage, match: MatchResult): Promise<number> {
-  const responseType = detectResponseType(email.subject, email.body?.content || email.bodyPreview);
   const isGroup = match.invoiceGroupId !== null && match.invoiceGroupId !== undefined;
+  const bodyText = email.body?.content || email.bodyPreview || "";
 
   // Outlook reports the original body content type; preserve it so the UI can
   // render formatted bodies safely instead of dumping raw HTML as text.
   const bodyFormat: "html" | "text" =
     (email.body?.contentType || "").toLowerCase() === "html" ? "html" : "text";
 
+  // 1. Run AI classifier (best-effort). Falls back to keyword detector if it fails.
+  const ctx = await loadInboundContext(match);
+  const aiResult = await tryClassifyInboundEmail(email.subject || "", bodyText, ctx);
+
+  const keywordType = detectResponseType(email.subject, bodyText);
+  const responseType: ClassifiedDecision = aiResult ? aiResult.decision : keywordType;
+  const classifierSource = aiResult ? "ai" : "keyword";
+
+  // 2. Persist the response row, including AI-extracted fields when present.
   const [response] = await db.insert(portalResponsesTable).values({
     claimId: match.claimId,
     invoiceGroupId: match.invoiceGroupId,
@@ -230,99 +288,150 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     conversationId: email.conversationId || null,
     autoLinked: true,
     processed: false,
+    aiSummary: aiResult?.summary ?? null,
+    extractedAmount: aiResult?.amount ?? null,
+    extractedDeadline: aiResult?.deadline ?? null,
+    requestedAction: aiResult?.requestedAction ?? null,
+    classifierSource,
+    classifierConfidence: aiResult?.confidence ?? null,
     receivedAt: new Date(email.receivedDateTime),
     metadata: {
       conversationId: email.conversationId,
       isRead: email.isRead,
+      keywordClassification: keywordType,
     },
   }).returning();
 
   const senderLabel = email.from?.emailAddress?.name || email.from?.emailAddress?.address || "unknown";
+  const isAcknowledgment = responseType === "acknowledgment";
+
+  // 3. Compose a note that surfaces the AI summary when we have one, and is
+  //    tagged "Acknowledged" vs. "Response received" so the timeline reads naturally.
+  const noteContent = (() => {
+    if (isAcknowledgment) {
+      const base = `Acknowledged by ${senderLabel} (proof of receipt — no action required)`;
+      return aiResult?.summary ? `${base}: ${aiResult.summary}` : `${base}.`;
+    }
+    const headline = `${typeLabelFor(responseType)} response received via email from ${senderLabel}`;
+    return aiResult?.summary ? `${headline}: ${aiResult.summary}` : `${headline}: "${email.subject}"`;
+  })();
+
+  const auditDetails = aiResult
+    ? `${responseType} response (AI confidence: ${aiResult.confidence}, match confidence: ${match.confidence})`
+    : `${responseType} response detected from email (confidence: ${match.confidence})`;
+
+  const auditMetadata = {
+    responseId: response.id,
+    source: "email",
+    responseType,
+    matchedVia: match.matchedVia,
+    classifierSource,
+    senderEmail: email.from?.emailAddress?.address,
+    aiSummary: aiResult?.summary,
+  };
 
   if (isGroup) {
     await db.insert(notesTable).values({
       claimId: null,
       invoiceGroupId: match.invoiceGroupId,
       type: "reply_parsed",
-      content: `Response received via email from ${senderLabel}: "${email.subject}"`,
+      content: noteContent,
       author: "Response Tracker",
       emailSubject: email.subject,
     });
 
     await db.insert(auditLogsTable).values({
       invoiceGroupId: match.invoiceGroupId,
-      action: "response_received",
-      details: `${responseType} response detected from email (confidence: ${match.confidence})`,
-      metadata: {
-        responseId: response.id,
-        source: "email",
-        responseType,
-        matchedVia: match.matchedVia,
-        senderEmail: email.from?.emailAddress?.address,
-      },
+      action: isAcknowledgment ? "response_acknowledged" : "response_received",
+      details: auditDetails,
+      metadata: auditMetadata,
       userEmail: "system",
       userName: "Response Tracker",
     });
 
-    await transitionGroupStatus({
-      groupId: match.invoiceGroupId!,
-      newStatus: "Needs Review",
-      source: "email_response_matcher",
-      reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
-      actor: { userEmail: "system", userName: "Response Tracker" },
-      systemOverride: true,
-    });
+    if (!isAcknowledgment) {
+      await transitionGroupStatus({
+        groupId: match.invoiceGroupId!,
+        newStatus: "Needs Review",
+        source: "email_response_matcher",
+        reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+        systemOverride: true,
+      });
+    }
 
     logger.info({
       responseId: response.id,
       invoiceGroupId: match.invoiceGroupId,
       responseType,
-      confidence: match.confidence,
+      classifierSource,
+      acknowledgmentSkipped: isAcknowledgment,
       matchedVia: match.matchedVia,
-    }, "Email response processed and linked to invoice group");
+    }, isAcknowledgment
+      ? "Acknowledgment received and logged (no status transition)"
+      : "Email response processed and linked to invoice group");
   } else {
     await db.insert(notesTable).values({
       claimId: match.claimId,
       type: "reply_parsed",
-      content: `Response received via email from ${senderLabel}: "${email.subject}"`,
+      content: noteContent,
       author: "Response Tracker",
       emailSubject: email.subject,
     });
 
     await db.insert(auditLogsTable).values({
       claimId: match.claimId,
-      action: "response_received",
-      details: `${responseType} response detected from email (confidence: ${match.confidence})`,
-      metadata: {
-        responseId: response.id,
-        source: "email",
-        responseType,
-        matchedVia: match.matchedVia,
-        senderEmail: email.from?.emailAddress?.address,
-      },
+      action: isAcknowledgment ? "response_acknowledged" : "response_received",
+      details: auditDetails,
+      metadata: auditMetadata,
       userEmail: "system",
       userName: "Response Tracker",
     });
 
-    await transitionClaimStatus({
-      claimId: match.claimId!,
-      newStatus: "Needs Review",
-      source: "email_response_matcher",
-      reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
-      actor: { userEmail: "system", userName: "Response Tracker" },
-      systemOverride: true,
-    });
+    if (!isAcknowledgment) {
+      await transitionClaimStatus({
+        claimId: match.claimId!,
+        newStatus: "Needs Review",
+        source: "email_response_matcher",
+        reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
+        actor: { userEmail: "system", userName: "Response Tracker" },
+        systemOverride: true,
+      });
+    }
 
     logger.info({
       responseId: response.id,
       claimId: match.claimId,
       responseType,
-      confidence: match.confidence,
+      classifierSource,
+      acknowledgmentSkipped: isAcknowledgment,
       matchedVia: match.matchedVia,
-    }, "Email response processed and linked to claim");
+    }, isAcknowledgment
+      ? "Acknowledgment received and logged (no status transition)"
+      : "Email response processed and linked to claim");
   }
 
   return response.id;
+}
+
+/**
+ * Decision rule for whether an inbound classified response should push the
+ * claim/group into "Needs Review". Acknowledgments are silent (proof of
+ * receipt only); everything else is actionable. Exported for unit testing.
+ */
+export function shouldTransitionToNeedsReview(responseType: ClassifiedDecision): boolean {
+  return responseType !== "acknowledgment";
+}
+
+function typeLabelFor(t: ClassifiedDecision): string {
+  switch (t) {
+    case "approval": return "Approval";
+    case "denial": return "Denial";
+    case "partial_approval": return "Partial-approval";
+    case "info_request": return "Info-request";
+    case "acknowledgment": return "Acknowledgment";
+    case "other": return "Other";
+  }
 }
 
 export async function processPortalResponse(data: {
