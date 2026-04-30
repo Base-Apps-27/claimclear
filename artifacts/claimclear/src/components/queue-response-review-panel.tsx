@@ -8,6 +8,7 @@ import {
   getGetInvoiceGroupValidTransitionsQueryKey,
   getListInvoiceGroupsQueryKey,
   getListWithdrawalsQueryKey,
+  getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
 import type {
   InvoiceGroupResponse,
@@ -178,6 +179,12 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
     queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(group.id) });
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(group.id) });
+    // Sidebar nav badge driven by GET /responses/awaiting-review/count.
+    // Every verdict here removes the row from the awaiting-review bucket
+    // (status moves out of `Needs Review`), so refresh on action so the
+    // badge doesn't lag the user's last click — the per-minute poll
+    // would otherwise show a stale count for up to 60s.
+    queryClient.invalidateQueries({ queryKey: getGetResponsesAwaitingReviewCountQueryKey() });
   };
 
   const continuationActions: ContinuationActionDef[] = [];

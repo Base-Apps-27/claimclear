@@ -414,6 +414,23 @@ export default function Queue() {
                   )}
                 </div>
               )}
+              {/* Footer link to the dedicated workspace. The card here is a
+                  peek; the full master/detail surface (with response thread,
+                  follow-up reply composer, and persistent URL per group)
+                  lives on its own top-nav page. */}
+              {responseReviewGroups.length > 0 && (
+                <div className="pt-1 border-t">
+                  <Link href="/responses-awaiting-review">
+                    <a
+                      data-testid="link-view-all-responses-awaiting-review"
+                      className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
+                    >
+                      View all ({responseReviewGroups.length})
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </a>
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

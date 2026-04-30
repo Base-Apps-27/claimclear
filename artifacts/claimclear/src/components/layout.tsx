@@ -1,6 +1,11 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@workspace/replit-auth-web";
-import { useGetAttestationCounts, getGetAttestationCountsQueryKey } from "@workspace/api-client-react";
+import {
+  useGetAttestationCounts,
+  getGetAttestationCountsQueryKey,
+  useGetResponsesAwaitingReviewCount,
+  getGetResponsesAwaitingReviewCountQueryKey,
+} from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
 import {
   Sidebar,
@@ -37,7 +42,8 @@ import {
   FolderOpen,
   HeartPulse,
   FileMinus,
-  ShieldCheck
+  ShieldCheck,
+  Eye
 } from "lucide-react";
 
 type NavBadge = { count: number; tone: "amber" | "blue"; label: string };
@@ -58,6 +64,7 @@ type NavSection = {
 const navDescriptions: Record<string, string> = {
   "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring claims.",
   "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
+  "Responses Awaiting Review": "Stage-2 inbox: payor sent something back and a verdict is owed. Master/detail review with response thread, AI hint, and verdict actions.",
   "Invoice Groups": "View and manage rides grouped by invoice number — the primary unit for disputes.",
   "All Claims": "Browse, search, and filter the complete claims database.",
   "Withdrawals": "Review closed claims and groups (withdrawn, non-issue, accepted loss) — capture lessons, who was told, and mark addressed.",
@@ -89,6 +96,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const pendingAttest = attestationCounts?.pending ?? 0;
   const queuedAttest = attestationCounts?.queued ?? 0;
+
+  // Live counter for the "Responses Awaiting Review" entry. Polls every
+  // 60s — same cadence as attestation counts — and only when the user is
+  // signed in and active so we don't burn polls on the auth screen.
+  const { data: awaitingReviewCount } = useGetResponsesAwaitingReviewCount({
+    query: {
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+      refetchInterval: 60_000,
+      enabled: isAuthenticated && user?.status === "active",
+    },
+  });
+  const responsesAwaitingReview = awaitingReviewCount?.count ?? 0;
+  const responsesAwaitingReviewBadges: NavBadge[] = responsesAwaitingReview > 0
+    ? [{ count: responsesAwaitingReview, tone: "amber", label: "Verdict pending" }]
+    : [];
   // Show both counts side-by-side so the user can read at a glance which
   // bucket is non-zero — pending (amber: verdicts that still need a decision)
   // vs queued (blue: parked for the user with portal access). A single total
@@ -113,6 +135,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "Queue", href: "/queue", icon: ListTodo },
+        {
+          label: "Responses Awaiting Review",
+          href: "/responses-awaiting-review",
+          icon: Eye,
+          badges: responsesAwaitingReviewBadges,
+        },
         {
           label: "Attestation Queue",
           href: "/attestation-queue",

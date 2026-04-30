@@ -3403,6 +3403,23 @@ export const GetAttestationCountsResponse = zod.object({
 });
 
 /**
+ * Returns the live count of invoice groups in `Needs Review` status that
+already have an Error Type assigned (i.e., they are stage-2 awaiting a
+human verdict, not stage-1 awaiting classification). Drives the
+sidebar nav badge for the "Responses Awaiting Review" page so the
+team always knows when verdicts are owed.
+
+ * @summary Count of invoice groups whose payor response needs a verdict
+ */
+export const GetResponsesAwaitingReviewCountResponse = zod.object({
+  count: zod
+    .number()
+    .describe(
+      "Number of invoice groups in `Needs Review` status that have an\nError Type assigned (stage-2 verdict pending). Drives the sidebar\nbadge on the Responses Awaiting Review nav entry.\n",
+    ),
+});
+
+/**
  * @summary Update claim evidence
  */
 export const UpdateClaimEvidenceParams = zod.object({

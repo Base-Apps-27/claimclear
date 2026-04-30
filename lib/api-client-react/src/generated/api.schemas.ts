@@ -1205,6 +1205,14 @@ export interface AttestationCountsResponse {
   queued: number;
 }
 
+export interface ResponsesAwaitingReviewCountResponse {
+  /** Number of invoice groups in `Needs Review` status that have an
+Error Type assigned (stage-2 verdict pending). Drives the sidebar
+badge on the Responses Awaiting Review nav entry.
+ */
+  count: number;
+}
+
 /**
  * Channel the latest payor response came in on.
  * @nullable

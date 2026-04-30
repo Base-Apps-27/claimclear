@@ -122,6 +122,7 @@ import type {
   ReplyToEmailConversation502,
   ReplyToEmailConversationBody,
   ResponseStats,
+  ResponsesAwaitingReviewCountResponse,
   RevertPortalSubmissionDescriptionBody,
   SOPAnalysisResult,
   SaveMappingsBody,
@@ -3060,6 +3061,92 @@ export function useGetAttestationCounts<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAttestationCountsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the live count of invoice groups in `Needs Review` status that
+already have an Error Type assigned (i.e., they are stage-2 awaiting a
+human verdict, not stage-1 awaiting classification). Drives the
+sidebar nav badge for the "Responses Awaiting Review" page so the
+team always knows when verdicts are owed.
+
+ * @summary Count of invoice groups whose payor response needs a verdict
+ */
+export const getGetResponsesAwaitingReviewCountUrl = () => {
+  return `/api/responses/awaiting-review/count`;
+};
+
+export const getResponsesAwaitingReviewCount = async (
+  options?: RequestInit,
+): Promise<ResponsesAwaitingReviewCountResponse> => {
+  return customFetch<ResponsesAwaitingReviewCountResponse>(
+    getGetResponsesAwaitingReviewCountUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetResponsesAwaitingReviewCountQueryKey = () => {
+  return [`/api/responses/awaiting-review/count`] as const;
+};
+
+export const getGetResponsesAwaitingReviewCountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetResponsesAwaitingReviewCountQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>
+  > = ({ signal }) =>
+    getResponsesAwaitingReviewCount({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetResponsesAwaitingReviewCountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>
+>;
+export type GetResponsesAwaitingReviewCountQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Count of invoice groups whose payor response needs a verdict
+ */
+
+export function useGetResponsesAwaitingReviewCount<
+  TData = Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewCount>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetResponsesAwaitingReviewCountQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

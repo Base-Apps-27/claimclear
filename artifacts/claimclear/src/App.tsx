@@ -19,6 +19,7 @@ import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Withdrawals from "@/pages/withdrawals";
 import AttestationQueue from "@/pages/attestation-queue";
+import ResponsesAwaitingReview from "@/pages/responses-awaiting-review";
 import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
 import SystemHealth from "@/pages/system-health";
@@ -49,6 +50,8 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={Queue} />
         <Route path="/attestation-queue" component={AttestationQueue} />
+        <Route path="/responses-awaiting-review" component={ResponsesAwaitingReview} />
+        <Route path="/responses-awaiting-review/:id" component={ResponsesAwaitingReview} />
         <Route path="/review" component={() => <Redirect to="/queue?tab=needs-review" />} />
         <Route path="/invoice-groups" component={InvoiceGroupsList} />
         <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />

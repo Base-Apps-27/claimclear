@@ -229,6 +229,7 @@ export * from "./replyToEmailConversation400";
 export * from "./replyToEmailConversation404";
 export * from "./replyToEmailConversation502";
 export * from "./replyToEmailConversationBody";
+export * from "./responsesAwaitingReviewCountResponse";
 export * from "./responseStats";
 export * from "./responseStatsBySource";
 export * from "./responseStatsByType";

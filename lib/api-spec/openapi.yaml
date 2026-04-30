@@ -1090,6 +1090,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttestationCountsResponse"
 
+  /responses/awaiting-review/count:
+    get:
+      operationId: getResponsesAwaitingReviewCount
+      tags: [responses]
+      summary: Count of invoice groups whose payor response needs a verdict
+      description: |
+        Returns the live count of invoice groups in `Needs Review` status that
+        already have an Error Type assigned (i.e., they are stage-2 awaiting a
+        human verdict, not stage-1 awaiting classification). Drives the
+        sidebar nav badge for the "Responses Awaiting Review" page so the
+        team always knows when verdicts are owed.
+      responses:
+        "200":
+          description: Awaiting-review count for the nav badge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsesAwaitingReviewCountResponse"
+
   /claims/{id}/evidence:
     patch:
       operationId: updateClaimEvidence
@@ -3972,6 +3991,17 @@ components:
         queued:
           type: integer
           description: Approved-family claims parked for someone with payor-portal access.
+
+    ResponsesAwaitingReviewCountResponse:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+          description: |
+            Number of invoice groups in `Needs Review` status that have an
+            Error Type assigned (stage-2 verdict pending). Drives the sidebar
+            badge on the Responses Awaiting Review nav entry.
 
     AttestationPendingExtras:
       type: object

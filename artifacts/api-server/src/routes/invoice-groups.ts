@@ -885,4 +885,23 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
   res.json(updated);
 }));
 
+// Live counter for the "Responses Awaiting Review" sidebar badge. Counts
+// invoice groups that have already been classified (errorTypeId is set) but
+// are still in Needs Review — i.e., a payor response landed and a human
+// verdict is still owed. Stage-1 unclassified items deliberately don't
+// count; those belong to the Classification Inbox surface. Lives under
+// /responses/... so the path mirrors the page route and so it doesn't
+// collide with the existing /invoice-groups/:id parametric routes.
+router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): Promise<void> => {
+  const [row] = await db
+    .select({ value: count() })
+    .from(invoiceGroupsTable)
+    .where(and(
+      eq(invoiceGroupsTable.status, "Needs Review"),
+      isNotNull(invoiceGroupsTable.errorTypeId),
+      ne(invoiceGroupsTable.errorTypeId, ""),
+    ));
+  res.json({ count: row?.value ?? 0 });
+}));
+
 export default router;
