@@ -55,6 +55,9 @@ import { WorkflowPlayer } from "@/components/workflow-player";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
+import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
+import type { ClosureReasonKey } from "@/components/closure/closure-options";
+import { XCircle, FileX } from "lucide-react";
 
 const CLAIM_STAGES: Stage[] = [
   { key: "triage", label: "Classify", desc: "Identify the error" },
@@ -340,6 +343,7 @@ export default function ClaimDetail() {
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [postResponseNotes, setPostResponseNotes] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
+  const [closureDialog, setClosureDialog] = useState<{ reason: ClosureReasonKey } | null>(null);
 
   useEffect(() => {
     if (claim) {
@@ -1343,6 +1347,33 @@ export default function ClaimDetail() {
                   testId="action-queue-for-portal"
                 />
               </ActionGroup>
+
+              {(getClaimStageKey(claim.status) === "build" || getClaimStageKey(claim.status) === "await") && (
+                <ActionGroup label="Exit workflow">
+                  <ActionRow
+                    icon={<XCircle className="h-4 w-4" />}
+                    label="Mark as Cannot Dispute"
+                    sub={
+                      getClaimStageKey(claim.status) === "build"
+                        ? "Worked the case; the evidence we'd need doesn't exist"
+                        : "Mid-flight: turns out we can't recover these dollars"
+                    }
+                    onClick={() => setClosureDialog({ reason: "not_contestable" })}
+                    testId="action-stage-mark-not-contestable"
+                  />
+                  <ActionRow
+                    icon={<FileX className="h-4 w-4" />}
+                    label="Mark as Non-Issue"
+                    sub={
+                      getClaimStageKey(claim.status) === "build"
+                        ? "Discovered this isn't a real billing error"
+                        : "Mid-flight: this turned out to not be a real billing error"
+                    }
+                    onClick={() => setClosureDialog({ reason: "non_issue" })}
+                    testId="action-stage-mark-non-issue"
+                  />
+                </ActionGroup>
+              )}
 
               {(validTransitions?.validOutcomes?.length ?? 0) > 0 && (() => {
                 const outcomes = (validTransitions?.validOutcomes || []) as string[];
