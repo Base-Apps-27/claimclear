@@ -21,4 +21,5 @@ export interface UpdateErrorTypeBody {
   emailTemplate?: string;
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
+  useDirectEmail?: boolean;
 }

@@ -83,6 +83,10 @@ export default function Settings() {
   const [portalDefaultGps, setPortalDefaultGps] = useState("");
   const [portalSettingsSaved, setPortalSettingsSaved] = useState(false);
   const [portalSettingsLoaded, setPortalSettingsLoaded] = useState(false);
+  const [directEmailRecipient, setDirectEmailRecipient] = useState("");
+  const [directEmailCc, setDirectEmailCc] = useState("");
+  const [directEmailSaved, setDirectEmailSaved] = useState(false);
+  const [directEmailLoaded, setDirectEmailLoaded] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -102,6 +106,25 @@ export default function Settings() {
       setPortalSettingsLoaded(true);
     }
   }, [appSettings, portalSettingsLoaded]);
+
+  useEffect(() => {
+    if (appSettings && !directEmailLoaded) {
+      setDirectEmailRecipient(appSettings.direct_email_recipient || "");
+      setDirectEmailCc(appSettings.direct_email_cc || "");
+      setDirectEmailLoaded(true);
+    }
+  }, [appSettings, directEmailLoaded]);
+
+  const handleSaveDirectEmail = async () => {
+    await updateAppSettings.mutateAsync({
+      data: {
+        direct_email_recipient: directEmailRecipient || null,
+        direct_email_cc: directEmailCc || null,
+      },
+    });
+    setDirectEmailSaved(true);
+    setTimeout(() => setDirectEmailSaved(false), 3000);
+  };
 
   const handleSaveDisputeInstructions = async () => {
     await updateAppSettings.mutateAsync({
@@ -467,6 +490,58 @@ export default function Settings() {
                 {updateAppSettings.isPending ? "Saving..." : "Save Portal Settings"}
               </Button>
               {portalSettingsSaved && (
+                <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Direct Email
+              <InfoTooltip content="Where dispute emails go for error types whose Submission Path is set to 'Direct Email'. The batch processor sends these on the same schedule as portal submissions, with evidence attached." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Used when an error type's Submission Path is set to <strong>Direct Email</strong>.
+              Dispute emails are sent from your connected Outlook account via the same batch schedule
+              as portal submissions, with evidence files attached.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="direct-email-to">Recipient (To)</Label>
+              <Input
+                id="direct-email-to"
+                type="email"
+                value={directEmailRecipient}
+                onChange={e => setDirectEmailRecipient(e.target.value)}
+                placeholder="tripinvresolution@medanswering.com"
+              />
+              <p className="text-xs text-muted-foreground">
+                The single address all Direct Email disputes are sent to.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="direct-email-cc">CC (optional)</Label>
+              <Input
+                id="direct-email-cc"
+                value={directEmailCc}
+                onChange={e => setDirectEmailCc(e.target.value)}
+                placeholder="billing@yourcompany.com"
+              />
+              <p className="text-xs text-muted-foreground">
+                Comma-separated list of additional recipients to copy on every Direct Email dispute.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleSaveDirectEmail} disabled={updateAppSettings.isPending}>
+                {updateAppSettings.isPending ? "Saving..." : "Save Direct Email Settings"}
+              </Button>
+              {directEmailSaved && (
                 <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
               )}
             </div>

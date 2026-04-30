@@ -21,4 +21,5 @@ export interface CreateErrorTypeBody {
   emailTemplate?: string;
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
+  useDirectEmail?: boolean;
 }

@@ -17,4 +17,18 @@ export interface AppSettingsResponse {
   portal_contact_phone?: string | null;
   /** @nullable */
   portal_default_gps_breadcrumbs?: string | null;
+  /**
+   * Recipient address used for the "Direct Email" submission path
+(e.g. tripinvresolution@medanswering.com). Disputes whose error
+type has useDirectEmail=true are sent here instead of being
+filed via the MAS portal.
+
+   * @nullable
+   */
+  direct_email_recipient?: string | null;
+  /**
+   * Optional CC line (comma-separated) for direct email disputes.
+   * @nullable
+   */
+  direct_email_cc?: string | null;
 }

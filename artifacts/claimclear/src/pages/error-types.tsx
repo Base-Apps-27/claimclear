@@ -16,10 +16,11 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Plus, Edit2, Trash2, TreeDeciduous, FileText,
   X, Sparkles, Loader2, Type,
-  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle, MapPin
+  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle, MapPin, Mail
 } from "lucide-react";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -296,6 +297,26 @@ interface ErrorTypeFormState {
   disputeInstructions: string;
   decisionTree: DecisionTree | null;
   useGpsControlDeviation: boolean;
+  useDirectEmail: boolean;
+}
+
+// Three mutually-exclusive submission paths. Backed by two independent
+// boolean columns server-side (useGpsControlDeviation, useDirectEmail);
+// the picker enforces "exactly one wins" by writing both flags from the
+// selected option.
+type SubmissionPath = "portal_other" | "portal_gps" | "direct_email";
+
+function pathFromForm(f: Pick<ErrorTypeFormState, "useGpsControlDeviation" | "useDirectEmail">): SubmissionPath {
+  if (f.useDirectEmail) return "direct_email";
+  if (f.useGpsControlDeviation) return "portal_gps";
+  return "portal_other";
+}
+
+function flagsFromPath(p: SubmissionPath): { useGpsControlDeviation: boolean; useDirectEmail: boolean } {
+  return {
+    useGpsControlDeviation: p === "portal_gps",
+    useDirectEmail: p === "direct_email",
+  };
 }
 
 export default function ErrorTypes() {
@@ -319,6 +340,7 @@ export default function ErrorTypes() {
     name: "", category: "", description: "", disputeInstructions: "",
     decisionTree: null,
     useGpsControlDeviation: false,
+    useDirectEmail: false,
   };
 
   const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
@@ -347,6 +369,7 @@ export default function ErrorTypes() {
         disputeInstructions: form.disputeInstructions,
         decisionTree: convertedTree,
         useGpsControlDeviation: form.useGpsControlDeviation,
+        useDirectEmail: form.useDirectEmail,
       });
     } catch (err: unknown) {
       setSopError(err instanceof Error ? err.message : "Analysis failed");
@@ -374,6 +397,7 @@ export default function ErrorTypes() {
       disputeInstructions: et.disputeInstructions || "",
       decisionTree: convertedTree,
       useGpsControlDeviation: et.useGpsControlDeviation === true,
+      useDirectEmail: et.useDirectEmail === true,
     });
     setEditingId(et.id);
   };
@@ -388,6 +412,7 @@ export default function ErrorTypes() {
         ? (JSON.parse(JSON.stringify(form.decisionTree)) as unknown as Record<string, unknown>)
         : undefined,
       useGpsControlDeviation: form.useGpsControlDeviation,
+      useDirectEmail: form.useDirectEmail,
     };
 
     if (editingId) {
@@ -464,7 +489,9 @@ export default function ErrorTypes() {
                   ) : (
                     <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />No Workflow</Badge>
                   )}
-                  {et.useGpsControlDeviation ? (
+                  {et.useDirectEmail ? (
+                    <Badge variant="secondary" className="text-purple-700"><Mail className="h-3 w-3 mr-1" />Direct Email</Badge>
+                  ) : et.useGpsControlDeviation ? (
                     <Badge variant="secondary" className="text-blue-700"><MapPin className="h-3 w-3 mr-1" />GPS Control Deviation</Badge>
                   ) : null}
                   {et.disputeInstructions ? (
@@ -586,26 +613,71 @@ export default function ErrorTypes() {
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Describe when this error type applies..." />
               </div>
               <Separator />
-              <div className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="use-gps-control-deviation" className="flex items-center gap-1 cursor-pointer">
-                      <MapPin className="h-3.5 w-3.5" />
-                      Submit via GPS Control Deviation form
-                      <InfoTooltip content="When ON, portal submissions for claims with this error type are filed under the MAS 'GPS Control Deviation' form (which requires the GPS Breadcrumbs Available field). When OFF, they go to the generic 'Other Issue or Question' form. Turn this ON for location/GPS-based denials only." />
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {form.useGpsControlDeviation
-                        ? "Routes to: GPS Control Deviation (requires GPS Breadcrumbs)"
-                        : "Routes to: Other Issue or Question (default)"}
-                    </p>
-                  </div>
-                  <Switch
-                    id="use-gps-control-deviation"
-                    checked={form.useGpsControlDeviation}
-                    onCheckedChange={(checked) => setForm({ ...form, useGpsControlDeviation: checked })}
-                  />
+              <div className="rounded-lg border p-3 space-y-3">
+                <div className="space-y-0.5">
+                  <Label className="flex items-center gap-1">
+                    Submission Path
+                    <InfoTooltip content="How disputes for this error type are filed. Pick exactly one. The two portal options open a Freshdesk ticket via the MAS portal. The Direct Email option bypasses the portal and emails the dispute (with attachments) to the address configured in Settings → Direct Email." />
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose how the batch processor files disputes for this error type.
+                  </p>
                 </div>
+                <RadioGroup
+                  value={pathFromForm(form)}
+                  onValueChange={(val) => setForm({ ...form, ...flagsFromPath(val as SubmissionPath) })}
+                  className="space-y-2"
+                >
+                  <label
+                    htmlFor="path-portal-other"
+                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
+                  >
+                    <RadioGroupItem id="path-portal-other" value="portal_other" className="mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-medium flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5" />
+                        MAS Portal — Other Issue or Question
+                        <Badge variant="outline" className="text-[10px] px-1 py-0">default</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Files a Freshdesk ticket on the generic form. Use for most non-GPS, non-email issues.
+                      </p>
+                    </div>
+                  </label>
+                  <label
+                    htmlFor="path-portal-gps"
+                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
+                  >
+                    <RadioGroupItem id="path-portal-gps" value="portal_gps" className="mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-medium flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        MAS Portal — GPS Control Deviation
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Files under the GPS Control Deviation form (includes the GPS Breadcrumbs Available field).
+                        Use for location/GPS-based denials only.
+                      </p>
+                    </div>
+                  </label>
+                  <label
+                    htmlFor="path-direct-email"
+                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
+                  >
+                    <RadioGroupItem id="path-direct-email" value="direct_email" className="mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-medium flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5" />
+                        Direct Email
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Bypasses the MAS portal. Emails the dispute (with evidence as attachments) to the address
+                        configured in Settings → Direct Email. Use for issues MAS handles over email
+                        (e.g. Attesting too Soon, Invoice Number not in System).
+                      </p>
+                    </div>
+                  </label>
+                </RadioGroup>
               </div>
               <Separator />
               <div>

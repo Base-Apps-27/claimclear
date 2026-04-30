@@ -168,19 +168,32 @@ async function getPortalSettings(): Promise<PortalSettings> {
 }
 
 /**
- * Pick the Freshdesk ticket form for a portal submission. The mapping lives
- * on the error_types row as the `useGpsControlDeviation` toggle so admins
- * can re-route a plan from the error-types admin page without a code change.
+ * Pick the dispatch path for a portal submission. The mapping lives on the
+ * error_types row so admins can re-route a plan from the error-types admin
+ * page without a code change. Three mutually-exclusive paths are supported
+ * (the admin UI presents these as a single 3-way picker):
  *
- * - `useGpsControlDeviation = true`  → "GPS Control Deviation" form (the
- *   only form that has the GPS Breadcrumbs Available field).
+ * - `useDirectEmail = true`           → "Direct Email" — bypass the MAS
+ *   portal entirely and send the dispute as an email to the global
+ *   recipient configured under app_settings.direct_email_recipient. Used
+ *   for issue classes MAS resolves over email (e.g. "Attesting too Soon",
+ *   "Invoice Number not in System"). Wins over the GPS toggle if both
+ *   happen to be set.
+ * - `useGpsControlDeviation = true`  → "GPS Control Deviation" Freshdesk
+ *   form (the only form that has the GPS Breadcrumbs Available field).
  * - everything else                   → "Other Issue or Question" (safe
  *   default; also used when no error type is set on the claim/group).
+ *
+ * Downstream consumers (batch processor, worker) branch on the returned
+ * string. "Direct Email" routes to sendDirectEmailDispute; the two
+ * Freshdesk values route to the Playwright worker.
  */
+export const DIRECT_EMAIL_ISSUE_TYPE = "Direct Email";
+
 export function determineIssueType(errorType: typeof errorTypesTable.$inferSelect | null): string {
-  return errorType?.useGpsControlDeviation
-    ? "GPS Control Deviation"
-    : "Other Issue or Question";
+  if (errorType?.useDirectEmail) return DIRECT_EMAIL_ISSUE_TYPE;
+  if (errorType?.useGpsControlDeviation) return "GPS Control Deviation";
+  return "Other Issue or Question";
 }
 
 function joinNonEmpty(items: (string | null | undefined)[], sep = ", "): string {
@@ -263,6 +276,10 @@ async function generatePortalDescription(
   const { group, rides } = ctx;
   const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || settings.defaultDisputeInstructions;
   const snap = buildSnapshot(ctx);
+  // For the direct-email path, the AI-generated text becomes the email body
+  // (wrapped with greeting + sign-off later by buildDirectEmailHtml). For
+  // both portal paths, the same text lands in a plain-text portal field.
+  const isDirectEmail = errorType?.useDirectEmail === true;
 
   const ridesBlock = rides.map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"} | Amount: $${r.claimAmount || "0.00"}`).join("\n");
 
@@ -290,7 +307,27 @@ ${ridesBlock}`
 
   const evidenceSummary = group?.evidenceNotes || rides.map(r => r.evidenceNotes).filter(Boolean).join("; ");
 
-  const prompt = `Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.
+  const formatRules = isDirectEmail
+    ? `Write a clear, factual dispute message that:
+- States the reason for the dispute/correction request
+- ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
+- References specific evidence (and notes that supporting files are attached, when applicable)
+- Is professional but sounds natural and human — vary phrasing
+- Is concise (2-4 paragraphs maximum)
+- Does NOT include a greeting line ("Hello,") or a sign-off / signature — those will be added automatically when the message is wrapped into an email`
+    : `Write a clear, factual portal submission note that:
+- States the reason for the dispute/correction request
+- ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
+- References specific evidence
+- Is professional but sounds natural and human — vary phrasing
+- Is concise (2-4 paragraphs maximum)
+- Does NOT include email-style greetings or sign-offs (this goes in a portal text field, not an email)`;
+
+  const channelLine = isDirectEmail
+    ? "Write a concise dispute message for an NEMT (Non-Emergency Medical Transportation) claim correction request that will be sent as an email to MAS Trip Inventory Resolution."
+    : "Write a concise dispute note for an NEMT (Non-Emergency Medical Transportation) claim correction request to be submitted on a support portal.";
+
+  const prompt = `${channelLine}
 
 ${groupHeader}
 
@@ -301,21 +338,19 @@ ${errorType?.guidance ? `SOP context: ${errorType.guidance}` : ""}
 
 ${instructions ? `IMPORTANT — Follow these guidelines for tone and content:\n${instructions}` : ""}
 
-Write a clear, factual portal submission note that:
-- States the reason for the dispute/correction request
-- ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
-- References specific evidence
-- Is professional but sounds natural and human — vary phrasing
-- Is concise (2-4 paragraphs maximum)
-- Does NOT include email-style greetings or sign-offs (this goes in a portal text field, not an email)
+${formatRules}
 
 Return ONLY the note text, no JSON wrapping.`;
+
+  const systemPrompt = isDirectEmail
+    ? "You are a professional NEMT claims dispute specialist. Write the body of a dispute email on behalf of a transportation provider — without the greeting or sign-off (those are added automatically). Each message should sound natural — vary sentence structure and word choice so no two messages are identical. Avoid boilerplate or robotic language. Return only the body text."
+    : "You are a professional NEMT claims dispute specialist. Write clear, factual portal submission notes on behalf of a transportation provider. Each note should sound natural — vary sentence structure and word choice so no two notes are identical. Avoid boilerplate or robotic language. Return only the note text.";
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
-    system: "You are a professional NEMT claims dispute specialist. Write clear, factual portal submission notes on behalf of a transportation provider. Each note should sound natural — vary sentence structure and word choice so no two notes are identical. Avoid boilerplate or robotic language. Return only the note text.",
+    system: systemPrompt,
   });
 
   const textBlock = message.content.find((b: { type: string }) => b.type === "text");

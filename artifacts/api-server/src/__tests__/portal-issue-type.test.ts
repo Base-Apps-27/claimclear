@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { determineIssueType } from "../routes/portal-submissions";
+import { determineIssueType, DIRECT_EMAIL_ISSUE_TYPE } from "../routes/portal-submissions";
 import { FRESHDESK_ISSUE_TYPE_MAP } from "../bot/batch-worker";
 import type { ErrorType } from "@workspace/db";
 
@@ -19,6 +19,7 @@ function makeErrorType(overrides: Partial<ErrorType>): ErrorType {
     emailTemplate: null,
     disputeInstructions: null,
     useGpsControlDeviation: false,
+    useDirectEmail: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -95,16 +96,65 @@ test("chain: toggle OFF → bot opens the Other Issue or Question Freshdesk form
     "with toggle OFF the bot must navigate to ?ticket_form=other_issue_or_question");
 });
 
-test("chain: every issueType determineIssueType can return must be routable by the bot", () => {
-  // Defensive: if a future issueType is added to determineIssueType but not
-  // to FRESHDESK_ISSUE_TYPE_MAP, the bot would silently fall back to the
-  // 'Other Issue or Question' slug. This test makes that drift loud.
-  const togglesToTest = [true, false];
-  for (const toggle of togglesToTest) {
-    const issueType = determineIssueType(makeErrorType({ useGpsControlDeviation: toggle }));
+test("chain: every Freshdesk-bound issueType determineIssueType can return must be routable by the bot", () => {
+  // Defensive: if a future portal issueType is added to determineIssueType
+  // but not to FRESHDESK_ISSUE_TYPE_MAP, the bot would silently fall back to
+  // the 'Other Issue or Question' slug. This test makes that drift loud.
+  // Direct Email is handled by sendDirectEmailDispute, not the portal bot,
+  // so it's intentionally excluded from this map check.
+  const portalCases: { useGpsControlDeviation: boolean; useDirectEmail: boolean }[] = [
+    { useGpsControlDeviation: true, useDirectEmail: false },
+    { useGpsControlDeviation: false, useDirectEmail: false },
+  ];
+  for (const flags of portalCases) {
+    const issueType = determineIssueType(makeErrorType(flags));
+    assert.notEqual(issueType, DIRECT_EMAIL_ISSUE_TYPE);
     assert.ok(
       Object.prototype.hasOwnProperty.call(FRESHDESK_ISSUE_TYPE_MAP, issueType),
-      `FRESHDESK_ISSUE_TYPE_MAP is missing an entry for issueType '${issueType}' (toggle=${toggle}) — the bot would fall back to the default form`,
+      `FRESHDESK_ISSUE_TYPE_MAP is missing an entry for issueType '${issueType}' (flags=${JSON.stringify(flags)}) — the bot would fall back to the default form`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// Direct Email path: a third mutually-exclusive submission path that bypasses
+// the MAS portal entirely. Backed by useDirectEmail on the error_types row.
+// The batch processor branches on issueType === "Direct Email" before
+// invoking Playwright, so the contract is: this constant must match what the
+// batch processor checks.
+// ---------------------------------------------------------------------------
+
+test("determineIssueType: useDirectEmail ON → Direct Email", () => {
+  const et = makeErrorType({ name: "Attesting too Soon", useDirectEmail: true });
+  assert.equal(determineIssueType(et), "Direct Email");
+  assert.equal(determineIssueType(et), DIRECT_EMAIL_ISSUE_TYPE);
+});
+
+test("determineIssueType: useDirectEmail wins over useGpsControlDeviation when both are on", () => {
+  // Edge case — UI enforces mutual exclusion via the 3-way picker, but if
+  // legacy data has both flags set the email path takes precedence.
+  const et = makeErrorType({
+    name: "Edge Case",
+    useGpsControlDeviation: true,
+    useDirectEmail: true,
+  });
+  assert.equal(determineIssueType(et), "Direct Email");
+});
+
+test("determineIssueType: useDirectEmail OFF + useGpsControlDeviation OFF → Other Issue or Question", () => {
+  const et = makeErrorType({ useDirectEmail: false, useGpsControlDeviation: false });
+  assert.equal(determineIssueType(et), "Other Issue or Question");
+});
+
+test("3-way picker: each path produces a distinct, stable issueType string", () => {
+  // The batch processor's branch (`if (issueType === "Direct Email")`)
+  // depends on this exact string — keep the three values stable and unique.
+  const directEmail = determineIssueType(makeErrorType({ useDirectEmail: true }));
+  const gps = determineIssueType(makeErrorType({ useGpsControlDeviation: true }));
+  const other = determineIssueType(makeErrorType({}));
+  const all = new Set([directEmail, gps, other]);
+  assert.equal(all.size, 3, "the three paths must produce three distinct issueType strings");
+  assert.equal(directEmail, "Direct Email");
+  assert.equal(gps, "GPS Control Deviation");
+  assert.equal(other, "Other Issue or Question");
 });

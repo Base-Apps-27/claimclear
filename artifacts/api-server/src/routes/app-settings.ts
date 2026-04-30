@@ -13,6 +13,8 @@ const allowedKeys = [
   "portal_contact_email",
   "portal_contact_phone",
   "portal_default_gps_breadcrumbs",
+  "direct_email_recipient",
+  "direct_email_cc",
 ] as const;
 type AllowedKey = typeof allowedKeys[number];
 

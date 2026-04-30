@@ -883,14 +883,121 @@ export function __setBatchWorkerForTests(
   __batchWorkerOverride = fn;
 }
 
+async function processDirectEmail(
+  sub: typeof portalSubmissionsTable.$inferSelect,
+  defaults: Awaited<ReturnType<typeof getPortalDefaults>>,
+): Promise<void> {
+  const { sendDirectEmailDispute } = await import("./direct-email-dispatch");
+
+  // Recipient comes from app_settings — read fresh each call so admin
+  // changes take effect immediately on the next run.
+  const settingsRows = await db.select().from(appSettingsTable);
+  const settingsMap: Record<string, string> = {};
+  for (const r of settingsRows) settingsMap[r.key] = r.value || "";
+  const recipientTo = settingsMap["direct_email_recipient"] || "";
+  const recipientCc = settingsMap["direct_email_cc"] || "";
+
+  const attachmentUrls = Array.isArray(sub.attachmentUrls)
+    ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
+    : [];
+
+  const subject = sub.subject
+    || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`;
+
+  logger.info(
+    { submissionId: sub.id, attachmentCount: attachmentUrls.length, recipientTo: recipientTo || "(unset)" },
+    "processDirectEmail: dispatching",
+  );
+
+  const result = await sendDirectEmailDispute(
+    {
+      id: sub.id,
+      confNumber: sub.confNumber || "",
+      subject,
+      descriptionHtml: sub.descriptionHtml || "",
+      attachmentUrls,
+      claimId: sub.claimId,
+      invoiceGroupId: sub.invoiceGroupId ?? null,
+    },
+    { to: recipientTo, cc: recipientCc },
+    {
+      providerName: defaults.providerName,
+      contactEmail: defaults.contactEmail,
+      contactPhone: defaults.contactPhone,
+    },
+  );
+
+  // Mark submitted. Reuse `portalTicketId` to store the Outlook messageId so
+  // the existing UI (which surfaces ticketId on the row) shows a meaningful
+  // reference for email-path submissions too.
+  await db.update(portalSubmissionsTable).set({
+    status: "submitted",
+    portalTicketId: result.messageId,
+    submittedAt: new Date().toISOString(),
+  }).where(eq(portalSubmissionsTable.id, sub.id));
+
+  const submittedAtIso = new Date().toISOString();
+  const reason = `Direct email dispute sent successfully${result.messageId ? ` - Message ID: ${result.messageId}` : ""}`;
+  if (sub.invoiceGroupId) {
+    await transitionGroupStatus({
+      groupId: sub.invoiceGroupId,
+      newStatus: "Awaiting Response",
+      source: "batch_processor",
+      reason,
+      actor: { userEmail: null, userName: "Batch Processor" },
+      systemOverride: true,
+      extraFields: {
+        disputeEmailSent: true,
+        disputeEmailSentAt: submittedAtIso,
+      },
+    });
+  } else {
+    await transitionClaimStatus({
+      claimId: sub.claimId,
+      newStatus: "Awaiting Response",
+      source: "batch_processor",
+      reason,
+      actor: { userEmail: null, userName: "Batch Processor" },
+      systemOverride: true,
+      extraFields: {
+        disputeEmailSent: true,
+        disputeEmailSentAt: submittedAtIso,
+      },
+    });
+  }
+
+  await db.insert(botActivityLogTable).values({
+    submissionId: sub.id,
+    botInstanceId: null,
+    action: "submission_complete",
+    success: true,
+    message: `Direct email sent successfully. Message ID: ${result.messageId || "N/A"}, attachments: ${result.attachmentCount}`,
+  });
+
+  logger.info(
+    { submissionId: sub.id, messageId: result.messageId, attachmentCount: result.attachmentCount },
+    "processDirectEmail: completed successfully",
+  );
+}
+
 async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
 ): Promise<void> {
+  const defaults = await getPortalDefaults();
+  const issueType = sub.issueType || "Other Issue or Question";
+
+  // Direct-email path: bypass Playwright entirely. The dispatcher downloads
+  // attachments from object storage, sends via Outlook, and we mirror the
+  // same DB updates / status transitions that the portal path does on
+  // success so the rest of the system (drawer, history, group transitions)
+  // is path-agnostic.
+  if (issueType === "Direct Email") {
+    await processDirectEmail(sub, defaults);
+    return;
+  }
+
   const runBatchWorker = __batchWorkerOverride
     ?? (await import("../bot/batch-worker")).runBatchWorker;
-  const defaults = await getPortalDefaults();
-
-  const issueType = sub.issueType || "Other Issue or Question";
 
   const workerSub: import("../bot/batch-worker").PortalSubmission = {
     id: sub.id,

@@ -17,4 +17,8 @@ export interface UpdateAppSettingsBody {
   portal_contact_phone?: string | null;
   /** @nullable */
   portal_default_gps_breadcrumbs?: string | null;
+  /** @nullable */
+  direct_email_recipient?: string | null;
+  /** @nullable */
+  direct_email_cc?: string | null;
 }

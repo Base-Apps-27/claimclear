@@ -3254,6 +3254,15 @@ components:
             routed to the MAS "GPS Control Deviation" Freshdesk form (which
             requires the GPS Breadcrumbs Available field). When false, they
             are routed to the generic "Other Issue or Question" form.
+        useDirectEmail:
+          type: boolean
+          description: |
+            When true, disputes for this error type bypass the MAS portal
+            entirely and are sent as emails to the global "direct email
+            recipient" address configured in app settings (intended for
+            issue classes that MAS resolves over email rather than via the
+            portal — e.g. "Attesting too Soon" or "Invoice Number not in
+            System"). When true, useGpsControlDeviation is ignored.
         createdAt:
           type: string
         updatedAt:
@@ -3262,6 +3271,7 @@ components:
         - id
         - name
         - useGpsControlDeviation
+        - useDirectEmail
 
     CreateErrorTypeBody:
       type: object
@@ -3287,6 +3297,8 @@ components:
         disputeInstructions:
           type: string
         useGpsControlDeviation:
+          type: boolean
+        useDirectEmail:
           type: boolean
       required:
         - name
@@ -3316,6 +3328,8 @@ components:
           type: string
         useGpsControlDeviation:
           type: boolean
+        useDirectEmail:
+          type: boolean
 
     AppSettingsResponse:
       type: object
@@ -3330,6 +3344,16 @@ components:
           type: ["string", "null"]
         portal_default_gps_breadcrumbs:
           type: ["string", "null"]
+        direct_email_recipient:
+          type: ["string", "null"]
+          description: |
+            Recipient address used for the "Direct Email" submission path
+            (e.g. tripinvresolution@medanswering.com). Disputes whose error
+            type has useDirectEmail=true are sent here instead of being
+            filed via the MAS portal.
+        direct_email_cc:
+          type: ["string", "null"]
+          description: Optional CC line (comma-separated) for direct email disputes.
 
     UpdateAppSettingsBody:
       type: object
@@ -3343,6 +3367,10 @@ components:
         portal_contact_phone:
           type: ["string", "null"]
         portal_default_gps_breadcrumbs:
+          type: ["string", "null"]
+        direct_email_recipient:
+          type: ["string", "null"]
+        direct_email_cc:
           type: ["string", "null"]
 
     ImportClaimsBody:

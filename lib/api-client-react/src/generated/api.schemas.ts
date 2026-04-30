@@ -769,6 +769,14 @@ requires the GPS Breadcrumbs Available field). When false, they
 are routed to the generic "Other Issue or Question" form.
  */
   useGpsControlDeviation: boolean;
+  /** When true, disputes for this error type bypass the MAS portal
+entirely and are sent as emails to the global "direct email
+recipient" address configured in app settings (intended for
+issue classes that MAS resolves over email rather than via the
+portal — e.g. "Attesting too Soon" or "Invoice Number not in
+System"). When true, useGpsControlDeviation is ignored.
+ */
+  useDirectEmail: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -795,6 +803,7 @@ export interface CreateErrorTypeBody {
   emailTemplate?: string;
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
+  useDirectEmail?: boolean;
 }
 
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
@@ -819,6 +828,7 @@ export interface UpdateErrorTypeBody {
   emailTemplate?: string;
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
+  useDirectEmail?: boolean;
 }
 
 export interface AppSettingsResponse {
@@ -832,6 +842,20 @@ export interface AppSettingsResponse {
   portal_contact_phone?: string | null;
   /** @nullable */
   portal_default_gps_breadcrumbs?: string | null;
+  /**
+   * Recipient address used for the "Direct Email" submission path
+(e.g. tripinvresolution@medanswering.com). Disputes whose error
+type has useDirectEmail=true are sent here instead of being
+filed via the MAS portal.
+
+   * @nullable
+   */
+  direct_email_recipient?: string | null;
+  /**
+   * Optional CC line (comma-separated) for direct email disputes.
+   * @nullable
+   */
+  direct_email_cc?: string | null;
 }
 
 export interface UpdateAppSettingsBody {
@@ -845,6 +869,10 @@ export interface UpdateAppSettingsBody {
   portal_contact_phone?: string | null;
   /** @nullable */
   portal_default_gps_breadcrumbs?: string | null;
+  /** @nullable */
+  direct_email_recipient?: string | null;
+  /** @nullable */
+  direct_email_cc?: string | null;
 }
 
 export interface ImportClaimRow {

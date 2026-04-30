@@ -2256,6 +2256,11 @@ export const ListErrorTypesResponseItem = zod.object({
     .describe(
       'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
     ),
+  useDirectEmail: zod
+    .boolean()
+    .describe(
+      'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2276,6 +2281,7 @@ export const CreateErrorTypeBody = zod.object({
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
+  useDirectEmail: zod.boolean().optional(),
 });
 
 /**
@@ -2302,6 +2308,11 @@ export const GetErrorTypeResponse = zod.object({
     .describe(
       'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
     ),
+  useDirectEmail: zod
+    .boolean()
+    .describe(
+      'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -2325,6 +2336,7 @@ export const UpdateErrorTypeBody = zod.object({
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
+  useDirectEmail: zod.boolean().optional(),
 });
 
 export const UpdateErrorTypeResponse = zod.object({
@@ -2343,6 +2355,11 @@ export const UpdateErrorTypeResponse = zod.object({
     .boolean()
     .describe(
       'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .describe(
+      'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -2364,6 +2381,16 @@ export const GetAppSettingsResponse = zod.object({
   portal_contact_email: zod.string().nullish(),
   portal_contact_phone: zod.string().nullish(),
   portal_default_gps_breadcrumbs: zod.string().nullish(),
+  direct_email_recipient: zod
+    .string()
+    .nullish()
+    .describe(
+      'Recipient address used for the \"Direct Email\" submission path\n(e.g. tripinvresolution@medanswering.com). Disputes whose error\ntype has useDirectEmail=true are sent here instead of being\nfiled via the MAS portal.\n',
+    ),
+  direct_email_cc: zod
+    .string()
+    .nullish()
+    .describe("Optional CC line (comma-separated) for direct email disputes."),
 });
 
 /**
@@ -2375,6 +2402,8 @@ export const UpdateAppSettingsBody = zod.object({
   portal_contact_email: zod.string().nullish(),
   portal_contact_phone: zod.string().nullish(),
   portal_default_gps_breadcrumbs: zod.string().nullish(),
+  direct_email_recipient: zod.string().nullish(),
+  direct_email_cc: zod.string().nullish(),
 });
 
 export const UpdateAppSettingsResponse = zod.object({
@@ -2383,6 +2412,16 @@ export const UpdateAppSettingsResponse = zod.object({
   portal_contact_email: zod.string().nullish(),
   portal_contact_phone: zod.string().nullish(),
   portal_default_gps_breadcrumbs: zod.string().nullish(),
+  direct_email_recipient: zod
+    .string()
+    .nullish()
+    .describe(
+      'Recipient address used for the \"Direct Email\" submission path\n(e.g. tripinvresolution@medanswering.com). Disputes whose error\ntype has useDirectEmail=true are sent here instead of being\nfiled via the MAS portal.\n',
+    ),
+  direct_email_cc: zod
+    .string()
+    .nullish()
+    .describe("Optional CC line (comma-separated) for direct email disputes."),
 });
 
 /**

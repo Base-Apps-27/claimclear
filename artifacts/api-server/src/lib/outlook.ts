@@ -54,17 +54,32 @@ async function getOutlookClient(): Promise<Client> {
   });
 }
 
+export interface EmailAttachment {
+  /** Filename shown in the recipient's mailbox (e.g. "evidence-1.pdf"). */
+  name: string;
+  /** Raw bytes of the attachment. */
+  content: Buffer;
+  /** MIME type (defaults to application/octet-stream when omitted). */
+  contentType?: string;
+}
+
 export interface SendEmailOptions {
   to: string | string[];
   subject: string;
   html: string;
   cc?: string | string[];
+  attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {
   messageId: string | null;
   conversationId: string | null;
 }
+
+// Microsoft Graph caps inline ("fileAttachment") payloads at ~3 MB total per
+// message. Anything larger requires the upload-session API. We refuse early
+// with a clear error rather than letting Graph reject mid-send.
+const INLINE_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
 
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const client = await getOutlookClient();
@@ -81,6 +96,16 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         .map((email) => ({ emailAddress: { address: email } }))
     : [];
 
+  const attachments = options.attachments ?? [];
+  const totalAttachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
+  if (totalAttachmentBytes > INLINE_ATTACHMENT_LIMIT_BYTES) {
+    throw new Error(
+      `Email attachments total ${totalAttachmentBytes} bytes which exceeds the ` +
+      `${INLINE_ATTACHMENT_LIMIT_BYTES}-byte inline cap. Use a smaller attachment set ` +
+      `or implement the Graph upload-session flow.`,
+    );
+  }
+
   const draft: any = {
     subject: options.subject,
     body: {
@@ -92,6 +117,15 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 
   if (ccRecipients.length > 0) {
     draft.ccRecipients = ccRecipients;
+  }
+
+  if (attachments.length > 0) {
+    draft.attachments = attachments.map((a) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.name,
+      contentType: a.contentType || "application/octet-stream",
+      contentBytes: a.content.toString("base64"),
+    }));
   }
 
   // Create a draft message so we can read back its id + conversationId

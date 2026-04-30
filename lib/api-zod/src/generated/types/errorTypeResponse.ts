@@ -36,6 +36,14 @@ requires the GPS Breadcrumbs Available field). When false, they
 are routed to the generic "Other Issue or Question" form.
  */
   useGpsControlDeviation: boolean;
+  /** When true, disputes for this error type bypass the MAS portal
+entirely and are sent as emails to the global "direct email
+recipient" address configured in app settings (intended for
+issue classes that MAS resolves over email rather than via the
+portal — e.g. "Attesting too Soon" or "Invoice Number not in
+System"). When true, useGpsControlDeviation is ignored.
+ */
+  useDirectEmail: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

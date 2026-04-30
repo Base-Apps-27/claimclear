@@ -18,7 +18,7 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import {
   Play, Loader2, Clock, AlertTriangle, CheckCircle, FlaskConical, Send, Lock, StopCircle, Ban,
   Search, Tag, Edit2, X, Sparkles, History, Bot, ChevronDown, ChevronRight, MoreVertical,
-  Eye, RefreshCw, XCircle, AlertCircle, ExternalLink,
+  Eye, RefreshCw, XCircle, AlertCircle, ExternalLink, Mail, Globe,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { WrapTooltip } from "@/components/info-tooltip";
@@ -921,8 +921,23 @@ function SubmissionRow({
         )}
       </div>
 
-      <span className="text-xs text-muted-foreground truncate max-w-[180px] hidden md:inline" title={sub.issueType || ""}>
-        {sub.issueType || "—"}
+      <span className="text-xs text-muted-foreground truncate max-w-[180px] hidden md:inline-flex items-center gap-1.5" title={sub.issueType || ""}>
+        {sub.issueType === "Direct Email" ? (
+          <WrapTooltip content="This dispute is sent as a direct email (bypasses the MAS portal).">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-medium leading-none">
+              <Mail className="h-2.5 w-2.5" />
+              Email
+            </span>
+          </WrapTooltip>
+        ) : sub.issueType ? (
+          <WrapTooltip content={`Filed via the MAS portal as: ${sub.issueType}`}>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-medium leading-none">
+              <Globe className="h-2.5 w-2.5" />
+              Portal
+            </span>
+          </WrapTooltip>
+        ) : null}
+        <span className="truncate">{sub.issueType || "—"}</span>
       </span>
       <span className="text-sm font-medium font-mono min-w-[64px] text-right">{formatCurrency(sub.claimAmount || "0")}</span>
       <span className="text-[11px] text-muted-foreground min-w-[56px] text-right">{timeAgo(sub.createdAt)}</span>

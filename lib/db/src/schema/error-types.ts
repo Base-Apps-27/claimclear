@@ -15,6 +15,7 @@ export const errorTypesTable = pgTable("error_types", {
   emailTemplate: text("email_template"),
   disputeInstructions: text("dispute_instructions"),
   useGpsControlDeviation: boolean("use_gps_control_deviation").notNull().default(false),
+  useDirectEmail: boolean("use_direct_email").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
