@@ -24,7 +24,7 @@ import {
   useListClaims,
   useGetInvoiceGroup, getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, UpdateClaimOutcomeBodyClosureReason } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation } from "@workspace/api-client-react";
 import { ConversationsCard } from "@/components/conversations-card";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
@@ -57,8 +57,7 @@ import { WorkflowPlayer } from "@/components/workflow-player";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
-import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
-import type { ClosureReasonKey } from "@/components/closure/closure-options";
+import { ClosureActions } from "@/components/closure/closure-actions";
 import { XCircle, FileX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -348,7 +347,6 @@ export default function ClaimDetail() {
   const [showHoldDialog, setShowHoldDialog] = useState(false);
   const [postResponseNotes, setPostResponseNotes] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActionCategory | "all">("all");
-  const [closureDialog, setClosureDialog] = useState<{ reason: ClosureReasonKey } | null>(null);
 
   useEffect(() => {
     if (claim) {
@@ -452,12 +450,14 @@ export default function ClaimDetail() {
     invalidate();
   };
 
-  const handleOutcomeChange = async (
-    outcome: string,
-    closureReason?: UpdateClaimOutcomeBodyClosureReason,
-  ) => {
+  // Non-closure outcomes only (Approved, Partially Approved, Payer Denied).
+  // Withdrawn / Non-Issue closures go through <ClosureActions> + the structured
+  // intake dialog so they always carry category, root cause, narrative, and
+  // accountability metadata. Bypassing the dialog here was the source of the
+  // silent-NULL Accept-as-Loss bug.
+  const handleOutcomeChange = async (outcome: string) => {
     const approvedAmount = outcome === "Approved" ? claim.claimAmount || "0" : outcome === "Partially Approved" ? "" : undefined;
-    await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount, closureReason } });
+    await updateOutcome.mutateAsync({ id: claimId, data: { outcome, approvedAmount } });
     invalidate();
   };
 
@@ -1186,27 +1186,32 @@ export default function ClaimDetail() {
 
               {(getClaimStageKey(claim.status) === "build" || getClaimStageKey(claim.status) === "await") && (
                 <ActionGroup label="Exit workflow">
-                  <ActionRow
-                    icon={<XCircle className="h-4 w-4" />}
-                    label="Mark as Cannot Dispute"
-                    sub={
-                      getClaimStageKey(claim.status) === "build"
-                        ? "Worked the case; the evidence we'd need doesn't exist"
-                        : "Mid-flight: turns out we can't recover these dollars"
-                    }
-                    onClick={() => setClosureDialog({ reason: "not_contestable" })}
-                    testId="action-stage-mark-not-contestable"
-                  />
-                  <ActionRow
-                    icon={<FileX className="h-4 w-4" />}
-                    label="Mark as Non-Issue"
-                    sub={
-                      getClaimStageKey(claim.status) === "build"
-                        ? "Discovered this isn't a real billing error"
-                        : "Mid-flight: this turned out to not be a real billing error"
-                    }
-                    onClick={() => setClosureDialog({ reason: "non_issue" })}
-                    testId="action-stage-mark-non-issue"
+                  <ClosureActions
+                    target={{ kind: "claim", id: claimId }}
+                    outcome={claim.outcome}
+                    closureReason={claim.closureReason}
+                    triggers={[
+                      {
+                        reason: "not_contestable",
+                        icon: <XCircle className="h-4 w-4" />,
+                        label: "Mark as Cannot Dispute",
+                        sub:
+                          getClaimStageKey(claim.status) === "build"
+                            ? "Worked the case; the evidence we'd need doesn't exist"
+                            : "Mid-flight: turns out we can't recover these dollars",
+                        testId: "action-stage-mark-not-contestable",
+                      },
+                      {
+                        reason: "non_issue",
+                        icon: <FileX className="h-4 w-4" />,
+                        label: "Mark as Non-Issue",
+                        sub:
+                          getClaimStageKey(claim.status) === "build"
+                            ? "Discovered this isn't a real billing error"
+                            : "Mid-flight: this turned out to not be a real billing error",
+                        testId: "action-stage-mark-non-issue",
+                      },
+                    ]}
                   />
                 </ActionGroup>
               )}
@@ -1237,21 +1242,28 @@ export default function ClaimDetail() {
                           onClick={() => handleOutcomeChange("Denied")}
                           testId="action-outcome-payer-denied"
                         />
-                        <ActionRow
-                          label="Withdraw — Not Contestable"
-                          sub="No clear path to recover the dollars"
-                          selected={claim.outcome === "Withdrawn" && claim.closureReason === "not_contestable"}
-                          disabledReason="Close this claim because we decided not to dispute it (no clear path to recover the dollars)."
-                          onClick={() => handleOutcomeChange("Withdrawn", "not_contestable")}
-                          testId="action-outcome-not-contestable"
-                        />
-                        <ActionRow
-                          label="Withdraw — Accepted Loss"
-                          sub="Accept the loss after a denial"
-                          selected={claim.outcome === "Withdrawn" && claim.closureReason === "accepted_loss"}
-                          disabledReason="Close this claim after a denial because we accept the loss and won't re-dispute."
-                          onClick={() => handleOutcomeChange("Withdrawn", "accepted_loss")}
-                          testId="action-outcome-accepted-loss"
+                        <ClosureActions
+                          target={{ kind: "claim", id: claimId }}
+                          outcome={claim.outcome}
+                          closureReason={claim.closureReason}
+                          triggers={[
+                            {
+                              reason: "not_contestable",
+                              label: "Withdraw — Not Contestable",
+                              sub: "No clear path to recover the dollars",
+                              disabledReason:
+                                "Close this claim because we decided not to dispute it (no clear path to recover the dollars).",
+                              testId: "action-outcome-not-contestable",
+                            },
+                            {
+                              reason: "accepted_loss",
+                              label: "Withdraw — Accepted Loss",
+                              sub: "Accept the loss after a denial",
+                              disabledReason:
+                                "Close this claim after a denial because we accept the loss and won't re-dispute.",
+                              testId: "action-outcome-accepted-loss",
+                            },
+                          ]}
                         />
                       </>
                     )}
@@ -1423,17 +1435,6 @@ export default function ClaimDetail() {
         </DialogContent>
       </Dialog>
 
-      <ClosureIntakeDialog
-        open={!!closureDialog}
-        onOpenChange={(open) => {
-          if (!open) setClosureDialog(null);
-        }}
-        target={{ kind: "claim", id: claimId }}
-        reason={closureDialog?.reason ?? "non_issue"}
-        onSuccess={() => {
-          setClosureDialog(null);
-        }}
-      />
     </div>
   );
 }

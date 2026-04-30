@@ -327,6 +327,17 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     return node.evidenceRequirements.every(r => isReqSatisfied(r, recs[r.key] ?? { acknowledged: false, items: [] }));
   };
 
+  // The decision-tree player keeps its own thin wrapper around
+  // <ClosureIntakeDialog> rather than adopting the shared <ClosureActions>
+  // component. The reason: here the "trigger" is not a button — it's the act
+  // of choosing an option in the guided flow. The player also needs to record
+  // the chosen step + final outcome only AFTER the structured intake is
+  // confirmed (see pendingClosureRef below), and supports per-option category
+  // / root-cause prefill from the tree definition. None of that maps cleanly
+  // onto a list of inline trigger buttons. The shared dialog still drives the
+  // intake itself, and its onSuccess invalidates the entity, valid-transitions
+  // and Withdrawals list queries — so this surface ends up calling the same
+  // dialog with the same refresh behaviour as every other closure path.
   const closureDialogEl = closureTarget ? (
     <ClosureIntakeDialog
       open={!!pendingClosure}

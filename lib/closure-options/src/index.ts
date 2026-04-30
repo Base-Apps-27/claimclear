@@ -118,7 +118,7 @@ export const CLOSURE_ACCOUNTABILITY_TAGS: { value: ClosureAccountabilityTag; lab
   { value: "other", label: "Other" },
 ];
 
-export type ClosureReasonKey = "not_contestable" | "non_issue";
+export type ClosureReasonKey = "not_contestable" | "non_issue" | "accepted_loss";
 
 export const CLOSURE_REASON_BANNER: Record<
   ClosureReasonKey,
@@ -139,5 +139,13 @@ export const CLOSURE_REASON_BANNER: Record<
     bannerClass: "bg-blue-50 border-blue-200 text-blue-900",
     submitLabel: "Mark Non-Issue",
     submitClass: "bg-blue-600 hover:bg-blue-700 text-white border-blue-700",
+  },
+  accepted_loss: {
+    label: "Accepted Loss",
+    description:
+      "We received a denial and have decided to accept the loss rather than re-dispute. The dollars stay lost.",
+    bannerClass: "bg-stone-50 border-stone-200 text-stone-900",
+    submitLabel: "Mark Accepted Loss",
+    submitClass: "bg-stone-700 hover:bg-stone-800 text-white border-stone-800",
   },
 };

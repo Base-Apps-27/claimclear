@@ -11,6 +11,7 @@ import {
   getGetInvoiceGroupValidTransitionsQueryKey,
   getListClaimEvidenceQueryKey,
   getListInvoiceGroupEvidenceQueryKey,
+  getListWithdrawalsQueryKey,
   type UpdateClaimOutcomeBodyClosureAccountabilityTagsItem,
   type UpdateClaimOutcomeBodyClosureReason,
   type UpdateInvoiceGroupOutcomeBodyClosureReason,
@@ -345,6 +346,7 @@ export function ClosureIntakeDialog({
         });
         queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(target.id) });
         queryClient.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(target.id) });
+        queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
       } else {
         await updateGroupOutcome.mutateAsync({
           id: target.id,
@@ -371,6 +373,7 @@ export function ClosureIntakeDialog({
         queryClient.invalidateQueries({
           queryKey: getListInvoiceGroupEvidenceQueryKey(target.id),
         });
+        queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
       }
 
       toast({
