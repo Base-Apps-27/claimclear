@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem, ProcessResponseBodyResponseType, UpdateInvoiceGroupOutcomeBodyClosureReason, ErrorTypeResponse } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1036,12 +1036,12 @@ export default function InvoiceGroupDetail() {
                       <>
                         <PresenceLockWrapper reason={lockReason} className="w-full">
                           <ActionRow
-                            label="Payer Denied"
+                            label="Denied by Payor"
                             selected={group.outcome === "Denied"}
                             disabled={!hasResponse || updateOutcome.isPending || othersPresent}
                             disabledReason={hasResponse ? undefined : "Disabled because no portal or email response has been recorded yet."}
                             onClick={() => handleOutcome("Denied")}
-                            testId="action-group-outcome-payer-denied"
+                            testId="action-group-outcome-denied-by-payor"
                           />
                         </PresenceLockWrapper>
                         <ClosureActions
@@ -1050,33 +1050,37 @@ export default function InvoiceGroupDetail() {
                           closureReason={group.closureReason}
                           triggers={[
                             {
-                              reason: "not_contestable",
-                              label: "Withdraw — Not Contestable",
+                              reason: "denied_by_payor",
+                              label: "Denied by Payor (with reason)",
+                              sub: "Payor formally denied — recorded response required",
+                              disabled: !hasResponse || updateOutcome.isPending || othersPresent,
+                              disabledReason: hasResponse
+                                ? "Close because the payor formally denied this group (no further dispute)."
+                                : "Disabled because no portal or email response has been recorded yet.",
+                              testId: "action-group-outcome-denied-by-payor-closure",
+                              wrap: (node) => (
+                                <PresenceLockWrapper reason={lockReason} className="w-full">
+                                  {node}
+                                </PresenceLockWrapper>
+                              ),
+                            },
+                            // Cannot Dispute is only valid pre-submission; once
+                            // any portal_submission exists for the group the
+                            // server will reject it, so we hide the trigger.
+                            ...(groupValidTransitions?.hasBeenSubmitted ? [] : [{
+                              reason: "cannot_dispute" as const,
+                              label: "Withdraw — Cannot Dispute",
                               sub: "No clear path to recover",
                               disabled: updateOutcome.isPending || othersPresent,
                               disabledReason:
                                 "Close because we decided not to dispute (no clear path to recover).",
-                              testId: "action-group-outcome-not-contestable",
-                              wrap: (node) => (
+                              testId: "action-group-outcome-cannot-dispute",
+                              wrap: (node: ReactNode) => (
                                 <PresenceLockWrapper reason={lockReason} className="w-full">
                                   {node}
                                 </PresenceLockWrapper>
                               ),
-                            },
-                            {
-                              reason: "accepted_loss",
-                              label: "Withdraw — Accepted Loss",
-                              sub: "Accept the loss after a denial",
-                              disabled: updateOutcome.isPending || othersPresent,
-                              disabledReason:
-                                "Close after a denial because we accept the loss and won't re-dispute.",
-                              testId: "action-group-outcome-accepted-loss",
-                              wrap: (node) => (
-                                <PresenceLockWrapper reason={lockReason} className="w-full">
-                                  {node}
-                                </PresenceLockWrapper>
-                              ),
-                            },
+                            }]),
                           ]}
                         />
                       </>

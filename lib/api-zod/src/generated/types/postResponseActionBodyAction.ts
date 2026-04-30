@@ -12,6 +12,6 @@ export type PostResponseActionBodyAction =
 export const PostResponseActionBodyAction = {
   resolve_reattest: "resolve_reattest",
   resolve_new_invoice: "resolve_new_invoice",
-  accept_loss: "accept_loss",
+  mark_denied_by_payor: "mark_denied_by_payor",
   re_dispute: "re_dispute",
 } as const;

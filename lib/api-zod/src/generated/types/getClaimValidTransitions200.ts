@@ -13,6 +13,8 @@ export type GetClaimValidTransitions200 = {
   validOutcomes?: string[];
   hasActiveSubmission?: boolean;
   canQueueForPortal?: boolean;
+  /** True if at least one portal_submission has ever existed for this claim (active or terminal). */
+  hasBeenSubmitted?: boolean;
   postResponseActions?: string[];
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this claim. */

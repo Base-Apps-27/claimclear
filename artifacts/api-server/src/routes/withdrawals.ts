@@ -7,7 +7,7 @@ import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 
 const router: IRouter = Router();
 
-const WITHDRAWAL_REASONS = ["not_contestable", "non_issue", "accepted_loss"] as const;
+const WITHDRAWAL_REASONS = ["cannot_dispute", "non_issue", "denied_by_payor"] as const;
 type WithdrawalReason = typeof WITHDRAWAL_REASONS[number];
 
 type WithdrawalRow = {
@@ -230,9 +230,9 @@ router.get("/withdrawals", asyncHandler(async (req, res): Promise<void> => {
   // other filters); we re-compute by toggling hideAddressed off.
   const countsRows = await fetchAllRows({ ...req.query, hideAddressed: "false" });
   const counts = {
-    not_contestable: countsRows.filter(r => r.closureReason === "not_contestable").length,
+    cannot_dispute:  countsRows.filter(r => r.closureReason === "cannot_dispute").length,
     non_issue:       countsRows.filter(r => r.closureReason === "non_issue").length,
-    accepted_loss:   countsRows.filter(r => r.closureReason === "accepted_loss").length,
+    denied_by_payor: countsRows.filter(r => r.closureReason === "denied_by_payor").length,
     addressed:       countsRows.filter(r => r.addressed).length,
   };
 
@@ -303,7 +303,7 @@ router.post("/withdrawals/bulk-address", asyncHandler(async (req, res): Promise<
     : { closureReviewState: "pending", closureAddressedAt: null, closureAddressedBy: null, closureAddressedByEmail: null };
 
   let updated = 0;
-  const closedReasons = ["not_contestable", "non_issue", "accepted_loss"];
+  const closedReasons = ["cannot_dispute", "non_issue", "denied_by_payor"];
 
   if (claimIds.length > 0) {
     const updatedClaims = await db.update(claimsTable)

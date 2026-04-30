@@ -141,9 +141,8 @@ export const ListInvoiceGroupsResponse = zod.object({
       ]),
       closureReason: zod
         .union([
-          zod.literal("payer_denied"),
-          zod.literal("not_contestable"),
-          zod.literal("accepted_loss"),
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
           zod.literal("non_issue"),
           zod.literal(null),
         ])
@@ -296,9 +295,8 @@ export const GetInvoiceGroupResponse = zod
     ]),
     closureReason: zod
       .union([
-        zod.literal("payer_denied"),
-        zod.literal("not_contestable"),
-        zod.literal("accepted_loss"),
+        zod.literal("denied_by_payor"),
+        zod.literal("cannot_dispute"),
         zod.literal("non_issue"),
         zod.literal(null),
       ])
@@ -432,9 +430,8 @@ export const GetInvoiceGroupResponse = zod
             ]),
             closureReason: zod
               .union([
-                zod.literal("payer_denied"),
-                zod.literal("not_contestable"),
-                zod.literal("accepted_loss"),
+                zod.literal("denied_by_payor"),
+                zod.literal("cannot_dispute"),
                 zod.literal("non_issue"),
                 zod.literal(null),
               ])
@@ -775,9 +772,8 @@ export const UpdateInvoiceGroupResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -916,9 +912,8 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1020,7 +1015,7 @@ export const UpdateInvoiceGroupOutcomeBody = zod
   .object({
     outcome: zod.string(),
     closureReason: zod
-      .enum(["payer_denied", "not_contestable", "accepted_loss", "non_issue"])
+      .enum(["denied_by_payor", "cannot_dispute", "non_issue"])
       .optional(),
     approvedAmount: zod.string().optional(),
     closureCategory: zod.string().nullish(),
@@ -1105,9 +1100,8 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1241,9 +1235,8 @@ export const TriageInvoiceGroupResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1374,9 +1367,8 @@ export const HoldInvoiceGroupResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1503,9 +1495,8 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1622,6 +1613,12 @@ export const GetInvoiceGroupValidTransitionsResponse = zod.object({
   validOutcomes: zod.array(zod.string()),
   canQueueForPortal: zod.boolean(),
   hasActiveSubmission: zod.boolean(),
+  hasBeenSubmitted: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id.",
+    ),
   postResponseActions: zod.array(zod.string()),
   latestResponseType: zod.string().nullish(),
   hasResponse: zod
@@ -1672,9 +1669,8 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -1790,9 +1786,8 @@ export const ListInvoiceGroupEvidenceResponse = zod.object({
         .nullish(),
       closureReasonAtAttach: zod
         .union([
-          zod.literal("payer_denied"),
-          zod.literal("not_contestable"),
-          zod.literal("accepted_loss"),
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
           zod.literal("non_issue"),
           zod.literal(null),
         ])
@@ -1943,9 +1938,8 @@ export const ListClaimsResponse = zod.object({
       ]),
       closureReason: zod
         .union([
-          zod.literal("payer_denied"),
-          zod.literal("not_contestable"),
-          zod.literal("accepted_loss"),
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
           zod.literal("non_issue"),
           zod.literal(null),
         ])
@@ -2114,9 +2108,8 @@ export const GetClaimResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2258,9 +2251,8 @@ export const UpdateClaimResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2365,6 +2357,12 @@ export const GetClaimValidTransitionsResponse = zod.object({
   validOutcomes: zod.array(zod.string()).optional(),
   hasActiveSubmission: zod.boolean().optional(),
   canQueueForPortal: zod.boolean().optional(),
+  hasBeenSubmitted: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True if at least one portal_submission has ever existed for this claim (active or terminal).",
+    ),
   postResponseActions: zod.array(zod.string()).optional(),
   latestResponseType: zod.string().nullish(),
   hasResponse: zod
@@ -2418,9 +2416,8 @@ export const UpdateClaimStatusResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2515,7 +2512,7 @@ export const UpdateClaimOutcomeBody = zod
   .object({
     outcome: zod.string(),
     closureReason: zod
-      .enum(["payer_denied", "not_contestable", "accepted_loss", "non_issue"])
+      .enum(["denied_by_payor", "cannot_dispute", "non_issue"])
       .optional(),
     approvedAmount: zod.string().optional(),
     invoiceNumbers: zod.string().optional(),
@@ -2569,7 +2566,7 @@ export const UpdateClaimOutcomeBody = zod
     closureReviewNotes: zod.string().nullish(),
   })
   .describe(
-    'Body for `PATCH \/claims\/{id}\/outcome`. The closure detail fields\n(closureCategory, closureRootCause, closureNarrative,\nclosureAccountabilityTags, etc.) are required when the outcome is\n\"Withdrawn\" with reason \"not_contestable\" or \"Non-Issue\" and are\nvalidated by the canonical `CreateClosureRequest` payload.\n',
+    'Body for `PATCH \/claims\/{id}\/outcome`. The closure detail fields\n(closureCategory, closureRootCause, closureNarrative,\nclosureAccountabilityTags, etc.) are required when the outcome is\n\"Withdrawn\" with reason \"cannot_dispute\" or \"Non-Issue\" and are\nvalidated by the canonical `CreateClosureRequest` payload.\n',
   );
 
 export const UpdateClaimOutcomeResponse = zod.object({
@@ -2606,9 +2603,8 @@ export const UpdateClaimOutcomeResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2739,9 +2735,8 @@ export const UpdateClaimEvidenceResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2871,9 +2866,8 @@ export const PlaceClaimOnHoldResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -2998,9 +2992,8 @@ export const RemoveClaimHoldResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -3129,9 +3122,8 @@ export const UpdateClaimWorkflowResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -3263,9 +3255,8 @@ export const TriageClaimResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -3360,7 +3351,7 @@ export const PostResponseActionBody = zod.object({
   action: zod.enum([
     "resolve_reattest",
     "resolve_new_invoice",
-    "accept_loss",
+    "mark_denied_by_payor",
     "re_dispute",
   ]),
   notes: zod.string().optional(),
@@ -3400,9 +3391,8 @@ export const PostResponseActionResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -3550,9 +3540,8 @@ export const GenerateClaimEmailResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -4950,8 +4939,7 @@ export const GetDashboardSummaryResponse = zod.object({
     onHold: zod.number(),
     withdrawnByReason: zod
       .object({
-        not_contestable: zod.number(),
-        accepted_loss: zod.number(),
+        cannot_dispute: zod.number(),
         other: zod.number(),
       })
       .describe(
@@ -4959,7 +4947,7 @@ export const GetDashboardSummaryResponse = zod.object({
       ),
     deniedByReason: zod
       .object({
-        payer_denied: zod.number(),
+        denied_by_payor: zod.number(),
         other: zod.number(),
       })
       .describe(
@@ -5036,9 +5024,8 @@ export const GetDashboardSummaryResponse = zod.object({
       ]),
       closureReason: zod
         .union([
-          zod.literal("payer_denied"),
-          zod.literal("not_contestable"),
-          zod.literal("accepted_loss"),
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
           zod.literal("non_issue"),
           zod.literal(null),
         ])
@@ -5571,9 +5558,8 @@ export const ListClaimEvidenceResponse = zod.object({
         .nullish(),
       closureReasonAtAttach: zod
         .union([
-          zod.literal("payer_denied"),
-          zod.literal("not_contestable"),
-          zod.literal("accepted_loss"),
+          zod.literal("denied_by_payor"),
+          zod.literal("cannot_dispute"),
           zod.literal("non_issue"),
           zod.literal(null),
         ])
@@ -5625,9 +5611,8 @@ export const AttachClosureEvidenceBody = zod
     notes: zod.string().nullish(),
     closureReasonAtAttach: zod
       .union([
-        zod.literal("payer_denied"),
-        zod.literal("not_contestable"),
-        zod.literal("accepted_loss"),
+        zod.literal("denied_by_payor"),
+        zod.literal("cannot_dispute"),
         zod.literal("non_issue"),
         zod.literal(null),
       ])
@@ -6881,9 +6866,8 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -7025,9 +7009,8 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   ]),
   closureReason: zod
     .union([
-      zod.literal("payer_denied"),
-      zod.literal("not_contestable"),
-      zod.literal("accepted_loss"),
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
       zod.literal("non_issue"),
       zod.literal(null),
     ])
@@ -7119,7 +7102,7 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
 });
 
 /**
- * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ * @summary List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups
  */
 export const listWithdrawalsQueryLimitDefault = 50;
 export const listWithdrawalsQueryOffsetDefault = 0;
@@ -7156,9 +7139,9 @@ export const ListWithdrawalsResponse = zod.object({
         errorDetails: zod.string().nullish(),
         outcome: zod.string(),
         closureReason: zod.enum([
-          "not_contestable",
+          "cannot_dispute",
           "non_issue",
-          "accepted_loss",
+          "denied_by_payor",
         ]),
         closureCategory: zod.string().nullish(),
         closureRootCause: zod.string().nullish(),
@@ -7179,9 +7162,9 @@ export const ListWithdrawalsResponse = zod.object({
   total: zod.number(),
   counts: zod
     .object({
-      not_contestable: zod.number(),
+      cannot_dispute: zod.number(),
       non_issue: zod.number(),
-      accepted_loss: zod.number(),
+      denied_by_payor: zod.number(),
       addressed: zod.number(),
     })
     .describe(

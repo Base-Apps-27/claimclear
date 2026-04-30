@@ -118,13 +118,13 @@ export const CLOSURE_ACCOUNTABILITY_TAGS: { value: ClosureAccountabilityTag; lab
   { value: "other", label: "Other" },
 ];
 
-export type ClosureReasonKey = "not_contestable" | "non_issue" | "accepted_loss";
+export type ClosureReasonKey = "cannot_dispute" | "non_issue" | "denied_by_payor";
 
 export const CLOSURE_REASON_BANNER: Record<
   ClosureReasonKey,
   { label: string; description: string; bannerClass: string; submitLabel: string; submitClass: string }
 > = {
-  not_contestable: {
+  cannot_dispute: {
     label: "Cannot Dispute",
     description:
       "We worked the case but the evidence we'd need doesn't exist or isn't recoverable. The dollars stay lost.",
@@ -140,12 +140,12 @@ export const CLOSURE_REASON_BANNER: Record<
     submitLabel: "Mark Non-Issue",
     submitClass: "bg-blue-600 hover:bg-blue-700 text-white border-blue-700",
   },
-  accepted_loss: {
-    label: "Accepted Loss",
+  denied_by_payor: {
+    label: "Denied by Payor",
     description:
-      "We received a denial and have decided to accept the loss rather than re-dispute. The dollars stay lost.",
-    bannerClass: "bg-stone-50 border-stone-200 text-stone-900",
-    submitLabel: "Mark Accepted Loss",
-    submitClass: "bg-stone-700 hover:bg-stone-800 text-white border-stone-800",
+      "The payor returned a denial that we're recording as the final outcome. The dollars stay lost.",
+    bannerClass: "bg-red-50 border-red-200 text-red-900",
+    submitLabel: "Mark Denied by Payor",
+    submitClass: "bg-red-600 hover:bg-red-700 text-white border-red-700",
   },
 };

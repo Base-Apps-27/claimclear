@@ -14,8 +14,7 @@ export type AttachClosureEvidenceBodyClosureReasonAtAttach =
   | null;
 
 export const AttachClosureEvidenceBodyClosureReasonAtAttach = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;

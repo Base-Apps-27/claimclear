@@ -1054,7 +1054,7 @@ export default function ClaimDetail() {
                       </span>
                     </Button>
                   )}
-                  {validTransitions.postResponseActions.includes("accept_loss") && (
+                  {validTransitions.postResponseActions.includes("mark_denied_by_payor") && (
                     <Button
                       variant="outline"
                       className="h-auto py-3 px-4 flex flex-col items-start gap-1 bg-red-50 hover:bg-red-100 border-red-300 text-red-900"
@@ -1062,7 +1062,7 @@ export default function ClaimDetail() {
                       onClick={async () => {
                         await postResponseActionMutation.mutateAsync({
                           id: claimId,
-                          data: { action: "accept_loss", notes: postResponseNotes || undefined },
+                          data: { action: "mark_denied_by_payor", notes: postResponseNotes || undefined },
                         });
                         setPostResponseNotes("");
                         queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
@@ -1070,7 +1070,7 @@ export default function ClaimDetail() {
                       }}
                     >
                       <span className="flex items-center gap-2 font-semibold">
-                        <X className="h-4 w-4" /> Accept as Loss
+                        <X className="h-4 w-4" /> Mark as Denied by Payor
                       </span>
                       <span className="text-xs font-normal text-red-700">
                         Close claim — denial accepted, no further action
@@ -1184,7 +1184,8 @@ export default function ClaimDetail() {
                 />
               </ActionGroup>
 
-              {(getClaimStageKey(claim.status) === "build" || getClaimStageKey(claim.status) === "await") && (
+              {(getClaimStageKey(claim.status) === "build" || getClaimStageKey(claim.status) === "await") &&
+                !validTransitions?.hasBeenSubmitted && (
                 <ActionGroup label="Exit workflow">
                   <ClosureActions
                     target={{ kind: "claim", id: claimId }}
@@ -1192,23 +1193,17 @@ export default function ClaimDetail() {
                     closureReason={claim.closureReason}
                     triggers={[
                       {
-                        reason: "not_contestable",
+                        reason: "cannot_dispute",
                         icon: <XCircle className="h-4 w-4" />,
                         label: "Mark as Cannot Dispute",
-                        sub:
-                          getClaimStageKey(claim.status) === "build"
-                            ? "Worked the case; the evidence we'd need doesn't exist"
-                            : "Mid-flight: turns out we can't recover these dollars",
-                        testId: "action-stage-mark-not-contestable",
+                        sub: "Worked the case; the evidence we'd need doesn't exist",
+                        testId: "action-stage-mark-cannot-dispute",
                       },
                       {
                         reason: "non_issue",
                         icon: <FileX className="h-4 w-4" />,
                         label: "Mark as Non-Issue",
-                        sub:
-                          getClaimStageKey(claim.status) === "build"
-                            ? "Discovered this isn't a real billing error"
-                            : "Mid-flight: this turned out to not be a real billing error",
+                        sub: "Discovered this isn't a real billing error",
                         testId: "action-stage-mark-non-issue",
                       },
                     ]}
@@ -1221,6 +1216,7 @@ export default function ClaimDetail() {
                 const closureOffered = outcomes.includes("Denied") || outcomes.includes("Withdrawn");
                 const nonClosure = outcomes.filter((o) => o !== "Denied" && o !== "Withdrawn");
                 const hasResponse = validTransitions?.hasResponse ?? !!validTransitions?.latestResponseType;
+                const hasBeenSubmitted = !!validTransitions?.hasBeenSubmitted;
                 return (
                   <ActionGroup label="Resolve">
                     {nonClosure.map((o) => (
@@ -1234,35 +1230,32 @@ export default function ClaimDetail() {
                     ))}
                     {closureOffered && (
                       <>
-                        <ActionRow
-                          label="Payer Denied"
-                          selected={claim.outcome === "Denied"}
-                          disabled={!hasResponse}
-                          disabledReason={hasResponse ? undefined : "Disabled because no portal or email response has been recorded yet."}
-                          onClick={() => handleOutcomeChange("Denied")}
-                          testId="action-outcome-payer-denied"
-                        />
                         <ClosureActions
                           target={{ kind: "claim", id: claimId }}
                           outcome={claim.outcome}
                           closureReason={claim.closureReason}
                           triggers={[
                             {
-                              reason: "not_contestable",
-                              label: "Withdraw — Not Contestable",
+                              reason: "denied_by_payor",
+                              label: "Denied by Payor",
+                              sub: "Payor formally denied — recorded response required",
+                              disabled: !hasResponse,
+                              disabledReason: hasResponse
+                                ? "Close this claim because the payor formally denied it (no further dispute)."
+                                : "Disabled because no portal or email response has been recorded yet.",
+                              testId: "action-outcome-denied-by-payor",
+                            },
+                            // Cannot Dispute is only valid pre-submission; once
+                            // a portal_submission exists the server will reject
+                            // it, so we hide the trigger entirely here.
+                            ...(hasBeenSubmitted ? [] : [{
+                              reason: "cannot_dispute" as const,
+                              label: "Withdraw — Cannot Dispute",
                               sub: "No clear path to recover the dollars",
                               disabledReason:
                                 "Close this claim because we decided not to dispute it (no clear path to recover the dollars).",
-                              testId: "action-outcome-not-contestable",
-                            },
-                            {
-                              reason: "accepted_loss",
-                              label: "Withdraw — Accepted Loss",
-                              sub: "Accept the loss after a denial",
-                              disabledReason:
-                                "Close this claim after a denial because we accept the loss and won't re-dispute.",
-                              testId: "action-outcome-accepted-loss",
-                            },
+                              testId: "action-outcome-cannot-dispute",
+                            }]),
                           ]}
                         />
                       </>

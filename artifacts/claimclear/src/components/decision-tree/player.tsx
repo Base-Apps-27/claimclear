@@ -248,7 +248,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     }
     if (isClosureLeaf && !isTestMode && closureTarget) {
       const reason: ClosureReasonKey =
-        opt.outcomeType === "cannot_dispute" ? "not_contestable" : "non_issue";
+        opt.outcomeType === "cannot_dispute" ? "cannot_dispute" : "non_issue";
       const result = {
         type: opt.outcomeType!,
         label: opt.outcomeLabel || OUTCOME_LABELS[opt.outcomeType!],

@@ -53,8 +53,8 @@ function isSelected(
   closureReason?: string | null,
 ): boolean {
   if (reason === "non_issue") return outcome === "Non-Issue";
-  // not_contestable / accepted_loss both close the entity as Withdrawn,
-  // distinguished only by the closureReason.
+  if (reason === "denied_by_payor") return outcome === "Denied" && closureReason === "denied_by_payor";
+  // cannot_dispute closes the entity as Withdrawn.
   return outcome === "Withdrawn" && closureReason === reason;
 }
 

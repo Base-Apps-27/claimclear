@@ -36,25 +36,25 @@ import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/hooks/use-toast";
 import { WithdrawalReviewDrawer } from "@/components/withdrawal-review-drawer";
 
-type TabKey = "all" | "not_contestable" | "non_issue" | "accepted_loss";
+type TabKey = "all" | "cannot_dispute" | "non_issue" | "denied_by_payor";
 
 const TABS: { key: TabKey; label: string; reasons: string[] }[] = [
-  { key: "all",             label: "All",            reasons: [] },
-  { key: "not_contestable", label: "Cannot Dispute", reasons: ["not_contestable"] },
-  { key: "non_issue",       label: "Non-Issue",      reasons: ["non_issue"] },
-  { key: "accepted_loss",   label: "Accepted Loss",  reasons: ["accepted_loss"] },
+  { key: "all",              label: "All",             reasons: [] },
+  { key: "cannot_dispute",   label: "Cannot Dispute",  reasons: ["cannot_dispute"] },
+  { key: "non_issue",        label: "Non-Issue",       reasons: ["non_issue"] },
+  { key: "denied_by_payor",  label: "Denied by Payor", reasons: ["denied_by_payor"] },
 ];
 
 const REASON_TONE: Record<string, Tone> = {
-  not_contestable: "amber",
+  cannot_dispute: "amber",
   non_issue: "blue",
-  accepted_loss: "muted",
+  denied_by_payor: "red",
 };
 
 const REASON_LABEL: Record<string, string> = {
-  not_contestable: "Cannot Dispute",
+  cannot_dispute: "Cannot Dispute",
   non_issue: "Non-Issue",
-  accepted_loss: "Accepted Loss",
+  denied_by_payor: "Denied by Payor",
 };
 
 function rowKey(r: WithdrawalRow): string {
@@ -108,7 +108,7 @@ export default function WithdrawalsPage() {
 
   const rows: WithdrawalRow[] = data?.rows ?? [];
   const total = data?.total ?? 0;
-  const counts = data?.counts ?? { not_contestable: 0, non_issue: 0, accepted_loss: 0, addressed: 0 };
+  const counts = data?.counts ?? { cannot_dispute: 0, non_issue: 0, denied_by_payor: 0, addressed: 0 };
 
   // Keep drawer in sync with refreshed data so saved fields appear
   useEffect(() => {
@@ -243,10 +243,10 @@ export default function WithdrawalsPage() {
     key: t.key,
     label: t.label,
     count:
-      t.key === "not_contestable" ? counts.not_contestable
-      : t.key === "non_issue"     ? counts.non_issue
-      : t.key === "accepted_loss" ? counts.accepted_loss
-      : counts.not_contestable + counts.non_issue + counts.accepted_loss,
+      t.key === "cannot_dispute"   ? counts.cannot_dispute
+      : t.key === "non_issue"      ? counts.non_issue
+      : t.key === "denied_by_payor" ? counts.denied_by_payor
+      : counts.cannot_dispute + counts.non_issue + counts.denied_by_payor,
   }));
 
   const colCount = 8;
@@ -272,15 +272,15 @@ export default function WithdrawalsPage() {
       <StatusStrip>
         <StatusDot tone="amber" />
         <span className="font-medium text-foreground">Cannot Dispute</span>
-        <span className="tabular-nums text-muted-foreground">{counts.not_contestable}</span>
+        <span className="tabular-nums text-muted-foreground">{counts.cannot_dispute}</span>
         <span className="text-muted-foreground">·</span>
         <StatusDot tone="blue" />
         <span className="font-medium text-foreground">Non-Issue</span>
         <span className="tabular-nums text-muted-foreground">{counts.non_issue}</span>
         <span className="text-muted-foreground">·</span>
         <StatusDot tone="muted" />
-        <span className="font-medium text-foreground">Accepted Loss</span>
-        <span className="tabular-nums text-muted-foreground">{counts.accepted_loss}</span>
+        <span className="font-medium text-foreground">Denied by Payor</span>
+        <span className="tabular-nums text-muted-foreground">{counts.denied_by_payor}</span>
         <span className="text-muted-foreground">·</span>
         <StatusDot tone="green" />
         <span className="font-medium text-foreground">Addressed</span>
@@ -435,7 +435,7 @@ export default function WithdrawalsPage() {
                         <EmptyState
                           icon={Inbox}
                           title="Nothing to review"
-                          description="When claims or groups are closed as Cannot Dispute, Non-Issue, or Accepted Loss, they will appear here for follow-up."
+                          description="When claims or groups are closed as Cannot Dispute, Non-Issue, or Denied by Payor, they will appear here for follow-up."
                         />
                       )}
                     </td>

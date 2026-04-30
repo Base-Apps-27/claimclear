@@ -10,7 +10,7 @@ export type CreateClosureRequestClosureReason =
   (typeof CreateClosureRequestClosureReason)[keyof typeof CreateClosureRequestClosureReason];
 
 export const CreateClosureRequestClosureReason = {
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  cannot_dispute: "cannot_dispute",
+  denied_by_payor: "denied_by_payor",
   non_issue: "non_issue",
 } as const;

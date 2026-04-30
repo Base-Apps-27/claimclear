@@ -378,6 +378,12 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
       inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
     ));
 
+  const allSubmissions = await db.select({ id: portalSubmissionsTable.id })
+    .from(portalSubmissionsTable)
+    .where(eq(portalSubmissionsTable.claimId, id))
+    .limit(1);
+  const hasBeenSubmitted = allSubmissions.length > 0;
+
   const validStatuses = activeSubmissions.length > 0 ? [] : (VALID_MANUAL_STATUS_TRANSITIONS[claim.status] || []);
 
   const validOutcomes: string[] = [];
@@ -409,9 +415,9 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     if (isPositive) {
       postResponseActions = ["resolve_reattest", "resolve_new_invoice"];
     } else if (isNegative) {
-      postResponseActions = ["accept_loss", "re_dispute"];
+      postResponseActions = ["mark_denied_by_payor", "re_dispute"];
     } else {
-      postResponseActions = ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"];
+      postResponseActions = ["resolve_reattest", "resolve_new_invoice", "mark_denied_by_payor", "re_dispute"];
     }
   }
 
@@ -422,6 +428,7 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     validOutcomes,
     hasActiveSubmission: activeSubmissions.length > 0,
     canQueueForPortal: !activeSubmissions.length && ["Needs Evidence", "Needs Review", "New"].includes(claim.status),
+    hasBeenSubmitted,
     postResponseActions,
     latestResponseType,
     hasResponse: hasResponses,
@@ -460,12 +467,12 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   const { outcome, approvedAmount, invoiceNumbers, closureReason, _systemOverride } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
-  if (outcome === "Denied" && closureReason !== undefined && closureReason !== "payer_denied") {
-    res.status(400).json({ error: `Denied outcome implies closureReason=payer_denied; pass Withdrawn for staff-initiated closures.` });
+  if (outcome === "Denied" && closureReason !== undefined && closureReason !== "denied_by_payor") {
+    res.status(400).json({ error: `Denied outcome implies closureReason=denied_by_payor; pass Withdrawn for staff-initiated closures.` });
     return;
   }
-  if (outcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
-    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
+  if (outcome === "Withdrawn" && closureReason !== "cannot_dispute") {
+    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "cannot_dispute".` });
     return;
   }
   if (outcome === "Non-Issue" && closureReason !== undefined && closureReason !== "non_issue") {
@@ -476,11 +483,13 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   let closure: NormalizedClosure | null = null;
   const effectiveReason = closureReason ?? (outcome === "Non-Issue" ? "non_issue" : closureReason);
   const reasonRequiresClosure =
-    effectiveReason === "not_contestable" || effectiveReason === "non_issue";
+    effectiveReason === "cannot_dispute" || effectiveReason === "non_issue";
   const wantsStructuredClosure =
-    outcome === "Withdrawn" || outcome === "Non-Issue";
+    outcome === "Withdrawn" || outcome === "Non-Issue" || outcome === "Denied";
   const hasClosureFields =
     wantsStructuredClosure && CLOSURE_DETAIL_FIELDS.some((f) => req.body[f] !== undefined);
+  // Denied accepts an optional structured closure (Denied-by-Payor with details);
+  // it does NOT require one because the simple "outcome = Denied" path is also valid.
   if (wantsStructuredClosure && (hasClosureFields || reasonRequiresClosure)) {
     try {
       closure = parseClosurePayload({
@@ -685,13 +694,13 @@ router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> =
   }
 }));
 
-const POST_RESPONSE_ACTIONS = ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"] as const;
+const POST_RESPONSE_ACTIONS = ["resolve_reattest", "resolve_new_invoice", "mark_denied_by_payor", "re_dispute"] as const;
 type PostResponseAction = typeof POST_RESPONSE_ACTIONS[number];
 
 const POST_RESPONSE_ACTION_LABELS: Record<PostResponseAction, string> = {
   resolve_reattest: "Resolve — Reattest",
   resolve_new_invoice: "Resolve — New Invoice #",
-  accept_loss: "Accept as Loss",
+  mark_denied_by_payor: "Mark as Denied by Payor",
   re_dispute: "Re-dispute with Additional Points",
 };
 
@@ -733,15 +742,15 @@ router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): P
         });
         break;
 
-      case "accept_loss":
+      case "mark_denied_by_payor":
         result = await transitionClaimStatusAndOutcome({
           claimId: id,
-          newStatus: "Resolved",
-          newOutcome: "Withdrawn",
+          newStatus: "Denied",
+          newOutcome: "Denied",
           source: "post_response_action",
           reason: `${actionLabel}${notes ? ` — ${notes}` : ""}`,
           actor: actorFromReq(req),
-          closureReason: "accepted_loss",
+          closureReason: "denied_by_payor",
         });
         break;
 
@@ -839,8 +848,8 @@ router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promis
   if (!existing) { res.status(404).json({ error: "Claim not found" }); return; }
 
   const reason = (existing as any).closureReason as string | null;
-  if (!reason || !["not_contestable", "non_issue", "accepted_loss"].includes(reason)) {
-    res.status(409).json({ error: "Closure review only applies to closed (withdrawn / non-issue) claims." });
+  if (!reason || !["cannot_dispute", "non_issue", "denied_by_payor"].includes(reason)) {
+    res.status(409).json({ error: "Closure review only applies to closed (withdrawn / denied / non-issue) claims." });
     return;
   }
 

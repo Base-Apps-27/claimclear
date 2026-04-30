@@ -34,9 +34,9 @@ export default function HandlingResponse() {
               <p className="font-display text-primary font-bold" style={{ fontSize: "1vw", marginTop: "1.5vh" }}>What now?</p>
               <div className="grid grid-cols-3 gap-[0.7vw]" style={{ marginTop: "0.8vh" }}>
                 <div className="border border-[#DC2626]/30 bg-[#FEE2E2]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
-                  <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Accept as Loss</p>
-                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Withdraw with reason "accepted_loss". Status → Resolved. Short note required.</p>
-                  <button className="bg-[#DC2626] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>Accept Loss</button>
+                  <p className="font-display text-[#991B1B] font-bold" style={{ fontSize: "0.9vw" }}>Mark Denied by Payor</p>
+                  <p className="font-body text-primary" style={{ fontSize: "0.72vw", marginTop: "0.4vh", lineHeight: "1.4" }}>Closure reason "denied_by_payor". Status → Denied. Short note required.</p>
+                  <button className="bg-[#DC2626] text-white font-display font-semibold rounded-[0.4vw] w-full" style={{ padding: "0.5vh 0", fontSize: "0.75vw", marginTop: "0.7vh" }}>Denied by Payor</button>
                 </div>
                 <div className="border border-[#16A34A]/30 bg-[#D1FAE5]/40 rounded-[0.5vw]" style={{ padding: "1.2vh 0.9vw" }}>
                   <p className="font-display text-[#065F46] font-bold" style={{ fontSize: "0.9vw" }}>Submit New Invoice</p>
@@ -55,7 +55,7 @@ export default function HandlingResponse() {
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
         <Callout number="1" title="Read the payor's exact response in Email Thread" body="The banner snippets the latest message; click 'Open thread' to see the full back-and-forth and reply directly to the payor." />
-        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = payer_denied. 'Withdrawn' (Accept Loss, Cannot Dispute, Non-Issue) is when WE close it. Closures need a reason and lessons-learned in Withdrawals Review." color="orange" />
+        <Callout number="2" title="Withdrawn vs Denied" body="'Denied' means the payor rejected us — closure_reason = denied_by_payor (response required). 'Withdrawn' (Cannot Dispute) is when WE close it before submission. 'Non-Issue' is when there's no real billing error. All closures need a reason and lessons-learned in Withdrawals Review." color="orange" />
         <Callout number="3" title="Submit New Invoice fixes data problems" body="If the payor denied because of a member-name mismatch and you can re-bill correctly, this is the right call." />
         <Callout number="4" title="Re-dispute adds firepower" body="Pulled a better GPS log? Got a corrected signature? Re-dispute. Status goes back to Needs Evidence and you run the workflow again." color="primary" />
       </div>

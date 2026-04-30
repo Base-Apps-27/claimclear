@@ -380,13 +380,13 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
   if (outcome === "Denied") {
-    if (closureReason !== undefined && closureReason !== "payer_denied") {
-      res.status(400).json({ error: `Denied outcome implies closureReason=payer_denied; pass Withdrawn for staff-initiated closures.` });
+    if (closureReason !== undefined && closureReason !== "denied_by_payor") {
+      res.status(400).json({ error: `Denied outcome implies closureReason=denied_by_payor; pass Withdrawn for staff-initiated closures.` });
       return;
     }
   }
-  if (outcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
-    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "not_contestable" or "accepted_loss".` });
+  if (outcome === "Withdrawn" && closureReason !== "cannot_dispute") {
+    res.status(400).json({ error: `Withdrawn outcome requires closureReason of "cannot_dispute".` });
     return;
   }
   if (outcome === "Non-Issue" && closureReason !== undefined && closureReason !== "non_issue") {
@@ -397,11 +397,13 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
   let closure: NormalizedClosure | null = null;
   const effectiveReason = closureReason ?? (outcome === "Non-Issue" ? "non_issue" : closureReason);
   const reasonRequiresClosure =
-    effectiveReason === "not_contestable" || effectiveReason === "non_issue";
+    effectiveReason === "cannot_dispute" || effectiveReason === "non_issue";
   const wantsStructuredClosure =
-    outcome === "Withdrawn" || outcome === "Non-Issue";
+    outcome === "Withdrawn" || outcome === "Non-Issue" || outcome === "Denied";
   const hasClosureFields =
     wantsStructuredClosure && CLOSURE_DETAIL_FIELDS.some((f) => req.body[f] !== undefined);
+  // Denied accepts an optional structured closure (Denied-by-Payor with details);
+  // it does NOT require one because the simple "outcome = Denied" path is also valid.
   if (wantsStructuredClosure && (hasClosureFields || reasonRequiresClosure)) {
     try {
       closure = parseClosurePayload({
@@ -611,6 +613,12 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
 
   const hasActiveSubmission = activeSubmissions.length > 0;
 
+  const allSubmissions = await db.select({ id: portalSubmissionsTable.id })
+    .from(portalSubmissionsTable)
+    .where(eq(portalSubmissionsTable.invoiceGroupId, id))
+    .limit(1);
+  const hasBeenSubmitted = allSubmissions.length > 0;
+
   const validStatuses = hasActiveSubmission ? [] : (VALID_GROUP_STATUS_TRANSITIONS[group.status] || []);
   const validOutcomes = VALID_GROUP_OUTCOME_BY_STATUS[group.status] || [];
 
@@ -639,9 +647,9 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     if (["approval", "partial_approval"].includes(latestResponseType)) {
       postResponseActions = ["resolve_reattest", "resolve_new_invoice"];
     } else if (latestResponseType === "denial") {
-      postResponseActions = ["accept_loss", "re_dispute"];
+      postResponseActions = ["mark_denied_by_payor", "re_dispute"];
     } else {
-      postResponseActions = ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"];
+      postResponseActions = ["resolve_reattest", "resolve_new_invoice", "mark_denied_by_payor", "re_dispute"];
     }
   }
 
@@ -650,6 +658,7 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     validOutcomes,
     canQueueForPortal,
     hasActiveSubmission,
+    hasBeenSubmitted,
     postResponseActions,
     latestResponseType,
     hasResponse,
@@ -775,7 +784,7 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
   if (!existing) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
   const reason = (existing as any).closureReason as string | null;
-  if (!reason || !["not_contestable", "non_issue", "accepted_loss"].includes(reason)) {
+  if (!reason || !["cannot_dispute", "non_issue", "denied_by_payor"].includes(reason)) {
     res.status(409).json({ error: "Closure review only applies to closed (withdrawn / non-issue) invoice groups." });
     return;
   }

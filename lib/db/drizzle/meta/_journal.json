@@ -43,6 +43,13 @@
       "when": 1777559999999,
       "tag": "0007_outbound_email_attachment_names",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777660000000,
+      "tag": "0008_closure_reason_consolidation",
+      "breakpoints": true
     }
   ]
 }

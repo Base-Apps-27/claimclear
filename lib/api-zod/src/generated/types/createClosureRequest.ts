@@ -16,7 +16,7 @@ Non-Issue). Used by `PATCH /claims/{id}/outcome` and
 `PATCH /invoice-groups/{id}/outcome` when staff are recording
 a structured closure (vs. a bare outcome change).
 
-Required fields when `closureReason` is `not_contestable` or `non_issue`:
+Required fields when `closureReason` is `cannot_dispute` or `non_issue`:
   - closureCategory (string; if "other", closureCategoryOther required)
   - closureRootCause (string; if "other", closureRootCauseOther required)
   - closureNarrative (string, ≥80 chars)
@@ -25,7 +25,7 @@ Required fields when `closureReason` is `not_contestable` or `non_issue`:
   - closureDrivers (≥1 with name) when tags includes "driver"
   - closureDispatchers (≥1 with name) when tags includes "dispatcher"
 
-For `accepted_loss`, the structured detail fields stay optional.
+For `denied_by_payor`, the structured detail fields stay optional.
 
  */
 export interface CreateClosureRequest {

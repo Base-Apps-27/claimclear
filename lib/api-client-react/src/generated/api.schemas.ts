@@ -56,9 +56,8 @@ export type ClaimResponseClosureReason =
   | null;
 
 export const ClaimResponseClosureReason = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -206,6 +205,8 @@ export interface ValidTransitionsResponse {
   validOutcomes: string[];
   canQueueForPortal: boolean;
   hasActiveSubmission: boolean;
+  /** True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id. */
+  hasBeenSubmitted?: boolean;
   postResponseActions: string[];
   /** @nullable */
   latestResponseType?: string | null;
@@ -249,9 +250,8 @@ export type InvoiceGroupResponseClosureReason =
   | null;
 
 export const InvoiceGroupResponseClosureReason = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -753,9 +753,8 @@ export type UpdateClaimOutcomeBodyClosureReason =
   (typeof UpdateClaimOutcomeBodyClosureReason)[keyof typeof UpdateClaimOutcomeBodyClosureReason];
 
 export const UpdateClaimOutcomeBodyClosureReason = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -776,7 +775,7 @@ export const UpdateClaimOutcomeBodyClosureAccountabilityTagsItem = {
  * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
 (closureCategory, closureRootCause, closureNarrative,
 closureAccountabilityTags, etc.) are required when the outcome is
-"Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+"Withdrawn" with reason "cannot_dispute" or "Non-Issue" and are
 validated by the canonical `CreateClosureRequest` payload.
 
  */
@@ -821,9 +820,8 @@ export type UpdateInvoiceGroupOutcomeBodyClosureReason =
   (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
 
 export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -921,9 +919,9 @@ export type WithdrawalRowClosureReason =
   (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
 
 export const WithdrawalRowClosureReason = {
-  not_contestable: "not_contestable",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
 } as const;
 
 /**
@@ -973,9 +971,9 @@ export interface WithdrawalRow {
  * Total counts per closure reason across the entire (unfiltered) dataset.
  */
 export type WithdrawalsListResponseCounts = {
-  not_contestable: number;
+  cannot_dispute: number;
   non_issue: number;
-  accepted_loss: number;
+  denied_by_payor: number;
   addressed: number;
 };
 
@@ -1021,8 +1019,8 @@ export type CreateClosureRequestClosureReason =
   (typeof CreateClosureRequestClosureReason)[keyof typeof CreateClosureRequestClosureReason];
 
 export const CreateClosureRequestClosureReason = {
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  cannot_dispute: "cannot_dispute",
+  denied_by_payor: "denied_by_payor",
   non_issue: "non_issue",
 } as const;
 
@@ -1045,7 +1043,7 @@ Non-Issue). Used by `PATCH /claims/{id}/outcome` and
 `PATCH /invoice-groups/{id}/outcome` when staff are recording
 a structured closure (vs. a bare outcome change).
 
-Required fields when `closureReason` is `not_contestable` or `non_issue`:
+Required fields when `closureReason` is `cannot_dispute` or `non_issue`:
   - closureCategory (string; if "other", closureCategoryOther required)
   - closureRootCause (string; if "other", closureRootCauseOther required)
   - closureNarrative (string, ≥80 chars)
@@ -1054,7 +1052,7 @@ Required fields when `closureReason` is `not_contestable` or `non_issue`:
   - closureDrivers (≥1 with name) when tags includes "driver"
   - closureDispatchers (≥1 with name) when tags includes "dispatcher"
 
-For `accepted_loss`, the structured detail fields stay optional.
+For `denied_by_payor`, the structured detail fields stay optional.
 
  */
 export interface CreateClosureRequest {
@@ -1104,9 +1102,8 @@ export type AttachClosureEvidenceBodyClosureReasonAtAttach =
   | null;
 
 export const AttachClosureEvidenceBodyClosureReasonAtAttach = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -1178,7 +1175,7 @@ export type PostResponseActionBodyAction =
 export const PostResponseActionBodyAction = {
   resolve_reattest: "resolve_reattest",
   resolve_new_invoice: "resolve_new_invoice",
-  accept_loss: "accept_loss",
+  mark_denied_by_payor: "mark_denied_by_payor",
   re_dispute: "re_dispute",
 } as const;
 
@@ -1559,8 +1556,7 @@ export type DashboardSummaryPipeline = {
  * Counts of Withdrawn invoice groups broken down by closure_reason.
  */
 export type DashboardSummaryStatsWithdrawnByReason = {
-  not_contestable: number;
-  accepted_loss: number;
+  cannot_dispute: number;
   other: number;
 };
 
@@ -1568,7 +1564,7 @@ export type DashboardSummaryStatsWithdrawnByReason = {
  * Counts of Denied invoice groups broken down by closure_reason.
  */
 export type DashboardSummaryStatsDeniedByReason = {
-  payer_denied: number;
+  denied_by_payor: number;
   other: number;
 };
 
@@ -2014,9 +2010,8 @@ export type ClaimEvidenceResponseClosureReasonAtAttach =
   | null;
 
 export const ClaimEvidenceResponseClosureReasonAtAttach = {
-  payer_denied: "payer_denied",
-  not_contestable: "not_contestable",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;
 
@@ -2624,6 +2619,8 @@ export type GetClaimValidTransitions200 = {
   validOutcomes?: string[];
   hasActiveSubmission?: boolean;
   canQueueForPortal?: boolean;
+  /** True if at least one portal_submission has ever existed for this claim (active or terminal). */
+  hasBeenSubmitted?: boolean;
   postResponseActions?: string[];
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this claim. */

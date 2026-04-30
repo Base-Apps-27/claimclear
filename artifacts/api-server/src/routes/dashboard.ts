@@ -64,25 +64,23 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     .where(eq(invoiceGroupsTable.outcome, "Withdrawn"))
     .groupBy(invoiceGroupsTable.closureReason);
   const withdrawnByReason = {
-    not_contestable: 0,
-    accepted_loss: 0,
+    cannot_dispute: 0,
     other: 0,
   };
   for (const row of withdrawnByReasonRaw) {
-    if (row.closureReason === "not_contestable") withdrawnByReason.not_contestable = row.count;
-    else if (row.closureReason === "accepted_loss") withdrawnByReason.accepted_loss = row.count;
+    if (row.closureReason === "cannot_dispute") withdrawnByReason.cannot_dispute = row.count;
     else withdrawnByReason.other += row.count;
   }
-  const withdrawn = withdrawnByReason.not_contestable + withdrawnByReason.accepted_loss + withdrawnByReason.other;
+  const withdrawn = withdrawnByReason.cannot_dispute + withdrawnByReason.other;
 
   const deniedByReasonRaw = await db
     .select({ closureReason: invoiceGroupsTable.closureReason, count: count() })
     .from(invoiceGroupsTable)
     .where(eq(invoiceGroupsTable.outcome, "Denied"))
     .groupBy(invoiceGroupsTable.closureReason);
-  const deniedByReason = { payer_denied: 0, other: 0 };
+  const deniedByReason = { denied_by_payor: 0, other: 0 };
   for (const row of deniedByReasonRaw) {
-    if (row.closureReason === "payer_denied") deniedByReason.payer_denied = row.count;
+    if (row.closureReason === "denied_by_payor") deniedByReason.denied_by_payor = row.count;
     else deniedByReason.other += row.count;
   }
 

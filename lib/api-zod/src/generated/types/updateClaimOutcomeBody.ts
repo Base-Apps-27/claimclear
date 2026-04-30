@@ -13,7 +13,7 @@ import type { UpdateClaimOutcomeBodyClosureReason } from "./updateClaimOutcomeBo
  * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
 (closureCategory, closureRootCause, closureNarrative,
 closureAccountabilityTags, etc.) are required when the outcome is
-"Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+"Withdrawn" with reason "cannot_dispute" or "Non-Issue" and are
 validated by the canonical `CreateClosureRequest` payload.
 
  */

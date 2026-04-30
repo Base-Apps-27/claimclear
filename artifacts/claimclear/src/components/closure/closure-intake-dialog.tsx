@@ -319,7 +319,12 @@ export function ClosureIntakeDialog({
       : null;
     const closureCommunicatedTo = communicatedTo.trim() ? communicatedTo.trim() : null;
 
-    const outcome = reason === "non_issue" ? "Non-Issue" : "Withdrawn";
+    const outcome =
+      reason === "non_issue"
+        ? "Non-Issue"
+        : reason === "denied_by_payor"
+          ? "Denied"
+          : "Withdrawn";
 
     try {
       if (isClaim) {

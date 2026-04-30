@@ -896,6 +896,9 @@ paths:
                     type: boolean
                   canQueueForPortal:
                     type: boolean
+                  hasBeenSubmitted:
+                    type: boolean
+                    description: "True if at least one portal_submission has ever existed for this claim (active or terminal)."
                   postResponseActions:
                     type: array
                     items:
@@ -2844,7 +2847,7 @@ paths:
     get:
       operationId: listWithdrawals
       tags: [withdrawals]
-      summary: List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+      summary: List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups
       parameters:
         - name: search
           in: query
@@ -3025,7 +3028,7 @@ components:
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
         closureReason:
           type: ["string", "null"]
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
         closureCategory:
           type: ["string", "null"]
         closureCategoryOther:
@@ -3131,6 +3134,9 @@ components:
           type: boolean
         hasActiveSubmission:
           type: boolean
+        hasBeenSubmitted:
+          type: boolean
+          description: "True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id."
         postResponseActions:
           type: array
           items:
@@ -3170,7 +3176,7 @@ components:
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
         closureReason:
           type: ["string", "null"]
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
         closureCategory:
           type: ["string", "null"]
         closureCategoryOther:
@@ -3412,14 +3418,14 @@ components:
         Body for `PATCH /claims/{id}/outcome`. The closure detail fields
         (closureCategory, closureRootCause, closureNarrative,
         closureAccountabilityTags, etc.) are required when the outcome is
-        "Withdrawn" with reason "not_contestable" or "Non-Issue" and are
+        "Withdrawn" with reason "cannot_dispute" or "Non-Issue" and are
         validated by the canonical `CreateClosureRequest` payload.
       properties:
         outcome:
           type: string
         closureReason:
           type: string
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue"]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue"]
         approvedAmount:
           type: string
         invoiceNumbers:
@@ -3473,7 +3479,7 @@ components:
           type: string
         closureReason:
           type: string
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue"]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue"]
         approvedAmount:
           type: string
         closureCategory:
@@ -3563,7 +3569,7 @@ components:
           type: string
         closureReason:
           type: string
-          enum: [not_contestable, non_issue, accepted_loss]
+          enum: [cannot_dispute, non_issue, denied_by_payor]
         closureCategory:
           type: ["string", "null"]
         closureRootCause:
@@ -3613,15 +3619,15 @@ components:
           type: object
           description: Total counts per closure reason across the entire (unfiltered) dataset.
           properties:
-            not_contestable:
+            cannot_dispute:
               type: integer
             non_issue:
               type: integer
-            accepted_loss:
+            denied_by_payor:
               type: integer
             addressed:
               type: integer
-          required: [not_contestable, non_issue, accepted_loss, addressed]
+          required: [cannot_dispute, non_issue, denied_by_payor, addressed]
       required:
         - rows
         - total
@@ -3661,7 +3667,7 @@ components:
         `PATCH /invoice-groups/{id}/outcome` when staff are recording
         a structured closure (vs. a bare outcome change).
 
-        Required fields when `closureReason` is `not_contestable` or `non_issue`:
+        Required fields when `closureReason` is `cannot_dispute` or `non_issue`:
           - closureCategory (string; if "other", closureCategoryOther required)
           - closureRootCause (string; if "other", closureRootCauseOther required)
           - closureNarrative (string, ≥80 chars)
@@ -3670,14 +3676,14 @@ components:
           - closureDrivers (≥1 with name) when tags includes "driver"
           - closureDispatchers (≥1 with name) when tags includes "dispatcher"
 
-        For `accepted_loss`, the structured detail fields stay optional.
+        For `denied_by_payor`, the structured detail fields stay optional.
       properties:
         outcome:
           type: string
           enum: ["Withdrawn", "Non-Issue"]
         closureReason:
           type: string
-          enum: ["not_contestable", "accepted_loss", "non_issue"]
+          enum: ["cannot_dispute", "denied_by_payor", "non_issue"]
         closureCategory:
           type: ["string", "null"]
         closureCategoryOther:
@@ -3746,7 +3752,7 @@ components:
           type: ["string", "null"]
         closureReasonAtAttach:
           type: ["string", "null"]
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
       required:
         - evidenceTypeName
         - imageUrl
@@ -3799,7 +3805,7 @@ components:
       properties:
         action:
           type: string
-          enum: ["resolve_reattest", "resolve_new_invoice", "accept_loss", "re_dispute"]
+          enum: ["resolve_reattest", "resolve_new_invoice", "mark_denied_by_payor", "re_dispute"]
         notes:
           type: string
       required:
@@ -4512,26 +4518,23 @@ components:
               type: object
               description: "Counts of Withdrawn invoice groups broken down by closure_reason."
               properties:
-                not_contestable:
-                  type: integer
-                accepted_loss:
+                cannot_dispute:
                   type: integer
                 other:
                   type: integer
               required:
-                - not_contestable
-                - accepted_loss
+                - cannot_dispute
                 - other
             deniedByReason:
               type: object
               description: "Counts of Denied invoice groups broken down by closure_reason."
               properties:
-                payer_denied:
+                denied_by_payor:
                   type: integer
                 other:
                   type: integer
               required:
-                - payer_denied
+                - denied_by_payor
                 - other
           required:
             - total
@@ -5308,7 +5311,7 @@ components:
           enum: ["tree", "closure", null]
         closureReasonAtAttach:
           type: ["string", "null"]
-          enum: ["payer_denied", "not_contestable", "accepted_loss", "non_issue", null]
+          enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
 
     PortalResponseItem:
       type: object

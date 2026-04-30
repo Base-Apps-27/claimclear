@@ -9887,7 +9887,7 @@ export const useUpdateInvoiceGroupClosureReview = <
 };
 
 /**
- * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ * @summary List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups
  */
 export const getListWithdrawalsUrl = (params?: ListWithdrawalsParams) => {
   const normalizedParams = new URLSearchParams();
@@ -9954,7 +9954,7 @@ export type ListWithdrawalsQueryResult = NonNullable<
 export type ListWithdrawalsQueryError = ErrorType<unknown>;
 
 /**
- * @summary List closures (not_contestable / non_issue / accepted_loss) across claims and invoice groups
+ * @summary List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups
  */
 
 export function useListWithdrawals<

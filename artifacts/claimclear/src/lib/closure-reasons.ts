@@ -1,7 +1,6 @@
 export const CLOSURE_REASON_LABELS: Record<string, string> = {
-  payer_denied: "Denied by payer",
-  not_contestable: "Withdrawn — not contestable",
-  accepted_loss: "Withdrawn — accepted loss after denial",
+  denied_by_payor: "Denied by payor",
+  cannot_dispute: "Withdrawn — cannot dispute",
   non_issue: "Resolved — non-issue at classification",
 };
 

@@ -19,6 +19,7 @@ import {
   auditLogsTable,
   notesTable,
   portalResponsesTable,
+  portalSubmissionsTable,
 } from "@workspace/db";
 
 let server: http.Server;
@@ -123,6 +124,8 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
 }
 
 async function cleanupClaim(id: number) {
+  await db.delete(portalResponsesTable).where(eq(portalResponsesTable.claimId, id)).catch(() => undefined);
+  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);
@@ -130,6 +133,7 @@ async function cleanupClaim(id: number) {
 }
 
 async function cleanupGroup(id: number) {
+  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id)).catch(() => undefined);
@@ -216,7 +220,7 @@ test("PATCH /claims/:id/outcome with structured Withdrawn closure persists every
   try {
     const body = {
       outcome: "Withdrawn",
-      closureReason: "not_contestable",
+      closureReason: "cannot_dispute",
       closureCategory: "evidence_gap",
       closureRootCause: "tablet_sync",
       closureNarrative: VALID_NARRATIVE,
@@ -231,7 +235,7 @@ test("PATCH /claims/:id/outcome with structured Withdrawn closure persists every
     assert.equal(res.status, 200, `expected 200 OK, got ${res.status} (${JSON.stringify(res.json)})`);
     assert.equal(res.json.outcome, "Withdrawn");
     assert.equal(res.json.status, "Resolved");
-    assert.equal(res.json.closureReason, "not_contestable");
+    assert.equal(res.json.closureReason, "cannot_dispute");
     assert.equal(res.json.closureCategory, "evidence_gap");
     assert.equal(res.json.closureRootCause, "tablet_sync");
     assert.equal(res.json.closureNarrative, VALID_NARRATIVE);
@@ -252,11 +256,11 @@ test("PATCH /claims/:id/outcome with structured Withdrawn closure persists every
     const meta = outcomeLog.metadata as any;
     const toOutcome = meta.to ?? meta.toOutcome;
     assert.equal(toOutcome, "Withdrawn");
-    assert.equal(meta.closureReason, "not_contestable");
+    assert.equal(meta.closureReason, "cannot_dispute");
     assert.ok(meta.closure, "metadata must include a `closure` sub-object");
     assert.equal(meta.closure.outcome, "Withdrawn",
       "closure sub-object must echo the outcome verbatim from the request");
-    assert.equal(meta.closure.closureReason, "not_contestable",
+    assert.equal(meta.closure.closureReason, "cannot_dispute",
       "closure sub-object must use `closureReason` (not `reason`) so it matches the request payload");
     assert.equal(meta.closure.closureCategory, "evidence_gap",
       "closure sub-object must use `closureCategory` (not `category`) verbatim");
@@ -275,12 +279,12 @@ test("PATCH /claims/:id/outcome with structured Withdrawn closure persists every
   }
 });
 
-test("PATCH /claims/:id/outcome rejects a Withdrawn/not_contestable closure when the narrative is too short", async () => {
+test("PATCH /claims/:id/outcome rejects a Withdrawn/cannot_dispute closure when the narrative is too short", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const body = {
       outcome: "Withdrawn",
-      closureReason: "not_contestable",
+      closureReason: "cannot_dispute",
       closureCategory: "evidence_gap",
       closureRootCause: "missing_documentation",
       closureNarrative: "too short",
@@ -299,12 +303,12 @@ test("PATCH /claims/:id/outcome rejects a Withdrawn/not_contestable closure when
   }
 });
 
-test("PATCH /claims/:id/outcome rejects a not_contestable closure when 'driver' tag is set but no driver is supplied", async () => {
+test("PATCH /claims/:id/outcome rejects a cannot_dispute closure when 'driver' tag is set but no driver is supplied", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const body = {
       outcome: "Withdrawn",
-      closureReason: "not_contestable",
+      closureReason: "cannot_dispute",
       closureCategory: "evidence_gap",
       closureRootCause: "missing_documentation",
       closureNarrative: VALID_NARRATIVE,
@@ -337,7 +341,7 @@ test("POST /claim-evidence/closure attaches an evidence row with closureScope + 
           imageUrl: "https://example.com/uploads/trip-card.png",
           notes: "Captured at closure time",
           closureScope: "closure",
-          closureReasonAtAttach: "not_contestable",
+          closureReasonAtAttach: "cannot_dispute",
         },
       },
     );
@@ -346,7 +350,7 @@ test("POST /claim-evidence/closure attaches an evidence row with closureScope + 
     assert.equal(res.json.invoiceGroupId, null);
     assert.equal(res.json.evidenceTypeName, "Trip card");
     assert.equal(res.json.closureScope, "closure");
-    assert.equal(res.json.closureReasonAtAttach, "not_contestable");
+    assert.equal(res.json.closureReasonAtAttach, "cannot_dispute");
     assert.equal(res.json.collectedBy, TEST_USER.displayName);
 
     const [auditRow] = await db.select().from(auditLogsTable)
@@ -360,7 +364,7 @@ test("POST /claim-evidence/closure attaches an evidence row with closureScope + 
     const meta = auditRow.metadata as any;
     assert.equal(meta.evidenceId, res.json.id);
     assert.equal(meta.closureScope, "closure");
-    assert.equal(meta.closureReasonAtAttach, "not_contestable");
+    assert.equal(meta.closureReasonAtAttach, "cannot_dispute");
   } finally {
     await cleanupClaim(seed.id);
   }
@@ -485,18 +489,18 @@ test("POST /claim-evidence/closure 404s when the parent claim does not exist", a
 
 // ---- Validation cannot be bypassed by omitting structured fields -------
 
-test("PATCH /claims/:id/outcome rejects Withdrawn/not_contestable when no structured closure fields are supplied", async () => {
+test("PATCH /claims/:id/outcome rejects Withdrawn/cannot_dispute when no structured closure fields are supplied", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/claims/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Withdrawn", closureReason: "not_contestable" },
+        body: { outcome: "Withdrawn", closureReason: "cannot_dispute" },
       },
     );
     assert.equal(res.status, 400,
-      "a not_contestable closure with no closureCategory/closureRootCause/closureNarrative must be rejected — the bypass path that previously let bare bodies through is closed");
+      "a cannot_dispute closure with no closureCategory/closureRootCause/closureNarrative must be rejected — the bypass path that previously let bare bodies through is closed");
     assert.match(res.json.error, /closureCategory|closureRootCause|closureNarrative/i,
       "error must point at one of the missing required closure fields");
   } finally {
@@ -504,14 +508,14 @@ test("PATCH /claims/:id/outcome rejects Withdrawn/not_contestable when no struct
   }
 });
 
-test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/not_contestable when no structured closure fields are supplied", async () => {
+test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/cannot_dispute when no structured closure fields are supplied", async () => {
   const seed = await createSeedGroup();
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/invoice-groups/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Withdrawn", closureReason: "not_contestable" },
+        body: { outcome: "Withdrawn", closureReason: "cannot_dispute" },
       },
     );
     assert.equal(res.status, 400,
@@ -522,7 +526,7 @@ test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/not_contestable when n
   }
 });
 
-test("PATCH /claims/:id/outcome requires closureRootCause for not_contestable closures (not just on 'other')", async () => {
+test("PATCH /claims/:id/outcome requires closureRootCause for cannot_dispute closures (not just on 'other')", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const res = await fetchJson<{ error: string }>(
@@ -531,7 +535,7 @@ test("PATCH /claims/:id/outcome requires closureRootCause for not_contestable cl
         method: "PATCH",
         body: {
           outcome: "Withdrawn",
-          closureReason: "not_contestable",
+          closureReason: "cannot_dispute",
           closureCategory: "evidence_gap",
           closureNarrative: VALID_NARRATIVE,
           closureAccountabilityTags: ["our_staff"],
@@ -561,7 +565,7 @@ test("POST /claim-evidence/closure rejects a body without imageUrl — closure e
           evidenceTypeName: "Trip card",
           // imageUrl deliberately omitted
           closureScope: "closure",
-          closureReasonAtAttach: "not_contestable",
+          closureReasonAtAttach: "cannot_dispute",
         },
       },
     );
@@ -596,13 +600,13 @@ test("POST /claim-evidence/closure rejects an empty-string imageUrl", async () =
   }
 });
 
-test("PATCH /claims/:id/outcome with Denied does NOT persist structured closure_* columns (Denied is outside the structured-closure scope)", async () => {
+test("PATCH /claims/:id/outcome with Denied + structured Denied-by-Payor closure persists the closure_* columns", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   const [resp] = await db.insert(portalResponsesTable).values({
     claimId: seed.id,
     source: "manual",
     responseType: "denial",
-    content: "Payer denial — test seed",
+    content: "Payor denial — test seed",
   }).returning({ id: portalResponsesTable.id });
   try {
     const res = await fetchJson<typeof claimsTable.$inferSelect>(
@@ -611,9 +615,9 @@ test("PATCH /claims/:id/outcome with Denied does NOT persist structured closure_
         method: "PATCH",
         body: {
           outcome: "Denied",
-          closureReason: "payer_denied",
-          closureCategory: "payer_dispute",
-          closureRootCause: "denial_code_50",
+          closureReason: "denied_by_payor",
+          closureCategory: "data_quirk",
+          closureRootCause: "duplicate_ride_row",
           closureNarrative: VALID_NARRATIVE,
           closureAccountabilityTags: ["external_payor"],
         },
@@ -621,10 +625,34 @@ test("PATCH /claims/:id/outcome with Denied does NOT persist structured closure_
     );
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
     assert.equal(res.json.outcome, "Denied");
-    assert.equal(res.json.closureReason, "payer_denied");
+    assert.equal(res.json.closureReason, "denied_by_payor");
+    assert.equal(res.json.closureCategory, "data_quirk",
+      "structured closure_* fields must persist for Denied + denied_by_payor when supplied");
+    assert.equal(res.json.closureRootCause, "duplicate_ride_row");
+    assert.equal(res.json.closureNarrative, VALID_NARRATIVE);
+  } finally {
+    await db.delete(portalResponsesTable).where(eq(portalResponsesTable.id, resp.id));
+    await cleanupClaim(seed.id);
+  }
+});
+
+test("PATCH /claims/:id/outcome with Denied (no closureReason, no structured fields) records a bare denial", async () => {
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  const [resp] = await db.insert(portalResponsesTable).values({
+    claimId: seed.id,
+    source: "manual",
+    responseType: "denial",
+    content: "Payor denial — test seed",
+  }).returning({ id: portalResponsesTable.id });
+  try {
+    const res = await fetchJson<typeof claimsTable.$inferSelect>(
+      `/api/claims/${seed.id}/outcome`,
+      { method: "PATCH", body: { outcome: "Denied" } },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.outcome, "Denied");
     assert.equal(res.json.closureCategory, null,
-      "structured closure_* fields must NOT be persisted for Denied (only Withdrawn / Non-Issue)");
-    assert.equal(res.json.closureRootCause, null);
+      "a bare Denied (no closure body) must not persist structured closure_* columns");
     assert.equal(res.json.closureNarrative, null);
   } finally {
     await db.delete(portalResponsesTable).where(eq(portalResponsesTable.id, resp.id));
@@ -668,7 +696,7 @@ test("PATCH /claims/:id/outcome persists closureAddressedAt/By/ByEmail/ReviewNot
         method: "PATCH",
         body: {
           outcome: "Withdrawn",
-          closureReason: "not_contestable",
+          closureReason: "cannot_dispute",
           closureCategory: "evidence_gap",
           closureRootCause: "tablet_sync",
           closureNarrative: VALID_NARRATIVE,
@@ -699,14 +727,14 @@ test("PATCH /claims/:id/outcome persists closureAddressedAt/By/ByEmail/ReviewNot
 
 // ---- Group → child cascade --------------------------------------------
 
-test("PATCH /claims/:id/outcome rejects Non-Issue + accepted_loss (Non-Issue requires closureReason='non_issue')", async () => {
+test("PATCH /claims/:id/outcome rejects Non-Issue + cannot_dispute (Non-Issue requires closureReason='non_issue')", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/claims/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Non-Issue", closureReason: "accepted_loss" },
+        body: { outcome: "Non-Issue", closureReason: "cannot_dispute" },
       },
     );
     assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
@@ -719,14 +747,14 @@ test("PATCH /claims/:id/outcome rejects Non-Issue + accepted_loss (Non-Issue req
   }
 });
 
-test("PATCH /claims/:id/outcome rejects Non-Issue + payer_denied", async () => {
+test("PATCH /claims/:id/outcome rejects Non-Issue + denied_by_payor", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/claims/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Non-Issue", closureReason: "payer_denied" },
+        body: { outcome: "Non-Issue", closureReason: "denied_by_payor" },
       },
     );
     assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
@@ -739,14 +767,14 @@ test("PATCH /claims/:id/outcome rejects Non-Issue + payer_denied", async () => {
   }
 });
 
-test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + accepted_loss", async () => {
+test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + cannot_dispute", async () => {
   const seed = await createSeedGroup();
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/invoice-groups/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Non-Issue", closureReason: "accepted_loss" },
+        body: { outcome: "Non-Issue", closureReason: "cannot_dispute" },
       },
     );
     assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
@@ -759,14 +787,14 @@ test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + accepted_loss", asyn
   }
 });
 
-test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + payer_denied", async () => {
+test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + denied_by_payor", async () => {
   const seed = await createSeedGroup();
   try {
     const res = await fetchJson<{ error: string }>(
       `/api/invoice-groups/${seed.id}/outcome`,
       {
         method: "PATCH",
-        body: { outcome: "Non-Issue", closureReason: "payer_denied" },
+        body: { outcome: "Non-Issue", closureReason: "denied_by_payor" },
       },
     );
     assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
@@ -778,6 +806,133 @@ test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + payer_denied", async
     await cleanupGroup(seed.id);
   }
 });
+
+// ---- Stage-aware closure-reason gates (Task #160) ----------------------
+
+test("PATCH /claims/:id/outcome rejects Withdrawn/cannot_dispute once a portal_submission exists for the claim", async () => {
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  await db.insert(portalSubmissionsTable).values({
+    claimId: seed.id,
+    status: "submitted",
+  });
+  try {
+    const res = await fetchJson<{ error: string }>(
+      `/api/claims/${seed.id}/outcome`,
+      {
+        method: "PATCH",
+        body: {
+          outcome: "Withdrawn",
+          closureReason: "cannot_dispute",
+          // structured closure fields are required for cannot_dispute, so we
+          // supply them here to ensure validation passes and the request
+          // actually reaches the submission gate.
+          closureCategory: "documentation_lost",
+          closureRootCause: "trip_sheet_missing",
+          closureNarrative: VALID_NARRATIVE,
+          closureAccountabilityTags: ["our_staff"],
+        },
+      },
+    );
+    assert.equal(res.status, 400,
+      `expected 400 (gate must reject post-submission cannot_dispute), got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(res.json.error, /Cannot Dispute|submitted to the payor/i,
+      "error must explain that cannot_dispute is no longer available after submission");
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, seed.id));
+    assert.equal(row.outcome, "Pending",
+      "outcome must NOT have changed when the cannot_dispute gate rejects the request");
+    assert.equal(row.closureReason, null, "closureReason must NOT have been persisted");
+  } finally {
+    await cleanupClaim(seed.id);
+  }
+});
+
+test("PATCH /claims/:id/outcome rejects Denied when no portal_response (or email response) is on file", async () => {
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  await db.insert(portalSubmissionsTable).values({
+    claimId: seed.id,
+    status: "submitted",
+  });
+  try {
+    const res = await fetchJson<{ error: string }>(
+      `/api/claims/${seed.id}/outcome`,
+      { method: "PATCH", body: { outcome: "Denied", closureReason: "denied_by_payor" } },
+    );
+    assert.equal(res.status, 400,
+      `expected 400 (gate must reject Denied without payor response), got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(res.json.error, /no portal or email response|Denied by Payor/i,
+      "error must explain that Denied requires a recorded payor/portal response");
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, seed.id));
+    assert.equal(row.outcome, "Pending",
+      "outcome must NOT have changed when the Denied/no-response gate rejects the request");
+    assert.equal(row.closureReason, null, "closureReason must NOT have been persisted");
+  } finally {
+    await cleanupClaim(seed.id);
+  }
+});
+
+test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/cannot_dispute once any portal_submission exists for the group", async () => {
+  const seed = await createSeedGroup();
+  // portal_submissions.claim_id is NOT NULL in the schema. Group-level
+  // submissions are tracked by attaching the submission to a child claim
+  // and setting invoiceGroupId — groupHasEverBeenSubmitted scans both
+  // direct group submissions and submissions on the group's child claims.
+  const child = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  await db.update(claimsTable).set({ invoiceGroupId: seed.id }).where(eq(claimsTable.id, child.id));
+  await db.insert(portalSubmissionsTable).values({
+    claimId: child.id,
+    invoiceGroupId: seed.id,
+    status: "submitted",
+  });
+  try {
+    const res = await fetchJson<{ error: string }>(
+      `/api/invoice-groups/${seed.id}/outcome`,
+      {
+        method: "PATCH",
+        body: {
+          outcome: "Withdrawn",
+          closureReason: "cannot_dispute",
+          // Supply structured closure fields so validation passes and the
+          // request actually reaches the submission gate.
+          closureCategory: "documentation_lost",
+          closureRootCause: "trip_sheet_missing",
+          closureNarrative: VALID_NARRATIVE,
+          closureAccountabilityTags: ["our_staff"],
+        },
+      },
+    );
+    assert.equal(res.status, 400,
+      `expected 400 (gate must reject post-submission cannot_dispute on a group), got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(res.json.error, /Cannot Dispute|submitted to the payor/i,
+      "error must explain that cannot_dispute is no longer available after the group has been submitted");
+    const [row] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, seed.id));
+    assert.equal(row.outcome, "Pending");
+    assert.equal(row.closureReason, null);
+  } finally {
+    await cleanupClaim(child.id);
+    await cleanupGroup(seed.id);
+  }
+});
+
+test("PATCH /invoice-groups/:id/outcome rejects Denied when no portal_response (or email response) is on file for the group", async () => {
+  const seed = await createSeedGroup();
+  try {
+    const res = await fetchJson<{ error: string }>(
+      `/api/invoice-groups/${seed.id}/outcome`,
+      { method: "PATCH", body: { outcome: "Denied", closureReason: "denied_by_payor" } },
+    );
+    assert.equal(res.status, 400,
+      `expected 400 (gate must reject group Denied without payor response), got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(res.json.error, /no portal or email response|Denied by Payor/i,
+      "error must explain that group Denied requires a recorded payor/portal response");
+    const [row] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, seed.id));
+    assert.equal(row.outcome, "Pending");
+    assert.equal(row.closureReason, null);
+  } finally {
+    await cleanupGroup(seed.id);
+  }
+});
+
+// ---- Group → child cascade --------------------------------------------
 
 test("PATCH /invoice-groups/:id/outcome cascades closure detail and closureReason onto every non-held child claim", async () => {
   const seed = await createSeedGroup();
@@ -792,7 +947,7 @@ test("PATCH /invoice-groups/:id/outcome cascades closure detail and closureReaso
         method: "PATCH",
         body: {
           outcome: "Withdrawn",
-          closureReason: "not_contestable",
+          closureReason: "cannot_dispute",
           closureCategory: "evidence_gap",
           closureRootCause: "missing_documentation",
           closureNarrative: VALID_NARRATIVE,
@@ -806,7 +961,7 @@ test("PATCH /invoice-groups/:id/outcome cascades closure detail and closureReaso
       const [child] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
       assert.equal(child.status, "Resolved", `child ${id} must be moved to Resolved alongside the group`);
       assert.equal(child.outcome, "Withdrawn", `child ${id} must inherit the group's Withdrawn outcome`);
-      assert.equal(child.closureReason, "not_contestable",
+      assert.equal(child.closureReason, "cannot_dispute",
         `child ${id} must inherit closureReason from the group cascade`);
       assert.equal(child.closureCategory, "evidence_gap",
         `child ${id} must inherit the structured closureCategory from the group`);

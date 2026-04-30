@@ -408,18 +408,18 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             <Section title="Closed claims" className="lg:col-span-1" icon={<XCircle className="w-4 h-4" />}>
               <div className="space-y-3">
-                <div data-testid="closure-denied-by-payer">
+                <div data-testid="closure-denied-by-payor">
                   <div className="flex items-baseline justify-between">
                     <span className="text-xs uppercase font-semibold text-muted-foreground flex items-center gap-1">
-                      Denied by payer
-                      <InfoTooltip content="Invoice groups the payer formally denied through a recorded portal or email response." />
+                      Denied by payor
+                      <InfoTooltip content="Invoice groups the payor formally denied through a recorded portal or email response — including those we chose to accept after a denial." />
                     </span>
                     <span className="text-xs text-muted-foreground">final</span>
                   </div>
                   <div className="text-2xl font-bold tabular-nums" data-testid="stat-denied-total">
                     {stats.denied}
                     <span className="text-sm font-normal text-muted-foreground ml-2">
-                      ({stats.deniedByReason.payer_denied} payer denied
+                      ({stats.deniedByReason.denied_by_payor} denied by payor
                       {stats.deniedByReason.other > 0 ? ` · ${stats.deniedByReason.other} other` : ""})
                     </span>
                   </div>
@@ -430,7 +430,7 @@ export default function Dashboard() {
                     <span className="text-xs uppercase font-semibold text-muted-foreground flex items-center gap-1">
                       <MinusCircle className="w-3 h-3" />
                       Withdrawn (closed by us)
-                      <InfoTooltip content="Invoice groups we chose to close internally — Not Contestable or Accepted Loss." />
+                      <InfoTooltip content="Invoice groups we chose to close internally — Cannot Dispute. Used before any payor submission." />
                     </span>
                     <span className="text-xs text-muted-foreground">not pursued</span>
                   </div>
@@ -438,7 +438,7 @@ export default function Dashboard() {
                     {stats.withdrawn}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    {stats.withdrawnByReason.not_contestable} not contestable · {stats.withdrawnByReason.accepted_loss} accepted loss
+                    {stats.withdrawnByReason.cannot_dispute} cannot dispute
                     {stats.withdrawnByReason.other > 0 && ` · ${stats.withdrawnByReason.other} other`}
                   </div>
                 </div>

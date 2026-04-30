@@ -19,15 +19,15 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 const REASON_TONE: Record<string, Tone> = {
-  not_contestable: "amber",
+  cannot_dispute: "amber",
   non_issue: "blue",
-  accepted_loss: "muted",
+  denied_by_payor: "red",
 };
 
 const REASON_LABEL: Record<string, string> = {
-  not_contestable: "Cannot Dispute",
+  cannot_dispute: "Cannot Dispute",
   non_issue: "Non-Issue",
-  accepted_loss: "Accepted Loss",
+  denied_by_payor: "Denied by Payor",
 };
 
 interface Props {

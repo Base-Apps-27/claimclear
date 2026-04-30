@@ -10,8 +10,8 @@
  * Total counts per closure reason across the entire (unfiltered) dataset.
  */
 export type WithdrawalsListResponseCounts = {
-  not_contestable: number;
+  cannot_dispute: number;
   non_issue: number;
-  accepted_loss: number;
+  denied_by_payor: number;
   addressed: number;
 };

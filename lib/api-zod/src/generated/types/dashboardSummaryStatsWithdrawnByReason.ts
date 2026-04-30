@@ -10,7 +10,6 @@
  * Counts of Withdrawn invoice groups broken down by closure_reason.
  */
 export type DashboardSummaryStatsWithdrawnByReason = {
-  not_contestable: number;
-  accepted_loss: number;
+  cannot_dispute: number;
   other: number;
 };

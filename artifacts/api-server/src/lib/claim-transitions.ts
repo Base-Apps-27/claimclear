@@ -178,15 +178,33 @@ export async function transitionClaimOutcome(opts: {
         .where(eq(portalResponsesTable.claimId, claimId))
         .limit(1);
       if (responseCount.length === 0) {
-        throw new Error(`Cannot mark this claim as Denied because no portal or email response has been recorded. Use "Withdraw — Not Contestable" instead.`);
+        throw new Error(`Cannot mark this claim as Denied by Payor because no portal or email response has been recorded. Use "Withdraw — Cannot Dispute" instead.`);
       }
     }
-    closureReason = "payer_denied";
+    closureReason = "denied_by_payor";
   } else if (newOutcome === "Withdrawn") {
-    if (closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
-      throw new Error(`Withdrawn outcome requires a closureReason of "not_contestable" or "accepted_loss".`);
+    if (closureReason !== "cannot_dispute") {
+      throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
+    }
+    if (!systemOverride) {
+      const submissionCount = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .limit(1);
+      if (submissionCount.length > 0) {
+        throw new Error(`Cannot close as "Cannot Dispute" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
+      }
     }
   } else if (newOutcome === "Non-Issue") {
+    if (!systemOverride) {
+      const submissionCount = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .limit(1);
+      if (submissionCount.length > 0) {
+        throw new Error(`Cannot close as "Non-Issue" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
+      }
+    }
     closureReason = "non_issue";
   } else if (closureReason === undefined) {
     closureReason = null;
@@ -266,27 +284,52 @@ export async function transitionClaimStatusAndOutcome(opts: {
   extraFields?: Partial<typeof claimsTable.$inferInsert>;
   closureReason?: ClosureReason | null;
   closure?: NormalizedClosure | null;
+  systemOverride?: boolean;
 }): Promise<TransitionResult> {
-  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields, closure } = opts;
+  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields, closure, systemOverride = false } = opts;
   let { closureReason } = opts;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
-  if (newOutcome === "Withdrawn" && closureReason !== "not_contestable" && closureReason !== "accepted_loss") {
-    throw new Error(`Withdrawn outcome requires a closureReason of "not_contestable" or "accepted_loss".`);
+  if (newOutcome === "Withdrawn") {
+    if (closureReason !== "cannot_dispute") {
+      throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
+    }
+    if (!systemOverride) {
+      const submissionCount = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .limit(1);
+      if (submissionCount.length > 0) {
+        throw new Error(`Cannot close as "Cannot Dispute" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
+      }
+    }
   }
   if (newOutcome === "Denied") {
-    const responseCount = await db.select({ id: portalResponsesTable.id })
-      .from(portalResponsesTable)
-      .where(eq(portalResponsesTable.claimId, claimId))
-      .limit(1);
-    if (responseCount.length === 0) {
-      throw new Error(`Cannot mark this claim as Denied because no portal or email response has been recorded. Use "Withdraw — Not Contestable" instead.`);
+    if (!systemOverride) {
+      const responseCount = await db.select({ id: portalResponsesTable.id })
+        .from(portalResponsesTable)
+        .where(eq(portalResponsesTable.claimId, claimId))
+        .limit(1);
+      if (responseCount.length === 0) {
+        throw new Error(`Cannot mark this claim as Denied by Payor because no portal or email response has been recorded. Use "Withdraw — Cannot Dispute" instead.`);
+      }
     }
-    if (closureReason === undefined) closureReason = "payer_denied";
+    if (closureReason === undefined) closureReason = "denied_by_payor";
   }
-  if (newOutcome === "Non-Issue" && closureReason === undefined) closureReason = "non_issue";
+  if (newOutcome === "Non-Issue") {
+    if (!systemOverride) {
+      const submissionCount = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .limit(1);
+      if (submissionCount.length > 0) {
+        throw new Error(`Cannot close as "Non-Issue" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
+      }
+    }
+    if (closureReason === undefined) closureReason = "non_issue";
+  }
   if (newOutcome !== "Denied" && newOutcome !== "Withdrawn" && newOutcome !== "Non-Issue") {
     closureReason = null;
   }

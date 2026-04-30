@@ -10,6 +10,6 @@
  * Counts of Denied invoice groups broken down by closure_reason.
  */
 export type DashboardSummaryStatsDeniedByReason = {
-  payer_denied: number;
+  denied_by_payor: number;
   other: number;
 };

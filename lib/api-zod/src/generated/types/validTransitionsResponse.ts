@@ -11,6 +11,8 @@ export interface ValidTransitionsResponse {
   validOutcomes: string[];
   canQueueForPortal: boolean;
   hasActiveSubmission: boolean;
+  /** True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id. */
+  hasBeenSubmitted?: boolean;
   postResponseActions: string[];
   /** @nullable */
   latestResponseType?: string | null;

@@ -13,7 +13,7 @@ export const closureAccountabilityTagSchema = z.enum(CLOSURE_ACCOUNTABILITY_TAGS
 const isoDateLike = z.union([z.string().min(1), z.date()]).optional().nullable();
 
 export const createClosureRequestSchema = z.object({
-  outcome: z.enum(["Withdrawn", "Non-Issue"]),
+  outcome: z.enum(["Withdrawn", "Non-Issue", "Denied"]),
   closureReason: z.enum(CLOSURE_REASONS),
   closureCategory: z.string().trim().min(1).optional().nullable(),
   closureCategoryOther: z.string().trim().optional().nullable(),
@@ -36,11 +36,15 @@ export const createClosureRequestSchema = z.object({
   if (val.outcome === "Non-Issue" && reason !== "non_issue") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Non-Issue outcome requires closureReason "non_issue".`, path: ["closureReason"] });
   }
-  if (val.outcome === "Withdrawn" && !["not_contestable", "accepted_loss"].includes(reason)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Withdrawn outcome requires closureReason "not_contestable" or "accepted_loss".`, path: ["closureReason"] });
+  if (val.outcome === "Withdrawn" && reason !== "cannot_dispute") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Withdrawn outcome requires closureReason "cannot_dispute".`, path: ["closureReason"] });
+  }
+  if (val.outcome === "Denied" && reason !== "denied_by_payor") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Denied outcome requires closureReason "denied_by_payor".`, path: ["closureReason"] });
   }
 
-  const requiresDetails = reason === "not_contestable" || reason === "non_issue";
+  const requiresDetails =
+    reason === "cannot_dispute" || reason === "non_issue" || reason === "denied_by_payor";
   if (!requiresDetails) {
     return;
   }
@@ -111,7 +115,7 @@ export const CLOSURE_DETAIL_FIELDS = [
 ] as const;
 
 export interface NormalizedClosure {
-  outcome: "Withdrawn" | "Non-Issue";
+  outcome: "Withdrawn" | "Non-Issue" | "Denied";
   closureReason: ClosureReason;
   closureCategory: string | null;
   closureCategoryOther: string | null;

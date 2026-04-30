@@ -52,20 +52,20 @@ const STATUSES = [
   {
     label: "Resolved",
     kind: "green" as const,
-    when: "Recovered or accepted",
-    means: "Closed with a positive outcome — money recovered, or accepted as a loss after a denial.",
+    when: "Recovered",
+    means: "Closed with a positive outcome — money recovered through the dispute.",
   },
   {
     label: "Denied",
     kind: "red" as const,
     when: "Payor rejected dispute",
-    means: "Closure reason: payer_denied. Decide: accept loss, re-dispute, or submit a new invoice.",
+    means: "Closure reason: denied_by_payor (recorded response required). Decide: mark denied, re-dispute, or submit a new invoice.",
   },
   {
     label: "Withdrawn",
     kind: "muted" as const,
     when: "We closed it on our side",
-    means: "Closure exit: Cannot Dispute, Accepted Loss, or Non-Issue. The row lands in Withdrawals Review for supervisor sign-off and lessons-learned.",
+    means: "Closure exit: Cannot Dispute (before submission) or Non-Issue. The row lands in Withdrawals Review for supervisor sign-off and lessons-learned.",
   },
 ];
 

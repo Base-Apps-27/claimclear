@@ -10,7 +10,7 @@ export type WithdrawalRowClosureReason =
   (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
 
 export const WithdrawalRowClosureReason = {
-  not_contestable: "not_contestable",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
-  accepted_loss: "accepted_loss",
+  denied_by_payor: "denied_by_payor",
 } as const;
