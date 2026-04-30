@@ -24,6 +24,8 @@ import {
   getListErrorTypesQueryKey,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
+import type { ClosureReasonKey } from "@/components/closure/closure-options";
 import { usePresence } from "@/hooks/use-presence";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -169,6 +171,7 @@ export default function InvoiceGroupDetail() {
   const reassignResponseMutation = useReassignResponse();
 
   const [holdReason, setHoldReason] = useState("");
+  const [closureDialog, setClosureDialog] = useState<{ reason: ClosureReasonKey } | null>(null);
 
   // Per-leg hold dialog state — tracks which ride row's Hold dialog is open,
   // plus its reason / pending-from inputs. Mirrors the claim-detail flow so
@@ -1021,7 +1024,7 @@ export default function InvoiceGroupDetail() {
                             selected={group.outcome === "Withdrawn" && group.closureReason === "not_contestable"}
                             disabled={updateOutcome.isPending || othersPresent}
                             disabledReason="Close because we decided not to dispute (no clear path to recover)."
-                            onClick={() => handleOutcome("Withdrawn", "not_contestable")}
+                            onClick={() => setClosureDialog({ reason: "not_contestable" })}
                             testId="action-group-outcome-not-contestable"
                           />
                         </PresenceLockWrapper>
@@ -1032,7 +1035,7 @@ export default function InvoiceGroupDetail() {
                             selected={group.outcome === "Withdrawn" && group.closureReason === "accepted_loss"}
                             disabled={updateOutcome.isPending || othersPresent}
                             disabledReason="Close after a denial because we accept the loss and won't re-dispute."
-                            onClick={() => handleOutcome("Withdrawn", "accepted_loss")}
+                            onClick={() => setClosureDialog({ reason: "accepted_loss" })}
                             testId="action-group-outcome-accepted-loss"
                           />
                         </PresenceLockWrapper>
@@ -1345,6 +1348,20 @@ export default function InvoiceGroupDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ClosureIntakeDialog
+        open={!!closureDialog}
+        onOpenChange={(open) => {
+          if (!open) setClosureDialog(null);
+        }}
+        target={{ kind: "group", id }}
+        reason={closureDialog?.reason ?? "non_issue"}
+        onSuccess={() => {
+          setClosureDialog(null);
+          invalidate();
+          queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(id) });
+        }}
+      />
     </div>
   );
 }
