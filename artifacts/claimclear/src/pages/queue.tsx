@@ -76,12 +76,14 @@ export default function Queue() {
     }
   };
 
-  const newQuery = useListInvoiceGroups({ status: "New" });
-  const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence" });
-  const needsReviewQuery = useListInvoiceGroups({ status: "Needs Review", limit: 100 });
-  const portalQueuedQuery = useListInvoiceGroups({ status: "Portal Queued" });
-  const awaitingQuery = useListInvoiceGroups({ status: "Awaiting Response" });
-  const onHoldQuery = useListInvoiceGroups({ status: "On Hold" });
+  // Bumped limits so the visible list isn't capped while a real total is
+  // available — the tab/section badges use server `total`, not array length.
+  const newQuery = useListInvoiceGroups({ status: "New", limit: 500 });
+  const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence", limit: 500 });
+  const needsReviewQuery = useListInvoiceGroups({ status: "Needs Review", limit: 500 });
+  const portalQueuedQuery = useListInvoiceGroups({ status: "Portal Queued", limit: 500 });
+  const awaitingQuery = useListInvoiceGroups({ status: "Awaiting Response", limit: 500 });
+  const onHoldQuery = useListInvoiceGroups({ status: "On Hold", limit: 500 });
 
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
@@ -89,6 +91,27 @@ export default function Queue() {
   const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
   const awaitingGroups = awaitingQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
+
+  // Real totals from the API — not the (possibly capped) array length.
+  // These drive the badge counts so they're always honest.
+  const actionableTotal = (newQuery.data?.total ?? 0) + (needsEvidenceQuery.data?.total ?? 0);
+  const needsReviewTotal = needsReviewQuery.data?.total ?? 0;
+  const portalQueuedTotal = portalQueuedQuery.data?.total ?? 0;
+  const awaitingTotal = awaitingQuery.data?.total ?? 0;
+  const onHoldTotal = onHoldQuery.data?.total ?? 0;
+
+  // "Needs Review" is set by two unrelated flows:
+  //   1. Import without an error type — group has no errorTypeId, needs the
+  //      operator to label it (true classification work).
+  //   2. Portal response received (especially info_request) — group is
+  //      already classified; operator needs a post-response decision
+  //      (re-dispute, accept loss, resolve, etc.) which lives on the
+  //      detail page, NOT the classification panel.
+  // The QueueNeedsReviewPanel only does (1), so mixing both into one inbox
+  // confused operators — they'd see classified items they couldn't act on
+  // here. Split them so each section has a single, honest meaning.
+  const unclassifiedGroups = needsReviewGroups.filter(g => !g.errorTypeId);
+  const postResponseGroups = needsReviewGroups.filter(g => !!g.errorTypeId);
 
   // Within each on-clock list, sort urgent rows to the top, then by remaining
   // days asc. The API already returns rows in service-date asc order, which is
@@ -132,17 +155,56 @@ export default function Queue() {
     return () => clearTimeout(t);
   }, [successMessage]);
 
-  // If a triage group leaves the Needs Review list (because it auto-advanced
-  // or someone else classified it), clear the dangling selection.
+  // If the selected classification group leaves the unclassified list
+  // (auto-advanced, classified by someone else, or its status changed),
+  // clear the dangling selection. Only the unclassified slice is relevant
+  // here — post-response items don't open this panel.
   useEffect(() => {
-    if (selectedTriageId && !needsReviewGroups.some(g => g.id === selectedTriageId)) {
+    if (selectedTriageId && !unclassifiedGroups.some(g => g.id === selectedTriageId)) {
       setSelectedTriageId(null);
     }
-  }, [selectedTriageId, needsReviewGroups]);
+  }, [selectedTriageId, unclassifiedGroups]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
 
-  const renderGroupRow = (group: InvoiceGroupResponse, opts: { onSelect: (id: number) => void; selectedId: number | null }) => {
+  // Per-row deadline pill that complements UrgentTodayBadge: shows a soft
+  // "Xd left" hint for items inside the warning window so Adam can see what's
+  // about to become urgent — not just what's urgent right now. Stays silent
+  // for items already covered by the red Today badge or far from deadline.
+  const renderDeadlineHint = (group: InvoiceGroupResponse) => {
+    if (group.isUrgent) return null;
+    const days = group.effectiveDaysLeft;
+    if (days == null) return null;
+    if (days < 0) {
+      return (
+        <span
+          data-testid={`deadline-hint-${group.invoiceNumber}`}
+          className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap"
+          style={{ background: "hsl(var(--destructive))", color: "white" }}
+          title="Past deadline — file immediately"
+        >
+          Overdue
+        </span>
+      );
+    }
+    if (days > 7) return null;
+    const tone = days <= 2 ? "amber" : "neutral";
+    const styles = tone === "amber"
+      ? { background: "hsl(var(--cc-amber-bg))", color: "hsl(var(--cc-amber-fg))", borderColor: "hsl(var(--cc-amber-border))" }
+      : { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))", borderColor: "transparent" };
+    return (
+      <span
+        data-testid={`deadline-hint-${group.invoiceNumber}`}
+        className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+        style={styles}
+        title={`${days} day${days === 1 ? "" : "s"} until the filing deadline (earliest service date drives the clock).`}
+      >
+        {days}d left
+      </span>
+    );
+  };
+
+  const renderGroupRow = (group: InvoiceGroupResponse, opts: { onSelect: (id: number) => void; selectedId: number | null; showDeadline?: boolean }) => {
     const isSelected = opts.selectedId === group.id;
     return (
       <button
@@ -163,6 +225,7 @@ export default function Queue() {
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
             <StatusBadge status={group.status} />
+            {opts.showDeadline && renderDeadlineHint(group)}
           </div>
           <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
             {group.errorTypeName && (
@@ -178,13 +241,13 @@ export default function Queue() {
     );
   };
 
-  const triageCount = needsReviewGroups.length;
-
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-1">
         <h2 className="text-2xl font-bold tracking-tight">Work Queue</h2>
-        <p className="text-muted-foreground">Invoice groups requiring attention — select a group to process</p>
+        <p className="text-muted-foreground">
+          Dispute operator workspace. Start at the <span className="font-medium">Classification Inbox</span> to label new portal responses, then work the <span className="font-medium">Action Required</span> tab — earliest service date first, with red badges for groups that must file today.
+        </p>
       </div>
 
       {urgentCount > 0 && (
@@ -212,33 +275,37 @@ export default function Queue() {
         </div>
       )}
 
-      {/* Triage Inbox — the gate before the workflow.
-          Items here haven't been classified yet, so they don't belong in any
-          workflow tab. This zone is always visible above the workflow tabs so
-          new portal responses don't disappear behind a tab Adam might forget
-          to check. */}
+      {/* Classification Inbox + Post-Response Review.
+          Both pull from status="Needs Review" but represent different work:
+          unclassified items need an Error Type assigned (handled inline by
+          QueueNeedsReviewPanel), while already-classified items came back
+          via portal response and need a post-response decision (handled on
+          the detail page). Splitting them keeps each section honest about
+          what action the operator should take. */}
       <div className="space-y-3" data-testid="triage-inbox">
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <Inbox className="h-5 w-5 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Triage Inbox</h3>
-                {triageCount > 0 ? (
-                  <Badge variant="secondary">{triageCount} to classify</Badge>
+                <h3 className="text-lg font-semibold">Classification Inbox</h3>
+                {unclassifiedGroups.length > 0 ? (
+                  <Badge variant="secondary" data-testid="badge-classification-count">
+                    {unclassifiedGroups.length} to classify
+                  </Badge>
                 ) : (
                   <Badge variant="outline">Empty</Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Portal responses waiting to be classified before they enter a workflow stage.
+              <p className="text-xs text-muted-foreground max-w-md text-right">
+                Imported groups with no Error Type yet. Pick a label and they auto-advance to Build Case.
               </p>
             </div>
-            {triageCount === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">All caught up — no responses to review.</p>
+            {unclassifiedGroups.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">All caught up — nothing to classify.</p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-needs-review">
-                {needsReviewGroups.map(g => renderGroupRow(g, { onSelect: selectTriage, selectedId: selectedTriageId }))}
+                {unclassifiedGroups.map(g => renderGroupRow(g, { onSelect: selectTriage, selectedId: selectedTriageId }))}
               </div>
             )}
           </CardContent>
@@ -256,6 +323,63 @@ export default function Queue() {
             />
           </div>
         )}
+
+        {postResponseGroups.length > 0 && (
+          <Card data-testid="post-response-review">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Inbox className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">Post-Response Review</h3>
+                  <Badge variant="secondary" data-testid="badge-post-response-count">
+                    {postResponseGroups.length} awaiting decision
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground max-w-md text-right">
+                  Already classified — payer has responded. Open the detail page to re-dispute, accept loss, or resolve.
+                </p>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-post-response">
+                {postResponseGroups.map(g => (
+                  <Link
+                    key={g.id}
+                    href={`/invoice-groups/${g.id}`}
+                    data-testid={`post-response-row-${g.invoiceNumber}`}
+                    className="block w-full text-left rounded-lg border bg-card transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="py-3 px-6 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 min-w-0 shrink-0">
+                        <div className="whitespace-nowrap flex items-center gap-2">
+                          <UrgentTodayBadge isUrgent={g.isUrgent} />
+                          <span className="font-mono font-semibold">{g.invoiceNumber}</span>
+                          <span className="text-muted-foreground ml-1 text-sm">
+                            {g.rideCount} ride{g.rideCount !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <StatusBadge status={g.status} />
+                      </div>
+                      <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
+                        {g.errorTypeName && (
+                          <span className="text-muted-foreground truncate min-w-0" title={g.errorTypeName}>
+                            {g.errorTypeName}
+                          </span>
+                        )}
+                        <span className="font-medium whitespace-nowrap">{formatCurrency(g.totalAmount)}</span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {needsReviewGroups.length < needsReviewTotal && (
+          <p className="text-xs text-muted-foreground" data-testid="needs-review-overflow-note">
+            Showing the first {needsReviewGroups.length} of {needsReviewTotal} Needs Review groups. Process some to reveal the rest.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -264,51 +388,60 @@ export default function Queue() {
             <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="actionable">
                 Action Required
-                {actionableGroups.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{actionableGroups.length}</Badge>
+                {actionableTotal > 0 && (
+                  <Badge variant="secondary" className="ml-2">{actionableTotal}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="portal-queued">
                 Portal Queued
-                {portalQueuedSorted.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{portalQueuedSorted.length}</Badge>
+                {portalQueuedTotal > 0 && (
+                  <Badge variant="secondary" className="ml-2">{portalQueuedTotal}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="awaiting">
                 Awaiting
-                {awaitingGroups.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{awaitingGroups.length}</Badge>
+                {awaitingTotal > 0 && (
+                  <Badge variant="secondary" className="ml-2">{awaitingTotal}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="on-hold">
                 On Hold
-                {onHoldSorted.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{onHoldSorted.length}</Badge>
+                {onHoldTotal > 0 && (
+                  <Badge variant="secondary" className="ml-2">{onHoldTotal}</Badge>
                 )}
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="actionable" className="mt-4">
+            <TabsContent value="actionable" className="mt-4 space-y-2">
+              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-actionable">
+                <span className="font-medium text-foreground">New + Needs Evidence.</span> Groups you can act on right now. Sorted earliest service date first; <span className="font-semibold" style={{ color: "hsl(var(--destructive))" }}>red Today</span> = must file before end of day, <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>amber</span> = within 2 days, neutral = within a week.
+              </p>
               {actionableGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups need action right now.</CardContent></Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
-                  {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId }))}
+                  {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="portal-queued" className="mt-4">
+            <TabsContent value="portal-queued" className="mt-4 space-y-2">
+              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-portal-queued">
+                <span className="font-medium text-foreground">Drafted, waiting for the next portal submission batch.</span> The clock is still running — urgency badges still apply.
+              </p>
               {portalQueuedSorted.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups queued for portal submission.</CardContent></Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
-                  {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId }))}
+                  {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="awaiting" className="mt-4">
+            <TabsContent value="awaiting" className="mt-4 space-y-2">
+              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-awaiting">
+                <span className="font-medium text-foreground">Submitted to the payer portal — waiting on a response.</span> No action needed unless a response arrives (it'll re-appear in the Classification Inbox above).
+              </p>
               {awaitingGroups.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups awaiting response.</CardContent></Card>
               ) : (
@@ -318,12 +451,15 @@ export default function Queue() {
               )}
             </TabsContent>
 
-            <TabsContent value="on-hold" className="mt-4">
+            <TabsContent value="on-hold" className="mt-4 space-y-2">
+              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-on-hold">
+                <span className="font-medium text-foreground">Manually parked or blocked.</span> Still on the deadline clock — urgency badges apply. Resume from the workflow when you're unblocked.
+              </p>
               {onHoldSorted.length === 0 ? (
                 <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups on hold.</CardContent></Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
-                  {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId }))}
+                  {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
                 </div>
               )}
             </TabsContent>
