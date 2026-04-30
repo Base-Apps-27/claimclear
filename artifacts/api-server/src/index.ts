@@ -438,6 +438,79 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   } catch (err) {
     logger.warn({ err }, "Task #74 closure_reason backfill: failed");
   }
+
+  // Disputed-child sync backfill (production only, idempotent).
+  // Heals claims whose status drifted from their invoice group's status because
+  // of the old `syncChildRides` terminal-only guard. A leg is "disputed" iff it
+  // has an error_type_id; clean legs are never touched. Held legs are never
+  // touched. Per-row audit entry written so the claim timeline reflects the
+  // backfilled change.
+  if (!isProduction) {
+    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Disputed-child sync backfill: skipping (not production)");
+  } else try {
+    const SYNCABLE = ["Portal Queued", "Generating Email", "Awaiting Response", "Ready to Review", "Resolved", "Denied"];
+    const drifted = await runWithDbWarmupRetry("Disputed-child sync backfill scan", () => db.execute(sql`
+      SELECT c.id            AS claim_id,
+             c.conf_number   AS conf_number,
+             c.status::text  AS claim_status,
+             c.outcome::text AS claim_outcome,
+             ig.id           AS group_id,
+             ig.invoice_number AS invoice_number,
+             ig.status::text AS group_status,
+             ig.outcome::text AS group_outcome
+      FROM claims c
+      INNER JOIN invoice_groups ig ON ig.id = c.invoice_group_id
+      WHERE c.error_type_id IS NOT NULL
+        AND c.status::text != 'On Hold'
+        AND ig.status::text = ANY(${SYNCABLE}::text[])
+        AND c.status::text != ig.status::text
+    `));
+    const rows = (drifted.rows ?? []) as Array<{
+      claim_id: number; conf_number: string | null;
+      claim_status: string; claim_outcome: string;
+      group_id: number; invoice_number: string;
+      group_status: string; group_outcome: string;
+    }>;
+    if (rows.length === 0) {
+      logger.info("Disputed-child sync backfill: nothing to do (no drifted legs)");
+    } else {
+      for (const row of rows) {
+        await runWithDbWarmupRetry(`Disputed-child sync backfill claim ${row.claim_id}`, async () => {
+          await db.execute(sql`
+            UPDATE claims
+            SET status = ${row.group_status}::claim_status,
+                outcome = ${row.group_outcome}::claim_outcome
+            WHERE id = ${row.claim_id}
+          `);
+          await db.execute(sql`
+            INSERT INTO audit_logs (claim_id, invoice_group_id, action, details, metadata, user_email, user_name)
+            VALUES (
+              ${row.claim_id},
+              ${row.group_id},
+              'claim_status_changed',
+              ${`Status changed from ${row.claim_status} to ${row.group_status} (backfill: cascaded from invoice group)`},
+              ${JSON.stringify({
+                from: row.claim_status,
+                to: row.group_status,
+                previousOutcome: row.claim_outcome,
+                newOutcome: row.group_outcome,
+                source: "group_cascade:backfill",
+                cascadedFromGroupId: row.group_id,
+              })}::jsonb,
+              NULL,
+              'system (backfill)'
+            )
+          `);
+        });
+      }
+      logger.info({
+        count: rows.length,
+        legs: rows.map((r) => ({ claimId: r.claim_id, conf: r.conf_number, invoice: r.invoice_number, from: r.claim_status, to: r.group_status })),
+      }, "Disputed-child sync backfill: re-synced drifted disputed legs with their groups");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Disputed-child sync backfill: failed");
+  }
 })();
 
 const rawPort = process.env["PORT"];

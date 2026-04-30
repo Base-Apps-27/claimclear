@@ -137,6 +137,21 @@ What's the verdict?
 - **Re-bucket confirmation.** Existing `accepted_loss` → `denied_by_payor` is the leaning, but user hasn't confirmed.
 - **Outcome alignment confirmation.** `cannot_dispute` → `Withdrawn`, `denied_by_payor` → `Denied`. User leaning yes; not yet confirmed.
 
+## Disputed-leg cascade and rollup (fixed Apr 30, 2026)
+
+A bug let claim status drift away from invoice-group status mid-lifecycle, and let clean rides drag the group's stepper backwards. Mechanism:
+
+- `syncChildRides` (`artifacts/api-server/src/lib/group-transitions.ts`) used to early-return for any non-terminal status, so a group going to "Portal Queued" / "Generating Email" / "Awaiting Response" / "Ready to Review" silently left disputed children frozen in their previous status. Header badges, top stepper, and right-pane "Step X of N" labels on the claim page all read from `claim.status` and showed stale data.
+- `getGroupCurrentStageKey` (`artifacts/claimclear/src/pages/invoice-group-detail.tsx`) rolled up the earliest stage across **all** rides on the invoice. Clean rides (no `error_type_id`) sit at "triage" forever, so a single disputed leg pushed all the way through still showed the group at STEP 1 Classify.
+
+Fix shipped:
+
+1. **Cascade rule rewritten.** `syncChildRides` now cascades any non-On-Hold group transition down to **disputed legs only** (`error_type_id IS NOT NULL`). Held legs and clean legs are never touched. Per-child audit rows are written so each claim's timeline shows "Status changed from X to Y (cascaded from invoice group)".
+2. **Rollup filtered.** `getGroupCurrentStageKey` and `buildGroupStages` now operate on disputed legs only, with a fallback to all rides for the pre-classification case (so we don't divide by zero when nothing's been classified yet). The rule "if any leg has an issue the entire invoice can't be submitted" is preserved — the slowest disputed leg defines the invoice's stage; clean legs are trivially done.
+3. **Production backfill.** A one-shot block in `artifacts/api-server/src/index.ts` runs on prod boot only, scans for disputed legs whose status drifted from their group's status (in any of the system-controlled or terminal statuses), and re-syncs them with a backfill-tagged audit row. Idempotent — the next prod restart finds zero drift.
+
+This was a single root cause masquerading as "we have two parallel solution paths" — there's only one write path; it just had a guard clause and a rollup function that were silently dropping work.
+
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.
 - **Anthropic Claude:** AI for SOP analysis, dispute note generation, and email generation, accessed via Replit AI Integrations proxy.

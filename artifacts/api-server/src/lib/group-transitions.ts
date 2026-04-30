@@ -1,4 +1,4 @@
-import { eq, and, or, ne, inArray } from "drizzle-orm";
+import { eq, and, or, ne, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
@@ -92,8 +92,34 @@ async function syncChildRides(
   actor: GroupTransitionActor,
   extraChildFields: Partial<typeof claimsTable.$inferInsert> | undefined,
   ex: DbExecutor,
+  source: string,
 ) {
-  if (!TERMINAL_STATUSES.includes(newStatus)) return;
+  // Don't cascade On Hold to children — group-level holds pause the group's
+  // own clock without forcing each leg into the per-leg hold flow (which has
+  // its own reason / pending-from inputs).
+  if (newStatus === "On Hold") return;
+
+  // Cascade to *disputed* legs only. A leg is "disputed" iff it has an
+  // error_type_id — that's how it got into the workflow in the first place.
+  // Clean legs sit on the same invoice but were never part of any dispute, so
+  // their status must not move when the group's status moves. The previous
+  // implementation only fired on terminal statuses, which let mid-lifecycle
+  // group transitions (Portal Queued, Awaiting Response, Ready to Review)
+  // silently leave child status drifting from group status.
+  const disputedChildren = await ex
+    .select({
+      id: claimsTable.id,
+      status: claimsTable.status,
+      outcome: claimsTable.outcome,
+    })
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, groupId),
+      ne(claimsTable.status, "On Hold"),
+      isNotNull(claimsTable.errorTypeId),
+    ));
+
+  if (disputedChildren.length === 0) return;
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = {
     status: newStatus as ClaimStatus,
@@ -108,7 +134,34 @@ async function syncChildRides(
     .where(and(
       eq(claimsTable.invoiceGroupId, groupId),
       ne(claimsTable.status, "On Hold"),
+      isNotNull(claimsTable.errorTypeId),
     ));
+
+  // Per-child audit rows so the claim timeline reflects what actually
+  // happened ("Status changed from X to Y (cascaded from group)") instead
+  // of leaving the operator to infer the cause from a sibling group event.
+  const auditRows = disputedChildren
+    .filter((c) => c.status !== newStatus || (newOutcome != null && c.outcome !== newOutcome))
+    .map((c) => ({
+      claimId: c.id,
+      invoiceGroupId: groupId,
+      action: "claim_status_changed",
+      details: `Status changed from ${c.status} to ${newStatus} (cascaded from invoice group)`,
+      metadata: {
+        from: c.status,
+        to: newStatus,
+        previousOutcome: c.outcome,
+        newOutcome: newOutcome ?? c.outcome,
+        source: `group_cascade:${source}`,
+        cascadedFromGroupId: groupId,
+      },
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    }));
+
+  if (auditRows.length > 0) {
+    await ex.insert(auditLogsTable).values(auditRows);
+  }
 }
 
 async function ensureNoHeldLegsBeforeClosure(groupId: number, newStatus: string, ex: DbExecutor): Promise<void> {
@@ -185,7 +238,7 @@ export async function transitionGroupStatus(opts: {
       author: actor.userName || actor.userEmail || source,
     });
 
-    await syncChildRides(groupId, newStatus, group.outcome, actor, childFields, ex);
+    await syncChildRides(groupId, newStatus, group.outcome, actor, childFields, ex, source);
 
     broadcastGroupEvent({
       type: "status_changed",
@@ -465,7 +518,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     if (closure.closureReviewNotes !== null) closureChildFields.closureReviewNotes = closure.closureReviewNotes;
     closureChildFields.closureReviewState = "pending";
   }
-  await syncChildRides(groupId, newStatus, newOutcome, actor, { ...closureChildFields, ...childFields }, ex);
+  await syncChildRides(groupId, newStatus, newOutcome, actor, { ...closureChildFields, ...childFields }, ex, source);
 
   broadcastGroupEvent({
     type: "status_changed",

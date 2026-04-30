@@ -105,12 +105,28 @@ function getRideStageKey(status: string): GroupStageKey {
   }
 }
 
-function buildGroupStages(rides: Array<{ status: string }>): Stage[] {
-  const total = rides.length;
+// A leg is "disputed" iff it has an error_type_id assigned. Clean legs sit on
+// the same invoice but were never part of any dispute — they must not drag the
+// group's stage backwards. Per the rule "if any leg has an issue, the entire
+// invoice cannot be submitted", the invoice's progress IS the slowest disputed
+// leg's progress; clean legs are trivially done.
+type RideForRollup = { status: string; errorTypeId?: string | null };
+
+function getDisputedRides<T extends RideForRollup>(rides: T[]): T[] {
+  return rides.filter((r) => r.errorTypeId != null);
+}
+
+function buildGroupStages(rides: RideForRollup[]): Stage[] {
+  // Fall back to all rides only when nothing has been classified yet, so the
+  // pre-classification view (everything at "triage") still renders sensibly
+  // instead of dividing by zero.
+  const disputed = getDisputedRides(rides);
+  const consider = disputed.length > 0 ? disputed : rides;
+  const total = consider.length;
   const stageIndex = (key: GroupStageKey) => GROUP_STAGE_KEYS.indexOf(key);
   const counts = GROUP_STAGE_KEYS.map((key) => {
     const idx = stageIndex(key);
-    return rides.filter((r) => stageIndex(getRideStageKey(r.status)) >= idx).length;
+    return consider.filter((r) => stageIndex(getRideStageKey(r.status)) >= idx).length;
   });
   const labels: Record<GroupStageKey, string> = {
     triage: "Classify",
@@ -127,11 +143,16 @@ function buildGroupStages(rides: Array<{ status: string }>): Stage[] {
   }));
 }
 
-function getGroupCurrentStageKey(groupStatus: string, rides: Array<{ status: string }>): GroupStageKey {
+function getGroupCurrentStageKey(groupStatus: string, rides: RideForRollup[]): GroupStageKey {
   if (groupStatus === "Resolved" || groupStatus === "Denied") return "resolve";
-  if (rides.length === 0) return getRideStageKey(groupStatus);
+  const disputed = getDisputedRides(rides);
+  // No disputed legs yet → the group's own status is the source of truth (it's
+  // sitting in triage / needs review until classification happens).
+  if (disputed.length === 0) return getRideStageKey(groupStatus);
+  // The slowest disputed leg defines the invoice's stage — one stuck leg
+  // blocks the whole submission, by design.
   let earliest: GroupStageKey = "resolve";
-  for (const r of rides) {
+  for (const r of disputed) {
     const k = getRideStageKey(r.status);
     if (GROUP_STAGE_KEYS.indexOf(k) < GROUP_STAGE_KEYS.indexOf(earliest)) earliest = k;
   }
