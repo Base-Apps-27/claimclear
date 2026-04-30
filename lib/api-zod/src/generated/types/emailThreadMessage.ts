@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EmailThreadMessageDirection } from "./emailThreadMessageDirection";
+import type { EmailThreadMessageResponseType } from "./emailThreadMessageResponseType";
 
 export interface EmailThreadMessage {
   id: string;
@@ -16,4 +17,22 @@ export interface EmailThreadMessage {
   senderEmail?: string | null;
   bodyPreview?: string | null;
   timestamp: string;
+  /** For inbound messages, the portal_responses row id (used to wire Approve / Deny / Mark Reviewed buttons). */
+  responseId?: number | null;
+  responseType?: EmailThreadMessageResponseType;
+  /** Inbound only — true when staff has already actioned this response. */
+  processed?: boolean | null;
+  aiSummary?: string | null;
+  extractedAmount?: string | null;
+  extractedDeadline?: string | null;
+  requestedAction?: string | null;
+  classifierSource?: string | null;
+  matchedVia?: string | null;
+  matchConfidence?: string | null;
+  /** The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute). */
+  claimId?: number | null;
+  /** Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. "INV-1234") so the UI can render an "↳ also covers INV-1234" pill linking out. */
+  siblingClaimRef?: string | null;
+  /** Numeric id companion to siblingClaimRef, for navigation. */
+  siblingClaimId?: number | null;
 }

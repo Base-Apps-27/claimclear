@@ -5755,19 +5755,248 @@ export const GetClaimEmailThreadParams = zod.object({
 });
 
 export const GetClaimEmailThreadResponse = zod.object({
-  messages: zod.array(
-    zod.object({
-      id: zod.string(),
-      direction: zod.enum(["inbound", "outbound"]),
-      conversationId: zod.string().nullish(),
-      subject: zod.string().nullish(),
-      sender: zod.string(),
-      senderEmail: zod.string().nullish(),
-      bodyPreview: zod.string().nullish(),
-      timestamp: zod.string(),
-    }),
-  ),
+  messages: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        direction: zod.enum(["inbound", "outbound"]),
+        conversationId: zod.string().nullish(),
+        subject: zod.string().nullish(),
+        sender: zod.string(),
+        senderEmail: zod.string().nullish(),
+        bodyPreview: zod.string().nullish(),
+        timestamp: zod.string(),
+        responseId: zod
+          .number()
+          .nullish()
+          .describe(
+            "For inbound messages, the portal_responses row id (used to wire Approve \/ Deny \/ Mark Reviewed buttons).",
+          ),
+        responseType: zod
+          .enum([
+            "approval",
+            "denial",
+            "partial_approval",
+            "info_request",
+            "acknowledgment",
+            "other",
+          ])
+          .nullish(),
+        processed: zod
+          .boolean()
+          .nullish()
+          .describe(
+            "Inbound only — true when staff has already actioned this response.",
+          ),
+        aiSummary: zod.string().nullish(),
+        extractedAmount: zod.string().nullish(),
+        extractedDeadline: zod.string().nullish(),
+        requestedAction: zod.string().nullish(),
+        classifierSource: zod.string().nullish(),
+        matchedVia: zod.string().nullish(),
+        matchConfidence: zod.string().nullish(),
+        claimId: zod
+          .number()
+          .nullish()
+          .describe(
+            "The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute).",
+          ),
+        siblingClaimRef: zod
+          .string()
+          .nullish()
+          .describe(
+            'Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. \"INV-1234\") so the UI can render an \"↳ also covers INV-1234\" pill linking out.',
+          ),
+        siblingClaimId: zod
+          .number()
+          .nullish()
+          .describe("Numeric id companion to siblingClaimRef, for navigation."),
+      }),
+    )
+    .describe(
+      "Flat chronological list of every message across every conversation. Kept for backwards compatibility; new UIs should prefer `conversations`.",
+    ),
   conversationIds: zod.array(zod.string()),
+  conversations: zod
+    .array(
+      zod.object({
+        conversationId: zod.string(),
+        status: zod
+          .enum([
+            "awaiting_their_reply",
+            "needs_review",
+            "acknowledged_pending",
+            "resolved",
+          ])
+          .describe(
+            "Per-thread status pill computed from the latest message + claim outcome:\n- awaiting_their_reply: we sent last\n- needs_review: latest inbound is a real (non-acknowledgment) response, not yet processed\n- acknowledged_pending: latest inbound is an acknowledgment (auto-ack)\n- resolved: the underlying claim\/group is closed\n",
+          ),
+        lastActivityAt: zod
+          .string()
+          .describe("Most recent message timestamp in this conversation."),
+        latestUnprocessedInboundId: zod
+          .number()
+          .nullish()
+          .describe(
+            "portal_responses.id of the latest unprocessed inbound; the UI anchors Approve \/ Deny \/ Mark Reviewed buttons here.",
+          ),
+        latestSubject: zod
+          .string()
+          .nullish()
+          .describe(
+            "Subject of the most recent message; useful for prefilling Reply.",
+          ),
+        latestInboundSender: zod
+          .string()
+          .nullish()
+          .describe(
+            'Email address of the most recent inbound sender; used to prefill Reply \"To\".',
+          ),
+        messages: zod.array(
+          zod.object({
+            id: zod.string(),
+            direction: zod.enum(["inbound", "outbound"]),
+            conversationId: zod.string().nullish(),
+            subject: zod.string().nullish(),
+            sender: zod.string(),
+            senderEmail: zod.string().nullish(),
+            bodyPreview: zod.string().nullish(),
+            timestamp: zod.string(),
+            responseId: zod
+              .number()
+              .nullish()
+              .describe(
+                "For inbound messages, the portal_responses row id (used to wire Approve \/ Deny \/ Mark Reviewed buttons).",
+              ),
+            responseType: zod
+              .enum([
+                "approval",
+                "denial",
+                "partial_approval",
+                "info_request",
+                "acknowledgment",
+                "other",
+              ])
+              .nullish(),
+            processed: zod
+              .boolean()
+              .nullish()
+              .describe(
+                "Inbound only — true when staff has already actioned this response.",
+              ),
+            aiSummary: zod.string().nullish(),
+            extractedAmount: zod.string().nullish(),
+            extractedDeadline: zod.string().nullish(),
+            requestedAction: zod.string().nullish(),
+            classifierSource: zod.string().nullish(),
+            matchedVia: zod.string().nullish(),
+            matchConfidence: zod.string().nullish(),
+            claimId: zod
+              .number()
+              .nullish()
+              .describe(
+                "The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute).",
+              ),
+            siblingClaimRef: zod
+              .string()
+              .nullish()
+              .describe(
+                'Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. \"INV-1234\") so the UI can render an \"↳ also covers INV-1234\" pill linking out.',
+              ),
+            siblingClaimId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Numeric id companion to siblingClaimRef, for navigation.",
+              ),
+          }),
+        ),
+      }),
+    )
+    .describe(
+      "Messages grouped by Outlook conversationId, sorted by lastActivityAt descending.",
+    ),
+});
+
+/**
+ * Posts a reply to the latest message in the given Outlook conversation
+via Microsoft Graph's reply-to-message endpoint, persists an
+outbound_emails row synchronously, and writes an `email_reply_sent`
+audit row on the claim. The thread refreshes immediately without
+waiting for the next inbox poll.
+
+ * @summary Send an in-app reply to an existing email conversation
+ */
+export const ReplyToEmailConversationParams = zod.object({
+  id: zod.coerce.number(),
+  conversationId: zod.coerce.string(),
+});
+
+export const ReplyToEmailConversationBody = zod.object({
+  subject: zod.string(),
+  bodyText: zod
+    .string()
+    .describe(
+      "Plain-text body. Sent as text\/plain to Graph; line breaks preserved.",
+    ),
+  to: zod.array(zod.string()),
+  cc: zod.array(zod.string()).optional(),
+});
+
+export const ReplyToEmailConversationResponse = zod.object({
+  id: zod.string(),
+  direction: zod.enum(["inbound", "outbound"]),
+  conversationId: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  sender: zod.string(),
+  senderEmail: zod.string().nullish(),
+  bodyPreview: zod.string().nullish(),
+  timestamp: zod.string(),
+  responseId: zod
+    .number()
+    .nullish()
+    .describe(
+      "For inbound messages, the portal_responses row id (used to wire Approve \/ Deny \/ Mark Reviewed buttons).",
+    ),
+  responseType: zod
+    .enum([
+      "approval",
+      "denial",
+      "partial_approval",
+      "info_request",
+      "acknowledgment",
+      "other",
+    ])
+    .nullish(),
+  processed: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Inbound only — true when staff has already actioned this response.",
+    ),
+  aiSummary: zod.string().nullish(),
+  extractedAmount: zod.string().nullish(),
+  extractedDeadline: zod.string().nullish(),
+  requestedAction: zod.string().nullish(),
+  classifierSource: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  claimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute).",
+    ),
+  siblingClaimRef: zod
+    .string()
+    .nullish()
+    .describe(
+      'Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. \"INV-1234\") so the UI can render an \"↳ also covers INV-1234\" pill linking out.',
+    ),
+  siblingClaimId: zod
+    .number()
+    .nullish()
+    .describe("Numeric id companion to siblingClaimRef, for navigation."),
 });
 
 /**

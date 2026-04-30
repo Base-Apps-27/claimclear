@@ -20,10 +20,12 @@ import {
   usePostResponseAction,
   useReassignResponse,
   useGetClaimEmailThread, getGetClaimEmailThreadQueryKey,
+  useReplyToEmailConversation,
   useListClaims,
   useGetInvoiceGroup, getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadMessage, UpdateClaimOutcomeBodyClosureReason } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, UpdateClaimOutcomeBodyClosureReason } from "@workspace/api-client-react";
+import { ConversationsCard } from "@/components/conversations-card";
 import { StatusBadge } from "@/components/status-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -303,7 +305,8 @@ export default function ClaimDetail() {
   const { data: emailThreadData } = useGetClaimEmailThread(claimId, {
     query: { queryKey: getGetClaimEmailThreadQueryKey(claimId), enabled: !!claimId },
   });
-  const emailThread: EmailThreadMessage[] = emailThreadData?.messages || [];
+  const conversations: EmailThreadConversation[] = emailThreadData?.conversations || [];
+  const replyMutation = useReplyToEmailConversation();
 
   const [reassignTarget, setReassignTarget] = useState<PortalResponseItem | null>(null);
   const [reassignSearch, setReassignSearch] = useState("");
@@ -915,274 +918,51 @@ export default function ClaimDetail() {
             </Card>
           )}
 
-          {claimResponses.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Inbox className="h-5 w-5" />
-                  Responses Received
-                  <Badge variant="secondary">{claimResponses.length}</Badge>
-                </CardTitle>
-                {claim.closureReason && (
-                  <CardDescription
-                    data-testid="responses-closure-reason"
-                    className="pt-1"
-                  >
-                    Closure reason: <span className="font-medium">{closureReasonLabel(claim.closureReason)}</span>
-                  </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {claimResponses.map((resp: PortalResponseItem) => {
-                  const typeColors: Record<string, string> = {
-                    approval: "bg-green-50 border-green-200 text-green-800",
-                    denial: "bg-red-50 border-red-200 text-red-800",
-                    partial_approval: "bg-amber-50 border-amber-200 text-amber-800",
-                    info_request: "bg-blue-50 border-blue-200 text-blue-800",
-                    acknowledgment: "bg-slate-50 border-slate-200 text-slate-700",
-                    other: "bg-gray-50 border-gray-200 text-gray-700",
-                  };
-                  const typeLabels: Record<string, string> = {
-                    approval: "Approved",
-                    denial: "Denied",
-                    partial_approval: "Partially Approved",
-                    info_request: "Info Requested",
-                    acknowledgment: "Acknowledged",
-                    other: "Other",
-                  };
-                  const colorClass = typeColors[resp.responseType] || typeColors.other;
-                  const isAck = resp.responseType === "acknowledgment";
-                  return (
-                    <div key={resp.id} className={`border rounded-lg p-4 space-y-2 ${colorClass}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {resp.source === "email" ? (
-                            <Mail className="h-4 w-4" />
-                          ) : (
-                            <Bot className="h-4 w-4" />
-                          )}
-                          <span className="text-sm font-medium">
-                            {resp.source === "email" ? "Email" : "Portal"} Response
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {typeLabels[resp.responseType] || resp.responseType}
-                          </Badge>
-                          {isAck && (
-                            <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-300">
-                              Receipt only — no action
-                            </Badge>
-                          )}
-                          {resp.classifierSource === "ai" && (
-                            <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
-                              AI summarized
-                            </Badge>
-                          )}
-                          {!resp.processed && !isAck && (
-                            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
-                              Needs Review
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="text-xs opacity-70">
-                          {resp.receivedAt ? formatDateTime(resp.receivedAt) : ""}
-                        </span>
-                      </div>
-
-                      {resp.subject && (
-                        <p className="text-sm font-medium">{resp.subject}</p>
-                      )}
-
-                      {resp.aiSummary && (
-                        <div className="text-sm bg-white/70 border border-current/10 rounded-md p-3">
-                          <div className="text-[11px] uppercase tracking-wide opacity-60 mb-1">Summary</div>
-                          <div className="leading-snug">{resp.aiSummary}</div>
-                          {(resp.requestedAction || resp.extractedAmount || resp.extractedDeadline) && (
-                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-80">
-                              {resp.requestedAction && (
-                                <span><strong>They want:</strong> {resp.requestedAction}</span>
-                              )}
-                              {resp.extractedAmount && (
-                                <span><strong>Amount:</strong> {resp.extractedAmount}</span>
-                              )}
-                              {resp.extractedDeadline && (
-                                <span><strong>Deadline:</strong> {resp.extractedDeadline}</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {(() => {
-                        const fullBody = (resp.rawContent && resp.rawContent.trim().length > 0)
-                          ? resp.rawContent
-                          : (resp.content || "");
-                        if (!fullBody) return null;
-                        const isLong = fullBody.length > 400 || fullBody.split("\n").length > 6;
-                        const isExpanded = expandedResponseIds.has(resp.id);
-                        const isHtml = resp.bodyFormat === "html";
-                        const sanitizedHtml = isHtml
-                          ? DOMPurify.sanitize(fullBody, {
-                              ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li", "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4", "h5", "h6", "span", "div"],
-                              ALLOWED_ATTR: ["href", "target", "rel"],
-                            })
-                          : "";
-                        return (
-                          <div className="space-y-1">
-                            {isHtml ? (
-                              <div
-                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 break-words font-sans overflow-y-auto prose prose-sm max-w-none ${
-                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
-                                }`}
-                                // Sanitized via DOMPurify above with a strict tag/attr allow-list.
-                                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-                              />
-                            ) : (
-                              <div
-                                className={`text-sm bg-white/60 border border-current/10 rounded-md p-3 whitespace-pre-wrap break-words font-sans overflow-y-auto ${
-                                  isExpanded ? "max-h-[32rem]" : "max-h-32"
-                                }`}
-                              >
-                                {fullBody}
-                              </div>
-                            )}
-                            {isLong && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-2 text-xs opacity-70 hover:opacity-100"
-                                onClick={() => toggleResponseExpanded(resp.id)}
-                              >
-                                {isExpanded ? "Show less" : "Show full message"}
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      <div className="flex items-center gap-3 text-xs opacity-60">
-                        {resp.senderEmail && (
-                          <span>From: {resp.senderName || resp.senderEmail}</span>
-                        )}
-                        {resp.matchedVia && (
-                          <span>Matched: {resp.matchedVia}</span>
-                        )}
-                        {resp.matchConfidence && (() => {
-                          const conf = String(resp.matchConfidence).toLowerCase();
-                          const confColors: Record<string, string> = {
-                            high: "bg-green-100 text-green-800 border-green-300",
-                            medium: "bg-amber-100 text-amber-800 border-amber-300",
-                            low: "bg-red-100 text-red-800 border-red-300",
-                          };
-                          const confTips: Record<string, string> = {
-                            high: "Strong match — sender, claim ref, and amount aligned.",
-                            medium: "Likely match — partial signals matched. Please verify.",
-                            low: "Weak match — auto-linked on minimal signals. Review carefully.",
-                          };
-                          return (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="outline" className={`text-[10px] capitalize cursor-help ${confColors[conf] || ""}`}>
-                                    {conf} confidence
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  {confTips[conf] || `Match confidence: ${conf}`}
-                                  {resp.matchedVia ? ` (matched via ${resp.matchedVia})` : ""}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          );
-                        })()}
-                        <Button
-                          size="sm" variant="ghost"
-                          className="text-xs h-6 px-2 ml-auto opacity-70 hover:opacity-100"
-                          onClick={() => {
-                            setReassignTarget(resp);
-                            setReassignSearch("");
-                            setReassignSelectedClaimId(null);
-                          }}
-                        >
-                          <ArrowRightLeft className="h-3 w-3 mr-1" /> Not the right claim?
-                        </Button>
-                      </div>
-
-                      {!resp.processed && (
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm" variant="outline"
-                            className="text-xs h-7 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
-                            onClick={async () => {
-                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "approval" } });
-                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
-                              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                            }}
-                          >
-                            <CheckCircle className="h-3 w-3 mr-1" /> Approve
-                          </Button>
-                          <Button
-                            size="sm" variant="outline"
-                            className="text-xs h-7 bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
-                            onClick={async () => {
-                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: "denial" } });
-                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
-                              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
-                            }}
-                          >
-                            <X className="h-3 w-3 mr-1" /> Deny
-                          </Button>
-                          <Button
-                            size="sm" variant="outline"
-                            className="text-xs h-7"
-                            onClick={async () => {
-                              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as any } });
-                              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
-                            }}
-                          >
-                            <Eye className="h-3 w-3 mr-1" /> Mark Reviewed
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
-
-          {emailThread.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessagesSquare className="h-5 w-5" />
-                  Email Thread
-                  <Badge variant="secondary">{emailThread.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {emailThread.map((msg) => {
-                  const isOutbound = msg.direction === "outbound";
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`border rounded-lg p-3 ${isOutbound ? "bg-blue-50/40 border-blue-200 ml-6" : "bg-slate-50 border-slate-200 mr-6"}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          {isOutbound ? <Send className="h-4 w-4 text-blue-700" /> : <Inbox className="h-4 w-4 text-slate-700" />}
-                          <span className="font-medium">{isOutbound ? "Sent" : "Received"}</span>
-                          <span className="opacity-70">{msg.sender}{msg.senderEmail && msg.senderEmail !== msg.sender ? ` <${msg.senderEmail}>` : ""}</span>
-                        </div>
-                        <span className="text-xs opacity-60">{formatDateTime(msg.timestamp)}</span>
-                      </div>
-                      {msg.subject && <p className="text-sm font-medium mt-1">{msg.subject}</p>}
-                      {msg.bodyPreview && <p className="text-sm opacity-80 mt-1 whitespace-pre-wrap">{msg.bodyPreview}</p>}
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
+          <ConversationsCard
+            conversations={conversations}
+            claimResponses={claimResponses}
+            claim={claim}
+            isReplying={replyMutation.isPending}
+            onApprove={async (responseId) => {
+              await processResponseMutation.mutateAsync({ id: responseId, data: { responseType: "approval" } });
+              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+              queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+            }}
+            onDeny={async (responseId) => {
+              await processResponseMutation.mutateAsync({ id: responseId, data: { responseType: "denial" } });
+              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+              queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+              queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+            }}
+            onMarkReviewed={async (resp) => {
+              await processResponseMutation.mutateAsync({ id: resp.id, data: { responseType: resp.responseType as any } });
+              queryClient.invalidateQueries({ queryKey: getListResponsesQueryKey({ claimId }) });
+              queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+            }}
+            onReassign={(resp) => {
+              setReassignTarget(resp);
+              setReassignSearch("");
+              setReassignSelectedClaimId(null);
+            }}
+            onReply={async (input) => {
+              const created = await replyMutation.mutateAsync({
+                id: claimId,
+                // Outlook conversation IDs may contain reserved URL chars
+                // (+, /, =) so encode before the codegen interpolates them.
+                conversationId: encodeURIComponent(input.conversationId),
+                data: {
+                  subject: input.subject,
+                  bodyText: input.bodyText,
+                  to: input.to,
+                  cc: input.cc,
+                },
+              });
+              queryClient.invalidateQueries({ queryKey: getGetClaimEmailThreadQueryKey(claimId) });
+              queryClient.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
+              return created;
+            }}
+          />
 
           {validTransitions?.postResponseActions && validTransitions.postResponseActions.length > 0 && (
             <Card className="border-2 border-blue-300 bg-blue-50/30">

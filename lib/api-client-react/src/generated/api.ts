@@ -60,6 +60,7 @@ import type {
   DashboardUserProductivity,
   EmailBouncesResponse,
   EmailCheckResult,
+  EmailThreadMessage,
   EmailThreadResponse,
   ErrorTypeResponse,
   EvidenceTypeBody,
@@ -110,6 +111,10 @@ import type {
   ReassignResponseBody,
   RecordPortalResponse200,
   RecordPortalResponseBody,
+  ReplyToEmailConversation400,
+  ReplyToEmailConversation404,
+  ReplyToEmailConversation502,
+  ReplyToEmailConversationBody,
   ResponseStats,
   RevertPortalSubmissionDescriptionBody,
   SOPAnalysisResult,
@@ -8419,6 +8424,139 @@ export function useGetClaimEmailThread<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Posts a reply to the latest message in the given Outlook conversation
+via Microsoft Graph's reply-to-message endpoint, persists an
+outbound_emails row synchronously, and writes an `email_reply_sent`
+audit row on the claim. The thread refreshes immediately without
+waiting for the next inbox poll.
+
+ * @summary Send an in-app reply to an existing email conversation
+ */
+export const getReplyToEmailConversationUrl = (
+  id: number,
+  conversationId: string,
+) => {
+  return `/api/claims/${id}/email-thread/${conversationId}/reply`;
+};
+
+export const replyToEmailConversation = async (
+  id: number,
+  conversationId: string,
+  replyToEmailConversationBody: ReplyToEmailConversationBody,
+  options?: RequestInit,
+): Promise<EmailThreadMessage> => {
+  return customFetch<EmailThreadMessage>(
+    getReplyToEmailConversationUrl(id, conversationId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replyToEmailConversationBody),
+    },
+  );
+};
+
+export const getReplyToEmailConversationMutationOptions = <
+  TError = ErrorType<
+    | ReplyToEmailConversation400
+    | ReplyToEmailConversation404
+    | ReplyToEmailConversation502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyToEmailConversation>>,
+    TError,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToEmailConversationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replyToEmailConversation>>,
+  TError,
+  {
+    id: number;
+    conversationId: string;
+    data: BodyType<ReplyToEmailConversationBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["replyToEmailConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replyToEmailConversation>>,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToEmailConversationBody>;
+    }
+  > = (props) => {
+    const { id, conversationId, data } = props ?? {};
+
+    return replyToEmailConversation(id, conversationId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplyToEmailConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replyToEmailConversation>>
+>;
+export type ReplyToEmailConversationMutationBody =
+  BodyType<ReplyToEmailConversationBody>;
+export type ReplyToEmailConversationMutationError = ErrorType<
+  | ReplyToEmailConversation400
+  | ReplyToEmailConversation404
+  | ReplyToEmailConversation502
+>;
+
+/**
+ * @summary Send an in-app reply to an existing email conversation
+ */
+export const useReplyToEmailConversation = <
+  TError = ErrorType<
+    | ReplyToEmailConversation400
+    | ReplyToEmailConversation404
+    | ReplyToEmailConversation502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyToEmailConversation>>,
+    TError,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToEmailConversationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replyToEmailConversation>>,
+  TError,
+  {
+    id: number;
+    conversationId: string;
+    data: BodyType<ReplyToEmailConversationBody>;
+  },
+  TContext
+> => {
+  return useMutation(getReplyToEmailConversationMutationOptions(options));
+};
 
 /**
  * @summary Trigger email inbox scan for responses

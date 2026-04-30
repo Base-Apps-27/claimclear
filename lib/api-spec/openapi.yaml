@@ -2381,6 +2381,84 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmailThreadResponse'
 
+  /claims/{id}/email-thread/{conversationId}/reply:
+    post:
+      operationId: replyToEmailConversation
+      tags: [responses]
+      summary: Send an in-app reply to an existing email conversation
+      description: |
+        Posts a reply to the latest message in the given Outlook conversation
+        via Microsoft Graph's reply-to-message endpoint, persists an
+        outbound_emails row synchronously, and writes an `email_reply_sent`
+        audit row on the claim. The thread refreshes immediately without
+        waiting for the next inbox poll.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, bodyText, to]
+              properties:
+                subject:
+                  type: string
+                bodyText:
+                  type: string
+                  description: Plain-text body. Sent as text/plain to Graph; line breaks preserved.
+                to:
+                  type: array
+                  items:
+                    type: string
+                cc:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Reply sent — returns the persisted outbound row so the UI can optimistically render it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailThreadMessage'
+        '400':
+          description: Validation error or no recipients on file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Claim or conversation not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '502':
+          description: Microsoft Graph rejected the send. Body is preserved client-side so staff can retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /responses/check-email:
     post:
       operationId: checkEmailResponses
@@ -5326,19 +5404,105 @@ components:
           nullable: true
         timestamp:
           type: string
+        responseId:
+          type: integer
+          nullable: true
+          description: For inbound messages, the portal_responses row id (used to wire Approve / Deny / Mark Reviewed buttons).
+        responseType:
+          type: string
+          enum: [approval, denial, partial_approval, info_request, acknowledgment, other]
+          nullable: true
+        processed:
+          type: boolean
+          nullable: true
+          description: Inbound only — true when staff has already actioned this response.
+        aiSummary:
+          type: string
+          nullable: true
+        extractedAmount:
+          type: string
+          nullable: true
+        extractedDeadline:
+          type: string
+          nullable: true
+        requestedAction:
+          type: string
+          nullable: true
+        classifierSource:
+          type: string
+          nullable: true
+        matchedVia:
+          type: string
+          nullable: true
+        matchConfidence:
+          type: string
+          nullable: true
+        claimId:
+          type: integer
+          nullable: true
+          description: The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute).
+        siblingClaimRef:
+          type: string
+          nullable: true
+          description: Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. "INV-1234") so the UI can render an "↳ also covers INV-1234" pill linking out.
+        siblingClaimId:
+          type: integer
+          nullable: true
+          description: Numeric id companion to siblingClaimRef, for navigation.
+
+    EmailThreadConversation:
+      type: object
+      required: [conversationId, status, lastActivityAt, messages]
+      properties:
+        conversationId:
+          type: string
+        status:
+          type: string
+          enum: [awaiting_their_reply, needs_review, acknowledged_pending, resolved]
+          description: |
+            Per-thread status pill computed from the latest message + claim outcome:
+            - awaiting_their_reply: we sent last
+            - needs_review: latest inbound is a real (non-acknowledgment) response, not yet processed
+            - acknowledged_pending: latest inbound is an acknowledgment (auto-ack)
+            - resolved: the underlying claim/group is closed
+        lastActivityAt:
+          type: string
+          description: Most recent message timestamp in this conversation.
+        latestUnprocessedInboundId:
+          type: integer
+          nullable: true
+          description: portal_responses.id of the latest unprocessed inbound; the UI anchors Approve / Deny / Mark Reviewed buttons here.
+        latestSubject:
+          type: string
+          nullable: true
+          description: Subject of the most recent message; useful for prefilling Reply.
+        latestInboundSender:
+          type: string
+          nullable: true
+          description: Email address of the most recent inbound sender; used to prefill Reply "To".
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailThreadMessage'
 
     EmailThreadResponse:
       type: object
-      required: [messages, conversationIds]
+      required: [messages, conversationIds, conversations]
       properties:
         messages:
           type: array
           items:
             $ref: '#/components/schemas/EmailThreadMessage'
+          description: Flat chronological list of every message across every conversation. Kept for backwards compatibility; new UIs should prefer `conversations`.
         conversationIds:
           type: array
           items:
             type: string
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailThreadConversation'
+          description: Messages grouped by Outlook conversationId, sorted by lastActivityAt descending.
 
     EmailCheckResult:
       type: object

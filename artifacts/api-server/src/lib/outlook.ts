@@ -142,6 +142,69 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
   return { messageId, conversationId };
 }
 
+export interface ReplyToMessageOptions {
+  /** ID of the original Outlook message we're replying to. */
+  originalMessageId: string;
+  /** Plain-text body for the reply. Sent as text/plain so Outlook keeps original quoted history intact. */
+  bodyText: string;
+  /**
+   * Subject override. Optional — Graph's createReply already prefixes the
+   * original subject with "Re:" automatically when this is omitted.
+   */
+  subject?: string;
+  /**
+   * To/Cc overrides. Optional — Graph's createReply uses the original sender
+   * as the default recipient, but we usually pass these explicitly so the UI
+   * is the source of truth.
+   */
+  to?: string[];
+  cc?: string[];
+}
+
+/**
+ * Reply to an existing Outlook message via Graph's `/me/messages/{id}/createReply`
+ * + `/send` flow. Using createReply (instead of raw sendMail) preserves the
+ * `In-Reply-To` / `References` headers so the conversation thread stays intact
+ * in both our mailbox and the recipient's.
+ *
+ * Returns the new draft's `id` and `conversationId` so the caller can persist
+ * an `outbound_emails` row that ties the new message back into the same thread.
+ */
+export async function replyToMessage(options: ReplyToMessageOptions): Promise<SendEmailResult> {
+  const client = await getOutlookClient();
+
+  // 1. createReply: Graph wires up In-Reply-To / References / threading headers
+  //    and returns a draft we can mutate before sending.
+  const draft = await client.api(`/me/messages/${options.originalMessageId}/createReply`).post({});
+  const messageId: string | undefined = draft?.id;
+  if (!messageId) {
+    throw new Error("Outlook createReply did not return a draft id");
+  }
+  const conversationId: string | null = draft?.conversationId ?? null;
+
+  // 2. PATCH body (and optional subject / recipients) onto the draft. Plain-text
+  //    body type so the original quoted history Outlook auto-includes is not
+  //    re-encoded as HTML.
+  const patch: Record<string, unknown> = {
+    body: { contentType: "Text", content: options.bodyText },
+  };
+  if (options.subject) {
+    patch.subject = options.subject;
+  }
+  if (options.to && options.to.length > 0) {
+    patch.toRecipients = options.to.map((address) => ({ emailAddress: { address } }));
+  }
+  if (options.cc && options.cc.length > 0) {
+    patch.ccRecipients = options.cc.map((address) => ({ emailAddress: { address } }));
+  }
+  await client.api(`/me/messages/${messageId}`).patch(patch);
+
+  // 3. Send. Graph returns 202 Accepted with no body.
+  await client.api(`/me/messages/${messageId}/send`).post({});
+
+  return { messageId, conversationId };
+}
+
 export async function isOutlookConnected(): Promise<boolean> {
   try {
     await getAccessToken();

@@ -5,9 +5,13 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { EmailThreadConversation } from "./emailThreadConversation";
 import type { EmailThreadMessage } from "./emailThreadMessage";
 
 export interface EmailThreadResponse {
+  /** Flat chronological list of every message across every conversation. Kept for backwards compatibility; new UIs should prefer `conversations`. */
   messages: EmailThreadMessage[];
   conversationIds: string[];
+  /** Messages grouped by Outlook conversationId, sorted by lastActivityAt descending. */
+  conversations: EmailThreadConversation[];
 }

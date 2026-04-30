@@ -2026,6 +2026,19 @@ export const EmailThreadMessageDirection = {
   outbound: "outbound",
 } as const;
 
+export type EmailThreadMessageResponseType =
+  | (typeof EmailThreadMessageResponseType)[keyof typeof EmailThreadMessageResponseType]
+  | null;
+
+export const EmailThreadMessageResponseType = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+} as const;
+
 export interface EmailThreadMessage {
   id: string;
   direction: EmailThreadMessageDirection;
@@ -2035,11 +2048,70 @@ export interface EmailThreadMessage {
   senderEmail?: string | null;
   bodyPreview?: string | null;
   timestamp: string;
+  /** For inbound messages, the portal_responses row id (used to wire Approve / Deny / Mark Reviewed buttons). */
+  responseId?: number | null;
+  responseType?: EmailThreadMessageResponseType;
+  /** Inbound only — true when staff has already actioned this response. */
+  processed?: boolean | null;
+  aiSummary?: string | null;
+  extractedAmount?: string | null;
+  extractedDeadline?: string | null;
+  requestedAction?: string | null;
+  classifierSource?: string | null;
+  matchedVia?: string | null;
+  matchConfidence?: string | null;
+  /** The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute). */
+  claimId?: number | null;
+  /** Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. "INV-1234") so the UI can render an "↳ also covers INV-1234" pill linking out. */
+  siblingClaimRef?: string | null;
+  /** Numeric id companion to siblingClaimRef, for navigation. */
+  siblingClaimId?: number | null;
+}
+
+/**
+ * Per-thread status pill computed from the latest message + claim outcome:
+- awaiting_their_reply: we sent last
+- needs_review: latest inbound is a real (non-acknowledgment) response, not yet processed
+- acknowledged_pending: latest inbound is an acknowledgment (auto-ack)
+- resolved: the underlying claim/group is closed
+
+ */
+export type EmailThreadConversationStatus =
+  (typeof EmailThreadConversationStatus)[keyof typeof EmailThreadConversationStatus];
+
+export const EmailThreadConversationStatus = {
+  awaiting_their_reply: "awaiting_their_reply",
+  needs_review: "needs_review",
+  acknowledged_pending: "acknowledged_pending",
+  resolved: "resolved",
+} as const;
+
+export interface EmailThreadConversation {
+  conversationId: string;
+  /** Per-thread status pill computed from the latest message + claim outcome:
+- awaiting_their_reply: we sent last
+- needs_review: latest inbound is a real (non-acknowledgment) response, not yet processed
+- acknowledged_pending: latest inbound is an acknowledgment (auto-ack)
+- resolved: the underlying claim/group is closed
+ */
+  status: EmailThreadConversationStatus;
+  /** Most recent message timestamp in this conversation. */
+  lastActivityAt: string;
+  /** portal_responses.id of the latest unprocessed inbound; the UI anchors Approve / Deny / Mark Reviewed buttons here. */
+  latestUnprocessedInboundId?: number | null;
+  /** Subject of the most recent message; useful for prefilling Reply. */
+  latestSubject?: string | null;
+  /** Email address of the most recent inbound sender; used to prefill Reply "To". */
+  latestInboundSender?: string | null;
+  messages: EmailThreadMessage[];
 }
 
 export interface EmailThreadResponse {
+  /** Flat chronological list of every message across every conversation. Kept for backwards compatibility; new UIs should prefer `conversations`. */
   messages: EmailThreadMessage[];
   conversationIds: string[];
+  /** Messages grouped by Outlook conversationId, sorted by lastActivityAt descending. */
+  conversations: EmailThreadConversation[];
 }
 
 export type EmailCheckResultResultsItem = {
@@ -2644,6 +2716,26 @@ export type ReassignResponseBody = {
   targetClaimId?: number;
   targetGroupId?: number;
   unmatch?: boolean;
+};
+
+export type ReplyToEmailConversationBody = {
+  subject: string;
+  /** Plain-text body. Sent as text/plain to Graph; line breaks preserved. */
+  bodyText: string;
+  to: string[];
+  cc?: string[];
+};
+
+export type ReplyToEmailConversation400 = {
+  error?: string;
+};
+
+export type ReplyToEmailConversation404 = {
+  error?: string;
+};
+
+export type ReplyToEmailConversation502 = {
+  error?: string;
 };
 
 export type CheckEmailResponsesBody = {

@@ -1,15 +1,32 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { searchInboxEmails, isOutlookConnected } from "../lib/outlook";
+import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse } from "../lib/response-matcher";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { logger } from "../lib/logger";
 import { isBounceMessage, recordBounce } from "../lib/bounce-detection";
+import {
+  buildSiblingLookup,
+  inboundToMessage,
+  outboundToMessage,
+  groupByConversation,
+  type ThreadMessage,
+} from "../lib/email-thread";
+
+/**
+ * Replyable Microsoft Graph caller. Override in tests via
+ * `__setReplyImplForTesting` so the reply route can be exercised end-to-end
+ * without a real Outlook account.
+ */
+let replyImpl: typeof replyToMessage = replyToMessage;
+export function __setReplyImplForTesting(fn: typeof replyToMessage | null): void {
+  replyImpl = fn ?? replyToMessage;
+}
 
 const router: IRouter = Router();
 
@@ -501,6 +518,14 @@ router.get("/claims/:id/email-thread", asyncHandler(async (req, res): Promise<vo
   const claimId = parseInt(String(req.params.id), 10);
   if (isNaN(claimId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  // Pull all messages tied to this claim (any conversation, including null)
+  // PLUS any sibling-claim messages that share a conversation with this
+  // claim. Doing it in one OR ensures null-conversationId messages on the
+  // current claim are never dropped just because the claim also has
+  // threaded conversations.
   const inboundForClaim = await db.select().from(portalResponsesTable)
     .where(eq(portalResponsesTable.claimId, claimId));
   const outboundForClaim = await db.select().from(outboundEmailsTable)
@@ -510,39 +535,197 @@ router.get("/claims/:id/email-thread", asyncHandler(async (req, res): Promise<vo
   for (const r of inboundForClaim) if (r.conversationId) conversationIds.add(r.conversationId);
   for (const o of outboundForClaim) if (o.conversationId) conversationIds.add(o.conversationId);
 
-  const allInbound = conversationIds.size > 0
-    ? await db.select().from(portalResponsesTable)
-        .where(inArray(portalResponsesTable.conversationId, Array.from(conversationIds)))
+  const convIdList = Array.from(conversationIds);
+  const allInbound = convIdList.length > 0
+    ? await db.select().from(portalResponsesTable).where(
+        or(
+          eq(portalResponsesTable.claimId, claimId),
+          inArray(portalResponsesTable.conversationId, convIdList),
+        ),
+      )
     : inboundForClaim;
-  const allOutbound = conversationIds.size > 0
-    ? await db.select().from(outboundEmailsTable)
-        .where(inArray(outboundEmailsTable.conversationId, Array.from(conversationIds)))
+  const allOutbound = convIdList.length > 0
+    ? await db.select().from(outboundEmailsTable).where(
+        or(
+          eq(outboundEmailsTable.claimId, claimId),
+          inArray(outboundEmailsTable.conversationId, convIdList),
+        ),
+      )
     : outboundForClaim;
 
-  const messages = [
-    ...allInbound.map((r) => ({
-      id: `in-${r.id}`,
-      direction: "inbound" as const,
-      conversationId: r.conversationId,
-      subject: r.subject,
-      sender: r.senderName || r.senderEmail || "Unknown",
-      senderEmail: r.senderEmail,
-      bodyPreview: r.content,
-      timestamp: (r.receivedAt instanceof Date ? r.receivedAt : new Date(r.receivedAt as any)).toISOString(),
-    })),
-    ...allOutbound.map((o) => ({
-      id: `out-${o.id}`,
-      direction: "outbound" as const,
-      conversationId: o.conversationId,
-      subject: o.subject,
-      sender: o.sentByUserName || o.sentByUserEmail || "ClaimClear",
-      senderEmail: o.sentByUserEmail,
-      bodyPreview: o.bodyPreview,
-      timestamp: (o.sentAt instanceof Date ? o.sentAt : new Date(o.sentAt as any)).toISOString(),
-    })),
+  // Sibling-claim refs (one round trip) for the "↳ also covers INV-…" pill.
+  const siblingClaimIds = new Set<number>();
+  for (const r of allInbound) if (r.claimId !== null && r.claimId !== claimId) siblingClaimIds.add(r.claimId);
+  for (const o of allOutbound) if (o.claimId !== null && o.claimId !== claimId) siblingClaimIds.add(o.claimId);
+  const siblingClaims = siblingClaimIds.size > 0
+    ? await db.select({
+        id: claimsTable.id,
+        refNumber: claimsTable.refNumber,
+        confNumber: claimsTable.confNumber,
+      }).from(claimsTable).where(inArray(claimsTable.id, Array.from(siblingClaimIds)))
+    : [];
+  const lookup = buildSiblingLookup(siblingClaims);
+
+  const messages: ThreadMessage[] = [
+    ...allInbound.map((r) => inboundToMessage(r, claimId, lookup)),
+    ...allOutbound.map((o) => outboundToMessage(o, claimId, lookup)),
   ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  res.json({ messages, conversationIds: Array.from(conversationIds) });
+  const isClaimResolved =
+    claim.status === "Resolved" ||
+    claim.status === "Denied" ||
+    (claim.outcome !== "Pending" && claim.outcome !== null);
+  const conversations = groupByConversation(messages, isClaimResolved);
+
+  res.json({
+    messages,
+    conversationIds: Array.from(conversationIds),
+    conversations,
+  });
+}));
+
+router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async (req, res): Promise<void> => {
+  const claimId = parseInt(String(req.params.id), 10);
+  if (isNaN(claimId)) { res.status(400).json({ error: "Invalid claim id" }); return; }
+
+  const conversationId = String(req.params.conversationId || "").trim();
+  if (!conversationId) { res.status(400).json({ error: "Missing conversationId" }); return; }
+
+  const { subject, bodyText, to, cc } = req.body ?? {};
+  if (typeof subject !== "string" || subject.trim().length === 0) {
+    res.status(400).json({ error: "subject is required" });
+    return;
+  }
+  if (typeof bodyText !== "string" || bodyText.trim().length === 0) {
+    res.status(400).json({ error: "bodyText is required" });
+    return;
+  }
+  const toList = Array.isArray(to)
+    ? (to as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  const ccList = Array.isArray(cc)
+    ? (cc as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  if (toList.length === 0) {
+    res.status(400).json({ error: "At least one 'to' recipient is required" });
+    return;
+  }
+
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
+  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  // Authorize: conversation must be anchored to this claim (inbound or
+  // outbound), else replies could be spoofed across claims.
+  const claimInbound = await db.select().from(portalResponsesTable)
+    .where(and(
+      eq(portalResponsesTable.conversationId, conversationId),
+      eq(portalResponsesTable.claimId, claimId),
+    ))
+    .orderBy(desc(portalResponsesTable.receivedAt))
+    .limit(1);
+  const claimOutbound = await db.select().from(outboundEmailsTable)
+    .where(and(
+      eq(outboundEmailsTable.conversationId, conversationId),
+      eq(outboundEmailsTable.claimId, claimId),
+    ))
+    .orderBy(desc(outboundEmailsTable.sentAt))
+    .limit(1);
+
+  if (claimInbound.length === 0 && claimOutbound.length === 0) {
+    res.status(404).json({ error: "Conversation not found for this claim" });
+    return;
+  }
+
+  // Pivot for Graph createReply: prefer latest inbound on this claim, else
+  // latest outbound on this claim. Sibling-claim rows are deliberately
+  // excluded so we never leak message IDs across claims.
+  const originalMessageId: string | null =
+    claimInbound[0]?.externalMessageId ?? claimOutbound[0]?.messageId ?? null;
+
+  if (!originalMessageId) {
+    res.status(404).json({ error: "No prior message found for this conversation" });
+    return;
+  }
+
+  // Send via Graph. Failures bubble up as 502 so the composer can retry.
+  let sendResult: { messageId: string | null; conversationId: string | null };
+  try {
+    sendResult = await replyImpl({
+      originalMessageId,
+      subject,
+      bodyText,
+      to: toList,
+      cc: ccList.length > 0 ? ccList : undefined,
+    });
+  } catch (err) {
+    logger.error({ err, claimId, conversationId }, "Failed to send reply via Outlook");
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to send reply",
+    });
+    return;
+  }
+
+  // Persist with the route's conversationId (NOT Graph's echo) so the new
+  // outbound stays grouped with the same thread on the UI.
+  const persistConversationId = conversationId;
+  const bodyPreview = bodyText.replace(/\s+/g, " ").trim().slice(0, 500);
+  const [persisted] = await db.insert(outboundEmailsTable).values({
+    messageId: sendResult.messageId,
+    conversationId: persistConversationId,
+    claimId,
+    invoiceGroupId: null,
+    submissionId: null,
+    kind: "manual",
+    subject,
+    recipients: [...toList, ...ccList],
+    bodyPreview,
+    sentByUserEmail: req.user?.email ?? null,
+    sentByUserName: req.user?.displayName ?? null,
+  }).returning();
+
+  // Audit row.
+  await db.insert(auditLogsTable).values({
+    claimId,
+    action: "email_reply_sent",
+    details: `Reply sent to ${toList.join(", ")}: "${subject}"`,
+    metadata: {
+      outboundEmailId: persisted.id,
+      conversationId: persistConversationId,
+      messageId: sendResult.messageId,
+      to: toList,
+      cc: ccList,
+      subject,
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? "User",
+  });
+
+  // Thread-shaped echo for optimistic UI append.
+  const message: ThreadMessage = {
+    id: `out-${persisted.id}`,
+    direction: "outbound",
+    conversationId: persistConversationId,
+    subject: persisted.subject,
+    sender: persisted.sentByUserName || persisted.sentByUserEmail || "ClaimClear",
+    senderEmail: persisted.sentByUserEmail,
+    bodyPreview: persisted.bodyPreview,
+    timestamp: persisted.sentAt.toISOString(),
+    responseId: null,
+    responseType: null,
+    processed: null,
+    aiSummary: null,
+    extractedAmount: null,
+    extractedDeadline: null,
+    requestedAction: null,
+    classifierSource: null,
+    matchedVia: null,
+    matchConfidence: null,
+    claimId,
+    siblingClaimRef: null,
+    siblingClaimId: null,
+  };
+
+  res.json(message);
 }));
 
 export default router;
