@@ -15,8 +15,11 @@ import {
   Mail,
   ArrowRight,
   Settings,
-  LayoutTemplate
+  LayoutTemplate,
+  XCircle,
+  FileX
 } from "lucide-react";
+import { CLOSURE_CATEGORIES, ROOT_CAUSES_BY_CATEGORY } from "@workspace/closure-options";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +37,13 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 
-type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
+type OutcomeType =
+  | "portal_dispute"
+  | "internal"
+  | "hold"
+  | "dispute"
+  | "cannot_dispute"
+  | "non_issue";
 
 interface EvidenceReq {
   key: string;
@@ -49,6 +58,8 @@ interface TreeOption {
   childId?: string;
   outcomeType?: OutcomeType;
   outcomeLabel?: string;
+  closureCategory?: string;
+  closureRootCause?: string;
 }
 
 interface TreeNode {
@@ -71,6 +82,8 @@ const OUTCOME_LABELS: Record<OutcomeType, string> = {
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
+  cannot_dispute: "Cannot Dispute (Withdraw)",
+  non_issue: "Non-Issue",
 };
 
 const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string }> = {
@@ -78,6 +91,8 @@ const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: st
   dispute: { bg: "bg-[#3478F6]/10 dark:bg-[#3478F6]/20", text: "text-[#3478F6] dark:text-[#3478F6]", border: "border-[#3478F6]/20 dark:border-[#3478F6]/30" },
   internal: { bg: "bg-red-50 dark:bg-red-500/10", text: "text-red-700 dark:text-red-400", border: "border-red-200 dark:border-red-800" },
   hold: { bg: "bg-[#E85D3A]/10 dark:bg-[#E85D3A]/20", text: "text-[#E85D3A] dark:text-[#E85D3A]", border: "border-[#E85D3A]/20 dark:border-[#E85D3A]/30" },
+  cannot_dispute: { bg: "bg-orange-50 dark:bg-orange-500/10", text: "text-orange-700 dark:text-orange-400", border: "border-orange-200 dark:border-orange-800" },
+  non_issue: { bg: "bg-slate-50 dark:bg-slate-500/10", text: "text-slate-700 dark:text-slate-400", border: "border-slate-200 dark:border-slate-800" },
 };
 
 const OUTCOME_ICONS: Record<OutcomeType, React.ElementType> = {
@@ -85,6 +100,8 @@ const OUTCOME_ICONS: Record<OutcomeType, React.ElementType> = {
   internal: Ban,
   hold: PauseCircle,
   dispute: Mail,
+  cannot_dispute: XCircle,
+  non_issue: FileX,
 };
 
 const SAMPLE_TREE: DecisionTree = {
@@ -182,6 +199,17 @@ export function RailPanel() {
       ...tree,
       nodes: tree.nodes.map(n => n.id === id ? { ...n, ...updates } : n),
     });
+  };
+
+  const updateOption = (nodeId: string, optionIndex: number, updates: Partial<TreeOption>) => {
+    setTree(prev => ({
+      ...prev,
+      nodes: prev.nodes.map(n => {
+        if (n.id !== nodeId) return n;
+        const newOptions = n.options.map((o, i) => i === optionIndex ? { ...o, ...updates } : o);
+        return { ...n, options: newOptions };
+      }),
+    }));
   };
 
   const selectedNode = tree.nodes.find(n => n.id === selectedNodeId);
@@ -400,7 +428,19 @@ export function RailPanel() {
 
                           <div className="flex-1 flex items-center gap-3">
                             {!opt.childId ? (
-                              <Select value={opt.outcomeType || ""}>
+                              <Select
+                                value={opt.outcomeType || ""}
+                                onValueChange={(v) => {
+                                  if (v === "sub_question") return;
+                                  const isClosure = v === "cannot_dispute" || v === "non_issue";
+                                  updateOption(selectedNode.id, idx, {
+                                    outcomeType: v as OutcomeType,
+                                    outcomeLabel: OUTCOME_LABELS[v as OutcomeType],
+                                    closureCategory: isClosure ? opt.closureCategory : undefined,
+                                    closureRootCause: isClosure ? opt.closureRootCause : undefined,
+                                  });
+                                }}
+                              >
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select outcome..." />
                                 </SelectTrigger>
@@ -436,6 +476,18 @@ export function RailPanel() {
                                       <span>Place on Hold</span>
                                     </div>
                                   </SelectItem>
+                                  <SelectItem value="cannot_dispute">
+                                    <div className="flex items-center gap-2 text-orange-600">
+                                      <XCircle className="h-4 w-4" />
+                                      <span>Cannot Dispute (Withdraw)</span>
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="non_issue">
+                                    <div className="flex items-center gap-2 text-slate-600">
+                                      <FileX className="h-4 w-4" />
+                                      <span>Non-Issue</span>
+                                    </div>
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                             ) : (
@@ -459,6 +511,37 @@ export function RailPanel() {
                               </Badge>
                             )}
                           </div>
+                          {(opt.outcomeType === "cannot_dispute" || opt.outcomeType === "non_issue") && (
+                            <div className="flex items-center gap-2 pl-1 mt-1">
+                              <Select
+                                value={opt.closureCategory || ""}
+                                onValueChange={(v) => updateOption(selectedNode.id, idx, { closureCategory: v, closureRootCause: undefined })}
+                              >
+                                <SelectTrigger className="h-8 text-xs flex-1">
+                                  <SelectValue placeholder="Closure category…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {CLOSURE_CATEGORIES.map((c) => (
+                                    <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={opt.closureRootCause || ""}
+                                onValueChange={(v) => updateOption(selectedNode.id, idx, { closureRootCause: v })}
+                                disabled={!opt.closureCategory}
+                              >
+                                <SelectTrigger className="h-8 text-xs flex-1">
+                                  <SelectValue placeholder={opt.closureCategory ? "Root cause…" : "Pick category first"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(opt.closureCategory ? ROOT_CAUSES_BY_CATEGORY[opt.closureCategory] || [] : []).map((rc) => (
+                                    <SelectItem key={rc.value} value={rc.value} className="text-xs">{rc.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -608,6 +691,8 @@ function RailNode({
                             opt.outcomeType === 'portal_dispute' ? 'bg-emerald-500' :
                             opt.outcomeType === 'dispute' ? 'bg-[#3478F6]' :
                             opt.outcomeType === 'internal' ? 'bg-red-500' :
+                            opt.outcomeType === 'cannot_dispute' ? 'bg-orange-500' :
+                            opt.outcomeType === 'non_issue' ? 'bg-slate-500' :
                             'bg-[#E85D3A]'
                           }`} />
                           <span className="font-medium truncate text-foreground">{OUTCOME_LABELS[opt.outcomeType]}</span>

@@ -10,10 +10,18 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { 
   Plus, X, HelpCircle, Settings, Trash2, ChevronDown, 
   Send, Ban, PauseCircle, Mail, Info, FileText, Image as ImageIcon,
-  MoreVertical, Edit2, GitBranch
+  MoreVertical, Edit2, GitBranch,
+  XCircle, FileX
 } from "lucide-react";
+import { CLOSURE_CATEGORIES, ROOT_CAUSES_BY_CATEGORY } from "@workspace/closure-options";
 
-export type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
+export type OutcomeType =
+  | "portal_dispute"
+  | "internal"
+  | "hold"
+  | "dispute"
+  | "cannot_dispute"
+  | "non_issue";
 
 export interface EvidenceReq {
   key: string;
@@ -28,6 +36,8 @@ export interface TreeOption {
   childId?: string;
   outcomeType?: OutcomeType;
   outcomeLabel?: string;
+  closureCategory?: string;
+  closureRootCause?: string;
 }
 
 export interface TreeNode {
@@ -50,6 +60,8 @@ const OUTCOME_LABELS: Record<OutcomeType, string> = {
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
+  cannot_dispute: "Cannot Dispute (Withdraw)",
+  non_issue: "Non-Issue",
 };
 
 const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string; icon: React.ElementType }> = {
@@ -57,6 +69,8 @@ const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: st
   dispute: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-300", icon: Mail },
   internal: { bg: "bg-red-50", text: "text-red-700", border: "border-red-300", icon: Ban },
   hold: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-300", icon: PauseCircle },
+  cannot_dispute: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-300", icon: XCircle },
+  non_issue: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300", icon: FileX },
 };
 
 const SAMPLE_TREE: DecisionTree = {
@@ -150,11 +164,14 @@ export function VerticalFlow() {
       if (!parentNode) return prev;
       
       const newOptions = [...parentNode.options];
+      const isClosure = outcomeType === "cannot_dispute" || outcomeType === "non_issue";
       newOptions[optionIndex] = { 
         ...newOptions[optionIndex], 
         childId: undefined, 
         outcomeType, 
-        outcomeLabel: OUTCOME_LABELS[outcomeType] 
+        outcomeLabel: OUTCOME_LABELS[outcomeType],
+        closureCategory: isClosure ? newOptions[optionIndex].closureCategory : undefined,
+        closureRootCause: isClosure ? newOptions[optionIndex].closureRootCause : undefined,
       };
       
       return {
@@ -318,9 +335,60 @@ export function VerticalFlow() {
                               <SelectItem value="hold">
                                 <span className="flex items-center gap-2"><PauseCircle className="h-4 w-4 text-amber-600" />Place on Hold</span>
                               </SelectItem>
+                              <SelectItem value="cannot_dispute">
+                                <span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-orange-600" />Cannot Dispute (Withdraw)</span>
+                              </SelectItem>
+                              <SelectItem value="non_issue">
+                                <span className="flex items-center gap-2"><FileX className="h-4 w-4 text-slate-600" />Non-Issue</span>
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                        {(opt.outcomeType === "cannot_dispute" || opt.outcomeType === "non_issue") && (
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-xs">Closure Category</Label>
+                              <Select
+                                value={opt.closureCategory || ""}
+                                onValueChange={(v) => {
+                                  const newOpts = [...node.options];
+                                  newOpts[i] = { ...opt, closureCategory: v, closureRootCause: undefined };
+                                  updateNode(node.id, { options: newOpts });
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select category…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {CLOSURE_CATEGORIES.map((c) => (
+                                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">Root Cause</Label>
+                              <Select
+                                value={opt.closureRootCause || ""}
+                                onValueChange={(v) => {
+                                  const newOpts = [...node.options];
+                                  newOpts[i] = { ...opt, closureRootCause: v };
+                                  updateNode(node.id, { options: newOpts });
+                                }}
+                                disabled={!opt.closureCategory}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder={opt.closureCategory ? "Select root cause…" : "Pick category first"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(opt.closureCategory ? ROOT_CAUSES_BY_CATEGORY[opt.closureCategory] || [] : []).map((rc) => (
+                                    <SelectItem key={rc.value} value={rc.value}>{rc.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </>
+                        )}
                         <Button 
                           variant="ghost" 
                           className="w-full text-xs h-8 text-red-600 hover:text-red-700 hover:bg-red-50 justify-start"

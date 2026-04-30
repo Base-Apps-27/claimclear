@@ -1,4 +1,10 @@
-export type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
+export type OutcomeType =
+  | "portal_dispute"
+  | "internal"
+  | "hold"
+  | "dispute"
+  | "cannot_dispute"
+  | "non_issue";
 
 export interface EvidenceReq {
   key: string;
@@ -27,6 +33,8 @@ export interface TreeOption {
   childId?: string;
   outcomeType?: OutcomeType;
   outcomeLabel?: string;
+  closureCategory?: string;
+  closureRootCause?: string;
 }
 
 export interface DecisionTree {
@@ -66,6 +74,8 @@ export const OUTCOME_LABELS: Record<OutcomeType, string> = {
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
+  cannot_dispute: "Cannot Dispute (Withdraw)",
+  non_issue: "Non-Issue",
 };
 
 export const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string }> = {
@@ -73,6 +83,8 @@ export const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; bor
   dispute: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-300" },
   internal: { bg: "bg-red-50", text: "text-red-700", border: "border-red-300" },
   hold: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-300" },
+  cannot_dispute: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-300" },
+  non_issue: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
 };
 
 let _counter = 0;

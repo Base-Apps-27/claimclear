@@ -12,5 +12,10 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "references": [
+    {
+      "path": "../../lib/closure-options"
+    }
+  ]
 }

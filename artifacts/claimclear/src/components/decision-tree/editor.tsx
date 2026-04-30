@@ -38,7 +38,12 @@ import {
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
   Settings, Trash2, GripVertical, Maximize, ZoomIn, ZoomOut, RotateCcw,
   Upload, ExternalLink, Loader2, ClipboardPaste,
+  XCircle, FileX,
 } from "lucide-react";
+import {
+  CLOSURE_CATEGORIES,
+  ROOT_CAUSES_BY_CATEGORY,
+} from "@/components/closure/closure-options";
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1.0];
 const DEFAULT_ZOOM = 0.75;
@@ -48,6 +53,8 @@ const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
   internal: Ban,
   hold: PauseCircle,
   dispute: Mail,
+  cannot_dispute: XCircle,
+  non_issue: FileX,
 };
 
 interface TreeEditorProps {
@@ -401,7 +408,15 @@ function FlowNode({
                   addChildNode={() => addChildNode(i)}
                   convertToLeaf={() => convertToLeaf(i)}
                   setOutcome={(ot: OutcomeType) => {
-                    updateOption(i, { outcomeType: ot, outcomeLabel: OUTCOME_LABELS[ot], childId: undefined });
+                    const isClosure = ot === "cannot_dispute" || ot === "non_issue";
+                    updateOption(i, {
+                      outcomeType: ot,
+                      outcomeLabel: OUTCOME_LABELS[ot],
+                      childId: undefined,
+                      // Clear closure fields when switching away from closure outcomes
+                      closureCategory: isClosure ? opt.closureCategory : undefined,
+                      closureRootCause: isClosure ? opt.closureRootCause : undefined,
+                    });
                   }}
                 />
 
@@ -514,9 +529,58 @@ function OptionPill({
                 <SelectItem value="hold">
                   <span className="flex items-center gap-1.5"><PauseCircle className="h-3 w-3 text-amber-600" />Place on Hold</span>
                 </SelectItem>
+                <SelectItem value="cannot_dispute">
+                  <span className="flex items-center gap-1.5"><XCircle className="h-3 w-3 text-orange-600" />Cannot Dispute (Withdraw)</span>
+                </SelectItem>
+                <SelectItem value="non_issue">
+                  <span className="flex items-center gap-1.5"><FileX className="h-3 w-3 text-slate-600" />Non-Issue</span>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {(opt.outcomeType === "cannot_dispute" || opt.outcomeType === "non_issue") && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Default Closure Category</Label>
+                <Select
+                  value={opt.closureCategory ?? ""}
+                  onValueChange={(val) =>
+                    updateOption({ closureCategory: val, closureRootCause: undefined })
+                  }
+                >
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue placeholder="(Ask user at runtime)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CLOSURE_CATEGORIES.map((c) => (
+                      <SelectItem key={c.value} value={c.value} className="text-xs">
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Default Root Cause</Label>
+                <Select
+                  value={opt.closureRootCause ?? ""}
+                  onValueChange={(val) => updateOption({ closureRootCause: val })}
+                  disabled={!opt.closureCategory}
+                >
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue placeholder={opt.closureCategory ? "(Ask user at runtime)" : "Pick category first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(opt.closureCategory ? ROOT_CAUSES_BY_CATEGORY[opt.closureCategory] ?? [] : []).map((rc) => (
+                      <SelectItem key={rc.value} value={rc.value} className="text-xs">
+                        {rc.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
           {opt.childId && (
             <Button variant="ghost" size="sm" className="w-full h-7 text-xs text-slate-500 hover:text-red-600 justify-start" onClick={convertToLeaf}>
               Convert to outcome

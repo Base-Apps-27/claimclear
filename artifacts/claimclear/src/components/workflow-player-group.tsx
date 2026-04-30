@@ -590,6 +590,7 @@ export function WorkflowPlayerGroup({
                     ref={treePlayerRef}
                     tree={parsedTree}
                     claimId={group.id}
+                    target={{ kind: "group", id: group.id }}
                     initialState={savedTreeState}
                     legs={evidenceLegs}
                     onEvidenceCollected={handleEvidenceCollected}

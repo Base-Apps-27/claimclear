@@ -20,13 +20,18 @@ import {
   ChevronRight, Undo2, HelpCircle, CheckCircle2,
   Send, Ban, PauseCircle, Mail, FileText, ClipboardPaste,
   Upload, X, Info, Loader2, ExternalLink, AlertTriangle, Plus,
+  XCircle, FileX,
 } from "lucide-react";
+import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
+import type { ClosureReasonKey } from "@/components/closure/closure-options";
 
 const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
   portal_dispute: Send,
   internal: Ban,
   hold: PauseCircle,
   dispute: Mail,
+  cannot_dispute: XCircle,
+  non_issue: FileX,
 };
 
 interface Step {
@@ -72,6 +77,9 @@ interface PlayerProps {
   onOutcome: (outcomeType: OutcomeType, outcomeLabel: string) => void;
   isTestMode?: boolean;
   claimId?: number;
+  /** Target for closure-style outcomes (cannot_dispute / non_issue). When omitted,
+   * falls back to `{ kind: "claim", id: claimId }` if claimId is provided. */
+  target?: { kind: "claim" | "group"; id: number };
   initialState?: TreePlayerState;
   legs?: EvidenceLeg[]; // when present, shows per-thumbnail "Applies to" chip selector
   onEvidenceCollected?: (evidence: {
@@ -136,9 +144,10 @@ function normalizeNodeEvidence(saved: unknown): Record<string, Record<string, No
 }
 
 export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function TreePlayer(
-  { tree, onOutcome, isTestMode, claimId, initialState, legs, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold, actionsDisabledReason },
+  { tree, onOutcome, isTestMode, claimId, target, initialState, legs, onEvidenceCollected, onConclude, onQueueForPortal, onPlaceHold, actionsDisabledReason },
   ref
 ) {
+  const closureTarget = target ?? (claimId ? { kind: "claim" as const, id: claimId } : null);
   const actionsDisabled = !!actionsDisabledReason;
   const restoredNodeExists = initialState?.currentNodeId
     ? tree.nodes.some(n => n.id === initialState.currentNodeId)
@@ -151,6 +160,15 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     canRestore ? normalizeNodeEvidence(initialState.nodeEvidence) : {}
   );
   const [showRestoreNotice, setShowRestoreNotice] = useState(!!initialState && !canRestore);
+
+  type PendingClosure = {
+    reason: ClosureReasonKey;
+    step: Step;
+    result: { type: OutcomeType; label: string };
+    prefill: { category?: string; rootCause?: string };
+  };
+  const [pendingClosure, setPendingClosure] = useState<PendingClosure | null>(null);
+  const pendingClosureRef = useRef<PendingClosure | null>(null);
 
   useImperativeHandle(ref, () => ({
     getState: () => ({ steps, currentNodeId, nodeEvidence, outcome }),
@@ -219,6 +237,38 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
       optionIndex,
     };
 
+    // Closure-style outcomes: open the closure intake dialog before recording
+    // the outcome so the user must confirm a category + root cause for the
+    // claim/group. Skip the dialog in test mode (no real target to close).
+    // Also respect the presence/lock guard — closure mutates the claim/group
+    // exactly like the queue/conclude/hold actions do, so it must be blocked
+    // when actionsDisabledReason is set (e.g. another user holds the lock).
+    const isClosureLeaf =
+      opt.outcomeType === "cannot_dispute" || opt.outcomeType === "non_issue";
+    if (isClosureLeaf && actionsDisabled) {
+      return;
+    }
+    if (isClosureLeaf && !isTestMode && closureTarget) {
+      const reason: ClosureReasonKey =
+        opt.outcomeType === "cannot_dispute" ? "not_contestable" : "non_issue";
+      const result = {
+        type: opt.outcomeType!,
+        label: opt.outcomeLabel || OUTCOME_LABELS[opt.outcomeType!],
+      };
+      const pc: PendingClosure = {
+        reason,
+        step,
+        result,
+        prefill: {
+          category: opt.closureCategory,
+          rootCause: opt.closureRootCause,
+        },
+      };
+      pendingClosureRef.current = pc;
+      setPendingClosure(pc);
+      return; // do not record step / outcome until the dialog is confirmed
+    }
+
     const newSteps = [...steps, step];
     setSteps(newSteps);
 
@@ -231,7 +281,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
         onOutcome(result.type, result.label);
       }
     }
-  }, [currentNode, steps, isTestMode, onOutcome, nodeEvidence, claimId, onEvidenceCollected]);
+  }, [currentNode, steps, isTestMode, onOutcome, nodeEvidence, claimId, onEvidenceCollected, closureTarget, actionsDisabled]);
 
   const handleUndo = useCallback(() => {
     if (steps.length === 0) return;
@@ -277,10 +327,52 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     return node.evidenceRequirements.every(r => isReqSatisfied(r, recs[r.key] ?? { acknowledged: false, items: [] }));
   };
 
+  const closureDialogEl = closureTarget ? (
+    <ClosureIntakeDialog
+      open={!!pendingClosure}
+      onOpenChange={(open) => {
+        if (!open) {
+          // Always close the visible dialog. We defer clearing the ref to
+          // the end of the tick so onSuccess (which fires immediately after
+          // onOpenChange(false) on submit) can still read pendingClosureRef
+          // before we drop it. If this was a true cancel, onSuccess never
+          // fires and the ref is cleared here, preventing a stale closure
+          // from being committed by a subsequent unrelated dialog open.
+          setPendingClosure(null);
+          queueMicrotask(() => {
+            pendingClosureRef.current = null;
+          });
+        }
+      }}
+      target={closureTarget}
+      reason={pendingClosure?.reason ?? "non_issue"}
+      prefill={
+        pendingClosure?.prefill?.category || pendingClosure?.prefill?.rootCause
+          ? {
+              category: pendingClosure.prefill.category,
+              rootCause: pendingClosure.prefill.rootCause,
+            }
+          : undefined
+      }
+      onSuccess={() => {
+        const pc = pendingClosureRef.current;
+        if (!pc) return;
+        pendingClosureRef.current = null;
+        setSteps((prev) => [...prev, pc.step]);
+        setOutcome(pc.result);
+        if (!isTestMode) {
+          onOutcome(pc.result.type, pc.result.label);
+        }
+      }}
+    />
+  ) : null;
+
   if (outcome) {
     const colors = OUTCOME_COLORS[outcome.type];
     const Icon = OUTCOME_ICONS[outcome.type];
     return (
+      <>
+      {closureDialogEl}
       <div className="space-y-3 min-w-0 overflow-hidden">
         {isTestMode && (
           <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Test Mode</Badge>
@@ -332,6 +424,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
           </CardContent>
         </Card>
       </div>
+      </>
     );
   }
 
@@ -381,6 +474,8 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   };
 
   return (
+    <>
+    {closureDialogEl}
     <div className="space-y-3 min-w-0 overflow-hidden">
       {isTestMode && (
         <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Test Mode - no changes will be saved</Badge>
@@ -569,6 +664,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
         </CardContent>
       </Card>
     </div>
+    </>
   );
 });
 

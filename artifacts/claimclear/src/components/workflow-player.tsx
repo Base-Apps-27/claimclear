@@ -586,6 +586,7 @@ export function WorkflowPlayer({
                 ref={treePlayerRef}
                 tree={parsedTree}
                 claimId={claim.id}
+                target={{ kind: "claim", id: claim.id }}
                 initialState={savedTreeState}
                 onEvidenceCollected={handleEvidenceCollected}
                 onOutcome={(outcomeType: OutcomeType, outcomeLabel: string) => {

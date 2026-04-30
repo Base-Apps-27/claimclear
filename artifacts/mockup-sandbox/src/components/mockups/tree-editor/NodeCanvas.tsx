@@ -3,8 +3,10 @@ import {
   Plus, X, HelpCircle, ChevronDown, ChevronRight,
   FileText, Copy, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
-  Camera, Upload, Save, Settings, ZoomIn, ZoomOut, Maximize, MousePointer2, Hand, Focus
+  Camera, Upload, Save, Settings, ZoomIn, ZoomOut, Maximize, MousePointer2, Hand, Focus,
+  XCircle, FileX
 } from "lucide-react";
+import { CLOSURE_CATEGORIES, ROOT_CAUSES_BY_CATEGORY } from "@workspace/closure-options";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +24,13 @@ import {
 import { Popover, PopoverContent, SelectScrollUpButton, SelectScrollDownButton, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-type OutcomeType = "portal_dispute" | "internal" | "hold" | "dispute";
+type OutcomeType =
+  | "portal_dispute"
+  | "internal"
+  | "hold"
+  | "dispute"
+  | "cannot_dispute"
+  | "non_issue";
 
 interface EvidenceReq {
   key: string;
@@ -38,6 +46,8 @@ interface TreeOption {
   childId?: string;
   outcomeType?: OutcomeType;
   outcomeLabel?: string;
+  closureCategory?: string;
+  closureRootCause?: string;
 }
 
 interface TreeNode {
@@ -60,6 +70,8 @@ const OUTCOME_LABELS: Record<OutcomeType, string> = {
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
+  cannot_dispute: "Cannot Dispute (Withdraw)",
+  non_issue: "Non-Issue",
 };
 
 const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string }> = {
@@ -67,6 +79,8 @@ const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: st
   dispute: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-300" },
   internal: { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-300" },
   hold: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-300" },
+  cannot_dispute: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-300" },
+  non_issue: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
 };
 
 const OUTCOME_ICONS: Record<OutcomeType, React.FC<any>> = {
@@ -74,6 +88,8 @@ const OUTCOME_ICONS: Record<OutcomeType, React.FC<any>> = {
   internal: Ban,
   hold: PauseCircle,
   dispute: Mail,
+  cannot_dispute: XCircle,
+  non_issue: FileX,
 };
 
 const SAMPLE_TREE: DecisionTree = {
@@ -393,6 +409,8 @@ export function NodeCanvas() {
             else if (opt.outcomeType === "dispute") color = "#3b82f6"; // blue-500
             else if (opt.outcomeType === "internal") color = "#f43f5e"; // rose-500
             else if (opt.outcomeType === "hold") color = "#f59e0b"; // amber-500
+            else if (opt.outcomeType === "cannot_dispute") color = "#f97316"; // orange-500
+            else if (opt.outcomeType === "non_issue") color = "#64748b"; // slate-500
             
             connections.push({
               id: `${layout.id}-${idx}-out`,
@@ -603,12 +621,15 @@ export function NodeCanvas() {
                               if (v === "sub") {
                                 addChildNode(layout.id, idx);
                               } else if (v === "none") {
-                                updateOptionData(layout.id, idx, { childId: undefined, outcomeType: undefined, outcomeLabel: undefined });
+                                updateOptionData(layout.id, idx, { childId: undefined, outcomeType: undefined, outcomeLabel: undefined, closureCategory: undefined, closureRootCause: undefined });
                               } else {
+                                const isClosure = v === "cannot_dispute" || v === "non_issue";
                                 updateOptionData(layout.id, idx, { 
                                   childId: undefined, 
                                   outcomeType: v as OutcomeType, 
-                                  outcomeLabel: OUTCOME_LABELS[v as OutcomeType] 
+                                  outcomeLabel: OUTCOME_LABELS[v as OutcomeType],
+                                  closureCategory: isClosure ? opt.closureCategory : undefined,
+                                  closureRootCause: isClosure ? opt.closureRootCause : undefined,
                                 });
                               }
                             }}
@@ -633,9 +654,47 @@ export function NodeCanvas() {
                               <SelectItem value="internal">
                                 <span className="flex items-center gap-2"><Ban className="h-3 w-3 text-rose-500"/> Internal Deny</span>
                               </SelectItem>
+                              <SelectItem value="cannot_dispute">
+                                <span className="flex items-center gap-2"><XCircle className="h-3 w-3 text-orange-500"/> Cannot Dispute</span>
+                              </SelectItem>
+                              <SelectItem value="non_issue">
+                                <span className="flex items-center gap-2"><FileX className="h-3 w-3 text-slate-500"/> Non-Issue</span>
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+
+                        {(opt.outcomeType === "cannot_dispute" || opt.outcomeType === "non_issue") && (
+                          <div className="w-full flex flex-col gap-1 pt-1">
+                            <Select
+                              value={opt.closureCategory || ""}
+                              onValueChange={(v) => updateOptionData(layout.id, idx, { closureCategory: v, closureRootCause: undefined })}
+                            >
+                              <SelectTrigger className="h-7 text-[11px] bg-slate-50 border-slate-200">
+                                <SelectValue placeholder="Closure category…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CLOSURE_CATEGORIES.map((c) => (
+                                  <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={opt.closureRootCause || ""}
+                              onValueChange={(v) => updateOptionData(layout.id, idx, { closureRootCause: v })}
+                              disabled={!opt.closureCategory}
+                            >
+                              <SelectTrigger className="h-7 text-[11px] bg-slate-50 border-slate-200">
+                                <SelectValue placeholder={opt.closureCategory ? "Root cause…" : "Pick category first"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(opt.closureCategory ? ROOT_CAUSES_BY_CATEGORY[opt.closureCategory] || [] : []).map((rc) => (
+                                  <SelectItem key={rc.value} value={rc.value} className="text-xs">{rc.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                         
                         <Button 
                           variant="ghost" 
