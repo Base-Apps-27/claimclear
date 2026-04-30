@@ -15,6 +15,12 @@ import {
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+
+// A claim is only "on the 30-day clock" while its status is one we still owe
+// action on. Once it's filed (Awaiting Response) or otherwise terminal, the
+// urgency signal stops applying, even if the calendar deadline has slipped.
+const CLAIM_ON_CLOCK_STATUSES = new Set<string>(EXPIRING_ACTIONABLE_STATUSES);
 
 const router: IRouter = Router();
 
@@ -162,12 +168,20 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
-function buildClaimsOrderBy(sortCol: string | undefined, sortDir: string | undefined) {
-  const col = sortCol && sortCol in CLAIMS_SORTABLE_COLUMNS
-    ? CLAIMS_SORTABLE_COLUMNS[sortCol as keyof typeof CLAIMS_SORTABLE_COLUMNS]
-    : claimsTable.createdAt;
-  const dirFn = sortDir === "asc" ? asc : desc;
-  return dirFn(col);
+// Default sort = service date ascending (oldest first), so the rows closest to
+// their 30-day filing deadline rise to the top. We push NULLs last so claims
+// missing a service date don't squat at the front of the list, and we tiebreak
+// by createdAt desc to keep newest imports above older ones with the same date.
+function buildClaimsOrderBy(sortCol: string | undefined, sortDir: string | undefined): SQL[] {
+  if (sortCol && sortCol in CLAIMS_SORTABLE_COLUMNS) {
+    const col = CLAIMS_SORTABLE_COLUMNS[sortCol as keyof typeof CLAIMS_SORTABLE_COLUMNS];
+    const dirFn = sortDir === "asc" ? asc : desc;
+    return [dirFn(col)];
+  }
+  return [
+    sql`${claimsTable.date} ASC NULLS LAST`,
+    desc(claimsTable.createdAt),
+  ];
 }
 
 router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
@@ -180,7 +194,7 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
 
   const [totalResult] = await db.select({ count: count() }).from(claimsTable).where(where);
   const claimsRaw = await db.select().from(claimsTable).where(where)
-    .orderBy(orderBy)
+    .orderBy(...orderBy)
     .limit(limitVal)
     .offset(offsetVal);
 
@@ -188,7 +202,8 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
   const claims = claimsRaw.map(claim => ({
     ...claim,
     effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
-    isUrgent: isUrgentDeadline(claim.date, today),
+    // Status-aware: only flag as urgent if we still owe action.
+    isUrgent: CLAIM_ON_CLOCK_STATUSES.has(claim.status) && isUrgentDeadline(claim.date, today),
   }));
 
   res.json({ claims, total: totalResult.count });
@@ -199,7 +214,7 @@ router.get("/claims/export-csv", asyncHandler(async (req, res): Promise<void> =>
   const where = buildClaimsWhere(req.query as Record<string, unknown>);
   const orderBy = buildClaimsOrderBy(sort as string, dir as string);
 
-  const claims = await db.select().from(claimsTable).where(where).orderBy(orderBy);
+  const claims = await db.select().from(claimsTable).where(where).orderBy(...orderBy);
 
   const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
 

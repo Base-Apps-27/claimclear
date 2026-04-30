@@ -64,6 +64,10 @@ function deriveActiveTab(filterStatuses: string[]): GroupsTabKey {
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "invoiceNumber", label: "Invoice #", hideable: false },
+  // Service Date is the earliest ride date in the group — it's what the
+  // 30-day filing deadline is measured against, so it sits right next to
+  // the invoice number rather than being buried.
+  { key: "serviceDate", label: "Service Date" },
   { key: "rideCount", label: "Rides" },
   { key: "clientNumber", label: "Client" },
   { key: "errorDetails", label: "Error Description" },
@@ -80,7 +84,13 @@ const STORAGE_KEY_DENSITY = "ig_density";
 function getInitialVisibleCols(): Set<string> {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_COLS);
-    if (saved) return new Set(JSON.parse(saved));
+    if (saved) {
+      const set = new Set<string>(JSON.parse(saved));
+      // Migration: surface newly added columns for users with a saved layout
+      // so they discover them rather than wondering why they don't appear.
+      if (!set.has("serviceDate")) set.add("serviceDate");
+      return set;
+    }
   } catch {}
   return new Set(ALL_COLUMNS.map(c => c.key));
 }
@@ -506,6 +516,14 @@ export default function InvoiceGroupsList() {
                           </div>
                         </th>
                       )}
+                      {visibleCols.has("serviceDate") && (
+                        <th className="px-4 py-3 font-medium">
+                          <div className="flex items-center gap-1">
+                            <SortableHeader label="Service Date" sortKey="serviceDate" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                            <InfoTooltip content="Earliest ride date in the group. The 30-day filing deadline counts from this date." side="bottom" />
+                          </div>
+                        </th>
+                      )}
                       {visibleCols.has("rideCount") && (
                         <th className="px-4 py-3 font-medium">
                           <div className="flex items-center gap-1">
@@ -618,6 +636,11 @@ export default function InvoiceGroupsList() {
                                   <UrgentTodayBadge isUrgent={group.isUrgent} />
                                   <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
                                 </div>
+                              </td>
+                            )}
+                            {visibleCols.has("serviceDate") && (
+                              <td className={`px-4 ${tdPy} whitespace-nowrap tabular-nums text-xs ${group.isUrgent ? "font-semibold" : "text-muted-foreground"}`}>
+                                {group.earliestDate ? formatDate(group.earliestDate) : '—'}
                               </td>
                             )}
                             {visibleCols.has("rideCount") && (

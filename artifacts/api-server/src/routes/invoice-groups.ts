@@ -16,6 +16,21 @@ import {
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+
+// A group is only "on the 30-day clock" while its status is one we still owe
+// action on. Once it's filed (Awaiting Response) or otherwise terminal, the
+// urgency signal stops applying, even if the calendar deadline has slipped.
+const GROUP_ON_CLOCK_STATUSES = new Set<string>(EXPIRING_ACTIONABLE_STATUSES);
+
+// Correlated subquery returning the earliest service date across the rides in
+// a given invoice group. Used both as a sortable column and (separately) for
+// row decoration so a single group's deadline math has one source of truth.
+const earliestServiceDateExpr = sql<string | null>`(
+  SELECT MIN(${claimsTable.date})
+  FROM ${claimsTable}
+  WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+)`;
 
 const router: IRouter = Router();
 
@@ -49,6 +64,7 @@ const INVOICE_GROUP_SORTABLE_COLUMNS = {
   totalAmount: sql`${invoiceGroupsTable.totalAmount}::numeric`,
   status: invoiceGroupsTable.status,
   createdAt: invoiceGroupsTable.createdAt,
+  serviceDate: earliestServiceDateExpr,
 } as const;
 
 function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined {
@@ -142,12 +158,19 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
-function buildInvoiceGroupOrderBy(sortCol: string | undefined, sortDir: string | undefined) {
-  const col = sortCol && sortCol in INVOICE_GROUP_SORTABLE_COLUMNS
-    ? INVOICE_GROUP_SORTABLE_COLUMNS[sortCol as keyof typeof INVOICE_GROUP_SORTABLE_COLUMNS]
-    : invoiceGroupsTable.createdAt;
-  const dirFn = sortDir === "asc" ? asc : desc;
-  return dirFn(col);
+// Default sort = earliest service date ascending (oldest first), so the rows
+// closest to their 30-day filing deadline rise to the top. NULLs go last so
+// groups missing a date don't squat at the front, and createdAt desc tiebreaks.
+function buildInvoiceGroupOrderBy(sortCol: string | undefined, sortDir: string | undefined): SQL[] {
+  if (sortCol && sortCol in INVOICE_GROUP_SORTABLE_COLUMNS) {
+    const col = INVOICE_GROUP_SORTABLE_COLUMNS[sortCol as keyof typeof INVOICE_GROUP_SORTABLE_COLUMNS];
+    const dirFn = sortDir === "asc" ? asc : desc;
+    return [dirFn(col)];
+  }
+  return [
+    sql`${earliestServiceDateExpr} ASC NULLS LAST`,
+    desc(invoiceGroupsTable.createdAt),
+  ];
 }
 
 router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
@@ -159,37 +182,24 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
 
   const [totalResult] = await db.select({ count: count() }).from(invoiceGroupsTable).where(where);
-  const groupsRaw = await db.select().from(invoiceGroupsTable).where(where)
-    .orderBy(orderBy)
+  // Select earliestDate inline so the same correlated subquery the ORDER BY
+  // uses also feeds row decoration — one source of truth, one round trip.
+  const groupsRaw = await db
+    .select({ row: invoiceGroupsTable, earliestDate: earliestServiceDateExpr })
+    .from(invoiceGroupsTable)
+    .where(where)
+    .orderBy(...orderBy)
     .limit(limitVal)
     .offset(offsetVal);
 
-  const groupIds = groupsRaw.map(g => g.id);
-  const earliestByGroup = new Map<number, string | null>();
-  if (groupIds.length > 0) {
-    const earliestRows = await db
-      .select({
-        invoiceGroupId: claimsTable.invoiceGroupId,
-        earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
-      })
-      .from(claimsTable)
-      .where(inArray(claimsTable.invoiceGroupId, groupIds))
-      .groupBy(claimsTable.invoiceGroupId);
-    for (const row of earliestRows) {
-      if (row.invoiceGroupId !== null) earliestByGroup.set(row.invoiceGroupId, row.earliestDate);
-    }
-  }
-
   const today = new Date();
-  const groups = groupsRaw.map(g => {
-    const earliestDate = earliestByGroup.get(g.id) ?? null;
-    return {
-      ...g,
-      earliestDate,
-      effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
-      isUrgent: isUrgentDeadline(earliestDate, today),
-    };
-  });
+  const groups = groupsRaw.map(({ row, earliestDate }) => ({
+    ...row,
+    earliestDate,
+    effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
+    // Status-aware: only flag as urgent if we still owe action.
+    isUrgent: GROUP_ON_CLOCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
+  }));
 
   res.json({ groups, total: totalResult.count });
 }));
@@ -199,7 +209,7 @@ router.get("/invoice-groups/export-csv", asyncHandler(async (req, res): Promise<
   const where = buildInvoiceGroupWhere(req.query as Record<string, unknown>);
   const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
 
-  const groups = await db.select().from(invoiceGroupsTable).where(where).orderBy(orderBy);
+  const groups = await db.select().from(invoiceGroupsTable).where(where).orderBy(...orderBy);
 
   const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
 
