@@ -162,6 +162,10 @@ Fix shipped:
 
 This was a single root cause masquerading as "we have two parallel solution paths" — there's only one write path; it just had a guard clause and a rollup function that were silently dropping work.
 
+## Schema drift guard (Task #228)
+
+Production runs `drizzle-kit push` rather than replaying migrations, so the SQL files in `lib/db/drizzle/` and the Drizzle schema TS files in `lib/db/src/schema/` can silently diverge (e.g. Tasks #205 and #216 were caught only by manual eyeball). To prevent this, `lib/db/scripts/check-schema-drift.sh` copies the current `lib/db/drizzle/` folder into a scratch dir (`lib/db/.drift-check/`, gitignored), runs `drizzle-kit generate` against the live schema TS files but writing into the scratch dir, and diffs the two. Any difference (a new SQL file, a new snapshot, or a journal entry) means the migrations are out of sync and the script exits 1 with a remediation hint pointing at `pnpm --filter @workspace/db exec drizzle-kit generate`. The script never modifies the real `lib/db/drizzle/` tree. It is exposed as `pnpm --filter @workspace/db run check-drift` and registered as the `schema-drift` validation step.
+
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.
 - **Anthropic Claude:** AI for SOP analysis, dispute note generation, and email generation, accessed via Replit AI Integrations proxy.
