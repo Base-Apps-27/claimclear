@@ -94,6 +94,11 @@ These are the rules that make a popover "Faceted Rail" rather than just "another
 9. **The table behind the popover is dimmed while open.** This is what `<DimWhileOpen>` provides. It signals modality without blocking, so the operator can still see the table updating live as filters change.
 10. **The primary tab strip stays.** The Faceted Rail is the *advanced* filter shell. The first-class segmentation (lifecycle tabs on Claims, group-status tabs on Invoice Groups) is still rendered separately, above the strip, via `<FilterStrip>`. Do not move tab-strip filters into the Faceted Rail.
 11. **The chip strip stays.** Applied filters still render as removable chips inside the Card, between the header strip and the table body, via `<FilterChipStrip>`. The chip strip and the popover are two views of the same state; both stay in sync because both read URL params.
+12. **The category rail follows the WAI-ARIA tablist keyboard contract.** Inside the rail (`role="tablist"`, `aria-orientation="vertical"`):
+    - `Up` / `Down` move focus to the previous / next category, wrapping at the ends. They move focus only — selection is not changed (manual activation).
+    - `Home` / `End` move focus to the first / last category.
+    - `Enter` / `Space` activate the focused category and forward focus into the right pane's first focusable control, so the operator can keep typing without another Tab.
+    - The rail uses a roving `tabindex`: only the active tab is in the page tab order, so `Tab` / `Shift+Tab` enters and leaves the rail as a single stop and continues into the right pane / footer as expected. Clicking a category still works exactly as before.
 
 ---
 

@@ -1,4 +1,9 @@
-import { useState, type ReactNode } from "react";
+import {
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Filter as FilterIcon, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -33,6 +38,9 @@ export type FacetedFilterProps = {
   initialCategoryId?: string;
 };
 
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function FacetedFilter({
   open,
   onOpenChange,
@@ -52,6 +60,69 @@ export function FacetedFilter({
 
   const active =
     categories.find(c => c.id === activeId) ?? categories[0];
+
+  // Refs for the rail tabs (roving tabindex) and the right pane (so we can
+  // optionally move focus into the first focusable control after activation).
+  const tabRefs = useRef(new Map<string, HTMLButtonElement | null>());
+  const rightPaneRef = useRef<HTMLDivElement | null>(null);
+
+  const focusTab = (id: string) => {
+    tabRefs.current.get(id)?.focus();
+  };
+
+  const focusFirstInRightPane = () => {
+    const pane = rightPaneRef.current;
+    if (!pane) return;
+    const firstFocusable = pane.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    firstFocusable?.focus();
+  };
+
+  // ARIA tablist keyboard contract: Up/Down moves focus between tabs (manual
+  // activation), Home/End jump to first/last, Enter/Space activate the focused
+  // tab and move focus into the right pane. Tab still moves into and out of
+  // the rail as a single stop (roving tabindex), so users who prefer tabbing
+  // through the popover's controls keep that flow.
+  const handleTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (categories.length === 0) return;
+    switch (event.key) {
+      case "ArrowDown": {
+        event.preventDefault();
+        const next = (index + 1) % categories.length;
+        focusTab(categories[next].id);
+        break;
+      }
+      case "ArrowUp": {
+        event.preventDefault();
+        const prev = (index - 1 + categories.length) % categories.length;
+        focusTab(categories[prev].id);
+        break;
+      }
+      case "Home": {
+        event.preventDefault();
+        focusTab(categories[0].id);
+        break;
+      }
+      case "End": {
+        event.preventDefault();
+        focusTab(categories[categories.length - 1].id);
+        break;
+      }
+      case "Enter":
+      case " ": {
+        // Suppress the synthetic click the button would otherwise dispatch so
+        // we can both activate and forward focus into the right pane in a
+        // single, predictable step.
+        event.preventDefault();
+        setActiveId(categories[index].id);
+        // Wait for the right pane to render the new category before focusing.
+        requestAnimationFrame(() => focusFirstInRightPane());
+        break;
+      }
+    }
+  };
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -94,17 +165,27 @@ export function FacetedFilter({
                 className="p-2 space-y-1"
                 role="tablist"
                 aria-label="Filter categories"
+                aria-orientation="vertical"
               >
-                {categories.map(category => {
+                {categories.map((category, index) => {
                   const isActive = active?.id === category.id;
                   const Icon = category.icon;
                   return (
                     <button
                       key={category.id}
+                      ref={el => {
+                        if (el) tabRefs.current.set(category.id, el);
+                        else tabRefs.current.delete(category.id);
+                      }}
                       type="button"
                       role="tab"
                       aria-selected={isActive}
+                      // Roving tabindex: only the active tab participates in
+                      // the page tab order; arrow keys move focus among the
+                      // others.
+                      tabIndex={isActive ? 0 : -1}
                       onClick={() => setActiveId(category.id)}
+                      onKeyDown={e => handleTabKeyDown(e, index)}
                       data-testid={`faceted-filter-category-${category.id}`}
                       className={cn(
                         "w-full flex items-center justify-between px-2.5 py-2 text-sm rounded-md transition-colors text-left",
@@ -145,7 +226,10 @@ export function FacetedFilter({
           </div>
 
           {/* Right pane: active category's controls */}
-          <div className="flex-1 bg-background flex flex-col min-w-0">
+          <div
+            ref={rightPaneRef}
+            className="flex-1 bg-background flex flex-col min-w-0"
+          >
             {active?.render()}
           </div>
         </div>
