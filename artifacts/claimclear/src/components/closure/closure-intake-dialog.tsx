@@ -15,6 +15,7 @@ import {
   type UpdateClaimOutcomeBodyClosureAccountabilityTagsItem,
   type UpdateClaimOutcomeBodyClosureReason,
   type UpdateInvoiceGroupOutcomeBodyClosureReason,
+  type AttachClosureEvidenceBodyClosureReasonAtAttach,
   type ClosurePersonRef,
 } from "@workspace/api-client-react";
 import {
@@ -44,9 +45,27 @@ import {
   CLOSURE_ACCOUNTABILITY_TAGS,
   CLOSURE_REASON_BANNER,
   ROOT_CAUSES_BY_CATEGORY,
+  assertNeverClosureReason,
   type ClosureAccountabilityTag,
   type ClosureReasonKey,
 } from "./closure-options";
+
+/**
+ * Compile-time guarantee that the frontend `ClosureReasonKey` union stays in
+ * lockstep with the codegen `AttachClosureEvidenceBodyClosureReasonAtAttach`
+ * union (modulo `null`, which only the optional request field allows). If
+ * the OpenAPI spec ever adds, removes, or renames a closure reason, this
+ * assertion fails to compile and forces an explicit reconciliation here
+ * rather than letting drift silently break runtime behavior.
+ */
+type _CodegenClosureReasonParity =
+  ClosureReasonKey extends NonNullable<AttachClosureEvidenceBodyClosureReasonAtAttach>
+    ? NonNullable<AttachClosureEvidenceBodyClosureReasonAtAttach> extends ClosureReasonKey
+      ? true
+      : never
+    : never;
+const _closureReasonParityCheck: _CodegenClosureReasonParity = true;
+void _closureReasonParityCheck;
 
 const NARRATIVE_MIN = 150;
 
@@ -319,12 +338,20 @@ export function ClosureIntakeDialog({
       : null;
     const closureCommunicatedTo = communicatedTo.trim() ? communicatedTo.trim() : null;
 
-    const outcome =
-      reason === "non_issue"
-        ? "Non-Issue"
-        : reason === "denied_by_payor"
-          ? "Denied"
-          : "Withdrawn";
+    const outcome = ((): "Non-Issue" | "Denied" | "Withdrawn" => {
+      switch (reason) {
+        case "non_issue":
+          return "Non-Issue";
+        case "denied_by_payor":
+          return "Denied";
+        case "cannot_dispute":
+          return "Withdrawn";
+        default:
+          // Exhaustiveness guard: if a new ClosureReasonKey is added without
+          // a matching outcome mapping here, this fails to compile.
+          return assertNeverClosureReason(reason);
+      }
+    })();
 
     try {
       if (isClaim) {
@@ -381,12 +408,19 @@ export function ClosureIntakeDialog({
         queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
       }
 
-      toast({
-        title:
-          reason === "non_issue"
-            ? "Marked as Non-Issue — added to Withdrawals Review"
-            : "Marked as Cannot Dispute — added to Withdrawals Review",
-      });
+      const successTitle = ((): string => {
+        switch (reason) {
+          case "non_issue":
+            return "Marked as Non-Issue — added to Withdrawals Review";
+          case "denied_by_payor":
+            return "Marked as Denied by Payor — added to Withdrawals Review";
+          case "cannot_dispute":
+            return "Marked as Cannot Dispute — added to Withdrawals Review";
+          default:
+            return assertNeverClosureReason(reason);
+        }
+      })();
+      toast({ title: successTitle });
       onOpenChange(false);
       onSuccess?.();
     } catch (err: any) {

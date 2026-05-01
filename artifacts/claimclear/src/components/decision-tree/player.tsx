@@ -247,6 +247,10 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
       return;
     }
     if (isClosureLeaf && !isTestMode && closureTarget) {
+      // Narrow the SOP outcome type to a frontend ClosureReasonKey. The
+      // `isClosureLeaf` gate above guarantees we only reach this branch for
+      // `cannot_dispute` or `non_issue` — `denied_by_payor` closures are
+      // initiated post-response, never from an SOP leaf.
       const reason: ClosureReasonKey =
         opt.outcomeType === "cannot_dispute" ? "cannot_dispute" : "non_issue";
       const result = {

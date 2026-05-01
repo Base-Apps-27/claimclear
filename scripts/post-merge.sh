@@ -6,4 +6,11 @@ pnpm --filter @workspace/db push-force
 pnpm --filter @workspace/api-spec run codegen
 # Rebuild composite project declarations so referencing projects don't pick up
 # stale .d.ts files in dist/ (which silently masks real type errors).
-pnpm exec tsc -b lib/db lib/api-client-react lib/object-storage-web --force
+pnpm exec tsc -b \
+  lib/db \
+  lib/api-client-react \
+  lib/object-storage-web \
+  lib/leg-state \
+  lib/api-zod \
+  lib/integrations-anthropic-ai \
+  --force

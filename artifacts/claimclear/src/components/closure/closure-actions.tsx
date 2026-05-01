@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { ActionRow } from "@/components/actions-rail";
 import { useClosureLauncher } from "./closure-launcher";
-import type { ClosureReasonKey } from "./closure-options";
+import { assertNeverClosureReason, type ClosureReasonKey } from "./closure-options";
 
 /**
  * Single source of truth for initiating a structured closure (Withdraw /
@@ -52,10 +52,19 @@ function isSelected(
   outcome?: string | null,
   closureReason?: string | null,
 ): boolean {
-  if (reason === "non_issue") return outcome === "Non-Issue";
-  if (reason === "denied_by_payor") return outcome === "Denied" && closureReason === "denied_by_payor";
-  // cannot_dispute closes the entity as Withdrawn.
-  return outcome === "Withdrawn" && closureReason === reason;
+  // Exhaustive over ClosureReasonKey — adding a new key forces an explicit
+  // match arm below or this stops compiling at `assertNeverClosureReason`.
+  switch (reason) {
+    case "non_issue":
+      return outcome === "Non-Issue";
+    case "denied_by_payor":
+      return outcome === "Denied" && closureReason === "denied_by_payor";
+    case "cannot_dispute":
+      // cannot_dispute closes the entity as Withdrawn.
+      return outcome === "Withdrawn" && closureReason === "cannot_dispute";
+    default:
+      return assertNeverClosureReason(reason);
+  }
 }
 
 export function ClosureActions({

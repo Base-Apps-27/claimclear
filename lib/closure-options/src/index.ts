@@ -118,12 +118,17 @@ export const CLOSURE_ACCOUNTABILITY_TAGS: { value: ClosureAccountabilityTag; lab
   { value: "other", label: "Other" },
 ];
 
-export type ClosureReasonKey = "cannot_dispute" | "non_issue" | "denied_by_payor";
+/**
+ * Single source of truth for the structured-closure reason keys used by the
+ * intake dialog, the launcher, and every closure surface in the app. The
+ * union is derived from `CLOSURE_REASON_BANNER` keys so adding a new closure
+ * reason here forces every consumer (banner, exhaustive switches in the
+ * dialog/actions, codegen-parity assertion in claimclear) to be updated in
+ * lockstep — the type system will not let drift go unnoticed again.
+ */
+export type ClosureReasonKey = keyof typeof CLOSURE_REASON_BANNER;
 
-export const CLOSURE_REASON_BANNER: Record<
-  ClosureReasonKey,
-  { label: string; description: string; bannerClass: string; submitLabel: string; submitClass: string }
-> = {
+export const CLOSURE_REASON_BANNER = {
   cannot_dispute: {
     label: "Cannot Dispute",
     description:
@@ -148,4 +153,17 @@ export const CLOSURE_REASON_BANNER: Record<
     submitLabel: "Mark Denied by Payor",
     submitClass: "bg-red-600 hover:bg-red-700 text-white border-red-700",
   },
-};
+} satisfies Record<
+  string,
+  { label: string; description: string; bannerClass: string; submitLabel: string; submitClass: string }
+>;
+
+/**
+ * Compile-time helper for exhaustive switches on `ClosureReasonKey`. Pass the
+ * fall-through value here and TypeScript will refuse to compile if a new
+ * reason key is added without a matching branch — this is what guards the
+ * `getOutcomeForReason` style derivations in the closure dialog and actions.
+ */
+export function assertNeverClosureReason(value: never): never {
+  throw new Error(`Unhandled closure reason: ${String(value)}`);
+}
