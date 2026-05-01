@@ -27,7 +27,9 @@ import {
 import {
   runBackfill,
   RETRO_BACKFILL_SOURCE,
+  BACKFILL_ID,
 } from "../migrations/2026-05-auto-non-issue-siblings-backfill";
+import { BACKFILL_IDS } from "../migrations/_backfill-audit";
 
 after(async () => {
   await pool.end().catch(() => undefined);
@@ -221,7 +223,7 @@ test("retro backfill: dry-run plans flips without writing; --apply lands them", 
       .select()
       .from(auditLogsTable)
       .where(eq(auditLogsTable.invoiceGroupId, qualifyingGroup.id));
-    type Meta = { source?: string; reason?: string } | null;
+    type Meta = { source?: string; reason?: string; backfillId?: string } | null;
     const retroAudits = qualGroupAudits.filter((a) => (a.metadata as Meta)?.source === RETRO_BACKFILL_SOURCE);
     assert.equal(
       retroAudits.length,
@@ -231,6 +233,19 @@ test("retro backfill: dry-run plans flips without writing; --apply lands them", 
     for (const a of retroAudits) {
       assert.equal(a.action, "leg_excluded");
       assert.equal((a.metadata as Meta)?.reason, "non_issue");
+      // Task #268: every backfill-produced audit row must also carry the
+      // uniform `backfillId` tag, so the saved cross-backfill SQL query
+      // (_backfill-audit-rows.sql) lists rows from this script.
+      assert.equal(
+        (a.metadata as Meta)?.backfillId,
+        BACKFILL_ID,
+        "audit row must be tagged with metadata.backfillId",
+      );
+      assert.equal(
+        BACKFILL_ID,
+        BACKFILL_IDS.autoNonIssueSiblings,
+        "BACKFILL_ID must match the registered constant",
+      );
     }
 
     // Bucket 2: all-blank group untouched.

@@ -50,11 +50,18 @@
 //     pnpm --filter @workspace/scripts run backfill:auto-non-issue-siblings -- \
 //       --apply --limit 50
 //
-// Rows produced by this script are tagged with
-//   audit_logs.metadata->>'source' = 'retro_auto_non_issue_backfill'
-// so they can be told apart from live auto-exclusion rows whose source is
-// 'auto_after_classify_sibling_clear', and from manual exclusions whose
-// source is 'manual'.
+// Rows produced by this script are tagged two ways:
+//   1. Legacy (kept for backwards compatibility with pre-existing rows
+//      and saved queries):
+//        audit_logs.metadata->>'source' = 'retro_auto_non_issue_backfill'
+//      Distinguishes from the live auto-exclusion source
+//      'auto_after_classify_sibling_clear' and from manual 'manual'.
+//   2. New uniform Task #268 convention:
+//        audit_logs.metadata->>'backfillId' =
+//          '2026-05-auto-non-issue-siblings'
+//      Stamped by every one-shot backfill so the saved query in
+//      `_backfill-audit-rows.sql` can list every backfill-produced row
+//      across all scripts with one filter.
 
 import {
   db,
@@ -70,12 +77,21 @@ import {
   excludeLegCore,
   type DbExecutor,
 } from "@workspace/api-server/src/lib/claim-transitions";
+import { BACKFILL_IDS } from "./_backfill-audit";
 
 // Source string written into `audit_logs.metadata.source` for every row
 // this script flips. Distinct from the live auto-exclusion source so
 // operators can SQL-filter to find rows produced by this run versus the
-// live trigger.
+// live trigger. Kept for backwards compatibility with pre-existing rows
+// — new rows are *also* stamped with `metadata.backfillId` per the
+// Task #268 uniform convention (see `_backfill-audit.ts`).
 export const RETRO_BACKFILL_SOURCE = "retro_auto_non_issue_backfill";
+
+// Uniform backfill id stamped into `audit_logs.metadata.backfillId` for
+// every row this script flips. Lets the shared
+// `_backfill-audit-rows.sql` query list rows from this script alongside
+// rows from any other registered backfill.
+export const BACKFILL_ID = BACKFILL_IDS.autoNonIssueSiblings;
 
 // System actor stamped on the audit row when nobody is watching. The
 // userEmail string makes these rows easy to find post-run.
@@ -303,6 +319,7 @@ export async function runBackfill(opts: BackfillOptions): Promise<BackfillReport
             leg: fresh,
             trustCallerStateGuard: true,
             ex: tx,
+            backfillId: BACKFILL_ID,
           });
           report.legsFlipped += 1;
           report.perStatusFlips[g.status] =

@@ -20,6 +20,12 @@
 // Idempotent: re-running after a successful pass is a no-op (no rows match
 // the WHERE NULL filter).
 //
+// Task #268 backfill-id convention: this script does NOT insert into
+// `audit_logs`. It updates / deletes `portal_submissions` rows directly.
+// There are no audit rows to stamp; the entry under
+// BACKFILL_IDS.portalSubmissionsGroupLink in `_backfill-audit.ts` exists
+// purely for registry completeness.
+//
 // To run:
 //   pnpm --filter @workspace/scripts run backfill:portal-submissions-group-link
 

@@ -480,6 +480,14 @@ export interface ExcludeLegParams {
   // looping. Set to false to have the helper enforce the guard itself.
   trustCallerStateGuard: boolean;
   ex?: DbExecutor;
+  // Set by one-shot backfill callers (see Task #268 / scripts/src/
+  // migrations/_backfill-audit.ts). When provided, the helper stamps
+  // `metadata.backfillId = <id>` on the audit row so operators can slice
+  // backfill-produced rows out of audit history with a single uniform
+  // filter regardless of which backfill ran. Live callers (manual
+  // exclude route, auto-after-classify path) leave this undefined and
+  // the field is omitted from metadata as before.
+  backfillId?: string;
 }
 
 export interface ExcludeLegResult {
@@ -487,7 +495,7 @@ export interface ExcludeLegResult {
 }
 
 export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeLegResult> {
-  const { claimId, reason, note, source, actor, leg, ex } = params;
+  const { claimId, reason, note, source, actor, leg, ex, backfillId } = params;
   const executor = ex ?? db;
 
   const [updated] = await executor
@@ -502,17 +510,20 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
   // something coherent to work with.
   const claim = updated ?? leg;
 
+  const metadata: Record<string, unknown> = {
+    reason,
+    note,
+    source,
+    previousSubStatus: "needs_classification",
+  };
+  if (backfillId !== undefined) metadata.backfillId = backfillId;
+
   await executor.insert(auditLogsTable).values({
     claimId,
     invoiceGroupId: leg.invoiceGroupId,
     action: "leg_excluded",
     details: `Leg excluded: ${reason}${note ? ` — ${note}` : ""}`,
-    metadata: {
-      reason,
-      note,
-      source,
-      previousSubStatus: "needs_classification",
-    },
+    metadata,
     userEmail: actor.userEmail,
     userName: actor.userName,
   });

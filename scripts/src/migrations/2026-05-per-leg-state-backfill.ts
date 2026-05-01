@@ -19,6 +19,13 @@
 // Idempotent: every write checks the current discrete value first and only
 // writes when the legacy blob unambiguously dictates a different value.
 //
+// Task #268 backfill-id convention: this script does NOT insert into
+// `audit_logs`. It only reads from it (to project verdicts) and writes
+// to `claims`, `invoice_groups`, and `claim_verdict`. There are no audit
+// rows to stamp here — the entry under BACKFILL_IDS.perLegState in
+// `_backfill-audit.ts` exists purely for registry completeness so the
+// id is reserved if a future change starts producing audit rows.
+//
 // To run:
 //   pnpm --filter @workspace/scripts run backfill:per-leg-state
 

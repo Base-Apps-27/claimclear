@@ -12,7 +12,17 @@ import { eq, and, ne, isNotNull, inArray, sql } from "drizzle-orm";
  * whose group is in a system-controlled or terminal status with a status
  * different from the leg's. Clean legs are never touched. Held legs are
  * never touched. The fix is idempotent — running it twice is a no-op.
+ *
+ * Audit rows produced by this script are tagged with the Task #268
+ * uniform `metadata.backfillId` convention so the saved
+ * `_backfill-audit-rows.sql` query lists them alongside rows from any
+ * other backfill. The legacy `metadata.source = 'group_cascade:backfill'`
+ * tag is preserved for backwards compatibility with pre-existing rows.
  */
+// Mirrors BACKFILL_IDS.disputedChildSync in scripts/src/migrations/
+// _backfill-audit.ts (kept as a literal here to avoid a circular
+// workspace dependency from api-server back to @workspace/scripts).
+const BACKFILL_ID = "api-server-backfill-disputed-child-sync";
 
 const SYNCABLE_GROUP_STATUSES = [
   "Portal Queued",
@@ -81,6 +91,10 @@ async function main() {
           newOutcome: row.groupOutcome,
           source: "group_cascade:backfill",
           cascadedFromGroupId: row.groupId,
+          // Task #268 uniform tag — set on every audit row produced by
+          // any backfill so a single saved query (see scripts/src/
+          // migrations/_backfill-audit-rows.sql) can list them all.
+          backfillId: BACKFILL_ID,
         },
         userEmail: null,
         userName: "system (backfill)",
