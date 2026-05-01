@@ -152,7 +152,11 @@ export function WorkflowPlayerGroup({
   const hasTree = !!parsedTree;
   const treePlayerRef = useRef<TreePlayerHandle>(null);
 
-  const workflowProgress = (group.workflowProgress as Record<string, unknown>) ?? {};
+  // TEMP STUB — removed in cutover task. The legacy workflow_progress
+  // JSONB column has been dropped (see Task #195). Reads return an empty
+  // shape so the existing UI lands on the default "review" step until the
+  // per-invoice state machine UI replaces this player.
+  const workflowProgress: Record<string, unknown> = {};
   const currentStep = (workflowProgress.currentStep as string) ?? "review";
   const savedTreeState = workflowProgress.treeState as TreePlayerState | undefined;
 

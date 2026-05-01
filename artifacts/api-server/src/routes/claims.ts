@@ -868,11 +868,16 @@ router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { workflowProgress } = req.body;
-  const [claim] = await db.update(claimsTable).set({ workflowProgress }).where(eq(claimsTable.id, id)).returning();
+  // TEMP STUB — removed in cutover task. The legacy `workflow_progress`
+  // JSONB column has been dropped (see Task #195). The new per-leg state
+  // machine writes to discrete columns through the contracts task. This
+  // endpoint is left as a no-op write that still emits the audit + bus
+  // event so that any in-flight UI calls don't 404 during the transition.
+  void req.body;
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  await createAuditLog(id, "workflow_step", "Workflow progress updated", req);
+  await createAuditLog(id, "workflow_step", "Workflow progress updated (stub)", req);
   emitClaimEvent(id, "workflow_updated", req);
   res.json(claim);
 }));
@@ -1001,9 +1006,11 @@ router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): P
           reason: `${actionLabel} — claim returned to evidence gathering for re-submission${notes ? `. ${notes}` : ""}`,
           actor: actorFromReq(req),
           systemOverride: true,
-          extraFields: {
-            workflowProgress: null,
-          },
+          // TEMP STUB — removed in cutover task. The legacy
+          // `workflow_progress` JSONB column has been dropped; the
+          // contracts task will reset the per-leg sop_node_id /
+          // sop_answers / sop_outcome / ready_at fields here instead.
+          extraFields: {},
         });
         break;
     }

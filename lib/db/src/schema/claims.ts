@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { invoiceGroupsTable } from "./invoice-groups";
@@ -52,6 +53,10 @@ export const claimsTable = pgTable("claims", {
   errorTypeId: text("error_type_id"),
   errorTypeName: text("error_type_name"),
   claimAmount: numeric("claim_amount", { precision: 12, scale: 2 }),
+  // Discrete denormalized read caches — see Per-Invoice Transition design doc
+  // §"Schema reshape". `status` mirrors the parent group's macro phase, and
+  // `outcome` mirrors the latest confirmed verdict from `claim_verdict`.
+  // Population logic for these moves into the contracts task.
   status: claimStatusEnum().notNull().default("New"),
   outcome: claimOutcomeEnum().notNull().default("Pending"),
   approvedAmount: numeric("approved_amount", { precision: 12, scale: 2 }),
@@ -66,7 +71,46 @@ export const claimsTable = pgTable("claims", {
   generatedEmailSubject: text("generated_email_subject"),
   generatedEmailBody: text("generated_email_body"),
   generatedEmailAt: text("generated_email_at"),
-  workflowProgress: jsonb("workflow_progress"),
+  // ────────────────────────────────────────────────────────────────────────
+  // Per-leg state machine columns. Replace the legacy
+  // `workflow_progress` JSONB column with discrete typed values. See
+  // `lib/db/src/enums/leg-state.ts` for the pinned vocabulary and
+  // `artifacts/claimclear/src/lib/lifecycle-phase.ts:deriveLegSubStatus`
+  // for the derived sub-status projection used by UI surfaces.
+  // ────────────────────────────────────────────────────────────────────────
+  // Whether this leg participates in the dispute. `false` = excluded
+  // (clean leg, no errorTypeId, flows through normal payment).
+  includedInDispute: boolean("included_in_dispute").notNull().default(true),
+  // Bookmark in the SOP decision tree, for resume.
+  sopNodeId: text("sop_node_id"),
+  // Append-only path: { nodeId, answer, ts }. The contracts task writes new
+  // entries on each sop-advance; never edited in place.
+  sopAnswers: jsonb("sop_answers").notNull().default(sql`'[]'::jsonb`),
+  // Outcome of the SOP walk. Pinned values: portal_dispute | dispute |
+  // hold | cannot_dispute | non_issue. Null while still investigating.
+  sopOutcome: text("sop_outcome"),
+  // Drop reason when the leg is dropped from the dispute pre-submit. Pinned
+  // values: cannot_dispute | non_issue. Same vocabulary as the leg-scoped
+  // subset of CLOSURE_REASONS.
+  dropReason: text("drop_reason"),
+  dropNote: text("drop_note"),
+  droppedAt: timestamp("dropped_at", { withTimezone: true }),
+  // Stamped when the SOP terminal lands on portal_dispute or dispute (the
+  // "ready" signal — leg is included in the next group submission).
+  readyAt: timestamp("ready_at", { withTimezone: true }),
+  // Per-leg narrative for the writeup, scoped to this leg only. Group-level
+  // context lives on `invoice_groups.group_context`.
+  perLegContext: text("per_leg_context"),
+  // MAS Action tracking — the per-leg cancel checklist on the post-response
+  // MAS Action phase. Pinned values: cancel | none.
+  masActionRequired: text("mas_action_required"),
+  masActionCompletedAt: timestamp("mas_action_completed_at", { withTimezone: true }),
+  masActionCompletedBy: text("mas_action_completed_by"),
+  masActionNote: text("mas_action_note"),
+  // The existing holdReason column is kept; its value domain is now
+  // constrained at the application layer to LEG_HOLD_REASONS. No CHECK
+  // constraint added — backfill normalizes synonyms, unrecognized values
+  // fall back to 'other'.
   holdReason: text("hold_reason"),
   holdPendingFrom: text("hold_pending_from"),
   holdPlacedAt: text("hold_placed_at"),
@@ -106,6 +150,26 @@ export const claimsTable = pgTable("claims", {
   index("claims_status_idx").on(table.status),
   index("claims_date_idx").on(table.date),
   index("claims_created_at_idx").on(table.createdAt),
+  index("idx_claims_sop_outcome").on(table.sopOutcome),
+  // Partial index supporting the MAS worklist query: per group, find the
+  // legs whose cancel hasn't been completed yet.
+  index("idx_claims_mas_action_pending")
+    .on(table.invoiceGroupId)
+    .where(sql`${table.masActionRequired} = 'cancel' AND ${table.masActionCompletedAt} IS NULL`),
+  // DB-level value-domain enforcement for the per-leg state machine
+  // columns. Pinned vocabulary lives in `lib/db/src/enums/leg-state.ts`.
+  check(
+    "claims_sop_outcome_chk",
+    sql`${table.sopOutcome} IS NULL OR ${table.sopOutcome} IN ('portal_dispute','dispute','hold','cannot_dispute','non_issue')`,
+  ),
+  check(
+    "claims_drop_reason_chk",
+    sql`${table.dropReason} IS NULL OR ${table.dropReason} IN ('cannot_dispute','non_issue')`,
+  ),
+  check(
+    "claims_mas_action_required_chk",
+    sql`${table.masActionRequired} IS NULL OR ${table.masActionRequired} IN ('cancel','none')`,
+  ),
 ]);
 
 export const insertClaimSchema = createInsertSchema(claimsTable).omit({ id: true, createdAt: true, updatedAt: true });

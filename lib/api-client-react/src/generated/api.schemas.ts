@@ -86,11 +86,6 @@ export type ClaimResponseEvidenceFiles = { [key: string]: unknown } | null;
 export type ClaimResponseEvidenceChecklist = { [key: string]: unknown } | null;
 
 /**
- * @nullable
- */
-export type ClaimResponseWorkflowProgress = { [key: string]: unknown } | null;
-
-/**
  * Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.
  */
 export type ClaimResponseAttestationState =
@@ -195,8 +190,6 @@ export interface ClaimResponse {
   /** @nullable */
   generatedEmailAt?: string | null;
   /** @nullable */
-  workflowProgress?: ClaimResponseWorkflowProgress;
-  /** @nullable */
   holdReason?: string | null;
   /** @nullable */
   holdPendingFrom?: string | null;
@@ -297,13 +290,6 @@ export const InvoiceGroupResponseClosureReviewState = {
 /**
  * @nullable
  */
-export type InvoiceGroupResponseWorkflowProgress = {
-  [key: string]: unknown;
-} | null;
-
-/**
- * @nullable
- */
 export type InvoiceGroupResponseEvidenceFiles = {
   [key: string]: unknown;
 } | null;
@@ -365,8 +351,6 @@ export interface InvoiceGroupResponse {
   rideCount: number;
   /** @nullable */
   totalAmount?: string | null;
-  /** @nullable */
-  workflowProgress?: InvoiceGroupResponseWorkflowProgress;
   /** @nullable */
   holdReason?: string | null;
   /** @nullable */
@@ -1257,10 +1241,8 @@ export interface AttestationPendingExtras {
   lastResponseSource?: AttestationPendingExtrasLastResponseSource;
 }
 
-export type UpdateWorkflowBodyWorkflowProgress = { [key: string]: unknown };
-
 export interface UpdateWorkflowBody {
-  workflowProgress: UpdateWorkflowBodyWorkflowProgress;
+  [key: string]: unknown;
 }
 
 export type TriageClaimBodyAction =

@@ -15,7 +15,32 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   approvedAmount: numeric("approved_amount", { precision: 12, scale: 2 }),
   rideCount: integer("ride_count").notNull().default(0),
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }),
-  workflowProgress: jsonb("workflow_progress"),
+  // ────────────────────────────────────────────────────────────────────────
+  // Per-invoice (group-level) state machine columns. Discrete-typed
+  // replacement for the legacy `workflow_progress` JSONB blob; see
+  // docs/architecture/per-invoice-transition.md §"Schema reshape" for the
+  // role each plays. The contracts task owns the transition logic that
+  // mutates them.
+  // ────────────────────────────────────────────────────────────────────────
+  // Group-scoped narrative for the writeup ("here's what's going on with
+  // this invoice as a whole"). Per-leg context lives on
+  // `claims.per_leg_context`.
+  groupContext: text("group_context"),
+  // Operator-authored "this is what I'm asking for" sentence shown back to
+  // the operator before generating the dispute preview.
+  understandingReadback: text("understanding_readback"),
+  understandingReadbackAt: timestamp("understanding_readback_at", { withTimezone: true }),
+  understandingReadbackBy: text("understanding_readback_by"),
+  // Stamped on each preview generation; the contracts task uses these to
+  // detect that a preview was produced before the operator submits.
+  previewGeneratedAt: timestamp("preview_generated_at", { withTimezone: true }),
+  previewGeneratedBy: text("preview_generated_by"),
+  // Re-attestation tracked at the group level (the "did the payor actually
+  // pay us?" loop after Approved). Defaults to false.
+  reattestRequired: boolean("reattest_required").notNull().default(false),
+  reattestCompletedAt: timestamp("reattest_completed_at", { withTimezone: true }),
+  reattestCompletedBy: text("reattest_completed_by"),
+  reattestNote: text("reattest_note"),
   holdReason: text("hold_reason"),
   holdPendingFrom: text("hold_pending_from"),
   holdPlacedAt: text("hold_placed_at"),

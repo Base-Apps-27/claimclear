@@ -137,6 +137,27 @@ export const LIFECYCLE_TABS: LifecycleTab[] = [
   },
 ];
 
+// ──────────────────────────────────────────────────────────────────────────
+// Per-leg sub-status — derived projection used by the per-invoice / per-leg
+// UI surfaces (legs panel, MAS Action checklist, attestation queue). NEVER
+// stored — always recomputed from the discrete columns introduced in the
+// per-leg state-machine schema reshape (see Task #195 / per-invoice-
+// transition design doc).
+//
+// The pinned vocabulary, the input shape, and the derivation function all
+// live in `@workspace/leg-state` (a tiny dependency-free shared package
+// also re-exported by `@workspace/db`) so server endpoints (contracts
+// task) and client UI surfaces use a single source of truth and cannot
+// drift. This module re-exports them for backwards compatibility with
+// existing client imports.
+// ──────────────────────────────────────────────────────────────────────────
+export {
+  type LegSubStatus,
+  type LegForSubStatus,
+  deriveLegSubStatus,
+  LEG_SUB_STATUSES,
+} from "@workspace/leg-state";
+
 export function deriveLifecycleTab(filterStatuses: string[]): LifecycleTabKey {
   if (filterStatuses.length === 0) return "All";
   for (const t of LIFECYCLE_TABS) {

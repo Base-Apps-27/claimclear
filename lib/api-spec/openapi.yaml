@@ -3274,8 +3274,10 @@ components:
           type: ["string", "null"]
         generatedEmailAt:
           type: ["string", "null"]
-        workflowProgress:
-          type: ["object", "null"]
+        # workflow_progress JSONB column dropped (Task #195 — per-claim →
+        # per-invoice transition). The discrete per-leg state-machine
+        # columns (sopNodeId, sopOutcome, dropReason, attestationState,
+        # …) replace it; surfaced via the contracts task.
         holdReason:
           type: ["string", "null"]
         holdPendingFrom:
@@ -3415,8 +3417,10 @@ components:
           type: integer
         totalAmount:
           type: ["string", "null"]
-        workflowProgress:
-          type: ["object", "null"]
+        # workflow_progress JSONB column dropped (Task #195). The new
+        # group-level lifecycle columns (lifecyclePhase, groupContext,
+        # readyToSubmitAt, submittedAt, …) replace it; surfaced via the
+        # contracts task.
         holdReason:
           type: ["string", "null"]
         holdPendingFrom:
@@ -4028,12 +4032,13 @@ components:
           description: Channel the latest payor response came in on.
 
     UpdateWorkflowBody:
+      # TEMP — body kept open while the workflow_progress column is being
+      # retired (Task #195). The endpoint is currently a no-op stub on
+      # the server; the cutover task removes this body and the endpoint
+      # entirely. Allows any payload so legacy callers don't 400 during
+      # the transition.
       type: object
-      properties:
-        workflowProgress:
-          type: object
-      required:
-        - workflowProgress
+      additionalProperties: true
 
     TriageClaimBody:
       type: object

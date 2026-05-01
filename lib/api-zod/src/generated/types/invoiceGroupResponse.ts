@@ -12,7 +12,6 @@ import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupRespon
 import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
-import type { InvoiceGroupResponseWorkflowProgress } from "./invoiceGroupResponseWorkflowProgress";
 
 export interface InvoiceGroupResponse {
   id: number;
@@ -64,8 +63,6 @@ export interface InvoiceGroupResponse {
   rideCount: number;
   /** @nullable */
   totalAmount?: string | null;
-  /** @nullable */
-  workflowProgress?: InvoiceGroupResponseWorkflowProgress;
   /** @nullable */
   holdReason?: string | null;
   /** @nullable */

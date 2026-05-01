@@ -5,8 +5,7 @@
  * ClaimClear API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateWorkflowBodyWorkflowProgress } from "./updateWorkflowBodyWorkflowProgress";
 
 export interface UpdateWorkflowBody {
-  workflowProgress: UpdateWorkflowBodyWorkflowProgress;
+  [key: string]: unknown;
 }

@@ -166,67 +166,197 @@ This is the new macro phase that did not exist before. It is the operational rea
 
 ## Schema reshape
 
-### `claims.workflow_progress` — new shape (JSONB)
+> **Status (Task #195 landed):** the legacy `workflow_progress` JSONB blobs
+> on both `claims` and `invoice_groups` have been **dropped** in favor of
+> discrete, typed columns plus an append-only verdict history. This section
+> documents the shipped shape; the JSONB-shape sketch that lived here
+> previously is preserved in git history.
+>
+> Code touchpoints:
+>
+> - Pinned vocabulary: `lib/db/src/enums/leg-state.ts`
+>   (`SOP_OUTCOMES`, `LEG_DROP_REASONS`, `LEG_HOLD_REASONS`,
+>   `MAS_ACTION_REQUIRED`, `VERDICT_SOURCE`, `VERDICT_OUTCOMES`,
+>   `LEG_SUB_STATUSES`)
+> - Group macro-phase enum + transition matrix: **owned by the contracts
+>   task** (the foundation introduces only the per-group columns
+>   that the matrix will write into; no `lifecycle_phase` column is added
+>   here).
+> - Derived per-leg sub-status: `lib/leg-state/src/index.ts:deriveLegSubStatus`
+>   (re-exported by `@workspace/db`, and by
+>   `artifacts/claimclear/src/lib/lifecycle-phase.ts` for the client)
+> - Observability log writer:
+>   `artifacts/api-server/src/lib/state-events.ts:emitStateEvent`
+>   (fire-and-forget, never throws)
+> - Feature flag: `PER_INVOICE_TRANSITION_ENABLED` in
+>   `lib/db/src/feature-flags.ts`
+> - One-shot backfill (already run):
+>   `scripts/src/migrations/2026-05-per-leg-state-backfill.ts`
 
-```typescript
-{
-  // Inner-tier per-leg investigation state
-  status: "needs_classification" | "investigating" | "blocked" | "ready" | "dropped",
-  decisionTreeNodeId?: string,    // bookmark in the tree, for resume
-  answers: { [nodeId: string]: string },
-  perLegContext?: string,          // leg-specific narrative for the writeup
-  evidenceCollected?: string[],    // refs into claim_evidence
-  readyAt?: string,                // ISO ts when operator marked Ready
-  dropReason?: "cannot_dispute" | "non_issue",
-  dropNote?: string,
-  droppedAt?: string,
+### Per-leg state — discrete columns on `claims`
 
-  // Post-response per-leg verdict (only for legs that were ready+submitted)
-  legVerdict?: {
-    suggested?: { outcome, confidence, reasoning, suggestedAt },  // AI-filled
-    confirmed?: { outcome: "Approved" | "Denied" | "Partial", note?, by, at },
-  },
+| Column | Type | Notes |
+| --- | --- | --- |
+| `included_in_dispute` | `bool not null default true` | `false` = excluded clean leg, never enters the dispute path. |
+| `sop_node_id` | `text` | Bookmark in the SOP decision tree, for resume. |
+| `sop_answers` | `jsonb not null default '[]'` | Append-only `{nodeId, answer, ts}[]` trail. Edited by the contracts task on each SOP advance, never in place. |
+| `sop_outcome` | `text` (`SOP_OUTCOMES`) | Terminal outcome of the SOP walk: `portal_dispute \| dispute \| hold \| cannot_dispute \| non_issue`. Null while still investigating. |
+| `drop_reason` | `text` (`LEG_DROP_REASONS`) | Operator drop pre-submit. Same vocabulary as the leg-scoped subset of `CLOSURE_REASONS`. |
+| `drop_note` | `text` | Free-text rationale, for the audit/closure trail. |
+| `dropped_at` | `timestamptz` | Stamped on drop; not edited again. |
+| `ready_at` | `timestamptz` | Stamped when the SOP terminal lands on `portal_dispute` or `dispute` (the "include in next submission" signal). |
+| `per_leg_context` | `text` | Per-leg narrative for the writeup. Group-wide context lives on `invoice_groups.group_context`. |
+| `mas_action_required` | `text` (`MAS_ACTION_REQUIRED`) | `cancel \| none`. Driven by drop reason / verdict. |
+| `mas_action_completed_at` | `timestamptz` | One-way completion stamp for the per-leg MAS checklist. |
+| `mas_action_completed_by` | `text` | User id of the operator who confirmed completion. |
+| `mas_action_note` | `text` | Optional notes captured at MAS completion. |
+| `attestation_state` | `text not null default 'not_required'` | `not_required \| pending \| queued \| completed`; existing column retained. |
 
-  // MAS action tracking
-  masAction?: {
-    required: "cancel" | "none",       // derived from dropReason or legVerdict
-    completedAt?: string,
-    completedBy?: string,              // user id
-  },
-}
-```
+`hold_reason` is also retained on `claims`, but its value domain is
+constrained to `LEG_HOLD_REASONS` at the application layer (no DB CHECK
+constraint — the backfill normalizes synonyms, unrecognized values fall
+back to `'other'`).
 
-### `invoice_groups.workflow_progress` — simplified (JSONB)
+Indexes: `idx_claims_sop_outcome (sop_outcome)`,
+`idx_claims_mas_action_pending (invoice_group_id) WHERE
+mas_action_required = 'cancel' AND mas_action_completed_at IS NULL`.
 
-```typescript
-{
-  // Group-level inputs to the writeup
-  groupContext?: string,              // aggregate special circumstances
-  understandingReadback?: string,     // from #168
-  understandingReadbackAt?: string,
-  generatedAt?: string,               // when writeup was generated
-  generatedBy?: string,
+### Per-leg verdict history — append-only `claim_verdict` table
 
-  // Group-level MAS re-attest tracking
-  reAttest?: {
-    required: boolean,                // derived: any payable legs remain?
-    completedAt?: string,
-    completedBy?: string,
-  },
-}
-```
+`claim_verdict` is the source of truth for the per-leg post-response
+verdict. **There is no `is_current` column** — the latest row per leg is a
+`(claim_id, created_at DESC)` lookup, and `claims.outcome` is the
+denormalized cache of the latest confirmed outcome.
 
-The `currentStep` concept on the group is removed. The group's macro phase is computed from `(disputed-leg statuses, portal_submissions presence, response presence, verdict completeness, masAction state, attestationState)` — not stored.
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `serial pk` | |
+| `claim_id` | `int not null fk → claims.id ON DELETE CASCADE` | |
+| `source` | `text` (`VERDICT_SOURCE`) | `ai_suggested` or `operator_confirmed`. |
+| `outcome` | `text` (`VERDICT_OUTCOMES`) | `Approved \| Denied \| Partial`. |
+| `note` | `text` | Optional operator note. |
+| `confidence` | `numeric(3,2)` | AI suggestions only. |
+| `reasoning` | `text` | AI suggestions only. |
+| `created_by` | `text` | User id; null for AI suggestions. |
+| `inspection_time_ms` | `int` | Operator confirmations only — feeds the calibration line on the verdict picker. |
+| `created_at` | `timestamptz default now()` | |
+
+Indexes: `idx_claim_verdict_claim_created (claim_id, created_at DESC)`,
+`idx_claim_verdict_source_outcome (source, outcome, created_at DESC)`.
+
+### Group state — discrete columns on `invoice_groups`
+
+The foundation lands the per-group columns that the contracts task will
+populate during macro-phase transitions. The macro-phase column itself,
+the readiness/submission timestamps, and the response/MAS-subphase
+timestamps are deliberately **not** added in this task — they belong to
+the transition matrix that the contracts task owns.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `group_context` | `text` | Group-scoped narrative for the writeup. Per-leg narrative lives on `claims.per_leg_context`. |
+| `understanding_readback` | `text` | Operator-authored "this is what I'm asking the payor for" sentence shown back before generating the dispute preview. |
+| `understanding_readback_at` / `understanding_readback_by` | `timestamptz` / `text` | Audit shoulder for the readback field. |
+| `preview_generated_at` / `preview_generated_by` | `timestamptz` / `text` | Stamped on each preview generation; the contracts task gates submission on at least one preview. |
+| `reattest_required` | `bool not null default false` | Group-level "did the payor actually pay us?" loop after Approved. |
+| `reattest_completed_at` / `reattest_completed_by` / `reattest_note` | `timestamptz` / `text` / `text` | Completion record for the re-attestation step. |
+
+No new indexes on `invoice_groups` in this task — the existing indexes on
+`invoice_number`, `status`, `outcome`, and `created_at` cover the
+foundation's read paths.
+
+### Per-leg sub-status — derived, never stored
+
+The inner-tier per-leg sub-status (`excluded`, `needs_classification`,
+`investigating`, `blocked`, `ready`, `dropped`) is **always derived** from
+`(included_in_dispute, errorTypeId, holdReason, sop_outcome)` via
+`deriveLegSubStatus(...)` in `lib/leg-state/src/index.ts` — a tiny
+dependency-free shared package that is re-exported by both `@workspace/db`
+(for server endpoints) and `artifacts/claimclear/src/lib/lifecycle-phase.ts`
+(for the React client), so the helper has exactly one implementation.
+The conditional ladder is the source of truth for precedence:
+
+1. `excluded` — `included_in_dispute === false` short-circuits.
+2. `needs_classification` — no `errorTypeId` yet.
+3. `blocked` — any `holdReason` set on the row.
+4. `investigating` — no `sop_outcome` yet.
+5. `dropped` — `sop_outcome ∈ {cannot_dispute, non_issue}`.
+6. `ready` — `sop_outcome ∈ {portal_dispute, dispute}`.
+7. `blocked` — `sop_outcome === 'hold'` (parallel pause from inside the
+   SOP walk).
+
+Pinned values live in `LEG_SUB_STATUSES`.
+
+### Observability — `state_events`
+
+Distinct from `audit_logs` (the human-facing activity feed),
+`state_events` is structured machine-data for analytics dashboards (per-
+event-key counts, time-in-phase histograms, AI-vs-operator timing). Writes
+go through `emitStateEvent(...)` which **never throws** — observability
+must never block the user-facing write that triggered it.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `bigserial pk` | |
+| `event_key` | `text not null` | e.g. `claim.sop_outcome_set`, `group.transitioned_to_submitted`. |
+| `claim_id` | `int fk → claims.id ON DELETE SET NULL` | |
+| `invoice_group_id` | `int fk → invoice_groups.id ON DELETE SET NULL` | |
+| `actor_user_id` | `text` | Null for system / bot / AI events. |
+| `duration_ms` | `int` | For inspection-time, time-in-phase, etc. |
+| `metadata` | `jsonb not null default '{}'` | |
+| `created_at` | `timestamptz default now()` | |
+
+Indexes: `idx_state_events_event_key_created`, `idx_state_events_group_created`.
 
 ### `claims.attestationState` — trigger refinement (#165)
 
 Today: auto-pushed to `pending` the moment a verdict hits Approved.
 
-New: auto-pushed to `pending` only when **(verdict = Approved/Partial) AND (group.reAttest.completedAt is set)**. Otherwise the attestation queue fills with rows that haven't actually been asked for payment yet, and the question "did the payor pay us?" is premature.
+New (owned by the downstream contracts task — not wired here): auto-pushed
+to `pending` only when **(verdict = Approved/Partial) AND
+(`invoice_groups.mas_action_completed_at` is set)**. Otherwise the
+attestation queue fills with rows that haven't actually been asked for
+payment yet, and the question "did the payor pay us?" is premature.
 
-### `claims.status` — read-side computed
+### `claims.status` and `claims.outcome` — denormalized read caches
 
-`claims.status` becomes a read-side projection of `(group's macro phase, leg's sub-status)`. Direct writes to `claims.status` outside of the cascade and the inner-tier transitions are deprecated. The single source of truth for display is the lifecycle-phase module from #169.
+After this foundation lands, `claims.status` and `claims.outcome` are
+**denormalized read caches**, not the source of truth:
+
+- `claims.status` mirrors the parent group's macro-phase-derived status.
+- `claims.outcome` mirrors the latest confirmed verdict from
+  `claim_verdict` (or `Pending` when no verdict exists).
+
+Population logic for these caches moves into the contracts task, which
+owns the macro-phase transition matrix and the verdict-write path. They
+are kept on the row so existing list/queue UIs continue to render
+without joining `claim_verdict` on every read.
+
+### Migration footprint
+
+The transition shipped in two `db:push --force` waves and one one-shot
+backfill, gated by `PER_INVOICE_TRANSITION_ENABLED`:
+
+1. **Additive push** — added every column listed above, plus the
+   `claim_verdict` and `state_events` tables, plus the DB-level CHECK
+   constraints (`claims_sop_outcome_chk`, `claims_drop_reason_chk`,
+   `claims_mas_action_required_chk`, `claim_verdict_source_chk`,
+   `claim_verdict_outcome_chk`). The legacy `workflow_progress` JSONB
+   columns were left in place so the backfill could read them.
+2. **Backfill** — `scripts/src/migrations/2026-05-per-leg-state-backfill.ts`
+   projected legacy `workflow_progress` blobs onto the discrete columns,
+   normalized `claims.hold_reason` onto `LEG_HOLD_REASONS`, walked
+   `audit_logs` for `outcome_changed` / `status_and_outcome_changed`
+   events to seed `claim_verdict` rows (with a fallback summary row for
+   non-Pending claims with no audit history), and emitted a verification
+   report (parity counts on completed-vs-sop_outcome, claims.outcome-vs-
+   latest-verdict, reAttest completion). Idempotent — detects the
+   legacy column's absence on re-run and short-circuits to a no-op.
+3. **Destructive push** — dropped the legacy `workflow_progress` columns
+   from both tables. After this point, all read paths that referenced
+   the blob are stubbed (`// TEMP STUB — removed in cutover task`) and
+   the contracts task owns swapping the stubs for the real per-leg /
+   per-invoice writes.
 
 ---
 

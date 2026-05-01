@@ -23,6 +23,9 @@
     },
     {
       "path": "../../lib/closure-options"
+    },
+    {
+      "path": "../../lib/leg-state"
     }
   ]
 }

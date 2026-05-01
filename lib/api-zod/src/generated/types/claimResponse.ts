@@ -12,7 +12,6 @@ import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChec
 import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
-import type { ClaimResponseWorkflowProgress } from "./claimResponseWorkflowProgress";
 import type { ClosurePersonRef } from "./closurePersonRef";
 
 export interface ClaimResponse {
@@ -97,8 +96,6 @@ export interface ClaimResponse {
   generatedEmailBody?: string | null;
   /** @nullable */
   generatedEmailAt?: string | null;
-  /** @nullable */
-  workflowProgress?: ClaimResponseWorkflowProgress;
   /** @nullable */
   holdReason?: string | null;
   /** @nullable */

@@ -190,6 +190,9 @@ importers:
       '@workspace/closure-options':
         specifier: workspace:*
         version: link:../../lib/closure-options
+      '@workspace/leg-state':
+        specifier: workspace:*
+        version: link:../../lib/leg-state
       dompurify:
         specifier: ^3.4.0
         version: 3.4.0
@@ -842,6 +845,9 @@ importers:
 
   lib/db:
     dependencies:
+      '@workspace/leg-state':
+        specifier: workspace:*
+        version: link:../leg-state
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.1(@types/pg@8.18.0)(pg@8.20.0)
@@ -880,6 +886,8 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1
 
+  lib/leg-state: {}
+
   lib/object-storage-web:
     dependencies:
       '@uppy/aws-s3':
@@ -910,6 +918,13 @@ importers:
         version: 19.2.14
 
   scripts:
+    dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../lib/db
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.1(@types/pg@8.18.0)(pg@8.20.0)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

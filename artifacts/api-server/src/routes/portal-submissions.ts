@@ -246,7 +246,11 @@ function buildSnapshot(ctx: GroupContext | { group: null; primaryClaim: typeof c
       errorDetails: group.errorDetails || "",
       evidenceNotes: group.evidenceNotes || "",
       evidenceFiles: group.evidenceFiles || null,
-      workflowHistory: group.workflowProgress || null,
+      // TEMP STUB — removed in cutover task. The legacy
+      // `workflow_progress` JSONB has been dropped (see Task #195). The
+      // contracts task swaps in a snapshot built from the new discrete
+      // sop_answers / lifecycle_phase columns.
+      workflowHistory: null,
       subjectFallback: subject,
     };
   }
@@ -262,7 +266,8 @@ function buildSnapshot(ctx: GroupContext | { group: null; primaryClaim: typeof c
     errorDetails: primaryClaim.errorDetails || "",
     evidenceNotes: primaryClaim.evidenceNotes || "",
     evidenceFiles: primaryClaim.evidenceFiles || null,
-    workflowHistory: primaryClaim.workflowProgress || null,
+    // TEMP STUB — removed in cutover task. See note above.
+    workflowHistory: null,
     subjectFallback: `Dispute - Conf #${primaryClaim.confNumber || "N/A"} - ${primaryClaim.errorTypeName || "Claim Correction"}`,
   };
 }

@@ -82,6 +82,7 @@
     "@uppy/dashboard": "^5.1.1",
     "@uppy/react": "^5.2.0",
     "@workspace/closure-options": "workspace:*",
+    "@workspace/leg-state": "workspace:*",
     "dompurify": "^3.4.0",
     "xlsx": "^0.18.5"
   }
