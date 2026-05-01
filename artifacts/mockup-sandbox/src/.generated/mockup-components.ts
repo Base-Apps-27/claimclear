@@ -29,5 +29,5 @@ export const modules: ModuleMap = {
   "./components/mockups/tree-editor/FlowNodeDetail.tsx": () => import("../components/mockups/tree-editor/FlowNodeDetail.tsx"),
   "./components/mockups/tree-editor/NodeCanvas.tsx": () => import("../components/mockups/tree-editor/NodeCanvas.tsx"),
   "./components/mockups/tree-editor/RailPanel.tsx": () => import("../components/mockups/tree-editor/RailPanel.tsx"),
-  "./components/mockups/tree-editor/VerticalFlow.tsx": () => import("../components/mockups/tree-editor/VerticalFlow.tsx"),
+  "./components/mockups/tree-editor/VerticalFlow.tsx": () => import("../components/mockups/tree-editor/VerticalFlow.tsx")
 };
