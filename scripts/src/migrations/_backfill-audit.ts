@@ -60,6 +60,13 @@ export const BACKFILL_IDS = {
   // disputed-leg status when it drifted from its group's status. Writes
   // an audit row per healed leg.
   disputedChildSync: "api-server-backfill-disputed-child-sync",
+
+  // Task #283: clear the lingering "Unprocessed" badge on phrase-signature
+  // acknowledgment receipts that landed BEFORE `shouldAutoMarkProcessed`
+  // shipped. Writes a single summary audit_logs row when at least one
+  // portal_responses row is flipped (claim_id and invoice_group_id are
+  // both null on that summary row).
+  clearPhraseSignatureAckProcessed: "2026-05-clear-phrase-signature-ack-processed",
 } as const;
 
 export type BackfillId = (typeof BACKFILL_IDS)[keyof typeof BACKFILL_IDS];
