@@ -1,0 +1,117 @@
+We’ve gone through a full architectural redesign moving from claim-based workflows to invoice-based workflows with per-leg investigation.
+
+I do NOT want a summary of the system.
+
+I want a precise, verifiable breakdown of how the CURRENT planned implementation (based on the latest 5-task model) handles the following scenarios and invariants.
+
+For each item below:
+1. Explain exactly how the system currently solves it (based on tasks + schema + UI)
+2. Point to the exact mechanism (column, endpoint, UI surface, derived logic, etc.)
+3. If it is NOT fully solved, explicitly say so and describe the gap
+4. Do NOT speculate or propose solutions — only describe what is actually defined
+
+---
+
+### 1. SOP Failure / Edge Cases
+- What happens when the decision tree (SOP) does NOT correctly represent reality?
+- How can an operator proceed if the SOP leads to the wrong terminal outcome?
+- Is there any override mechanism? If yes, where and how is it enforced/audited?
+
+---
+
+### 2. Invoice Readiness Enforcement
+- What EXACTLY prevents an invoice from being submitted if not all required legs are resolved?
+- Is this enforced:
+  - in UI only
+  - in backend validation
+  - at database level
+- What is the source of truth for “invoice is ready”?
+
+---
+
+### 3. `included_in_dispute` Lifecycle
+- How is `included_in_dispute` set initially?
+- Can it change after classification? If so, how?
+- What prevents drift between:
+  - included_in_dispute
+  - error_type_id
+  - sop_outcome
+- What logic ensures this field remains correct over time?
+
+---
+
+### 4. Derived Sub-Status Integrity
+- Sub-status is derived from columns (not stored).
+- What guarantees that the derived logic remains consistent across:
+  - Claim Detail
+  - Invoice Group Detail
+  - Queue
+  - Any filters or counters
+- Is there a single shared function or multiple implementations?
+
+---
+
+### 5. MAS Phase Entry Conditions
+- What EXACT conditions must be true for an invoice to enter "MAS Action Required"?
+- Are these conditions enforced anywhere, or just implied?
+- Can an invoice enter MAS phase with:
+  - unresolved legs
+  - missing verdicts
+- If not, what blocks it?
+
+---
+
+### 6. Per-Leg vs Group Consistency
+- How does the system ensure consistency between:
+  - per-leg facts (sop_outcome, verdict, hold)
+  - group-level lifecycle phase
+- Is group phase:
+  - stored
+  - derived
+- Where is this logic defined?
+
+---
+
+### 7. Data Migration Integrity (JSONB → New Schema)
+- What happens if legacy `workflow_progress` data cannot be mapped cleanly?
+- How are partial or corrupted records handled?
+- What guarantees that no claims are left in an undefined state post-migration?
+
+---
+
+### 8. System Invariants (Critical)
+List ALL enforced invariants in the system, for example:
+- “An invoice cannot be submitted unless all legs are resolved”
+- “A leg cannot have a verdict without SOP completion”
+
+For each invariant:
+- Where is it enforced?
+- What happens if it is violated?
+
+---
+
+### 9. Failure Modes
+List the top 5 ways this system could enter an inconsistent or broken state based on the current implementation.
+
+For each:
+- What causes it
+- Whether it is currently prevented
+- If not prevented, where the gap is
+
+---
+
+### 10. Operator Escape Hatches
+In real usage, operators will encounter edge cases.
+
+- What are ALL ways an operator can override or bypass system logic?
+- Are these tracked/audited?
+- If there are NO escape hatches, confirm explicitly and explain how edge cases are handled
+
+---
+
+Final requirement:
+Do not generalize. Do not describe intended design.
+
+Only describe what is concretely defined in the current tasks, schema, and implementation plan.
+
+If something is undefined, say "UNDEFINED" clearly.
