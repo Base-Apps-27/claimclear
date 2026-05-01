@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { refreshGroupDerivedFields, getGroupMacroPhase } from "../lib/denormalized-cache";
@@ -160,7 +160,63 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     conditions.push(buildInvoiceGroupExpiringCondition(expiringMode));
   }
 
+  const macroPhase = query.macroPhase;
+  if (macroPhase && typeof macroPhase === "string") {
+    const phaseCondition = buildMacroPhaseCondition(macroPhase);
+    if (phaseCondition) conditions.push(phaseCondition);
+  }
+
   return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+const STATUS_BY_PHASE = {
+  "pre-submit": ["New", "Needs Evidence"],
+  "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
+  "response-pending": ["Ready to Review", "Needs Review"],
+  "closed": ["Resolved", "Denied"],
+  "on-hold": ["On Hold"],
+} as const satisfies Record<string, ReadonlyArray<typeof claimStatusEnum.enumValues[number]>>;
+
+function buildMacroPhaseCondition(phase: string): SQL | undefined {
+  if (phase === "mas-action-required") {
+    return and(
+      isNull(invoiceGroupsTable.reattestCompletedAt),
+      or(
+        eq(invoiceGroupsTable.reattestRequired, true),
+        sql`exists (
+          select 1 from claims c
+          where c.invoice_group_id = ${invoiceGroupsTable.id}
+            and c.mas_action_required = 'cancel'
+            and c.mas_action_completed_at is null
+        )`,
+      )!,
+    );
+  }
+  if (phase === "awaiting-payout") {
+    return isNotNull(invoiceGroupsTable.reattestCompletedAt);
+  }
+  if (phase in STATUS_BY_PHASE) {
+    const statuses = STATUS_BY_PHASE[phase as keyof typeof STATUS_BY_PHASE];
+    const statusCondition = inArray(invoiceGroupsTable.status, [...statuses]);
+    if (phase === "response-pending") {
+      return and(
+        statusCondition,
+        isNull(invoiceGroupsTable.reattestCompletedAt),
+        or(
+          isNull(invoiceGroupsTable.reattestRequired),
+          eq(invoiceGroupsTable.reattestRequired, false),
+        )!,
+        sql`not exists (
+          select 1 from claims c
+          where c.invoice_group_id = ${invoiceGroupsTable.id}
+            and c.mas_action_required = 'cancel'
+            and c.mas_action_completed_at is null
+        )`,
+      );
+    }
+    return statusCondition;
+  }
+  return undefined;
 }
 
 // Default sort = earliest service date ascending (oldest first), so the rows
@@ -291,6 +347,30 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     .where(eq(claimsTable.invoiceGroupId, id))
     .orderBy(desc(claimsTable.createdAt));
 
+  const rideIds = rides.map((r) => r.id);
+  const verdictMap = new Map<number, { latest: typeof claimVerdictTable.$inferSelect | null; latestAi: typeof claimVerdictTable.$inferSelect | null }>();
+  if (rideIds.length > 0) {
+    const allVerdicts = await db
+      .select()
+      .from(claimVerdictTable)
+      .where(inArray(claimVerdictTable.claimId, rideIds))
+      .orderBy(desc(claimVerdictTable.createdAt));
+    for (const v of allVerdicts) {
+      const slot = verdictMap.get(v.claimId) ?? { latest: null, latestAi: null };
+      if (slot.latest === null) slot.latest = v;
+      if (slot.latestAi === null && v.source === "ai_suggested") slot.latestAi = v;
+      verdictMap.set(v.claimId, slot);
+    }
+  }
+  const ridesWithVerdicts = rides.map((r) => {
+    const slot = verdictMap.get(r.id);
+    return {
+      ...r,
+      latestVerdict: slot?.latest ?? null,
+      latestAiSuggestion: slot?.latestAi ?? null,
+    };
+  });
+
   const submissions = await db.select().from(portalSubmissionsTable)
     .where(eq(portalSubmissionsTable.invoiceGroupId, id))
     .orderBy(desc(portalSubmissionsTable.createdAt));
@@ -313,7 +393,18 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
   const heldCount = rides.filter(r => r.status === "On Hold").length;
   const isPartial = heldCount > 0 && heldCount < rides.length;
 
-  res.json({ ...group, rides, submissions, notes, auditLogs, responses, isPartial });
+  const macroPhase = getGroupMacroPhase(group);
+
+  res.json({
+    ...group,
+    rides: ridesWithVerdicts,
+    submissions,
+    notes,
+    auditLogs,
+    responses,
+    isPartial,
+    macroPhase,
+  });
 }));
 
 router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {
@@ -935,7 +1026,27 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
       isNotNull(invoiceGroupsTable.errorTypeId),
       ne(invoiceGroupsTable.errorTypeId, ""),
     ));
-  res.json({ count: row?.value ?? 0 });
+
+  const masResult = await db.execute(sql`
+    select count(distinct g.id)::int as count
+    from invoice_groups g
+    where (
+      (g.reattest_required = true and g.reattest_completed_at is null)
+      or exists (
+        select 1
+        from claims c
+        where c.invoice_group_id = g.id
+          and c.mas_action_required = 'cancel'
+          and c.mas_action_completed_at is null
+      )
+    )
+  `);
+  const masRow = (masResult.rows?.[0] ?? {}) as { count?: number };
+
+  res.json({
+    count: row?.value ?? 0,
+    masActionCount: masRow.count ?? 0,
+  });
 }));
 
 // Per-invoice (group-level) state-machine endpoints (Task #196). Same

@@ -163,6 +163,15 @@ paths:
           schema:
             type: string
             enum: [soon, urgent]
+        - name: macroPhase
+          in: query
+          description: |
+            Filter groups by server-derived macro phase. `mas-action-required`
+            returns groups that owe per-leg MAS cancellations, group-level
+            re-attestation, or both. Drives the new MAS Action surfaces.
+          schema:
+            type: string
+            enum: [pre-submit, in-flight, response-pending, mas-action-required, awaiting-payout, closed, on-hold]
         - name: sort
           in: query
           description: Column to sort by
@@ -1236,7 +1245,9 @@ paths:
         already have an Error Type assigned (i.e., they are stage-2 awaiting a
         human verdict, not stage-1 awaiting classification). Drives the
         sidebar nav badge for the "Responses Awaiting Review" page so the
-        team always knows when verdicts are owed.
+        team always knows when verdicts are owed. The same payload also
+        carries a `masActionCount` so the sidebar can render a sub-pill
+        without a second poll.
       responses:
         "200":
           description: Awaiting-review count for the nav badge
@@ -1244,6 +1255,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponsesAwaitingReviewCountResponse"
+
+  /feature-flags:
+    get:
+      operationId: getFeatureFlags
+      tags: [system]
+      summary: Read the rollout feature flags exposed to the UI
+      description: |
+        Thin endpoint that lets the frontend gate UI surfaces on the same
+        env vars the server checks. Currently exposes
+        `perInvoiceTransitionEnabled` so the per-leg verdict picker and
+        MAS Action surface only mount when the rollout is on.
+      responses:
+        "200":
+          description: Current feature-flag values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureFlagsResponse"
+
+  /ai-calibration:
+    get:
+      operationId: getAiCalibration
+      tags: [responses]
+      summary: AI vs operator agreement stats for one error type
+      description: |
+        Pairs every `ai_suggested` verdict in the window with the next
+        `operator_confirmed` verdict on the same leg, then rolls them up
+        per error type. Drives the calibration line under the AI suggestion
+        in `<PerLegVerdictPicker>`. Returns zeros when the error type has
+        no history yet — the UI renders "Not enough history yet" rather
+        than misleading 0% stats.
+      parameters:
+        - name: errorTypeId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: windowDays
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+      responses:
+        "200":
+          description: Calibration stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCalibrationResponse"
+        "400":
+          description: Missing or invalid errorTypeId
 
   /claims/{id}/evidence:
     patch:
@@ -3681,11 +3745,6 @@ components:
           type: ["string", "null"]
         attestationQueuedBy:
           type: ["string", "null"]
-        # Per-leg state-machine columns introduced by Task #195 (per-claim →
-        # per-invoice transition). Source of truth for the inner-tier
-        # leg sub-status (`excluded | needs_classification | investigating |
-        # blocked | ready | dropped`) which is *derived* from these via
-        # `deriveLegSubStatus` in `@workspace/leg-state`.
         includedInDispute:
           type: boolean
           description: "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings)."
@@ -3723,6 +3782,16 @@ components:
           type: ["string", "null"]
         masActionNote:
           type: ["string", "null"]
+        latestVerdict:
+          oneOf:
+            - $ref: "#/components/schemas/ClaimVerdictResponse"
+            - type: "null"
+          description: "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch."
+        latestAiSuggestion:
+          oneOf:
+            - $ref: "#/components/schemas/ClaimVerdictResponse"
+            - type: "null"
+          description: "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint."
         createdAt:
           type: string
         updatedAt:
@@ -3877,6 +3946,20 @@ components:
           type: ["string", "null"]
         importBatch:
           type: ["string", "null"]
+        reattestRequired:
+          type: boolean
+          description: "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection."
+        reattestCompletedAt:
+          type: ["string", "null"]
+          description: "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`."
+        reattestCompletedBy:
+          type: ["string", "null"]
+        reattestNote:
+          type: ["string", "null"]
+        macroPhase:
+          type: ["string", "null"]
+          enum: ["pre-submit", "in-flight", "response-pending", "mas-action-required", "awaiting-payout", "closed", "on-hold", null]
+          description: "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.)."
         createdAt:
           type: string
         updatedAt:
@@ -3909,16 +3992,6 @@ components:
           format: date-time
           description: "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight."
         previewGeneratedBy:
-          type: ["string", "null"]
-        reattestRequired:
-          type: boolean
-          description: "True when at least one Approved leg requires a re-attestation step in the payor portal."
-        reattestCompletedAt:
-          type: ["string", "null"]
-          format: date-time
-        reattestCompletedBy:
-          type: ["string", "null"]
-        reattestNote:
           type: ["string", "null"]
         legSubStatusCounts:
           type: ["object", "null"]
@@ -4608,7 +4681,7 @@ components:
 
     ResponsesAwaitingReviewCountResponse:
       type: object
-      required: [count]
+      required: [count, masActionCount]
       properties:
         count:
           type: integer
@@ -4616,6 +4689,52 @@ components:
             Number of invoice groups in `Needs Review` status that have an
             Error Type assigned (stage-2 verdict pending). Drives the sidebar
             badge on the Responses Awaiting Review nav entry.
+        masActionCount:
+          type: integer
+          description: |
+            Number of invoice groups whose macro phase is
+            `mas-action-required` — i.e., per-leg verdicts are confirmed and
+            the operator still owes per-leg cancellations and/or a group
+            re-attestation. Surfaced as the sub-pill on the same nav badge
+            so MAS work-in-flight is visible without a separate top-level
+            entry.
+
+    FeatureFlagsResponse:
+      type: object
+      required: [perInvoiceTransitionEnabled]
+      properties:
+        perInvoiceTransitionEnabled:
+          type: boolean
+          description: |
+            Mirrors `PER_INVOICE_TRANSITION_ENABLED` env on the server. When
+            false, per-leg verdict capture and the MAS Action surface stay
+            hidden in the UI; everything renders as it did pre-rollout.
+
+    AiCalibrationResponse:
+      type: object
+      required: [errorTypeId, totalConfirmations, agreementCount, perOutcomeAgreement, windowDays]
+      properties:
+        errorTypeId:
+          type: string
+        totalConfirmations:
+          type: integer
+          description: Number of paired (AI suggestion → operator confirmation) verdicts in the window.
+        agreementCount:
+          type: integer
+          description: How many of those pairs agreed.
+        perOutcomeAgreement:
+          type: object
+          required: [Approved, Denied, Partial]
+          properties:
+            Approved:
+              type: integer
+            Denied:
+              type: integer
+            Partial:
+              type: integer
+        windowDays:
+          type: integer
+          description: Window applied when computing the stats (defaults to 90 days server-side).
 
     AttestationPendingExtras:
       type: object

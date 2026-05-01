@@ -149,6 +149,24 @@ export interface ClosurePersonRef {
   id?: string | null;
 }
 
+export interface ClaimVerdictResponse {
+  id: number;
+  claimId: number;
+  source: string;
+  outcome: string;
+  /** @nullable */
+  note?: string | null;
+  /** @nullable */
+  confidence?: string | null;
+  /** @nullable */
+  reasoning?: string | null;
+  createdAt: string;
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  inspectionTimeMs?: number | null;
+}
+
 export interface ClaimResponse {
   id: number;
   /** @nullable */
@@ -295,6 +313,10 @@ export interface ClaimResponse {
   masActionCompletedBy?: string | null;
   /** @nullable */
   masActionNote?: string | null;
+  /** Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch. */
+  latestVerdict?: ClaimVerdictResponse | null;
+  /** Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint. */
+  latestAiSuggestion?: ClaimVerdictResponse | null;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -390,6 +412,24 @@ export type InvoiceGroupResponseEvidenceChecklist = {
 } | null;
 
 /**
+ * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+ * @nullable
+ */
+export type InvoiceGroupResponseMacroPhase =
+  | (typeof InvoiceGroupResponseMacroPhase)[keyof typeof InvoiceGroupResponseMacroPhase]
+  | null;
+
+export const InvoiceGroupResponseMacroPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
+} as const;
+
+/**
  * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
  * @nullable
  */
@@ -481,6 +521,22 @@ export interface InvoiceGroupResponse {
   payorEmail?: string | null;
   /** @nullable */
   importBatch?: string | null;
+  /** True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection. */
+  reattestRequired: boolean;
+  /**
+   * Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.
+   * @nullable
+   */
+  reattestCompletedAt?: string | null;
+  /** @nullable */
+  reattestCompletedBy?: string | null;
+  /** @nullable */
+  reattestNote?: string | null;
+  /**
+   * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+   * @nullable
+   */
+  macroPhase?: InvoiceGroupResponseMacroPhase;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -516,14 +572,6 @@ export interface InvoiceGroupResponse {
   previewGeneratedAt?: string | null;
   /** @nullable */
   previewGeneratedBy?: string | null;
-  /** True when at least one Approved leg requires a re-attestation step in the payor portal. */
-  reattestRequired: boolean;
-  /** @nullable */
-  reattestCompletedAt?: string | null;
-  /** @nullable */
-  reattestCompletedBy?: string | null;
-  /** @nullable */
-  reattestNote?: string | null;
   /**
    * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
    * @nullable
@@ -1391,24 +1439,6 @@ export interface RecordVerdictBody {
   inspectionTimeMs?: number | null;
 }
 
-export interface ClaimVerdictResponse {
-  id: number;
-  claimId: number;
-  source: string;
-  outcome: string;
-  /** @nullable */
-  note?: string | null;
-  /** @nullable */
-  confidence?: string | null;
-  /** @nullable */
-  reasoning?: string | null;
-  createdAt: string;
-  /** @nullable */
-  createdBy?: string | null;
-  /** @nullable */
-  inspectionTimeMs?: number | null;
-}
-
 export interface SetLegContextBody {
   /** Free-form per-leg narrative. Empty string clears the field. */
   context: string;
@@ -1462,6 +1492,39 @@ Error Type assigned (stage-2 verdict pending). Drives the sidebar
 badge on the Responses Awaiting Review nav entry.
  */
   count: number;
+  /** Number of invoice groups whose macro phase is
+`mas-action-required` — i.e., per-leg verdicts are confirmed and
+the operator still owes per-leg cancellations and/or a group
+re-attestation. Surfaced as the sub-pill on the same nav badge
+so MAS work-in-flight is visible without a separate top-level
+entry.
+ */
+  masActionCount: number;
+}
+
+export interface FeatureFlagsResponse {
+  /** Mirrors `PER_INVOICE_TRANSITION_ENABLED` env on the server. When
+false, per-leg verdict capture and the MAS Action surface stay
+hidden in the UI; everything renders as it did pre-rollout.
+ */
+  perInvoiceTransitionEnabled: boolean;
+}
+
+export type AiCalibrationResponsePerOutcomeAgreement = {
+  Approved: number;
+  Denied: number;
+  Partial: number;
+};
+
+export interface AiCalibrationResponse {
+  errorTypeId: string;
+  /** Number of paired (AI suggestion → operator confirmation) verdicts in the window. */
+  totalConfirmations: number;
+  /** How many of those pairs agreed. */
+  agreementCount: number;
+  perOutcomeAgreement: AiCalibrationResponsePerOutcomeAgreement;
+  /** Window applied when computing the stats (defaults to 90 days server-side). */
+  windowDays: number;
 }
 
 /**
@@ -2754,6 +2817,13 @@ export type ListInvoiceGroupsParams = {
    */
   expiring?: ListInvoiceGroupsExpiring;
   /**
+ * Filter groups by server-derived macro phase. `mas-action-required`
+returns groups that owe per-leg MAS cancellations, group-level
+re-attestation, or both. Drives the new MAS Action surfaces.
+
+ */
+  macroPhase?: ListInvoiceGroupsMacroPhase;
+  /**
    * Column to sort by
    */
   sort?: ListInvoiceGroupsSort;
@@ -2779,6 +2849,19 @@ export type ListInvoiceGroupsExpiring =
 export const ListInvoiceGroupsExpiring = {
   soon: "soon",
   urgent: "urgent",
+} as const;
+
+export type ListInvoiceGroupsMacroPhase =
+  (typeof ListInvoiceGroupsMacroPhase)[keyof typeof ListInvoiceGroupsMacroPhase];
+
+export const ListInvoiceGroupsMacroPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
 } as const;
 
 export type ListInvoiceGroupsSort =
@@ -3041,6 +3124,15 @@ string). Surfaces the data the queue-review UI needs
 without forcing a second roundtrip per row.
  */
   extras: ListAttestationPending200Extras;
+};
+
+export type GetAiCalibrationParams = {
+  errorTypeId: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  windowDays?: number;
 };
 
 export type ListPortalSubmissionsParams = {

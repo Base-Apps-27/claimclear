@@ -7,6 +7,7 @@ import {
   getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import {
   Sidebar,
   SidebarContent,
@@ -108,9 +109,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     },
   });
   const responsesAwaitingReview = awaitingReviewCount?.count ?? 0;
-  const responsesAwaitingReviewBadges: NavBadge[] = responsesAwaitingReview > 0
-    ? [{ count: responsesAwaitingReview, tone: "amber", label: "Verdict pending" }]
-    : [];
+  const masActionCount = awaitingReviewCount?.masActionCount ?? 0;
+  const { perInvoiceTransitionEnabled } = useFeatureFlags();
+  const responsesAwaitingReviewBadges: NavBadge[] = [
+    ...(responsesAwaitingReview > 0
+      ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
+      : []),
+    ...(perInvoiceTransitionEnabled && masActionCount > 0
+      ? [{ count: masActionCount, tone: "blue" as const, label: "MAS action" }]
+      : []),
+  ];
   // Show both counts side-by-side so the user can read at a glance which
   // bucket is non-zero — pending (amber: verdicts that still need a decision)
   // vs queued (blue: parked for the user with portal access). A single total

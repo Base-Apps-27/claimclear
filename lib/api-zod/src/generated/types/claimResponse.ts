@@ -15,6 +15,7 @@ import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionReq
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
 import type { ClaimResponseSopOutcome } from "./claimResponseSopOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
+import type { ClaimVerdictResponse } from "./claimVerdictResponse";
 import type { ClosurePersonRef } from "./closurePersonRef";
 
 export interface ClaimResponse {
@@ -163,6 +164,10 @@ export interface ClaimResponse {
   masActionCompletedBy?: string | null;
   /** @nullable */
   masActionNote?: string | null;
+  /** Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch. */
+  latestVerdict?: ClaimVerdictResponse | null;
+  /** Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint. */
+  latestAiSuggestion?: ClaimVerdictResponse | null;
   createdAt?: string;
   updatedAt?: string;
   /**

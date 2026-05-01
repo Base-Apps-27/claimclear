@@ -11,6 +11,7 @@ import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupRespo
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
 import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
 import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
+import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
 
@@ -93,6 +94,22 @@ export interface InvoiceGroupResponse {
   payorEmail?: string | null;
   /** @nullable */
   importBatch?: string | null;
+  /** True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection. */
+  reattestRequired: boolean;
+  /**
+   * Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.
+   * @nullable
+   */
+  reattestCompletedAt?: string | null;
+  /** @nullable */
+  reattestCompletedBy?: string | null;
+  /** @nullable */
+  reattestNote?: string | null;
+  /**
+   * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+   * @nullable
+   */
+  macroPhase?: InvoiceGroupResponseMacroPhase;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -128,14 +145,6 @@ export interface InvoiceGroupResponse {
   previewGeneratedAt?: Date | null;
   /** @nullable */
   previewGeneratedBy?: string | null;
-  /** True when at least one Approved leg requires a re-attestation step in the payor portal. */
-  reattestRequired: boolean;
-  /** @nullable */
-  reattestCompletedAt?: Date | null;
-  /** @nullable */
-  reattestCompletedBy?: string | null;
-  /** @nullable */
-  reattestNote?: string | null;
   /**
    * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
    * @nullable

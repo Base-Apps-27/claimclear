@@ -1,0 +1,241 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import type {
+  AiCalibrationResponse,
+  ClaimResponse,
+  ClaimVerdictResponse,
+  RecordVerdictBodyOutcome,
+} from "@workspace/api-client-react";
+import { formatDateTime } from "@/lib/format";
+
+export type VerdictOutcome = RecordVerdictBodyOutcome;
+
+const OUTCOMES: VerdictOutcome[] = ["Approved", "Denied", "Partial"];
+
+const OUTCOME_TONE: Record<VerdictOutcome, string> = {
+  Approved:
+    "data-[selected=true]:bg-emerald-600 data-[selected=true]:text-white data-[selected=true]:border-emerald-600 hover:bg-emerald-50 hover:border-emerald-300",
+  Denied:
+    "data-[selected=true]:bg-rose-600 data-[selected=true]:text-white data-[selected=true]:border-rose-600 hover:bg-rose-50 hover:border-rose-300",
+  Partial:
+    "data-[selected=true]:bg-amber-600 data-[selected=true]:text-white data-[selected=true]:border-amber-600 hover:bg-amber-50 hover:border-amber-300",
+};
+
+const CALIBRATION_MIN_CONFIRMATIONS = 5;
+
+export interface PerLegVerdictPickerProps {
+  claim: ClaimResponse;
+  latestSuggestion?: ClaimVerdictResponse | null;
+  latestVerdict?: ClaimVerdictResponse | null;
+  calibration?: AiCalibrationResponse;
+  onConfirm: (
+    outcome: VerdictOutcome,
+    note: string | undefined,
+    inspectionTimeMs: number,
+  ) => Promise<void>;
+}
+
+export function PerLegVerdictPicker({
+  claim,
+  latestSuggestion,
+  latestVerdict,
+  calibration,
+  onConfirm,
+}: PerLegVerdictPickerProps) {
+  const mountAt = useRef<number>(Date.now());
+  useEffect(() => {
+    mountAt.current = Date.now();
+  }, []);
+
+  const [picked, setPicked] = useState<VerdictOutcome | null>(null);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isConfirmed =
+    latestVerdict?.source === "operator_confirmed" &&
+    typeof latestVerdict?.outcome === "string";
+
+  const handleConfirm = async () => {
+    if (!picked || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const elapsed = Math.max(0, Date.now() - mountAt.current);
+      await onConfirm(picked, note.trim() || undefined, elapsed);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to record verdict.";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const calibrationLine = useMemo(
+    () => renderCalibrationLine(claim.errorTypeId, calibration),
+    [claim.errorTypeId, calibration],
+  );
+
+  if (isConfirmed && latestVerdict) {
+    return (
+      <Card data-testid={`per-leg-verdict-confirmed-${claim.id}`}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            Verdict recorded — {latestVerdict.outcome}
+            <Badge variant="outline" className="ml-auto font-mono text-xs">
+              #{claim.confNumber}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground space-y-1">
+          <div>
+            {latestVerdict.createdBy ? `${latestVerdict.createdBy} · ` : ""}
+            {formatDateTime(latestVerdict.createdAt)}
+          </div>
+          {latestVerdict.note && (
+            <div className="italic whitespace-pre-wrap">{latestVerdict.note}</div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card data-testid={`per-leg-verdict-picker-${claim.id}`}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
+          <span className="font-mono">#{claim.confNumber}</span>
+          {claim.errorTypeName && (
+            <Badge variant="secondary" className="text-[10px]">
+              {claim.errorTypeName}
+            </Badge>
+          )}
+        </CardTitle>
+        {claim.errorDetails && (
+          <p
+            className="text-xs text-muted-foreground line-clamp-2"
+            title={claim.errorDetails}
+          >
+            {claim.errorDetails}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {latestSuggestion && (
+          <div
+            className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-1.5"
+            data-testid={`ai-suggestion-${claim.id}`}
+          >
+            <div className="flex items-center gap-2 text-sm">
+              <Sparkles className="h-4 w-4 text-blue-600" />
+              <span className="font-medium">
+                AI suggests {latestSuggestion.outcome}
+                {formatConfidence(latestSuggestion.confidence)}
+              </span>
+            </div>
+            {latestSuggestion.reasoning && (
+              <p className="text-xs text-muted-foreground italic line-clamp-3">
+                {latestSuggestion.reasoning}
+              </p>
+            )}
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid={`calibration-line-${claim.id}`}
+            >
+              {calibrationLine}
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+            Pick an outcome
+          </Label>
+          <div className="grid grid-cols-3 gap-2">
+            {OUTCOMES.map((o) => (
+              <Button
+                key={o}
+                type="button"
+                variant="outline"
+                size="sm"
+                data-selected={picked === o}
+                disabled={submitting}
+                onClick={() => setPicked(o)}
+                className={OUTCOME_TONE[o]}
+                data-testid={`button-pick-${o.toLowerCase()}-${claim.id}`}
+              >
+                {o}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`verdict-note-${claim.id}`}
+            className="text-xs text-muted-foreground"
+          >
+            Note (optional)
+          </Label>
+          <Textarea
+            id={`verdict-note-${claim.id}`}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={submitting}
+            rows={2}
+            placeholder="Anything the next reviewer should know."
+            data-testid={`input-note-${claim.id}`}
+          />
+        </div>
+
+        {error && (
+          <p
+            className="text-xs text-red-700 bg-red-50 rounded px-2 py-1"
+            data-testid={`error-confirm-${claim.id}`}
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!picked || submitting}
+            onClick={handleConfirm}
+            data-testid={`button-confirm-verdict-${claim.id}`}
+          >
+            {submitting && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+            Confirm verdict
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatConfidence(c: string | null | undefined): string {
+  if (c == null) return "";
+  const n = typeof c === "number" ? c : Number(c);
+  if (!Number.isFinite(n)) return "";
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return ` (${pct}% confident)`;
+}
+
+function renderCalibrationLine(
+  errorTypeId: string | null | undefined,
+  calibration: AiCalibrationResponse | undefined,
+): string {
+  if (!errorTypeId) return "Not enough history yet.";
+  if (!calibration) return "Loading calibration…";
+  if (calibration.totalConfirmations < CALIBRATION_MIN_CONFIRMATIONS) {
+    return "Not enough history yet.";
+  }
+  return `For this error type, AI agreed with operator on ${calibration.agreementCount} of last ${calibration.totalConfirmations} verdicts (window ${calibration.windowDays}d).`;
+}

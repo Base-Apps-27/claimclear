@@ -12,4 +12,12 @@ Error Type assigned (stage-2 verdict pending). Drives the sidebar
 badge on the Responses Awaiting Review nav entry.
  */
   count: number;
+  /** Number of invoice groups whose macro phase is
+`mas-action-required` — i.e., per-leg verdicts are confirmed and
+the operator still owes per-leg cancellations and/or a group
+re-attestation. Surfaced as the sub-pill on the same nav badge
+so MAS work-in-flight is visible without a separate top-level
+entry.
+ */
+  masActionCount: number;
 }

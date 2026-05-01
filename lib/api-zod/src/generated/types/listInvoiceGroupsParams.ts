@@ -8,6 +8,7 @@
 import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
 import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
 import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
+import type { ListInvoiceGroupsMacroPhase } from "./listInvoiceGroupsMacroPhase";
 import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
 
 export type ListInvoiceGroupsParams = {
@@ -48,6 +49,13 @@ export type ListInvoiceGroupsParams = {
    * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
    */
   expiring?: ListInvoiceGroupsExpiring;
+  /**
+ * Filter groups by server-derived macro phase. `mas-action-required`
+returns groups that owe per-leg MAS cancellations, group-level
+re-attestation, or both. Drives the new MAS Action surfaces.
+
+ */
+  macroPhase?: ListInvoiceGroupsMacroPhase;
   /**
    * Column to sort by
    */

@@ -22,7 +22,17 @@ import {
   useListErrorTypes,
   useCreateErrorType,
   getListErrorTypesQueryKey,
+  useRecordLegVerdict,
+  useCompleteLegMasAction,
+  useCompleteGroupReattest,
+  getGetClaimQueryKey,
+  getListInvoiceGroupsQueryKey,
+  getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
+import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
+import { MasActionChecklist } from "@/components/mas-action-checklist";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { useAiCalibrations } from "@/hooks/use-ai-calibration";
 import { closureReasonLabel } from "@/lib/closure-reasons";
 import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
 import { InvoiceGroupDetailV2 } from "@/components/invoice-group-detail-v2";
@@ -477,6 +487,12 @@ function InvoiceGroupDetailLegacy({ groupId: id }: { groupId: number }) {
         stages={buildGroupStages(rides)}
         currentKey={getGroupCurrentStageKey(group.status, rides)}
         variant="group"
+      />
+
+      <PerInvoiceTransitionSurface
+        group={group}
+        rides={rides}
+        onAfterChange={() => invalidate()}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1413,4 +1429,172 @@ function InvoiceGroupDetailLegacy({ groupId: id }: { groupId: number }) {
 
     </div>
   );
+}
+
+interface PerInvoiceTransitionSurfaceProps {
+  group: InvoiceGroupResponse;
+  rides: ClaimResponse[];
+  onAfterChange: () => void;
+}
+
+function PerInvoiceTransitionSurface({
+  group,
+  rides,
+  onAfterChange,
+}: PerInvoiceTransitionSurfaceProps) {
+  const { perInvoiceTransitionEnabled } = useFeatureFlags();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const recordVerdict = useRecordLegVerdict();
+  const completeMas = useCompleteLegMasAction();
+  const completeReattest = useCompleteGroupReattest();
+
+  const disputedRides = rides.filter(
+    (r) => r.includedInDispute !== false && !!r.errorTypeId,
+  );
+
+  const { calibrationByErrorType } = useAiCalibrations(
+    disputedRides.map((r) => r.errorTypeId),
+  );
+
+  if (!perInvoiceTransitionEnabled) return null;
+
+  const macroPhase = group.macroPhase ?? null;
+
+  const invalidate = (claimId?: number) => {
+    queryClient.invalidateQueries({
+      queryKey: getGetInvoiceGroupQueryKey(group.id),
+    });
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+    });
+    if (claimId !== undefined) {
+      queryClient.invalidateQueries({
+        queryKey: getGetClaimQueryKey(claimId),
+      });
+    }
+    onAfterChange();
+  };
+
+  if (macroPhase === "mas-action-required") {
+    return (
+      <Card data-testid="invoice-group-mas-action">
+        <CardHeader>
+          <CardTitle className="text-lg">MAS Action</CardTitle>
+          <CardDescription>
+            Cancel the affected legs in MAS, then re-attest the survivors
+            so the group can move to awaiting payout.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MasActionChecklist
+            group={{ ...group, rides }}
+            onCompleteLegMasAction={async (claimId, body) => {
+              await completeMas.mutateAsync({ id: claimId, data: body });
+              invalidate(claimId);
+              toast({ title: "MAS cancellation recorded", duration: 3000 });
+            }}
+            onCompleteGroupReattest={async (body) => {
+              await completeReattest.mutateAsync({ id: group.id, data: body });
+              invalidate();
+              toast({
+                title: "Re-attest confirmed",
+                description: "Group is now awaiting payout.",
+                duration: 3000,
+              });
+            }}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (macroPhase === "response-pending") {
+    if (disputedRides.length === 0) return null;
+    return (
+      <Card data-testid="invoice-group-per-leg-picker">
+        <CardHeader>
+          <CardTitle className="text-lg">Per-leg verdict</CardTitle>
+          <CardDescription>
+            Pick the outcome for each leg. The legacy bulk verdict
+            actions on the rail still work — this is the per-leg path.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {disputedRides.map((claim) => (
+            <PerLegVerdictPicker
+              key={claim.id}
+              claim={claim}
+              latestVerdict={claim.latestVerdict ?? null}
+              latestSuggestion={claim.latestAiSuggestion ?? null}
+              calibration={
+                claim.errorTypeId
+                  ? calibrationByErrorType.get(claim.errorTypeId)
+                  : undefined
+              }
+              onConfirm={async (outcome, note, inspectionTimeMs) => {
+                await recordVerdict.mutateAsync({
+                  id: claim.id,
+                  data: {
+                    source: "operator_confirmed",
+                    outcome,
+                    note,
+                    inspectionTimeMs,
+                  },
+                });
+                invalidate(claim.id);
+                toast({
+                  title: "Verdict recorded",
+                  description: `#${claim.confNumber}: ${outcome}`,
+                  duration: 3000,
+                });
+              }}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const summarized = disputedRides.filter(
+    (r) => r.latestVerdict?.source === "operator_confirmed",
+  );
+  if (
+    (macroPhase === "awaiting-payout" || macroPhase === "closed") &&
+    summarized.length > 0
+  ) {
+    return (
+      <Card data-testid="invoice-group-verdict-summary">
+        <CardHeader>
+          <CardTitle className="text-lg">Per-leg verdict summary</CardTitle>
+          <CardDescription>
+            Read-only — verdicts are append-only and locked once the
+            group is past response review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {summarized.map((claim) => {
+            const v = claim.latestVerdict;
+            return (
+              <div
+                key={claim.id}
+                className="flex items-center justify-between gap-2 text-sm border rounded px-3 py-2"
+                data-testid={`verdict-summary-row-${claim.id}`}
+              >
+                <span className="font-mono">#{claim.confNumber}</span>
+                <Badge variant="outline">{v?.outcome ?? "—"}</Badge>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {v?.createdBy ? `${v.createdBy} · ` : ""}
+                  {v?.createdAt ? formatDateTime(v.createdAt) : ""}
+                </span>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
 }

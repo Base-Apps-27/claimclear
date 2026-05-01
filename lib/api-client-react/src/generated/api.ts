@@ -21,6 +21,7 @@ import type {
   AdminAuditLogsResponse,
   AdminExportAuditLogsCsvParams,
   AdminListAuditLogsParams,
+  AiCalibrationResponse,
   AnalyzeSOPBody,
   AnthropicConversation,
   AnthropicConversationWithMessages,
@@ -75,7 +76,9 @@ import type {
   ExportClaimsCsvParams,
   ExportInvoiceGroupsCsvParams,
   ExportWithdrawalsCsvParams,
+  FeatureFlagsResponse,
   GenerateEmailBody,
+  GetAiCalibrationParams,
   GetAuthSession200,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
@@ -3449,7 +3452,9 @@ export function useGetAttestationCounts<
 already have an Error Type assigned (i.e., they are stage-2 awaiting a
 human verdict, not stage-1 awaiting classification). Drives the
 sidebar nav badge for the "Responses Awaiting Review" page so the
-team always knows when verdicts are owed.
+team always knows when verdicts are owed. The same payload also
+carries a `masActionCount` so the sidebar can render a sub-pill
+without a second poll.
 
  * @summary Count of invoice groups whose payor response needs a verdict
  */
@@ -3522,6 +3527,190 @@ export function useGetResponsesAwaitingReviewCount<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetResponsesAwaitingReviewCountQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Thin endpoint that lets the frontend gate UI surfaces on the same
+env vars the server checks. Currently exposes
+`perInvoiceTransitionEnabled` so the per-leg verdict picker and
+MAS Action surface only mount when the rollout is on.
+
+ * @summary Read the rollout feature flags exposed to the UI
+ */
+export const getGetFeatureFlagsUrl = () => {
+  return `/api/feature-flags`;
+};
+
+export const getFeatureFlags = async (
+  options?: RequestInit,
+): Promise<FeatureFlagsResponse> => {
+  return customFetch<FeatureFlagsResponse>(getGetFeatureFlagsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFeatureFlagsQueryKey = () => {
+  return [`/api/feature-flags`] as const;
+};
+
+export const getGetFeatureFlagsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFeatureFlags>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFeatureFlags>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFeatureFlagsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeatureFlags>>> = ({
+    signal,
+  }) => getFeatureFlags({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFeatureFlags>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFeatureFlagsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFeatureFlags>>
+>;
+export type GetFeatureFlagsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Read the rollout feature flags exposed to the UI
+ */
+
+export function useGetFeatureFlags<
+  TData = Awaited<ReturnType<typeof getFeatureFlags>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFeatureFlags>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFeatureFlagsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Pairs every `ai_suggested` verdict in the window with the next
+`operator_confirmed` verdict on the same leg, then rolls them up
+per error type. Drives the calibration line under the AI suggestion
+in `<PerLegVerdictPicker>`. Returns zeros when the error type has
+no history yet — the UI renders "Not enough history yet" rather
+than misleading 0% stats.
+
+ * @summary AI vs operator agreement stats for one error type
+ */
+export const getGetAiCalibrationUrl = (params: GetAiCalibrationParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/ai-calibration?${stringifiedParams}`
+    : `/api/ai-calibration`;
+};
+
+export const getAiCalibration = async (
+  params: GetAiCalibrationParams,
+  options?: RequestInit,
+): Promise<AiCalibrationResponse> => {
+  return customFetch<AiCalibrationResponse>(getGetAiCalibrationUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAiCalibrationQueryKey = (
+  params?: GetAiCalibrationParams,
+) => {
+  return [`/api/ai-calibration`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAiCalibrationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiCalibration>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAiCalibrationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAiCalibration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAiCalibrationQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAiCalibration>>
+  > = ({ signal }) => getAiCalibration(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiCalibration>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAiCalibrationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiCalibration>>
+>;
+export type GetAiCalibrationQueryError = ErrorType<void>;
+
+/**
+ * @summary AI vs operator agreement stats for one error type
+ */
+
+export function useGetAiCalibration<
+  TData = Awaited<ReturnType<typeof getAiCalibration>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAiCalibrationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAiCalibration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAiCalibrationQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

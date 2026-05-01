@@ -93,6 +93,20 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       'Restrict to actionable groups whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
     ),
+  macroPhase: zod
+    .enum([
+      "pre-submit",
+      "in-flight",
+      "response-pending",
+      "mas-action-required",
+      "awaiting-payout",
+      "closed",
+      "on-hold",
+    ])
+    .optional()
+    .describe(
+      "Filter groups by server-derived macro phase. `mas-action-required`\nreturns groups that owe per-leg MAS cancellations, group-level\nre-attestation, or both. Drives the new MAS Action surfaces.\n",
+    ),
   sort: zod
     .enum([
       "invoiceNumber",
@@ -210,6 +224,34 @@ export const ListInvoiceGroupsResponse = zod.object({
       evidenceChecklist: zod.object({}).passthrough().nullish(),
       payorEmail: zod.string().nullish(),
       importBatch: zod.string().nullish(),
+      reattestRequired: zod
+        .boolean()
+        .describe(
+          "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+        ),
+      reattestCompletedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+        ),
+      reattestCompletedBy: zod.string().nullish(),
+      reattestNote: zod.string().nullish(),
+      macroPhase: zod
+        .union([
+          zod.literal("pre-submit"),
+          zod.literal("in-flight"),
+          zod.literal("response-pending"),
+          zod.literal("mas-action-required"),
+          zod.literal("awaiting-payout"),
+          zod.literal("closed"),
+          zod.literal("on-hold"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+        ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       earliestDate: zod
@@ -251,14 +293,6 @@ export const ListInvoiceGroupsResponse = zod.object({
           "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
         ),
       previewGeneratedBy: zod.string().nullish(),
-      reattestRequired: zod
-        .boolean()
-        .describe(
-          "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-        ),
-      reattestCompletedAt: zod.coerce.date().nullish(),
-      reattestCompletedBy: zod.string().nullish(),
-      reattestNote: zod.string().nullish(),
       legSubStatusCounts: zod
         .object({
           excluded: zod.number().optional(),
@@ -405,6 +439,34 @@ export const GetInvoiceGroupResponse = zod
     evidenceChecklist: zod.object({}).passthrough().nullish(),
     payorEmail: zod.string().nullish(),
     importBatch: zod.string().nullish(),
+    reattestRequired: zod
+      .boolean()
+      .describe(
+        "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+      ),
+    reattestCompletedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+      ),
+    reattestCompletedBy: zod.string().nullish(),
+    reattestNote: zod.string().nullish(),
+    macroPhase: zod
+      .union([
+        zod.literal("pre-submit"),
+        zod.literal("in-flight"),
+        zod.literal("response-pending"),
+        zod.literal("mas-action-required"),
+        zod.literal("awaiting-payout"),
+        zod.literal("closed"),
+        zod.literal("on-hold"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      ),
     createdAt: zod.string().optional(),
     updatedAt: zod.string().optional(),
     earliestDate: zod
@@ -446,14 +508,6 @@ export const GetInvoiceGroupResponse = zod
         "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
       ),
     previewGeneratedBy: zod.string().nullish(),
-    reattestRequired: zod
-      .boolean()
-      .describe(
-        "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-      ),
-    reattestCompletedAt: zod.coerce.date().nullish(),
-    reattestCompletedBy: zod.string().nullish(),
-    reattestNote: zod.string().nullish(),
     legSubStatusCounts: zod
       .object({
         excluded: zod.number().optional(),
@@ -660,6 +714,46 @@ export const GetInvoiceGroupResponse = zod
               ),
             masActionCompletedBy: zod.string().nullish(),
             masActionNote: zod.string().nullish(),
+            latestVerdict: zod
+              .union([
+                zod.object({
+                  id: zod.number(),
+                  claimId: zod.number(),
+                  source: zod.string(),
+                  outcome: zod.string(),
+                  note: zod.string().nullish(),
+                  confidence: zod.string().nullish(),
+                  reasoning: zod.string().nullish(),
+                  createdAt: zod.coerce.date(),
+                  createdBy: zod.string().nullish(),
+                  inspectionTimeMs: zod.number().nullish(),
+                }),
+                zod.null(),
+              ])
+              .optional()
+              .describe(
+                "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+              ),
+            latestAiSuggestion: zod
+              .union([
+                zod.object({
+                  id: zod.number(),
+                  claimId: zod.number(),
+                  source: zod.string(),
+                  outcome: zod.string(),
+                  note: zod.string().nullish(),
+                  confidence: zod.string().nullish(),
+                  reasoning: zod.string().nullish(),
+                  createdAt: zod.coerce.date(),
+                  createdBy: zod.string().nullish(),
+                  inspectionTimeMs: zod.number().nullish(),
+                }),
+                zod.null(),
+              ])
+              .optional()
+              .describe(
+                "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+              ),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
             effectiveDaysLeft: zod
@@ -1020,6 +1114,34 @@ export const UpdateInvoiceGroupResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1061,14 +1183,6 @@ export const UpdateInvoiceGroupResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -1201,6 +1315,34 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1242,14 +1384,6 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -1430,6 +1564,34 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1471,14 +1633,6 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -1606,6 +1760,34 @@ export const TriageInvoiceGroupResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1647,14 +1829,6 @@ export const TriageInvoiceGroupResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -1779,6 +1953,34 @@ export const HoldInvoiceGroupResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1820,14 +2022,6 @@ export const HoldInvoiceGroupResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -1948,6 +2142,34 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -1989,14 +2211,6 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -2164,6 +2378,34 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -2205,14 +2447,6 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -2396,6 +2630,34 @@ export const SetGroupContextResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -2437,14 +2699,6 @@ export const SetGroupContextResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -2572,6 +2826,34 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -2613,14 +2895,6 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -2744,6 +3018,34 @@ export const StampPreviewGeneratedResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -2785,14 +3087,6 @@ export const StampPreviewGeneratedResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -2924,6 +3218,34 @@ export const CompleteGroupReattestResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -2965,14 +3287,6 @@ export const CompleteGroupReattestResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
@@ -3253,6 +3567,46 @@ export const ListClaimsResponse = zod.object({
         .describe("Operator-confirmed completion stamp for the MAS action."),
       masActionCompletedBy: zod.string().nullish(),
       masActionNote: zod.string().nullish(),
+      latestVerdict: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+        ),
+      latestAiSuggestion: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+        ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -3494,6 +3848,46 @@ export const GetClaimResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3708,6 +4102,46 @@ export const UpdateClaimResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3944,6 +4378,46 @@ export const UpdateClaimStatusResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4202,6 +4676,46 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4411,6 +4925,46 @@ export const ListAttestationPendingResponse = zod.object({
         .describe("Operator-confirmed completion stamp for the MAS action."),
       masActionCompletedBy: zod.string().nullish(),
       masActionNote: zod.string().nullish(),
+      latestVerdict: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+        ),
+      latestAiSuggestion: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+        ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -4656,6 +5210,46 @@ export const AttestClaimResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4861,6 +5455,46 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5066,6 +5700,46 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5103,7 +5777,9 @@ export const GetAttestationCountsResponse = zod.object({
 already have an Error Type assigned (i.e., they are stage-2 awaiting a
 human verdict, not stage-1 awaiting classification). Drives the
 sidebar nav badge for the "Responses Awaiting Review" page so the
-team always knows when verdicts are owed.
+team always knows when verdicts are owed. The same payload also
+carries a `masActionCount` so the sidebar can render a sub-pill
+without a second poll.
 
  * @summary Count of invoice groups whose payor response needs a verdict
  */
@@ -5112,6 +5788,68 @@ export const GetResponsesAwaitingReviewCountResponse = zod.object({
     .number()
     .describe(
       "Number of invoice groups in `Needs Review` status that have an\nError Type assigned (stage-2 verdict pending). Drives the sidebar\nbadge on the Responses Awaiting Review nav entry.\n",
+    ),
+  masActionCount: zod
+    .number()
+    .describe(
+      "Number of invoice groups whose macro phase is\n`mas-action-required` — i.e., per-leg verdicts are confirmed and\nthe operator still owes per-leg cancellations and\/or a group\nre-attestation. Surfaced as the sub-pill on the same nav badge\nso MAS work-in-flight is visible without a separate top-level\nentry.\n",
+    ),
+});
+
+/**
+ * Thin endpoint that lets the frontend gate UI surfaces on the same
+env vars the server checks. Currently exposes
+`perInvoiceTransitionEnabled` so the per-leg verdict picker and
+MAS Action surface only mount when the rollout is on.
+
+ * @summary Read the rollout feature flags exposed to the UI
+ */
+export const GetFeatureFlagsResponse = zod.object({
+  perInvoiceTransitionEnabled: zod
+    .boolean()
+    .describe(
+      "Mirrors `PER_INVOICE_TRANSITION_ENABLED` env on the server. When\nfalse, per-leg verdict capture and the MAS Action surface stay\nhidden in the UI; everything renders as it did pre-rollout.\n",
+    ),
+});
+
+/**
+ * Pairs every `ai_suggested` verdict in the window with the next
+`operator_confirmed` verdict on the same leg, then rolls them up
+per error type. Drives the calibration line under the AI suggestion
+in `<PerLegVerdictPicker>`. Returns zeros when the error type has
+no history yet — the UI renders "Not enough history yet" rather
+than misleading 0% stats.
+
+ * @summary AI vs operator agreement stats for one error type
+ */
+export const getAiCalibrationQueryWindowDaysMax = 365;
+
+export const GetAiCalibrationQueryParams = zod.object({
+  errorTypeId: zod.coerce.string(),
+  windowDays: zod.coerce
+    .number()
+    .min(1)
+    .max(getAiCalibrationQueryWindowDaysMax)
+    .optional(),
+});
+
+export const GetAiCalibrationResponse = zod.object({
+  errorTypeId: zod.string(),
+  totalConfirmations: zod
+    .number()
+    .describe(
+      "Number of paired (AI suggestion → operator confirmation) verdicts in the window.",
+    ),
+  agreementCount: zod.number().describe("How many of those pairs agreed."),
+  perOutcomeAgreement: zod.object({
+    Approved: zod.number(),
+    Denied: zod.number(),
+    Partial: zod.number(),
+  }),
+  windowDays: zod
+    .number()
+    .describe(
+      "Window applied when computing the stats (defaults to 90 days server-side).",
     ),
 });
 
@@ -5302,6 +6040,46 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5519,6 +6297,46 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5719,6 +6537,46 @@ export const RemoveLegHoldResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5916,6 +6774,46 @@ export const ClearLegHoldResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -6121,6 +7019,46 @@ export const ClassifyLegResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -6329,6 +7267,46 @@ export const SopAdvanceLegResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -6530,6 +7508,46 @@ export const ReclassifyLegResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -6782,6 +7800,46 @@ export const SetLegContextResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -6990,6 +8048,46 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7189,6 +8287,46 @@ export const UpdateClaimWorkflowResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7393,6 +8531,46 @@ export const TriageClaimResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7600,6 +8778,46 @@ export const PostResponseActionResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7820,6 +9038,46 @@ export const GenerateClaimEmailResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -9546,6 +10804,34 @@ export const GetDashboardSummaryResponse = zod.object({
       evidenceChecklist: zod.object({}).passthrough().nullish(),
       payorEmail: zod.string().nullish(),
       importBatch: zod.string().nullish(),
+      reattestRequired: zod
+        .boolean()
+        .describe(
+          "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+        ),
+      reattestCompletedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+        ),
+      reattestCompletedBy: zod.string().nullish(),
+      reattestNote: zod.string().nullish(),
+      macroPhase: zod
+        .union([
+          zod.literal("pre-submit"),
+          zod.literal("in-flight"),
+          zod.literal("response-pending"),
+          zod.literal("mas-action-required"),
+          zod.literal("awaiting-payout"),
+          zod.literal("closed"),
+          zod.literal("on-hold"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+        ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       earliestDate: zod
@@ -9587,14 +10873,6 @@ export const GetDashboardSummaryResponse = zod.object({
           "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
         ),
       previewGeneratedBy: zod.string().nullish(),
-      reattestRequired: zod
-        .boolean()
-        .describe(
-          "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-        ),
-      reattestCompletedAt: zod.coerce.date().nullish(),
-      reattestCompletedBy: zod.string().nullish(),
-      reattestNote: zod.string().nullish(),
       legSubStatusCounts: zod
         .object({
           excluded: zod.number().optional(),
@@ -11500,6 +12778,46 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .describe("Operator-confirmed completion stamp for the MAS action."),
   masActionCompletedBy: zod.string().nullish(),
   masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -11643,6 +12961,34 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
   importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   earliestDate: zod
@@ -11684,14 +13030,6 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
       "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
     ),
   previewGeneratedBy: zod.string().nullish(),
-  reattestRequired: zod
-    .boolean()
-    .describe(
-      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
-    ),
-  reattestCompletedAt: zod.coerce.date().nullish(),
-  reattestCompletedBy: zod.string().nullish(),
-  reattestNote: zod.string().nullish(),
   legSubStatusCounts: zod
     .object({
       excluded: zod.number().optional(),
