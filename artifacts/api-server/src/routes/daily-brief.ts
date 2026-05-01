@@ -5,7 +5,7 @@ import { claimsTable, portalSubmissionsTable, cronRunsTable, auditLogsTable } fr
 import { asyncHandler } from "../lib/asyncHandler";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
-import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 import { isOutlookConnected } from "../lib/outlook";
 import { sendEmailWithContext } from "../lib/email-send";
 import { getConnectorHealth } from "../lib/connector-health";
@@ -333,7 +333,7 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
   // expiring worklist just adds noise. Open count and yesterday-activity
   // metrics still use the full open set.
   const expiringStatusFilter = or(
-    ...EXPIRING_ACTIONABLE_STATUSES.map(s => eq(claimsTable.status, s)),
+    ...CLAIM_EXPIRING_ACTIONABLE_STATUSES.map(s => eq(claimsTable.status, s)),
   );
 
   const [openCountResult] = await db

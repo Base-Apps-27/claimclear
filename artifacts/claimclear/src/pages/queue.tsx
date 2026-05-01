@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMidnightRollover } from "@/lib/midnight-rollover";
 import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import {
@@ -364,17 +365,52 @@ export default function Queue() {
 
   // Bumped limits so the visible list isn't capped while a real total is
   // available — the tab/section badges use server `total`, not array length.
-  const newQuery = useListInvoiceGroups({ status: "New", limit: 500 });
-  const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence", limit: 500 });
-  const portalQueuedQuery = useListInvoiceGroups({ status: "Portal Queued", limit: 500 });
-  const onHoldQuery = useListInvoiceGroups({ status: "On Hold", limit: 500 });
+  //
+  // `refetchOnWindowFocus: true` is scoped here (the global QueryClient
+  // disables it by default) so the Queue can never drift from the
+  // Dashboard the way it did before Task #290 — when an operator left
+  // the Queue open, hit lunch, and returned after the deadline tipped,
+  // cached rows kept yesterday's `isUrgent: false` while the Dashboard
+  // (freshly fetched on its own mount) showed the new urgent count.
+  // Refetching on focus + on day rollover (see effect below) keeps both
+  // surfaces in sync without a manual refresh.
+  const newParams = { status: "New", limit: 500 } as const;
+  const needsEvidenceParams = { status: "Needs Evidence", limit: 500 } as const;
+  // `Generating Email` is a real, pre-submit, on-clock invoice-group
+  // status (set by `POST /invoice-groups/:id/package` when the operator
+  // clicks "Ready to package"). It satisfies the same urgency rule as
+  // `New` / `Needs Evidence` and folds into the Action Required lane so
+  // the Dashboard can never count an urgent group the operator has
+  // nowhere to act on.
+  const generatingEmailParams = { status: "Generating Email", limit: 500 } as const;
+  const portalQueuedParams = { status: "Portal Queued", limit: 500 } as const;
+  const onHoldParams = { status: "On Hold", limit: 500 } as const;
+  const newQuery = useListInvoiceGroups(newParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(newParams), refetchOnWindowFocus: true },
+  });
+  const needsEvidenceQuery = useListInvoiceGroups(needsEvidenceParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(needsEvidenceParams), refetchOnWindowFocus: true },
+  });
+  const generatingEmailQuery = useListInvoiceGroups(generatingEmailParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(generatingEmailParams), refetchOnWindowFocus: true },
+  });
+  const portalQueuedQuery = useListInvoiceGroups(portalQueuedParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(portalQueuedParams), refetchOnWindowFocus: true },
+  });
+  const onHoldQuery = useListInvoiceGroups(onHoldParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(onHoldParams), refetchOnWindowFocus: true },
+  });
 
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
+  const generatingEmailGroups = generatingEmailQuery.data?.groups || [];
   const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
 
-  const actionableTotal = (newQuery.data?.total ?? 0) + (needsEvidenceQuery.data?.total ?? 0);
+  const actionableTotal =
+    (newQuery.data?.total ?? 0) +
+    (needsEvidenceQuery.data?.total ?? 0) +
+    (generatingEmailQuery.data?.total ?? 0);
   const portalQueuedTotal = portalQueuedQuery.data?.total ?? 0;
   const onHoldTotal = onHoldQuery.data?.total ?? 0;
 
@@ -383,11 +419,16 @@ export default function Queue() {
   // (`Needs Review`) and `limit=0` because we only care about the
   // embedded `needsClassificationInbox` payload — not the list itself.
   // Single round trip, single query key, no fork between counts and
-  // payload.
-  const inboxQuery = useListInvoiceGroups({
+  // payload. Same focus-refetch treatment as the lane queries — the
+  // Needs Review inbox sits on the same page and the operator expects
+  // it to stay current after a tab refocus.
+  const inboxParams = {
     status: "Needs Review",
     limit: 0,
     include: "needs_classification",
+  } as const;
+  const inboxQuery = useListInvoiceGroups(inboxParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(inboxParams), refetchOnWindowFocus: true },
   });
   const inboxGroups: NeedsClassificationInboxGroup[] =
     inboxQuery.data?.needsClassificationInbox?.groups ?? [];
@@ -410,7 +451,16 @@ export default function Queue() {
   // Unfiltered, sorted lists drive the urgent split badges (so the
   // "62 urgent" hint still reflects reality even when the operator has
   // narrowed the visible set with `?expiring=`).
-  const actionableAll = sortByUrgency([...newGroups, ...needsGroups]);
+  //
+  // Action Required = New ∪ Needs Evidence ∪ Generating Email — every
+  // pre-submit, on-clock group lands here so the Dashboard's "must file
+  // today" hero count and the Queue's `?expiring=urgent` view can never
+  // disagree about what's actionable. (See dashboard.ts comment.)
+  const actionableAll = sortByUrgency([
+    ...newGroups,
+    ...needsGroups,
+    ...generatingEmailGroups,
+  ]);
   const portalQueuedAll = sortByUrgency(portalQueuedGroups);
   const onHoldAll = sortByUrgency(onHoldGroups);
 
@@ -489,6 +539,26 @@ export default function Queue() {
     // the `?include=needs_classification` payload.
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   };
+
+  // Day-rollover invalidator (Task #290). The server stamps `isUrgent`
+  // / `effectiveDaysLeft` against its own clock at fetch time. When the
+  // operator leaves the Queue open across midnight, today's deadlines
+  // tip but the cached rows still carry yesterday's flags — the
+  // Dashboard (mounted later) ends up disagreeing with the Queue.
+  // `useMidnightRollover` (shared with `pages/dashboard.tsx`) wakes on
+  // the next local midnight, invalidates the lane queries plus the
+  // dashboard summary family so any sister tab also stays in sync, then
+  // re-arms for the following midnight.
+  const handleMidnightRollover = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    queryClient.invalidateQueries({
+      predicate: (q) => {
+        const key = q.queryKey;
+        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
+      },
+    });
+  }, [queryClient]);
+  useMidnightRollover(handleMidnightRollover);
 
   // Per-row deadline pill — renders for *every* on-clock row that has
   // an `effectiveDaysLeft`, including rows past a week. Before Task #274
@@ -591,8 +661,22 @@ export default function Queue() {
           isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
         }`}
       >
-        <div className="py-3 px-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0 shrink-0">
+        {/*
+          Two-row layout that gracefully wraps on narrow widths (Task #290).
+          Before this change the left cluster used `shrink-0` against a
+          `flex-1` right cluster, so on viewports around 375–430 px the
+          status badge and the per-row deadline pill (the
+          `renderDeadlineHint` output) silently disappeared off the right
+          edge of the row. The fix is structural rather than a media
+          query: each row is split into a top line that always wraps
+          its own children (badge / invoice# / ride count / status / pill)
+          and a bottom line that holds the error-type meta + currency +
+          chevron. `min-w-0` on the inner clusters lets the truncating
+          `meta` span actually truncate instead of forcing horizontal
+          overflow that would push the pill out of view.
+        */}
+        <div className="py-3 px-6 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
             <div className="whitespace-nowrap flex items-center gap-2">
               <UrgentTodayBadge isUrgent={group.isUrgent} size={group.isUrgent ? "md" : "sm"} />
               <span className="font-mono font-semibold">{group.invoiceNumber}</span>
@@ -601,15 +685,17 @@ export default function Queue() {
             <StatusBadge status={group.status} />
             {opts.showDeadline && renderDeadlineHint(group)}
           </div>
-          <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
-            {meta}
-            <span
-              className={`whitespace-nowrap ${group.isUrgent ? "font-bold" : "font-medium"}`}
-              style={group.isUrgent ? { color: "hsl(var(--destructive))" } : undefined}
-            >
-              {formatCurrency(group.totalAmount)}
-            </span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div className="flex items-center gap-4 text-sm min-w-0 justify-between">
+            <div className="min-w-0 flex-1 truncate">{meta}</div>
+            <div className="flex items-center gap-4 shrink-0">
+              <span
+                className={`whitespace-nowrap ${group.isUrgent ? "font-bold" : "font-medium"}`}
+                style={group.isUrgent ? { color: "hsl(var(--destructive))" } : undefined}
+              >
+                {formatCurrency(group.totalAmount)}
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </div>
           </div>
         </div>
       </button>
@@ -718,7 +804,7 @@ export default function Queue() {
 
             <TabsContent value="actionable" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-actionable">
-                <span className="font-medium text-foreground">New + Needs Evidence.</span> Groups you can act on right now. Sorted earliest service date first.{" "}
+                <span className="font-medium text-foreground">New + Needs Evidence + Generating Email.</span> Pre-submit groups you can act on right now. Sorted earliest service date first.{" "}
                 <span className="font-semibold" style={{ color: "hsl(var(--destructive))" }}>Today</span> = must file before EOD,{" "}
                 <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>≤2d</span> = within two days,{" "}
                 <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.85 }}>≤7d</span> = within a week, neutral = anything past a week. Every row shows its tier.

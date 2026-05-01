@@ -23,12 +23,15 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
-import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 
-// A claim is only "on the 30-day clock" while its status is one we still owe
-// action on. Once it's filed (Awaiting Response) or otherwise terminal, the
-// urgency signal stops applying, even if the calendar deadline has slipped.
-const CLAIM_ON_CLOCK_STATUSES = new Set<string>(EXPIRING_ACTIONABLE_STATUSES);
+// A claim is only "on the 30-day clock" while its status is one we still
+// owe action on. Once it's filed (Awaiting Response) or otherwise
+// terminal, the urgency signal stops applying, even if the calendar
+// deadline has slipped. Includes `Portal Queued` and `Processed` because
+// stuck claims in those states still escalate against the 30-day clock —
+// see the rule in dashboard.ts.
+const CLAIM_ON_CLOCK_STATUSES = new Set<string>(CLAIM_EXPIRING_ACTIONABLE_STATUSES);
 
 const router: IRouter = Router();
 

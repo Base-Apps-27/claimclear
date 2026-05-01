@@ -24,8 +24,11 @@ import {
   type DashboardActivityEvent,
   type InvoiceGroupResponse,
 } from "@workspace/api-client-react";
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
+import { useMidnightRollover } from "@/lib/midnight-rollover";
 import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
@@ -301,9 +304,38 @@ export default function Dashboard() {
   const firstName = firstNameFromUser(user);
   useDashboardLiveUpdates();
 
+  // `refetchOnWindowFocus: true` is scoped to the deadline-driven
+  // dashboard queries (Task #290). The global QueryClient leaves it off,
+  // but this summary computes `urgentCount` against the server clock at
+  // fetch time — leaving it stale across a tab refocus is exactly how
+  // the Dashboard and Queue used to drift apart. The Queue's lane
+  // queries get the same treatment so neither surface can fall behind.
+  const queryClient = useQueryClient();
   const { data: summary, isLoading } = useGetDashboardSummary({
-    query: { queryKey: getGetDashboardSummaryQueryKey() },
+    query: {
+      queryKey: getGetDashboardSummaryQueryKey(),
+      refetchOnWindowFocus: true,
+    },
   });
+
+  // Day-rollover invalidator (Task #290). Mirrors the Queue-side
+  // scheduler so a Dashboard tab left open across midnight can't keep
+  // showing yesterday's "must file today" totals if the operator never
+  // navigates to the Queue. We invalidate the dashboard summary key
+  // (and the broader `/api/dashboard*` family for any sister cards),
+  // plus the invoice-group lane keys so any open Queue tab also
+  // refreshes — the two surfaces have to agree at the boundary.
+  const handleMidnightRollover = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    queryClient.invalidateQueries({
+      predicate: (q) => {
+        const key = q.queryKey;
+        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
+      },
+    });
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+  }, [queryClient]);
+  useMidnightRollover(handleMidnightRollover);
   const { data: activity } = useGetDashboardActivity(
     { limit: 15 },
     { query: { queryKey: getGetDashboardActivityQueryKey({ limit: 15 }) } },

@@ -7,7 +7,10 @@ import {
   shiftDeadlineForOfficeClosure,
   nextBusinessDay,
 } from "../lib/dates";
-import { EXPIRING_ACTIONABLE_STATUSES } from "../routes/dashboard";
+import {
+  CLAIM_EXPIRING_ACTIONABLE_STATUSES,
+  GROUP_EXPIRING_ACTIONABLE_STATUSES,
+} from "../routes/dashboard";
 
 // Helpers ---------------------------------------------------------------
 
@@ -176,33 +179,163 @@ test("isUrgent: a deadline already in the past counts as urgent", () => {
   assert.equal(isUrgentDeadline(pastService, FRIDAY), true);
 });
 
-// Status filter ---------------------------------------------------------
+// Status filter (Task #290) --------------------------------------------
+//
+// Group-level and claim-level "actionable" status sets diverge by design.
+// See the rule and rationale spelled out in `routes/dashboard.ts`.
 
-test("EXPIRING_ACTIONABLE_STATUSES excludes 'Awaiting Response' (already filed; clock satisfied)", () => {
+// --- Group-level set ---------------------------------------------------
+
+test("GROUP_EXPIRING_ACTIONABLE_STATUSES is exactly { New, Needs Evidence, On Hold, Generating Email }", () => {
+  // Lock the membership *and* the size — adding or removing a status
+  // here moves the Dashboard's must-file-today count, so it should be a
+  // deliberate, reviewed change rather than a drive-by.
+  assert.deepEqual(
+    [...GROUP_EXPIRING_ACTIONABLE_STATUSES].sort(),
+    ["Generating Email", "Needs Evidence", "New", "On Hold"],
+    "group-level urgency set drifted",
+  );
+});
+
+test("GROUP_EXPIRING_ACTIONABLE_STATUSES excludes post-submit and concluded statuses", () => {
+  // Post-submit: clock satisfied (Portal Queued = operator already
+  // submitted via the portal); response timing lives elsewhere.
+  // Concluded: nothing left to file.
+  // Processed: claim-only state, never lands on invoice_groups.status.
+  for (const s of [
+    "Portal Queued",
+    "Awaiting Response",
+    "Needs Review",
+    "Ready to Review",
+    "Resolved",
+    "Denied",
+    "Processed",
+  ] as const) {
+    assert.ok(
+      !GROUP_EXPIRING_ACTIONABLE_STATUSES.includes(s as never),
+      `'${s}' must not be in the group-level actionable status set`,
+    );
+  }
+});
+
+test("GROUP_EXPIRING_ACTIONABLE_STATUSES includes 'Generating Email' (pre-submit, on-clock)", () => {
   assert.ok(
-    !EXPIRING_ACTIONABLE_STATUSES.includes("Awaiting Response" as never),
+    GROUP_EXPIRING_ACTIONABLE_STATUSES.includes("Generating Email" as never),
+    "Generating Email is set when the operator clicks 'Ready to package' — it must be in the actionable set so the Dashboard hero and the Queue's Action Required lane stay in sync",
+  );
+});
+
+// --- Claim-level set ---------------------------------------------------
+
+test("CLAIM_EXPIRING_ACTIONABLE_STATUSES retains 'Portal Queued' and 'Processed' (stuck-leg escalations)", () => {
+  // The 30-day clock keeps running on individual claims in these
+  // states even after their parent group has moved on. The daily brief
+  // and claim list use these to surface stuck legs.
+  assert.ok(
+    CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes("Portal Queued" as never),
+    "Portal Queued must remain in the claim-level actionable set",
+  );
+  assert.ok(
+    CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes("Processed" as never),
+    "Processed must remain in the claim-level actionable set",
+  );
+});
+
+test("CLAIM_EXPIRING_ACTIONABLE_STATUSES excludes 'Awaiting Response' (already filed; clock satisfied)", () => {
+  assert.ok(
+    !CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes("Awaiting Response" as never),
     "Awaiting Response must not be in actionable statuses — once we've filed, the 30-day rule is met",
   );
 });
 
-test("EXPIRING_ACTIONABLE_STATUSES includes 'On Hold' (the filing clock keeps running while paused)", () => {
+test("CLAIM_EXPIRING_ACTIONABLE_STATUSES includes 'On Hold' (the filing clock keeps running while paused)", () => {
   assert.ok(
-    EXPIRING_ACTIONABLE_STATUSES.includes("On Hold" as never),
+    CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes("On Hold" as never),
     "On Hold must be in actionable statuses — pausing internally does not pause the 30-day deadline",
   );
 });
 
-test("EXPIRING_ACTIONABLE_STATUSES still includes the team-action statuses", () => {
+test("CLAIM_EXPIRING_ACTIONABLE_STATUSES still includes the team-action statuses", () => {
   for (const s of [
     "New",
     "Needs Evidence",
     "Portal Queued",
     "Generating Email",
-    "Ready to Review",
   ] as const) {
     assert.ok(
-      EXPIRING_ACTIONABLE_STATUSES.includes(s),
+      CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes(s),
       `expected '${s}' to remain in the actionable status set`,
     );
   }
+});
+
+// `Ready to Review` and `Needs Review` are post-submit response triage,
+// not filing-clock urgency. Task #290 removed both from every urgency
+// surface — lock that out at the claim level too so a future change can't
+// silently re-add them.
+test("CLAIM_EXPIRING_ACTIONABLE_STATUSES excludes 'Ready to Review' and 'Needs Review' (post-submit, not on the filing clock)", () => {
+  for (const s of ["Ready to Review", "Needs Review"] as const) {
+    assert.ok(
+      !CLAIM_EXPIRING_ACTIONABLE_STATUSES.includes(s as never),
+      `'${s}' must not be in the claim-level actionable set — it's post-submit response triage, not filing-clock urgency`,
+    );
+  }
+});
+
+// --- Group-level isUrgent decision (mirrors invoice-groups.ts row math)
+
+// The endpoint computes `isUrgent` as
+//   GROUP_ON_CLOCK_STATUSES.has(status) && isUrgentDeadline(date, now)
+// (see routes/invoice-groups.ts). Lock that combined behaviour here so
+// future regressions surface even without an HTTP-level test.
+function computeGroupIsUrgent(status: string, serviceDate: string, now: Date): boolean {
+  const onClock = (GROUP_EXPIRING_ACTIONABLE_STATUSES as readonly string[]).includes(status);
+  return onClock && isUrgentDeadline(serviceDate, now);
+}
+
+test("a Portal Queued group with a today deadline is NOT urgent at the group level", () => {
+  // Service date such that the raw 30-day deadline lands on FRIDAY (today).
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupIsUrgent("Portal Queued", sd, FRIDAY),
+    false,
+    "Portal Queued = operator already submitted; group-level urgency must not fire",
+  );
+});
+
+test("a Generating Email group with a today deadline IS urgent at the group level", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupIsUrgent("Generating Email", sd, FRIDAY),
+    true,
+    "Generating Email = packaged but not yet submitted; group-level urgency must fire",
+  );
+});
+
+test("an Awaiting Response group with a today deadline is NOT urgent at the group level", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupIsUrgent("Awaiting Response", sd, FRIDAY),
+    false,
+    "Awaiting Response = filed; the 30-day rule is satisfied, group-level urgency must not fire",
+  );
+});
+
+test("a New group with a today deadline IS urgent at the group level", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(computeGroupIsUrgent("New", sd, FRIDAY), true);
+});
+
+test("a Needs Evidence group with a today deadline IS urgent at the group level", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(computeGroupIsUrgent("Needs Evidence", sd, FRIDAY), true);
+});
+
+test("an On Hold group with a today deadline IS urgent at the group level", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupIsUrgent("On Hold", sd, FRIDAY),
+    true,
+    "the filing clock keeps running while paused",
+  );
 });

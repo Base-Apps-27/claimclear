@@ -23,12 +23,15 @@ import {
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
-import { EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 
-// A group is only "on the 30-day clock" while its status is one we still owe
-// action on. Once it's filed (Awaiting Response) or otherwise terminal, the
-// urgency signal stops applying, even if the calendar deadline has slipped.
-const GROUP_ON_CLOCK_STATUSES = new Set<string>(EXPIRING_ACTIONABLE_STATUSES);
+// A group is only "on the 30-day clock" while its status is one we still
+// owe action on. Once it's `Portal Queued` (operator submitted via the
+// portal — clock satisfied), `Awaiting Response`, or otherwise concluded
+// the urgency signal stops applying at the GROUP level, even if the
+// calendar deadline has slipped. See dashboard.ts for the full rule and
+// why this set diverges from the claim-level set.
+const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUSES);
 
 // Correlated subquery returning the earliest service date across the rides in
 // a given invoice group. Used both as a sortable column and (separately) for

@@ -1,6 +1,9 @@
 import { and, eq, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
-import { EXPIRING_ACTIONABLE_STATUSES } from "../routes/dashboard";
+import {
+  CLAIM_EXPIRING_ACTIONABLE_STATUSES,
+  GROUP_EXPIRING_ACTIONABLE_STATUSES,
+} from "../routes/dashboard";
 import { SOON_DAYS, URGENT_DAYS } from "./risk-config";
 
 export type ExpiringMode = "soon" | "urgent";
@@ -29,12 +32,12 @@ function effectiveDeadlineSql(dateExpr: SQL): SQL {
 }
 
 function actionableClaimStatusCondition(): SQL {
-  const parts = EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(claimsTable.status, s));
+  const parts = CLAIM_EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(claimsTable.status, s));
   return or(...parts) as SQL;
 }
 
 function actionableGroupStatusCondition(): SQL {
-  const parts = EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(invoiceGroupsTable.status, s));
+  const parts = GROUP_EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(invoiceGroupsTable.status, s));
   return or(...parts) as SQL;
 }
 

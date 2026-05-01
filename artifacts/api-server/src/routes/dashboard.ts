@@ -12,23 +12,60 @@ import { getOverdueCount } from "../lib/overdue-submissions";
 const router: IRouter = Router();
 
 const OPEN_STATUSES = ["New", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
-// Statuses where the 30-day filing clock is still running on us. Includes
-// "On Hold" because pausing internally does not pause the deadline — if we
-// don't unpause and file in time, we lose the window. Excludes only
-// "Awaiting Response": once we've filed, the 30-day rule is satisfied and
-// the wait is on the payor's external timeline, not ours.
+
+// Operating rule for both sets below:
+//   A row is "urgent today" iff its filing deadline is `<=` today AND its
+//   status is neither already-submitted nor concluded.
 //
-// "Processed" lives here too: it marks a leg whose worktree is done but
-// whose invoice hasn't been packaged yet. The 30-day clock keeps
-// running until the parent group transitions to Generating Email
-// (which happens when the operator clicks "Ready to package").
-export const EXPIRING_ACTIONABLE_STATUSES = [
+// The two sets diverge because that rule lands on different statuses at
+// the claim level vs. the invoice-group level (Task #290):
+//
+// • Group level — `GROUP_EXPIRING_ACTIONABLE_STATUSES`. A group's status
+//   represents the operator's progress toward submission. Once the group
+//   is `Portal Queued` the operator has submitted via the portal and the
+//   filing clock is satisfied from the office's POV; its post-submit
+//   timeline (response-by, review-by) lives on the Responses Awaiting
+//   Review surface, not the filing-deadline hero. `Awaiting Response`,
+//   `Needs Review`, and `Ready to Review` are likewise post-submit.
+//   `Resolved` and `Denied` are concluded. `Processed` is a CLAIM-only
+//   transition state and never lands on `invoice_groups.status`, so
+//   listing it here is dead weight that only mislead readers. The
+//   actual pre-submit, on-clock statuses are exactly:
+//     { New, Needs Evidence, On Hold, Generating Email }
+//   `Generating Email` is the state set by `POST /invoice-groups/:id/
+//   package` when the operator clicks "Ready to package" — it satisfies
+//   the urgency rule (not yet submitted, not concluded) and must be
+//   spelled out so the Dashboard hero count and the Queue
+//   `?expiring=urgent` view can never disagree.
+//
+// • Claim level — `CLAIM_EXPIRING_ACTIONABLE_STATUSES`. The 30-day clock
+//   keeps running on individual CLAIMS in `Portal Queued` and `Processed`
+//   even after their parent group has moved on (a stuck Portal Queued
+//   claim, or a Processed leg whose worktree is done but whose invoice
+//   hasn't been packaged yet, must still escalate before the deadline
+//   slips). Those leg-level escalations are surfaced via the daily brief
+//   and the claim list, not the Queue, so this set retains them.
+//
+// Both sets exclude `Awaiting Response` (once we've filed, the 30-day
+// rule is satisfied), the queue-managed review statuses
+// (`Needs Review`, `Ready to Review` — those are post-submit response
+// triage, not filing-clock urgency), and the concluded statuses
+// (`Resolved`, `Denied`). Both sets include `On Hold` (pausing
+// internally does not pause the deadline — if we don't unpause and file
+// in time, we lose the window).
+export const GROUP_EXPIRING_ACTIONABLE_STATUSES = [
+  "New",
+  "Needs Evidence",
+  "On Hold",
+  "Generating Email",
+] as const;
+
+export const CLAIM_EXPIRING_ACTIONABLE_STATUSES = [
   "New",
   "Needs Evidence",
   "Processed",
   "Portal Queued",
   "Generating Email",
-  "Ready to Review",
   "On Hold",
 ] as const;
 
@@ -148,7 +185,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
   const expiringStatusFilter = or(
-    ...EXPIRING_ACTIONABLE_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
+    ...GROUP_EXPIRING_ACTIONABLE_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
   );
 
   const openGroupsWithDates = await db
