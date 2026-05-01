@@ -70,6 +70,28 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
     logger.warn({ err }, "One-time migration: conversation_id backfill failed");
   }
 
+  // Task #273: clear stale error_message on rows that ultimately succeeded.
+  // Prior to the batch-processor fix, the success path didn't null
+  // error_message, so a row that failed once and then succeeded kept showing
+  // a misleading red error pill on the Portal Submissions page. This is a
+  // self-healing UPDATE — naturally idempotent because subsequent runs match
+  // zero rows.
+  try {
+    const res = await runWithDbWarmupRetry("Task #273 stale errorMessage backfill", () => db.execute(sql`
+      UPDATE portal_submissions
+      SET error_message = NULL
+      WHERE status = 'submitted'
+        AND error_message IS NOT NULL
+        AND error_message <> ''
+    `));
+    const rowCount = (res as { rowCount?: number | null }).rowCount ?? 0;
+    if (rowCount > 0) {
+      logger.info({ rowCount }, "Task #273: cleared stale error_message from submitted portal_submissions rows");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Task #273: stale errorMessage backfill failed");
+  }
+
   // Removed (Task #258): Task #64 batch-submission re-queue backfill and the
   // Apr-27 attempts-reset followup. Both queries selected/returned
   // `portal_submissions.claim_id`, which migration 0014 dropped during the

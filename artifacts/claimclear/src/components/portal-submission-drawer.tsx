@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, X, Send, Play, ExternalLink, FileText, Image as ImageIcon,
   FlaskConical, Sparkles, Pencil, Save, RefreshCw, ChevronRight,
-  Activity, CheckCircle2, AlertTriangle, Bot, Edit2,
+  Activity, CheckCircle2, AlertTriangle, Bot, Edit2, Mail,
 } from "lucide-react";
 import { Link } from "wouter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -328,7 +328,13 @@ export function PortalSubmissionDrawer({
               {submission.portalTicketId && (
                 <>
                   <span>·</span>
-                  <span className="font-mono">Ticket {submission.portalTicketId}</span>
+                  {submission.issueType === "Direct Email" ? (
+                    <WrapTooltip content={`Outlook message ID: ${submission.portalTicketId}`}>
+                      <span className="cursor-help">Email Sent</span>
+                    </WrapTooltip>
+                  ) : (
+                    <span className="font-mono">Ticket {submission.portalTicketId}</span>
+                  )}
                 </>
               )}
             </div>
@@ -603,8 +609,19 @@ export function PortalSubmissionDrawer({
                     {submission.portalTicketId ? (
                       <>
                         <div className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          <span>Submitted — ticket <span className="font-mono font-semibold">{submission.portalTicketId}</span></span>
+                          {submission.issueType === "Direct Email" ? (
+                            <>
+                              <Mail className="h-4 w-4 text-green-600" />
+                              <WrapTooltip content={`Outlook message ID: ${submission.portalTicketId}`}>
+                                <span className="cursor-help">Email Sent</span>
+                              </WrapTooltip>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              <span>Submitted — ticket <span className="font-mono font-semibold">{submission.portalTicketId}</span></span>
+                            </>
+                          )}
                         </div>
                         {submission.submittedAt && (
                           <div className="text-[11px] mt-1 text-muted-foreground">{formatDateTime(submission.submittedAt)}</div>

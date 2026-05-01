@@ -996,11 +996,24 @@ function SubmissionRow({
           </WrapTooltip>
         )}
         {sub.portalTicketId && (
-          <WrapTooltip content="Ticket ID assigned by the MAS portal after submission.">
-            <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 font-mono bg-green-50 text-green-700 border-green-300">
-              <CheckCircle className="h-2.5 w-2.5 mr-1" />{sub.portalTicketId}
-            </Badge>
-          </WrapTooltip>
+          sub.issueType === "Direct Email" ? (
+            // Direct-email rows reuse `portalTicketId` to store the Outlook
+            // messageId (a long base64-looking string). Show a fixed-width
+            // "Email Sent" pill instead so it doesn't blow the row apart;
+            // the underlying messageId is still available on hover for
+            // copy/debugging.
+            <WrapTooltip content={`Sent via direct email — Outlook message ID: ${sub.portalTicketId}`}>
+              <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 w-[88px] justify-center bg-green-50 text-green-700 border-green-300 flex-shrink-0" data-testid={`row-email-sent-${sub.id}`}>
+                <Mail className="h-2.5 w-2.5 mr-1" />Email Sent
+              </Badge>
+            </WrapTooltip>
+          ) : (
+            <WrapTooltip content="Ticket ID assigned by the MAS portal after submission.">
+              <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 font-mono bg-green-50 text-green-700 border-green-300">
+                <CheckCircle className="h-2.5 w-2.5 mr-1" />{sub.portalTicketId}
+              </Badge>
+            </WrapTooltip>
+          )
         )}
         {sub.errorMessage && (
           <WrapTooltip content={sub.errorMessage}>

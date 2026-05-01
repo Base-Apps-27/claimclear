@@ -972,6 +972,9 @@ async function processDirectEmail(
     portalTicketId: result.messageId,
     submittedAt: new Date().toISOString(),
     submittedInBatchId: batchId ?? null,
+    // Clear any leftover error from a previous failed attempt so the row
+    // does not keep showing a stale red error pill after success.
+    errorMessage: null,
   }).where(eq(portalSubmissionsTable.id, sub.id));
 
   const submittedAtIso = new Date().toISOString();
@@ -1074,6 +1077,9 @@ async function processViaExternalBot(
       // group can render an "Already submitted in run #N" pill. Set once on
       // the pending → submitted transition; never cleared.
       submittedInBatchId: batchId ?? null,
+      // Clear any leftover error from a previous failed attempt so the row
+      // does not keep showing a stale red error pill after success.
+      errorMessage: null,
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     const submittedAtIso = new Date().toISOString();
