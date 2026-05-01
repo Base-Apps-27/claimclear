@@ -44,9 +44,16 @@ interface Props {
   // surrounding leg list. When omitted (e.g. the read-only group detail
   // page), the jump button is hidden.
   onJumpToLeg?: (claimId: number) => void;
+  /**
+   * When true, render only the inner submission body — no Card chrome and no
+   * header. The caller is expected to wrap in their own card. Used by the
+   * densified invoice-group detail surface so the cc-card from the page
+   * provides the chrome.
+   */
+  bare?: boolean;
 }
 
-export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJumpToLeg }: Props) {
+export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJumpToLeg, bare }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -153,18 +160,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Sparkles className="h-4 w-4" /> Submission preview
-        </CardTitle>
-        <CardDescription>
-          Confirm the AI's read of the case, then generate the dispute
-          submission preview.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  const body = (
+    <>
         {!isPreSubmit && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -388,7 +385,25 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
             </div>
           </>
         )}
-      </CardContent>
+    </>
+  );
+
+  if (bare) {
+    return <div className="space-y-4">{body}</div>;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4" /> Submission preview
+        </CardTitle>
+        <CardDescription>
+          Confirm the AI's read of the case, then generate the dispute
+          submission preview.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">{body}</CardContent>
     </Card>
   );
 }

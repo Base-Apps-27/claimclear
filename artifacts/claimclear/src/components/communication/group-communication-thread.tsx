@@ -59,6 +59,13 @@ interface Props {
     to: string[];
     cc: string[];
   }) => Promise<void>;
+  /**
+   * When true, render only the inner conversation list — no Card chrome and
+   * no header. The caller is expected to wrap the output in their own
+   * card/header. Used by the densified invoice-group detail surface so the
+   * cc-card from the page provides the chrome.
+   */
+  bare?: boolean;
 }
 
 const STATUS_META: Record<
@@ -98,6 +105,7 @@ export function GroupCommunicationThread({
   isSending,
   onSyncInbox,
   onReply,
+  bare,
 }: Props) {
   const totalMessages = conversations.reduce(
     (acc, c) => acc + c.messages.length,
@@ -110,6 +118,35 @@ export function GroupCommunicationThread({
   const needsReply = conversations.some(
     (c) => c.status === "needs_review" || c.status === "awaiting_their_reply",
   );
+
+  const inner = (
+    <>
+      {conversations.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No email conversations linked to {groupInvoiceNumber} yet. Messages
+          will appear once inbox sync picks up replies.
+        </p>
+      ) : (
+        conversations.map((conv) => (
+          <ConversationSection
+            key={conv.conversationId}
+            conversation={conv}
+            isSending={isSending}
+            onReply={onReply}
+            needsReply={needsReply}
+          />
+        ))
+      )}
+    </>
+  );
+
+  if (bare) {
+    return (
+      <div className="space-y-4" data-testid="group-communication-thread">
+        {inner}
+      </div>
+    );
+  }
 
   return (
     <Card data-testid="group-communication-thread">
@@ -150,24 +187,7 @@ export function GroupCommunicationThread({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 pt-0">
-        {conversations.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">
-            No email conversations linked to {groupInvoiceNumber} yet. Messages
-            will appear once inbox sync picks up replies.
-          </p>
-        ) : (
-          conversations.map((conv) => (
-            <ConversationSection
-              key={conv.conversationId}
-              conversation={conv}
-              isSending={isSending}
-              onReply={onReply}
-              needsReply={needsReply}
-            />
-          ))
-        )}
-      </CardContent>
+      <CardContent className="space-y-4 pt-0">{inner}</CardContent>
     </Card>
   );
 }

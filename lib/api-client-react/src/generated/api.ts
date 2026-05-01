@@ -5575,6 +5575,93 @@ export const useCreateClaimNote = <
 };
 
 /**
+ * @summary Create a note attached to an invoice group
+ */
+export const getCreateInvoiceGroupNoteUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/notes`;
+};
+
+export const createInvoiceGroupNote = async (
+  id: number,
+  createNoteBody: CreateNoteBody,
+  options?: RequestInit,
+): Promise<NoteResponse> => {
+  return customFetch<NoteResponse>(getCreateInvoiceGroupNoteUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createNoteBody),
+  });
+};
+
+export const getCreateInvoiceGroupNoteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvoiceGroupNote>>,
+    TError,
+    { id: number; data: BodyType<CreateNoteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createInvoiceGroupNote>>,
+  TError,
+  { id: number; data: BodyType<CreateNoteBody> },
+  TContext
+> => {
+  const mutationKey = ["createInvoiceGroupNote"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createInvoiceGroupNote>>,
+    { id: number; data: BodyType<CreateNoteBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createInvoiceGroupNote(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateInvoiceGroupNoteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createInvoiceGroupNote>>
+>;
+export type CreateInvoiceGroupNoteMutationBody = BodyType<CreateNoteBody>;
+export type CreateInvoiceGroupNoteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a note attached to an invoice group
+ */
+export const useCreateInvoiceGroupNote = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvoiceGroupNote>>,
+    TError,
+    { id: number; data: BodyType<CreateNoteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createInvoiceGroupNote>>,
+  TError,
+  { id: number; data: BodyType<CreateNoteBody> },
+  TContext
+> => {
+  return useMutation(getCreateInvoiceGroupNoteMutationOptions(options));
+};
+
+/**
  * @summary Delete a note
  */
 export const getDeleteNoteUrl = (id: number) => {

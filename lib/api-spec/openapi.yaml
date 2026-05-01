@@ -1985,6 +1985,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/NoteResponse"
 
+  /invoice-groups/{id}/notes:
+    post:
+      operationId: createInvoiceGroupNote
+      tags: [notes]
+      summary: Create a note attached to an invoice group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteBody"
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoteResponse"
+
   /notes/{id}:
     delete:
       operationId: deleteNote
@@ -5155,7 +5180,9 @@ components:
         id:
           type: integer
         claimId:
-          type: integer
+          type: ["integer", "null"]
+        invoiceGroupId:
+          type: ["integer", "null"]
         type:
           type: string
           enum: ["manual", "email", "email_sent", "reply_parsed", "status_change", "outcome_recorded", "system", "bot"]
@@ -5171,7 +5198,6 @@ components:
           type: string
       required:
         - id
-        - claimId
         - type
         - content
 

@@ -57,6 +57,40 @@ router.post("/claims/:id/notes", asyncHandler(async (req, res): Promise<void> =>
   res.status(201).json(note);
 }));
 
+router.post("/invoice-groups/:id/notes", asyncHandler(async (req, res): Promise<void> => {
+  const invoiceGroupId = parseId(req.params.id);
+  if (isNaN(invoiceGroupId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { content, type } = req.body;
+  if (content == null) { res.status(400).json({ error: "content is required" }); return; }
+
+  const author = req.user?.displayName || req.user?.email || "Unknown";
+
+  const [note] = await db.insert(notesTable).values({
+    invoiceGroupId,
+    content,
+    type: type || "manual",
+    author,
+  }).returning();
+
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId,
+    action: "note_added",
+    details: `Note added by ${author}`,
+    userEmail: req.user?.email || null,
+    userName: author,
+  });
+
+  broadcastGroupEvent({
+    type: "note_added",
+    invoiceGroupId,
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+    timestamp: new Date().toISOString(),
+  });
+  res.status(201).json(note);
+}));
+
 router.delete("/notes/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

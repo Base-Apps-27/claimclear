@@ -1011,7 +1011,8 @@ export const GetInvoiceGroupResponse = zod
         .array(
           zod.object({
             id: zod.number(),
-            claimId: zod.number(),
+            claimId: zod.number().nullish(),
+            invoiceGroupId: zod.number().nullish(),
             type: zod.enum([
               "manual",
               "email",
@@ -9834,7 +9835,8 @@ export const ListClaimNotesParams = zod.object({
 
 export const ListClaimNotesResponseItem = zod.object({
   id: zod.number(),
-  claimId: zod.number(),
+  claimId: zod.number().nullish(),
+  invoiceGroupId: zod.number().nullish(),
   type: zod.enum([
     "manual",
     "email",
@@ -9861,6 +9863,18 @@ export const CreateClaimNoteParams = zod.object({
 });
 
 export const CreateClaimNoteBody = zod.object({
+  content: zod.string(),
+  type: zod.string().optional(),
+});
+
+/**
+ * @summary Create a note attached to an invoice group
+ */
+export const CreateInvoiceGroupNoteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateInvoiceGroupNoteBody = zod.object({
   content: zod.string(),
   type: zod.string().optional(),
 });

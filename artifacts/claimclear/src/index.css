@@ -199,3 +199,93 @@
   margin-left: 0;
   color: hsl(var(--muted-foreground));
 }
+
+/* ---------------------------------------------------------------- */
+/* cc-scope — densified-detail primitives promoted from the         */
+/* mockup-sandbox cohesion-sweep into the real claimclear app.      */
+/* Used by claim-detail-v2 + invoice-group-detail-v2 (Task #263).   */
+/* All declarations are scoped to .cc-scope so they do not bleed    */
+/* into the rest of the app. The cc-* HSL component variables in    */
+/* :root above continue to drive cohesion/StatusPill primitives via */
+/* hsl(var(--cc-blue-bg)); we add the pre-resolved colour aliases   */
+/* the mockup primitives reference (var(--cc-bg) etc.) here so the  */
+/* same JSX from the mockups works inside cc-scope unchanged.       */
+/* ---------------------------------------------------------------- */
+
+.cc-scope {
+  --cc-bg: hsl(var(--background));
+  --cc-fg: hsl(var(--foreground));
+  --cc-card: hsl(var(--card));
+  --cc-border: hsl(var(--border));
+  --cc-muted: hsl(var(--muted));
+  --cc-muted-fg: hsl(var(--muted-foreground));
+  --cc-primary: hsl(var(--primary));
+  --cc-primary-fg: hsl(var(--primary-foreground));
+  --cc-accent: hsl(var(--accent));
+  --cc-destructive: hsl(var(--destructive));
+  --cc-success: hsl(var(--cc-success));
+  --cc-warning: hsl(var(--cc-warning));
+  --cc-amber-bg: hsl(var(--cc-amber-bg));
+  --cc-amber-border: hsl(var(--cc-amber-border));
+  --cc-amber-fg: hsl(var(--cc-amber-fg));
+  --cc-purple-bg: hsl(var(--cc-purple-bg));
+  --cc-purple-border: hsl(var(--cc-purple-border));
+  --cc-purple-fg: hsl(var(--cc-purple-fg));
+  --cc-blue-bg: hsl(var(--cc-blue-bg));
+  --cc-blue-border: hsl(var(--cc-blue-border));
+  --cc-blue-fg: hsl(var(--cc-blue-fg));
+  --cc-green-bg: hsl(var(--cc-green-bg));
+  --cc-green-border: hsl(var(--cc-green-border));
+  --cc-green-fg: hsl(var(--cc-green-fg));
+  --cc-red-bg: hsl(var(--cc-red-bg));
+  --cc-red-border: hsl(var(--cc-red-border));
+  --cc-red-fg: hsl(var(--cc-red-fg));
+  --cc-radius: 0.5rem;
+  color: var(--cc-fg);
+  background: var(--cc-bg);
+}
+
+.cc-scope .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.cc-scope .cc-card {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+}
+
+.cc-scope .cc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: calc(var(--cc-radius) - 2px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
+}
+.cc-scope .cc-btn:not([disabled]):hover { background: var(--cc-muted); }
+.cc-scope .cc-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.cc-scope .cc-input,
+.cc-scope .cc-select,
+.cc-scope .cc-textarea {
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  border-radius: calc(var(--cc-radius) - 2px);
+  border: 1px solid var(--cc-border);
+  background: var(--cc-card);
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--cc-fg);
+}
+.cc-scope .cc-input:focus,
+.cc-scope .cc-select:focus,
+.cc-scope .cc-textarea:focus {
+  outline: 2px solid var(--cc-blue-border);
+  outline-offset: -1px;
+}

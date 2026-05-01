@@ -15,7 +15,10 @@ import type { NoteResponseType } from "./noteResponseType";
 
 export interface NoteResponse {
   id: number;
-  claimId: number;
+  /** @nullable */
+  claimId?: number | null;
+  /** @nullable */
+  invoiceGroupId?: number | null;
   type: NoteResponseType;
   content: string;
   /** @nullable */
