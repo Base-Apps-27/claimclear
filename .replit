@@ -37,3 +37,11 @@ defaultBucketID = "replit-objstore-aa15283a-2ca4-4bf5-b949-fffbd7690c1c"
 [userenv.shared]
 BOT_SERVICE_TOKEN = "0a813f710d64667100d51fc992fbf9c1e81f58f900d76e2e8941ce05608d5183"
 MAS_PORTAL_URL = "https://tpissues.medanswering.com"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
