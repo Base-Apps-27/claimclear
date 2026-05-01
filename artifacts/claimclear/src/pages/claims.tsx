@@ -28,6 +28,7 @@ import {
   type FacetOption,
 } from "@/components/list-table/faceted-filter";
 import { useUrlParams } from "@/lib/use-url-params";
+import { SERVICE_DATE_PRESETS, CREATED_DATE_PRESETS } from "@/lib/date-presets";
 import {
   PageHeader,
   StatusStrip, StatusDot, StatusPillForStatus,
@@ -410,6 +411,7 @@ export default function ClaimsList() {
               false,
             )
           }
+          presets={SERVICE_DATE_PRESETS}
           testIdPrefix="facet-serviceDate"
         />
       ),
@@ -432,6 +434,7 @@ export default function ClaimsList() {
               false,
             )
           }
+          presets={CREATED_DATE_PRESETS}
           testIdPrefix="facet-createdDate"
         />
       ),

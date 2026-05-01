@@ -43,29 +43,8 @@ export function FacetDateRange({
         <h4 className="text-sm font-medium">Custom range</h4>
       </div>
       <div className="p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{fromLabel}</Label>
-            <Input
-              type="date"
-              value={value.from ?? ""}
-              onChange={e => onChange({ ...value, from: e.target.value })}
-              data-testid={testIdPrefix ? `${testIdPrefix}-from` : undefined}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{toLabel}</Label>
-            <Input
-              type="date"
-              value={value.to ?? ""}
-              onChange={e => onChange({ ...value, to: e.target.value })}
-              data-testid={testIdPrefix ? `${testIdPrefix}-to` : undefined}
-            />
-          </div>
-        </div>
-
         {presets && presets.length > 0 && (
-          <div className="pt-4 border-t space-y-2">
+          <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">
               Quick presets
             </Label>
@@ -94,6 +73,33 @@ export function FacetDateRange({
             </div>
           </div>
         )}
+
+        <div
+          className={
+            presets && presets.length > 0
+              ? "grid grid-cols-2 gap-4 pt-4 border-t"
+              : "grid grid-cols-2 gap-4"
+          }
+        >
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">{fromLabel}</Label>
+            <Input
+              type="date"
+              value={value.from ?? ""}
+              onChange={e => onChange({ ...value, from: e.target.value })}
+              data-testid={testIdPrefix ? `${testIdPrefix}-from` : undefined}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">{toLabel}</Label>
+            <Input
+              type="date"
+              value={value.to ?? ""}
+              onChange={e => onChange({ ...value, to: e.target.value })}
+              data-testid={testIdPrefix ? `${testIdPrefix}-to` : undefined}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

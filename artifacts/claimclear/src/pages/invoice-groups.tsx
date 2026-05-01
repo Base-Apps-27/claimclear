@@ -30,6 +30,7 @@ import {
   type FacetOption,
 } from "@/components/list-table/faceted-filter";
 import { useUrlParams } from "@/lib/use-url-params";
+import { CREATED_DATE_PRESETS } from "@/lib/date-presets";
 import {
   PageHeader, FilterStrip, type FilterStripTab,
   StatusStrip, StatusDot, StatusPillForStatus,
@@ -415,6 +416,7 @@ export default function InvoiceGroupsList() {
               false,
             )
           }
+          presets={CREATED_DATE_PRESETS}
           testIdPrefix="facet-createdDate"
         />
       ),
