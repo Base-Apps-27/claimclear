@@ -2,19 +2,16 @@ import { useState, useEffect, useMemo } from "react";
 import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
 import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link, useLocation } from "wouter";
-import { Search, Filter, Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, ListTodo, FileText, Files } from "lucide-react";
+import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, ListTodo, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, DollarSign, Clock } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
@@ -23,6 +20,15 @@ import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
+import {
+  ListTableHeaderStrip,
+  FacetSearchableCheckboxList,
+  FacetCheckboxList,
+  FacetDateRange,
+  FacetNumericRange,
+  type FacetedFilterCategory,
+  type FacetOption,
+} from "@/components/list-table/faceted-filter";
 import { useUrlParams } from "@/lib/use-url-params";
 import {
   PageHeader, FilterStrip, type FilterStripTab,
@@ -254,6 +260,202 @@ export default function InvoiceGroupsList() {
     });
   };
 
+  const setMultiParam = (key: string, values: string[]) => {
+    set({ [key]: values.length > 0 ? values.join(",") : null, page: null }, false);
+  };
+
+  const toggleMulti = (current: string[], id: string, next: boolean) => {
+    if (next) return current.includes(id) ? current : [...current, id];
+    return current.filter(v => v !== id);
+  };
+
+  const errorTypeOptions: FacetOption[] = useMemo(
+    () => [
+      { id: "__unassigned__", label: "Unassigned", italic: true },
+      ...errorTypes.map(et => ({ id: String(et.id), label: et.name })),
+    ],
+    [errorTypes],
+  );
+  const statusOptions: FacetOption[] = useMemo(
+    () => STATUSES.map(s => ({ id: s, label: s })),
+    [],
+  );
+  const outcomeOptions: FacetOption[] = useMemo(
+    () => OUTCOMES.map(o => ({ id: o, label: o })),
+    [],
+  );
+
+  const statusCount = filterStatuses.length;
+  const outcomeCount = filterOutcomes.length;
+  const errorTypeCount = filterErrorTypeIds.length;
+  const errorDetailsCount = filterErrorDetails ? 1 : 0;
+  const createdDateCount = filterCreatedFrom || filterCreatedTo ? 1 : 0;
+  const amountCount = filterAmountMin || filterAmountMax ? 1 : 0;
+  const deadlineCount = filterExpiring ? 1 : 0;
+
+  const totalAppliedFilters =
+    statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
+    createdDateCount + amountCount + deadlineCount;
+
+  const filterCategories: FacetedFilterCategory[] = useMemo(() => [
+    {
+      id: "status",
+      label: "Status",
+      icon: Activity,
+      appliedCount: statusCount,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={statusOptions}
+          selected={filterStatuses}
+          onToggle={(id, next) =>
+            setMultiParam("status", toggleMulti(filterStatuses, id, next))
+          }
+          placeholder="Filter statuses..."
+          pinSelected
+          testIdPrefix="facet-status"
+        />
+      ),
+    },
+    {
+      id: "outcome",
+      label: "Outcome",
+      icon: FileCheck,
+      appliedCount: outcomeCount,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={outcomeOptions}
+          selected={filterOutcomes}
+          onToggle={(id, next) =>
+            setMultiParam("outcome", toggleMulti(filterOutcomes, id, next))
+          }
+          placeholder="Filter outcomes..."
+          testIdPrefix="facet-outcome"
+        />
+      ),
+    },
+    {
+      id: "errorType",
+      label: "Error Type",
+      icon: AlertCircle,
+      appliedCount: errorTypeCount,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={errorTypeOptions}
+          selected={filterErrorTypeIds}
+          onToggle={(id, next) =>
+            setMultiParam(
+              "errorTypeId",
+              toggleMulti(filterErrorTypeIds, id, next),
+            )
+          }
+          placeholder="Filter error types..."
+          pinSelected
+          testIdPrefix="facet-errorType"
+        />
+      ),
+    },
+    {
+      id: "errorDetails",
+      label: "Error Description",
+      icon: FileWarning,
+      appliedCount: errorDetailsCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Error description"
+          exclusive
+          options={[
+            { id: "empty", label: "No description" },
+            { id: "present", label: "Has description" },
+          ]}
+          selected={filterErrorDetails ? [filterErrorDetails] : []}
+          onToggle={(id, next) =>
+            set({ errorDetails: next ? id : null, page: null }, false)
+          }
+          testIdPrefix="facet-errorDetails"
+        />
+      ),
+    },
+    {
+      id: "deadline",
+      label: "Filing Deadline",
+      icon: Clock,
+      appliedCount: deadlineCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Filing deadline"
+          exclusive
+          options={[
+            { id: "soon", label: "Expiring soon (≤ 10 days)" },
+            { id: "urgent", label: "Must file today" },
+          ]}
+          selected={filterExpiring ? [filterExpiring] : []}
+          onToggle={(id, next) =>
+            set({ expiring: next ? id : null, page: null }, false)
+          }
+          testIdPrefix="facet-deadline"
+          hint="Only counts groups with actionable status; weekend deadlines are shifted to Friday."
+        />
+      ),
+    },
+    {
+      id: "createdDate",
+      label: "Created Date",
+      icon: CalendarIcon,
+      appliedCount: createdDateCount,
+      render: () => (
+        <FacetDateRange
+          value={{ from: filterCreatedFrom, to: filterCreatedTo }}
+          onChange={v =>
+            set(
+              {
+                createdFrom: v.from || null,
+                createdTo: v.to || null,
+                page: null,
+              },
+              false,
+            )
+          }
+          testIdPrefix="facet-createdDate"
+        />
+      ),
+    },
+    {
+      id: "amount",
+      label: "Total Amount",
+      icon: DollarSign,
+      appliedCount: amountCount,
+      render: () => (
+        <FacetNumericRange
+          heading="Total amount range"
+          value={{ min: filterAmountMin, max: filterAmountMax }}
+          onChange={v =>
+            set(
+              {
+                amountMin: v.min || null,
+                amountMax: v.max || null,
+                page: null,
+              },
+              false,
+            )
+          }
+          prefix="$"
+          minPlaceholder="0.00"
+          maxPlaceholder="Any"
+          testIdPrefix="facet-amount"
+        />
+      ),
+    },
+  ], [
+    statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
+    createdDateCount, amountCount, deadlineCount,
+    statusOptions, outcomeOptions, errorTypeOptions,
+    filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
+    filterExpiring,
+    filterCreatedFrom, filterCreatedTo,
+    filterAmountMin, filterAmountMax,
+    set,
+  ]);
+
   const visibleColumnKeys = ALL_COLUMNS.filter(c => visibleCols.has(c.key)).map(c => c.key);
 
   const colCount = visibleColumnKeys.length + 1;
@@ -320,172 +522,32 @@ export default function InvoiceGroupsList() {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-8 space-y-4 min-w-0">
-          <Card>
-            <CardHeader className="p-4 border-b flex flex-row items-center justify-between space-y-0 gap-3">
-              <div className="relative w-72 flex-shrink-0">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by Invoice #, Client, Error..."
-                  className="pl-9 pr-8"
-                  value={search}
-                  onChange={e => set({ q: e.target.value || null, page: null }, false)}
-                  data-testid="input-search-groups"
-                />
-                {search && (
-                  <button onClick={() => set({ q: null, page: null }, false)} className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Clear search">
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
+          <ListTableHeaderStrip
+            searchValue={search}
+            onSearchChange={v => set({ q: v || null, page: null }, false)}
+            searchPlaceholder="Search by Invoice #, Client, Error..."
+            searchTestId="input-search-groups"
+            matchingCount={total}
+            matchingNoun={{ one: "group", other: "groups" }}
+            filterOpen={filterOpen}
+            onFilterOpenChange={setFilterOpen}
+            filterCategories={filterCategories}
+            totalApplied={totalAppliedFilters}
+            onClearAllFilters={clearFilters}
+            extras={
+              <>
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
-                <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={hasActiveFilters ? "border-primary text-primary" : ""} data-testid="button-open-filters">
-                      <Filter className="mr-2 h-4 w-4" />
-                      Filter
-                      {hasActiveFilters && (
-                        <span className="ml-1.5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold h-4 w-4 inline-flex items-center justify-center">
-                          {chips.filter(c => c.key !== "q").length}
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-4 space-y-4 max-h-[80vh] overflow-y-auto" align="end">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Status</Label>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {STATUSES.map(s => (
-                          <div key={s} className="flex items-center gap-2 py-0.5">
-                            <Checkbox
-                              id={`ig-status-${s}`}
-                              checked={filterStatuses.includes(s)}
-                              onCheckedChange={checked => {
-                                const next = checked ? [...filterStatuses, s] : filterStatuses.filter(x => x !== s);
-                                set({ status: next.length > 0 ? next.join(",") : null, page: null }, false);
-                              }}
-                            />
-                            <Label htmlFor={`ig-status-${s}`} className="text-sm font-normal cursor-pointer">{s}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Outcome</Label>
-                      <div className="space-y-1">
-                        {OUTCOMES.map(o => (
-                          <div key={o} className="flex items-center gap-2 py-0.5">
-                            <Checkbox
-                              id={`ig-outcome-${o}`}
-                              checked={filterOutcomes.includes(o)}
-                              onCheckedChange={checked => {
-                                const next = checked ? [...filterOutcomes, o] : filterOutcomes.filter(x => x !== o);
-                                set({ outcome: next.length > 0 ? next.join(",") : null, page: null }, false);
-                              }}
-                            />
-                            <Label htmlFor={`ig-outcome-${o}`} className="text-sm font-normal cursor-pointer">{o}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Error Type</Label>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        <div className="flex items-center gap-2 py-0.5">
-                          <Checkbox
-                            id="ig-et-unassigned"
-                            checked={filterErrorTypeIds.includes("__unassigned__")}
-                            onCheckedChange={checked => {
-                              const next = checked ? [...filterErrorTypeIds, "__unassigned__"] : filterErrorTypeIds.filter(x => x !== "__unassigned__");
-                              set({ errorTypeId: next.length > 0 ? next.join(",") : null, page: null }, false);
-                            }}
-                          />
-                          <Label htmlFor="ig-et-unassigned" className="text-sm font-normal cursor-pointer italic text-muted-foreground">Unassigned</Label>
-                        </div>
-                        {errorTypes.map(et => (
-                          <div key={et.id} className="flex items-center gap-2 py-0.5">
-                            <Checkbox
-                              id={`ig-et-${et.id}`}
-                              checked={filterErrorTypeIds.includes(String(et.id))}
-                              onCheckedChange={checked => {
-                                const next = checked ? [...filterErrorTypeIds, String(et.id)] : filterErrorTypeIds.filter(x => x !== String(et.id));
-                                set({ errorTypeId: next.length > 0 ? next.join(",") : null, page: null }, false);
-                              }}
-                            />
-                            <Label htmlFor={`ig-et-${et.id}`} className="text-sm font-normal cursor-pointer">{et.name}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Error Description</Label>
-                      <Select value={filterErrorDetails || "__all__"} onValueChange={v => set({ errorDetails: v === "__all__" ? null : v, page: null }, false)}>
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue placeholder="All groups" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__all__">All groups</SelectItem>
-                          <SelectItem value="empty">No description</SelectItem>
-                          <SelectItem value="present">Has description</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Created Date</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">From</Label>
-                          <Input type="date" className="h-8 text-sm" value={filterCreatedFrom} onChange={e => set({ createdFrom: e.target.value || null, page: null }, false)} />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">To</Label>
-                          <Input type="date" className="h-8 text-sm" value={filterCreatedTo} onChange={e => set({ createdTo: e.target.value || null, page: null }, false)} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Total Amount</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Min ($)</Label>
-                          <Input type="number" min="0" step="0.01" placeholder="0.00" className="h-8 text-sm" value={filterAmountMin} onChange={e => set({ amountMin: e.target.value || null, page: null }, false)} />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Max ($)</Label>
-                          <Input type="number" min="0" step="0.01" placeholder="Any" className="h-8 text-sm" value={filterAmountMax} onChange={e => set({ amountMax: e.target.value || null, page: null }, false)} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Filing Deadline</Label>
-                      <Select value={filterExpiring || "__all__"} onValueChange={v => set({ expiring: v === "__all__" ? null : v, page: null }, false)}>
-                        <SelectTrigger className="h-8 text-sm" data-testid="select-filter-expiring">
-                          <SelectValue placeholder="All deadlines" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__all__">All deadlines</SelectItem>
-                          <SelectItem value="soon">Expiring soon (≤ 10 days)</SelectItem>
-                          <SelectItem value="urgent">Must file today</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Only counts groups with actionable status; weekend deadlines are shifted to Friday.</p>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t">
-                      <Button variant="ghost" size="sm" onClick={() => { clearFilters(); setFilterOpen(false); }} className="text-xs">Clear all</Button>
-                      <Button size="sm" onClick={() => setFilterOpen(false)} className="text-xs">Done</Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
                 <a href={csvUrl} download>
                   <Button variant="outline" size="sm" data-testid="button-export-csv">
                     <Download className="mr-2 h-4 w-4" />
                     Export CSV
                   </Button>
                 </a>
-              </div>
-            </CardHeader>
-
+              </>
+            }
+          >
+          <Card>
             <FilterChipStrip
               chips={chips}
               onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, page: null }, false); }}
@@ -721,6 +783,7 @@ export default function InvoiceGroupsList() {
               />
             </CardContent>
           </Card>
+          </ListTableHeaderStrip>
 
           <CrossPageNudge
             text={<>To work one at a time with full evidence, open</>}
