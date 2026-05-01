@@ -63,7 +63,7 @@ const DEFAULT_TAB: QueueTab = "actionable";
  * Big urgency hero at the top of the Queue. Mirrors the Dashboard's
  * "File today" card so the operator who clicked through doesn't lose
  * context. Three states:
- * - red    → urgent groups exist; file-today bloodbath, intensified
+ * - red    → urgent groups exist; file-today crunch, intensified
  *            (full-width + sticky) when arrived via `?expiring=urgent`.
  * - amber  → on the `?expiring=soon` view; softer signal, no sticky.
  * - green  → urgentCount === 0; calm "all clear" relief state.
@@ -142,7 +142,7 @@ function QueueUrgencyHero({
   }
 
   // Green "all clear" relief state — calm white-to-green gradient so it
-  // celebrates the cleared bloodbath without screaming.
+  // celebrates the cleared file-today queue without screaming.
   return (
     <div
       data-testid="queue-urgency-hero"
@@ -167,7 +167,7 @@ function QueueUrgencyHero({
         <div className="flex flex-col">
           <span className="text-sm font-semibold">All clear — nothing must file today.</span>
           <span className="text-xs opacity-80">
-            Bloodbath cleared. Work the next tier so it stays that way.
+            File-today queue is empty. Work the next tier so it stays that way.
           </span>
         </div>
       </div>
