@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle, Inbox, Loader2 } from "lucide-react";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
+import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta";
 import {
   QueueResponseReviewPanel,
   ResponseReviewRowMeta,
@@ -577,6 +578,16 @@ export default function Queue() {
                   {lockReason && (
                     <p className="text-xs text-muted-foreground">{lockReason}</p>
                   )}
+                  {/*
+                    Ready to package CTA — same readiness payload and
+                    endpoint as the version on the invoice-group detail
+                    page, just compact-styled for the queue panel.
+                    Self-hides once the group is past pre-submit.
+                  */}
+                  <QueueReadyToPackageCta
+                    groupId={selectedWorkflowGroup.id}
+                    groupStatusFromList={selectedWorkflowGroup.status}
+                  />
                   <Button asChild size="sm" data-testid="open-group-from-queue">
                     <Link href={`/invoice-groups/${selectedWorkflowGroup.id}`}>
                       Open invoice-group workspace <ChevronRight className="h-4 w-4 ml-1" />

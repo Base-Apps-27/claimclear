@@ -143,6 +143,7 @@ export const ListInvoiceGroupsResponse = zod.object({
         "New",
         "Needs Review",
         "Needs Evidence",
+        "Processed",
         "Portal Queued",
         "Generating Email",
         "Ready to Review",
@@ -358,6 +359,7 @@ export const GetInvoiceGroupResponse = zod
       "New",
       "Needs Review",
       "Needs Evidence",
+      "Processed",
       "Portal Queued",
       "Generating Email",
       "Ready to Review",
@@ -554,6 +556,7 @@ export const GetInvoiceGroupResponse = zod
               "New",
               "Needs Review",
               "Needs Evidence",
+              "Processed",
               "Portal Queued",
               "Generating Email",
               "Ready to Review",
@@ -1001,6 +1004,38 @@ export const GetInvoiceGroupResponse = zod
           }),
         )
         .optional(),
+      packagingReadiness: zod
+        .object({
+          ready: zod.boolean(),
+          reason: zod
+            .string()
+            .describe(
+              "Human-readable explanation; suitable for the disabled-CTA tooltip.",
+            ),
+          unprocessedLegCount: zod
+            .number()
+            .describe("Legs with sop_outcome=NULL that are not on hold."),
+          processedLegCount: zod
+            .number()
+            .describe(
+              "Legs whose worktree concluded with a dispute outcome (portal_dispute|dispute).",
+            ),
+          excludedLegCount: zod
+            .number()
+            .describe(
+              "Legs whose worktree concluded as cannot_dispute or non_issue.",
+            ),
+          heldLegCount: zod
+            .number()
+            .describe(
+              "Legs currently on hold (per-leg hold_reason or sop_outcome=hold).",
+            ),
+          totalLegCount: zod.number(),
+        })
+        .optional()
+        .describe(
+          'Readiness state for the \"Ready to package\" CTA on an invoice group. `ready=true` means the operator may POST to \/invoice-groups\/{id}\/package right now; `ready=false` means the CTA should render disabled with `reason` as the tooltip. Counts are derived from leg-level state (sop_outcome, hold_reason). See artifacts\/api-server\/src\/lib\/group-packaging.ts.\n',
+        ),
     }),
   );
 
@@ -1032,6 +1067,7 @@ export const UpdateInvoiceGroupResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -1211,6 +1247,198 @@ export const DeleteInvoiceGroupParams = zod.object({
 });
 
 /**
+ * Operator-driven transition out of pre-submit. Gated by the readiness rules in lib/group-packaging.ts: every non-held leg must have a sop_outcome set and at least one leg must be contestable (sop_outcome IN portal_dispute|dispute). On success the group moves to Generating Email and the standard downstream draft/submit flow takes over.
+
+ * @summary Package an invoice group (operator-driven flip to Generating Email)
+ */
+export const PackageInvoiceGroupParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PackageInvoiceGroupResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+});
+
+/**
  * @summary Update invoice group status
  */
 export const UpdateInvoiceGroupStatusParams = zod.object({
@@ -1233,6 +1461,7 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -1482,6 +1711,7 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -1678,6 +1908,7 @@ export const TriageInvoiceGroupResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -1871,6 +2102,7 @@ export const HoldInvoiceGroupResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -2060,6 +2292,7 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -2354,6 +2587,7 @@ export const SetGroupContextResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -2550,6 +2784,7 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -2742,6 +2977,7 @@ export const StampPreviewGeneratedResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -2942,6 +3178,7 @@ export const CompleteGroupReattestResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -3220,6 +3457,7 @@ export const ListClaimsResponse = zod.object({
         "New",
         "Needs Review",
         "Needs Evidence",
+        "Processed",
         "Portal Queued",
         "Generating Email",
         "Ready to Review",
@@ -3501,6 +3739,7 @@ export const GetClaimResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -3755,6 +3994,7 @@ export const UpdateClaimResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -4031,6 +4271,7 @@ export const UpdateClaimStatusResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -4329,6 +4570,7 @@ export const UpdateClaimOutcomeResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -4578,6 +4820,7 @@ export const ListAttestationPendingResponse = zod.object({
         "New",
         "Needs Review",
         "Needs Evidence",
+        "Processed",
         "Portal Queued",
         "Generating Email",
         "Ready to Review",
@@ -4863,6 +5106,7 @@ export const AttestClaimResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -5108,6 +5352,7 @@ export const QueueAttestationForClaimResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -5353,6 +5598,7 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -5677,6 +5923,7 @@ export const UpdateClaimEvidenceResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -5934,6 +6181,7 @@ export const PlaceLegOnHoldResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -6174,6 +6422,7 @@ export const RemoveLegHoldResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -6411,6 +6660,7 @@ export const ClearLegHoldResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -6656,6 +6906,7 @@ export const ClassifyLegResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -6904,6 +7155,7 @@ export const SopAdvanceLegResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -7155,6 +7407,7 @@ export const ExcludeLegResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -7400,6 +7653,7 @@ export const IncludeLegResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -7641,6 +7895,7 @@ export const ReclassifyLegResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -7933,6 +8188,7 @@ export const SetLegContextResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -8181,6 +8437,7 @@ export const CompleteLegMasActionResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -8425,6 +8682,7 @@ export const TriageClaimResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -8672,6 +8930,7 @@ export const PostResponseActionResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -8932,6 +9191,7 @@ export const GenerateClaimEmailResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -10773,6 +11033,7 @@ export const GetDashboardSummaryResponse = zod.object({
         "New",
         "Needs Review",
         "Needs Evidence",
+        "Processed",
         "Portal Queued",
         "Generating Email",
         "Ready to Review",
@@ -12676,6 +12937,7 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",
@@ -12930,6 +13192,7 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     "New",
     "Needs Review",
     "Needs Evidence",
+    "Processed",
     "Portal Queued",
     "Generating Email",
     "Ready to Review",

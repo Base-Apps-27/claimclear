@@ -23,7 +23,13 @@ export type LifecyclePhase =
   | "on-hold";
 
 export const STATUSES_BY_PHASE: Record<LifecyclePhase, readonly string[]> = {
-  "pre-submit": ["New", "Needs Evidence"],
+  // "Processed" sits in pre-submit alongside New / Needs Evidence —
+  // the leg's worktree is done but the parent invoice has not yet
+  // been packaged. The "Action Required" tab below picks up every
+  // status in this bucket, so a Processed leg keeps showing up in
+  // the operator's queue until the invoice is packaged. (See
+  // task-231 for the full rationale.)
+  "pre-submit": ["New", "Needs Evidence", "Processed"],
   "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
   "response-pending": ["Ready to Review", "Needs Review"],
   "closed": ["Resolved", "Denied", "Withdrawn"],

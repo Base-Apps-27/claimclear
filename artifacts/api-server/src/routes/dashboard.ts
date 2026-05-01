@@ -11,15 +11,21 @@ import { getOverdueCount } from "../lib/overdue-submissions";
 
 const router: IRouter = Router();
 
-const OPEN_STATUSES = ["New", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
+const OPEN_STATUSES = ["New", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
 // Statuses where the 30-day filing clock is still running on us. Includes
 // "On Hold" because pausing internally does not pause the deadline — if we
 // don't unpause and file in time, we lose the window. Excludes only
 // "Awaiting Response": once we've filed, the 30-day rule is satisfied and
 // the wait is on the payor's external timeline, not ours.
+//
+// "Processed" lives here too: it marks a leg whose worktree is done but
+// whose invoice hasn't been packaged yet. The 30-day clock keeps
+// running until the parent group transitions to Generating Email
+// (which happens when the operator clicks "Ready to package").
 export const EXPIRING_ACTIONABLE_STATUSES = [
   "New",
   "Needs Evidence",
+  "Processed",
   "Portal Queued",
   "Generating Email",
   "Ready to Review",

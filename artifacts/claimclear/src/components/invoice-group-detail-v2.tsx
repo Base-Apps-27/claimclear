@@ -10,11 +10,13 @@ import {
   useGetInvoiceGroupValidTransitions,
   getGetInvoiceGroupValidTransitionsQueryKey,
   useCreatePortalSubmission,
+  usePackageInvoiceGroup,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
   PortalResponseItem,
+  GroupPackagingReadiness,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const confirmReadbackMutation = useConfirmUnderstandingReadback();
   const stampPreviewMutation = useStampPreviewGenerated();
   const submitMutation = useCreatePortalSubmission();
+  // "Ready to package" mutation — POSTs the new endpoint that flips
+  // a pre-submit group into Generating Email. Always operator-driven;
+  // the readiness payload (computed server-side) gates the CTA.
+  const packageMutation = usePackageInvoiceGroup();
   const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId, {
     query: {
@@ -89,6 +95,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const readbackConfirmed = !!group?.understandingReadbackAt;
   const previewGenerated = !!group?.previewGeneratedAt;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
+  // "Ready to package" payload from GET /invoice-groups/:id — null
+  // until the first fetch lands; the CTA is hidden in that interval.
+  const packagingReadiness: GroupPackagingReadiness | undefined =
+    (group as InvoiceGroupDetailResponse | undefined)?.packagingReadiness;
 
   function invalidateGroup() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
@@ -135,6 +145,42 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           invalidateGroup();
         },
         onError: (e: unknown) => toast({ title: "Preview generation failed", description: String((e as Error).message), variant: "destructive" }),
+      },
+    );
+  }
+
+  // Operator clicked "Ready to package" — fire the new system-controlled
+  // transition. Server returns 409 + reason if readiness has slipped
+  // since the page loaded; we surface that via the toast and let the
+  // refetched group repaint the disabled state.
+  function onClickPackage() {
+    packageMutation.mutate(
+      { id: groupId },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Invoice packaged",
+            description: "Group moved to Generating Email — draft generation will pick up from here.",
+          });
+          invalidateGroup();
+        },
+        onError: (e: unknown) => {
+          let errorMsg = e instanceof Error ? e.message : String(e);
+          if (e != null && typeof e === "object" && "response" in e) {
+            const axiosErr = e as { response?: { data?: { error?: string } } };
+            const resp = axiosErr.response?.data;
+            if (resp?.error) errorMsg = resp.error;
+          }
+          toast({
+            title: "Cannot package yet",
+            description: errorMsg,
+            variant: "destructive",
+          });
+          // The 409 carries fresh readiness in its body; refetching the
+          // group is the simplest way to repaint the CTA's disabled
+          // tooltip with the canonical reason.
+          invalidateGroup();
+        },
       },
     );
   }
@@ -368,6 +414,91 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/*
+        Ready to package CTA — operator-driven flip from pre-submit
+        into Generating Email. Hidden once the group is past
+        pre-submit (the existing Submission preview / portal flow
+        below takes over). Disabled state surfaces the readiness
+        reason as a tooltip; clicking when enabled fires the new
+        POST /invoice-groups/:id/package endpoint.
+      */}
+      {isPreSubmit && packagingReadiness && (
+        <Card data-testid="ready-to-package-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4" /> Ready to package
+            </CardTitle>
+            <CardDescription>
+              Move this invoice out of pre-submit once every leg's worktree
+              is done. Held legs ride along — they don't block packaging.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge variant="outline" data-testid="readiness-count-processed">
+                {packagingReadiness.processedLegCount} processed
+              </Badge>
+              <Badge variant="outline" data-testid="readiness-count-unprocessed">
+                {packagingReadiness.unprocessedLegCount} unprocessed
+              </Badge>
+              <Badge variant="outline" data-testid="readiness-count-excluded">
+                {packagingReadiness.excludedLegCount} excluded
+              </Badge>
+              <Badge variant="outline" data-testid="readiness-count-held">
+                {packagingReadiness.heldLegCount} on hold
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p
+                className={`text-sm ${packagingReadiness.ready ? "text-green-700" : "text-muted-foreground"}`}
+                data-testid="readiness-reason"
+              >
+                {packagingReadiness.ready
+                  ? "All worktree review complete. Click to advance into draft generation."
+                  : packagingReadiness.reason}
+              </p>
+              {(() => {
+                const button = (
+                  <Button
+                    size="sm"
+                    onClick={onClickPackage}
+                    disabled={!packagingReadiness.ready || packageMutation.isPending}
+                    data-testid="ready-to-package-button"
+                  >
+                    {packageMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Ready to package
+                  </Button>
+                );
+                if (!packagingReadiness.ready) {
+                  return (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} data-testid="ready-to-package-disabled-wrapper">
+                            {button}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          data-testid="ready-to-package-disabled-tooltip"
+                        >
+                          {packagingReadiness.reason}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  );
+                }
+                return button;
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

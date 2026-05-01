@@ -33,6 +33,7 @@ export const ClaimResponseStatus = {
   New: "New",
   Needs_Review: "Needs Review",
   Needs_Evidence: "Needs Evidence",
+  Processed: "Processed",
   Portal_Queued: "Portal Queued",
   Generating_Email: "Generating Email",
   Ready_to_Review: "Ready to Review",
@@ -355,6 +356,7 @@ export const InvoiceGroupResponseStatus = {
   New: "New",
   Needs_Review: "Needs Review",
   Needs_Evidence: "Needs Evidence",
+  Processed: "Processed",
   Portal_Queued: "Portal Queued",
   Generating_Email: "Generating Email",
   Ready_to_Review: "Ready to Review",
@@ -886,6 +888,25 @@ with whitespace preserved.
   updatedAt?: string | null;
 }
 
+/**
+ * Readiness state for the "Ready to package" CTA on an invoice group. `ready=true` means the operator may POST to /invoice-groups/{id}/package right now; `ready=false` means the CTA should render disabled with `reason` as the tooltip. Counts are derived from leg-level state (sop_outcome, hold_reason). See artifacts/api-server/src/lib/group-packaging.ts.
+
+ */
+export interface GroupPackagingReadiness {
+  ready: boolean;
+  /** Human-readable explanation; suitable for the disabled-CTA tooltip. */
+  reason: string;
+  /** Legs with sop_outcome=NULL that are not on hold. */
+  unprocessedLegCount: number;
+  /** Legs whose worktree concluded with a dispute outcome (portal_dispute|dispute). */
+  processedLegCount: number;
+  /** Legs whose worktree concluded as cannot_dispute or non_issue. */
+  excludedLegCount: number;
+  /** Legs currently on hold (per-leg hold_reason or sop_outcome=hold). */
+  heldLegCount: number;
+  totalLegCount: number;
+}
+
 export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
   /** True when at least one leg is On Hold and at least one is not — the group is split, with part of it moving forward while part is parked. */
   isPartial?: boolean;
@@ -894,6 +915,7 @@ export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
   notes?: NoteResponse[];
   auditLogs?: AuditLogResponse[];
   responses?: PortalResponseItem[];
+  packagingReadiness?: GroupPackagingReadiness;
 };
 
 export interface InvoiceGroupsListResponse {
@@ -2942,6 +2964,11 @@ export const ExportInvoiceGroupsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
 } as const;
+
+export type PackageInvoiceGroup409 = {
+  error: string;
+  packagingReadiness?: GroupPackagingReadiness;
+};
 
 export type UpdateInvoiceGroupStatusBody = {
   status: string;

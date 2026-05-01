@@ -19,6 +19,7 @@ export const InvoiceGroupResponseStatus = {
   New: "New",
   Needs_Review: "Needs Review",
   Needs_Evidence: "Needs Evidence",
+  Processed: "Processed",
   Portal_Queued: "Portal Queued",
   Generating_Email: "Generating Email",
   Ready_to_Review: "Ready to Review",

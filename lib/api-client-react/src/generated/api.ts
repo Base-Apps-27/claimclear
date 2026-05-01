@@ -118,6 +118,7 @@ import type {
   LookupMappingsResponse,
   NoteResponse,
   NotificationPreferencesResponse,
+  PackageInvoiceGroup409,
   PlaceHoldBody,
   PortalResponseItem,
   PortalSubmissionResponse,
@@ -863,6 +864,93 @@ export const useDeleteInvoiceGroup = <
   TContext
 > => {
   return useMutation(getDeleteInvoiceGroupMutationOptions(options));
+};
+
+/**
+ * Operator-driven transition out of pre-submit. Gated by the readiness rules in lib/group-packaging.ts: every non-held leg must have a sop_outcome set and at least one leg must be contestable (sop_outcome IN portal_dispute|dispute). On success the group moves to Generating Email and the standard downstream draft/submit flow takes over.
+
+ * @summary Package an invoice group (operator-driven flip to Generating Email)
+ */
+export const getPackageInvoiceGroupUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/package`;
+};
+
+export const packageInvoiceGroup = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getPackageInvoiceGroupUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPackageInvoiceGroupMutationOptions = <
+  TError = ErrorType<void | PackageInvoiceGroup409>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof packageInvoiceGroup>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof packageInvoiceGroup>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["packageInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof packageInvoiceGroup>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return packageInvoiceGroup(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PackageInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof packageInvoiceGroup>>
+>;
+
+export type PackageInvoiceGroupMutationError =
+  ErrorType<void | PackageInvoiceGroup409>;
+
+/**
+ * @summary Package an invoice group (operator-driven flip to Generating Email)
+ */
+export const usePackageInvoiceGroup = <
+  TError = ErrorType<void | PackageInvoiceGroup409>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof packageInvoiceGroup>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof packageInvoiceGroup>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPackageInvoiceGroupMutationOptions(options));
 };
 
 /**

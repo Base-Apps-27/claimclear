@@ -5,6 +5,7 @@ import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubm
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
+import { computeGroupReadiness, loadGroupReadiness } from "../lib/group-packaging";
 import { refreshGroupDerivedFields, getGroupMacroPhase } from "../lib/denormalized-cache";
 import { getMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -396,6 +397,12 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
 
   const macroPhase = getGroupMacroPhase(group);
 
+  // "Ready to package" CTA payload — see lib/group-packaging.ts. Computed
+  // off the rows we already loaded; no extra DB roundtrip. Frontend
+  // (InvoiceGroupDetailV2 + Queue right-side panel in #232) renders the
+  // CTA in enabled or disabled state from this payload.
+  const packagingReadiness = computeGroupReadiness(group, rides);
+
   res.json({
     ...group,
     rides: ridesWithVerdicts,
@@ -405,6 +412,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     responses,
     isPartial,
     macroPhase,
+    packagingReadiness,
   });
 }));
 
@@ -492,6 +500,82 @@ router.patch("/invoice-groups/:id/status", asyncHandler(async (req, res): Promis
   } catch (err: any) {
     const msg = err.message || "Failed to update status";
     if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    res.status(400).json({ error: msg });
+  }
+}));
+
+// POST /invoice-groups/:id/package — operator-driven flip from
+// pre-submit (New|Needs Evidence) to Generating Email. Gated by the
+// readiness helper in lib/group-packaging.ts: every non-held leg must
+// have a sop_outcome set and at least one leg must be contestable.
+//
+// Generating Email is in SYSTEM_CONTROLLED_GROUP_STATUSES so the
+// transition runs with `systemOverride: true`; this endpoint is the
+// authorised system-controlled entry point. Standard audit/note/SSE
+// semantics flow through `transitionGroupStatus` as usual.
+router.post("/invoice-groups/:id/package", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const readiness = await loadGroupReadiness(id);
+  if (readiness === null) {
+    res.status(404).json({ error: "Invoice group not found" });
+    return;
+  }
+  if (!readiness.ready) {
+    // 409: the request is well-formed, the group exists, but its
+    // current state precludes the action. Frontend renders the same
+    // reason string in the disabled-CTA tooltip.
+    res.status(409).json({ error: readiness.reason, packagingReadiness: readiness });
+    return;
+  }
+
+  try {
+    const result = await transitionGroupStatus({
+      groupId: id,
+      newStatus: "Generating Email",
+      source: "operator_packaged",
+      reason: "Operator clicked Ready to package",
+      actor: actorFromReq(req),
+      systemOverride: true,
+    });
+    // Recompute readiness post-transition so the client picks up the
+    // new state in the same response (group is no longer pre-submit,
+    // so `ready` will now be false with a "Group is Generating Email…"
+    // reason — keeps the UI consistent if it re-renders from this body).
+    const refreshed = await loadGroupReadiness(id);
+    res.json({ ...result.group, packagingReadiness: refreshed });
+  } catch (err: any) {
+    // Map error families to standard HTTP semantics:
+    //   • 404 — group disappeared between the readiness check and
+    //     the transition (extremely narrow race window, but cheap to
+    //     handle correctly).
+    //   • 409 — `transitionGroupStatus` rejected the move because
+    //     the current state precludes it (e.g. the group flipped
+    //     out of pre-submit between our readiness check and the
+    //     transition call). Same semantics as the readiness 409
+    //     above — the request is well-formed but state is wrong.
+    //   • 400 — validation/precondition failure that doesn't fit
+    //     either of the above. Kept as a fallback so genuinely
+    //     malformed transitions still surface cleanly.
+    const msg = err.message || "Failed to package invoice group";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    // Transition layer raises errors with phrases like "invalid
+    // transition", "not allowed", "current status", or
+    // "cannot transition" for state-conflict cases. We prefer to
+    // err on the side of 409 here so the frontend's "Cannot package
+    // yet" toast handler kicks in (it already mirrors the readiness
+    // 409 path) instead of the generic 400 fallback.
+    if (
+      msg.includes("invalid transition") ||
+      msg.includes("not allowed") ||
+      msg.includes("current status") ||
+      msg.includes("cannot transition")
+    ) {
+      const refreshed = await loadGroupReadiness(id).catch(() => null);
+      res.status(409).json({ error: msg, packagingReadiness: refreshed });
+      return;
+    }
     res.status(400).json({ error: msg });
   }
 }));

@@ -8,10 +8,17 @@ import {
 } from "@workspace/db";
 import { and, eq, or, gte, lt, inArray, sql, desc, isNotNull } from "drizzle-orm";
 
+// Every claim_status value that means "the leg is still open" — used to
+// build the daily brief's per-leg counts. "Processed" is open (worktree
+// done but invoice not yet packaged). "Generating Email" was a
+// pre-existing omission corrected here so the brief no longer drops
+// in-flight legs that happen to be in that intermediate state.
 export const OPEN_STATUSES = [
   "New",
   "Needs Evidence",
+  "Processed",
   "Portal Queued",
+  "Generating Email",
   "Ready to Review",
   "Awaiting Response",
   "On Hold",

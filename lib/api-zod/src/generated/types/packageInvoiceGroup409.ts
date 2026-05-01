@@ -11,20 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { GroupPackagingReadiness } from "./groupPackagingReadiness";
 
-export type ClaimResponseStatus =
-  (typeof ClaimResponseStatus)[keyof typeof ClaimResponseStatus];
-
-export const ClaimResponseStatus = {
-  New: "New",
-  Needs_Review: "Needs Review",
-  Needs_Evidence: "Needs Evidence",
-  Processed: "Processed",
-  Portal_Queued: "Portal Queued",
-  Generating_Email: "Generating Email",
-  Ready_to_Review: "Ready to Review",
-  Awaiting_Response: "Awaiting Response",
-  On_Hold: "On Hold",
-  Resolved: "Resolved",
-  Denied: "Denied",
-} as const;
+export type PackageInvoiceGroup409 = {
+  error: string;
+  packagingReadiness?: GroupPackagingReadiness;
+};

@@ -48,6 +48,13 @@ export function toneForStatus(status: string | null | undefined): Tone {
     case "Awaiting Response":
     case "Portal Queued":
       return "blue";
+    // "Processed" sits in pre-submit but signals "worktree complete,
+    // waiting for the invoice to be packaged" — distinct enough from
+    // both the actionable blues and the still-needs-attention ambers
+    // to deserve a calm purple. Tone is purely visual; the macro-phase
+    // bucketing in lifecycle-phase.ts is what drives lifecycle UI.
+    case "Processed":
+      return "purple";
     case "Needs Evidence":
     case "On Hold":
       return "amber";

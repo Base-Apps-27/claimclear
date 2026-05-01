@@ -48,6 +48,12 @@ const VALID_MANUAL_STATUS_TRANSITIONS: Record<string, string[]> = {
   "New": ["Needs Evidence", "Needs Review", "On Hold", "Resolved", "Denied"],
   "Needs Review": ["New", "Needs Evidence", "On Hold", "Resolved", "Denied"],
   "Needs Evidence": ["Needs Review", "On Hold", "Resolved", "Denied"],
+  // Operator can drop a "Processed" leg back to Needs Evidence if they
+  // realise they ran the worktree on the wrong basis, place it on
+  // hold, or close it as resolved/denied. The actual flip into
+  // Generating Email happens at the group level (operator clicks
+  // "Ready to package"), not via a manual claim transition.
+  "Processed": ["Needs Evidence", "On Hold", "Resolved", "Denied"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
@@ -63,6 +69,10 @@ const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
   "New": ["Pending", "Withdrawn"],
   "Needs Review": ["Pending", "Withdrawn"],
   "Needs Evidence": ["Pending", "Withdrawn"],
+  // "Processed" is a pre-filing status — same outcome envelope as the
+  // other pre-submit statuses. No portal/email outcomes until the
+  // dispute has actually been filed.
+  "Processed": ["Pending", "Withdrawn"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],

@@ -6,6 +6,7 @@ const statusDescriptions: Record<string, string> = {
   "New": "Claim just entered the system. Next: Review the claim details and move to evidence gathering.",
   "Needs Review": "Claim imported with no error details. Check the portal, then classify as non-issue or define the error type.",
   "Needs Evidence": "Evidence must be collected before this claim can proceed. Next: Gather GPS logs, driver statements, and supporting documents.",
+  "Processed": "Worktree complete on this leg — waiting for the rest of the invoice to be packaged. Next: Finish the remaining legs, then click Ready to package on the invoice.",
   "Generating Email": "The system is generating a dispute email for this claim. Next: Wait for email generation to complete, then review.",
   "Ready to Review": "The dispute email or submission is ready for staff review. Next: Review the generated content and approve or edit before sending.",
   "Awaiting Response": "Dispute has been submitted to the payor portal. Next: Wait for the payor's response — check back periodically.",

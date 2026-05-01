@@ -333,6 +333,47 @@ paths:
         "204":
           description: Deleted
 
+  /invoice-groups/{id}/package:
+    post:
+      operationId: packageInvoiceGroup
+      tags: [invoice-groups]
+      summary: Package an invoice group (operator-driven flip to Generating Email)
+      description: >
+        Operator-driven transition out of pre-submit. Gated by the
+        readiness rules in lib/group-packaging.ts: every non-held leg
+        must have a sop_outcome set and at least one leg must be
+        contestable (sop_outcome IN portal_dispute|dispute). On success
+        the group moves to Generating Email and the standard
+        downstream draft/submit flow takes over.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Group successfully packaged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "404":
+          description: Invoice group not found
+        "409":
+          description: Group is not ready to package (not pre-submit, has unprocessed legs, or no contestable legs)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  packagingReadiness:
+                    $ref: "#/components/schemas/GroupPackagingReadiness"
+                required:
+                  - error
+
   /invoice-groups/{id}/status:
     patch:
       operationId: updateInvoiceGroupStatus
@@ -3660,7 +3701,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+          enum: ["New", "Needs Review", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         outcome:
           type: string
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
@@ -3873,7 +3914,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: ["New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+          enum: ["New", "Needs Review", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
         outcome:
           type: string
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
@@ -4057,6 +4098,46 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PortalResponseItem"
+            packagingReadiness:
+              $ref: "#/components/schemas/GroupPackagingReadiness"
+
+    GroupPackagingReadiness:
+      type: object
+      description: >
+        Readiness state for the "Ready to package" CTA on an invoice
+        group. `ready=true` means the operator may POST to
+        /invoice-groups/{id}/package right now; `ready=false` means
+        the CTA should render disabled with `reason` as the tooltip.
+        Counts are derived from leg-level state (sop_outcome,
+        hold_reason). See artifacts/api-server/src/lib/group-packaging.ts.
+      properties:
+        ready:
+          type: boolean
+        reason:
+          type: string
+          description: Human-readable explanation; suitable for the disabled-CTA tooltip.
+        unprocessedLegCount:
+          type: integer
+          description: Legs with sop_outcome=NULL that are not on hold.
+        processedLegCount:
+          type: integer
+          description: Legs whose worktree concluded with a dispute outcome (portal_dispute|dispute).
+        excludedLegCount:
+          type: integer
+          description: Legs whose worktree concluded as cannot_dispute or non_issue.
+        heldLegCount:
+          type: integer
+          description: Legs currently on hold (per-leg hold_reason or sop_outcome=hold).
+        totalLegCount:
+          type: integer
+      required:
+        - ready
+        - reason
+        - unprocessedLegCount
+        - processedLegCount
+        - excludedLegCount
+        - heldLegCount
+        - totalLegCount
 
     InvoiceGroupsListResponse:
       type: object

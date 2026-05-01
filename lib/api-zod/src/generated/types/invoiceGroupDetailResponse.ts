@@ -13,6 +13,7 @@ understanding readback / preview generation) instead.
  */
 import type { AuditLogResponse } from "./auditLogResponse";
 import type { ClaimResponse } from "./claimResponse";
+import type { GroupPackagingReadiness } from "./groupPackagingReadiness";
 import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
 import type { NoteResponse } from "./noteResponse";
 import type { PortalResponseItem } from "./portalResponseItem";
@@ -26,4 +27,5 @@ export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
   notes?: NoteResponse[];
   auditLogs?: AuditLogResponse[];
   responses?: PortalResponseItem[];
+  packagingReadiness?: GroupPackagingReadiness;
 };

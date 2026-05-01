@@ -165,7 +165,8 @@ async function createSeedErrorType(): Promise<typeof errorTypesTable.$inferSelec
 
 async function cleanupClaim(id: number) {
   await db.delete(stateEventsTable).where(eq(stateEventsTable.claimId, id)).catch(() => undefined);
-  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
+  // portal_submissions was reparented to invoice_group_id, so it's
+  // cleaned up by cleanupGroup (not here, where we'd have no group ref).
   await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);
