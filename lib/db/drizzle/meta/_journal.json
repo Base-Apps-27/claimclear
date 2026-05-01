@@ -78,6 +78,13 @@
       "when": 1777680000000,
       "tag": "0010_per_leg_state",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777636417051,
+      "tag": "0011_tough_dragon_man",
+      "breakpoints": true
     }
   ]
 }

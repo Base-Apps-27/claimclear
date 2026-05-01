@@ -6,284 +6,284 @@ CREATE TYPE "public"."bot_status" AS ENUM('running', 'idle', 'error', 'stopped')
 CREATE TYPE "public"."response_source" AS ENUM('email', 'portal', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."response_type" AS ENUM('approval', 'denial', 'partial_approval', 'info_request', 'acknowledgment', 'other');--> statement-breakpoint
 CREATE TABLE "sessions" (
-	"sid" varchar PRIMARY KEY NOT NULL,
-	"sess" jsonb NOT NULL,
-	"expire" timestamp NOT NULL
+        "sid" varchar PRIMARY KEY NOT NULL,
+        "sess" jsonb NOT NULL,
+        "expire" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
-	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"email" varchar,
-	"first_name" varchar,
-	"last_name" varchar,
-	"profile_image_url" varchar,
-	"role" varchar DEFAULT 'user' NOT NULL,
-	"status" varchar DEFAULT 'pending' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "users_email_unique" UNIQUE("email")
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "email" varchar,
+        "first_name" varchar,
+        "last_name" varchar,
+        "profile_image_url" varchar,
+        "role" varchar DEFAULT 'user' NOT NULL,
+        "status" varchar DEFAULT 'pending' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
 CREATE TABLE "invoice_groups" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"invoice_number" text NOT NULL,
-	"client_number" text,
-	"error_details" text,
-	"error_type_id" text,
-	"error_type_name" text,
-	"status" "claim_status" DEFAULT 'New' NOT NULL,
-	"outcome" "claim_outcome" DEFAULT 'Pending' NOT NULL,
-	"approved_amount" numeric(12, 2),
-	"ride_count" integer DEFAULT 0 NOT NULL,
-	"total_amount" numeric(12, 2),
-	"workflow_progress" jsonb,
-	"hold_reason" text,
-	"hold_pending_from" text,
-	"hold_placed_at" text,
-	"triage_notes" text,
-	"triaged_at" text,
-	"dispute_email_sent" boolean DEFAULT false NOT NULL,
-	"dispute_email_sent_at" text,
-	"generated_email_subject" text,
-	"generated_email_body" text,
-	"generated_email_at" text,
-	"evidence_files" jsonb,
-	"evidence_notes" text,
-	"evidence_checklist" jsonb,
-	"payor_email" text,
-	"import_batch" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "invoice_number" text NOT NULL,
+        "client_number" text,
+        "error_details" text,
+        "error_type_id" text,
+        "error_type_name" text,
+        "status" "claim_status" DEFAULT 'New' NOT NULL,
+        "outcome" "claim_outcome" DEFAULT 'Pending' NOT NULL,
+        "approved_amount" numeric(12, 2),
+        "ride_count" integer DEFAULT 0 NOT NULL,
+        "total_amount" numeric(12, 2),
+        "workflow_progress" jsonb,
+        "hold_reason" text,
+        "hold_pending_from" text,
+        "hold_placed_at" text,
+        "triage_notes" text,
+        "triaged_at" text,
+        "dispute_email_sent" boolean DEFAULT false NOT NULL,
+        "dispute_email_sent_at" text,
+        "generated_email_subject" text,
+        "generated_email_body" text,
+        "generated_email_at" text,
+        "evidence_files" jsonb,
+        "evidence_notes" text,
+        "evidence_checklist" jsonb,
+        "payor_email" text,
+        "import_batch" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "claims" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"invoice_group_id" integer,
-	"conf_number" text NOT NULL,
-	"date" text,
-	"ref_number" text,
-	"client_number" text,
-	"car_number" text,
-	"error_details" text,
-	"error_type_id" text,
-	"error_type_name" text,
-	"claim_amount" numeric(12, 2),
-	"status" "claim_status" DEFAULT 'New' NOT NULL,
-	"outcome" "claim_outcome" DEFAULT 'Pending' NOT NULL,
-	"approved_amount" numeric(12, 2),
-	"invoice_numbers" text,
-	"payor_email" text,
-	"dispute_email_sent" boolean DEFAULT false NOT NULL,
-	"dispute_email_sent_at" text,
-	"import_batch" text,
-	"evidence_files" jsonb,
-	"evidence_notes" text,
-	"evidence_checklist" jsonb,
-	"generated_email_subject" text,
-	"generated_email_body" text,
-	"generated_email_at" text,
-	"workflow_progress" jsonb,
-	"hold_reason" text,
-	"hold_pending_from" text,
-	"hold_placed_at" text,
-	"triage_notes" text,
-	"triaged_at" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "invoice_group_id" integer,
+        "conf_number" text NOT NULL,
+        "date" text,
+        "ref_number" text,
+        "client_number" text,
+        "car_number" text,
+        "error_details" text,
+        "error_type_id" text,
+        "error_type_name" text,
+        "claim_amount" numeric(12, 2),
+        "status" "claim_status" DEFAULT 'New' NOT NULL,
+        "outcome" "claim_outcome" DEFAULT 'Pending' NOT NULL,
+        "approved_amount" numeric(12, 2),
+        "invoice_numbers" text,
+        "payor_email" text,
+        "dispute_email_sent" boolean DEFAULT false NOT NULL,
+        "dispute_email_sent_at" text,
+        "import_batch" text,
+        "evidence_files" jsonb,
+        "evidence_notes" text,
+        "evidence_checklist" jsonb,
+        "generated_email_subject" text,
+        "generated_email_body" text,
+        "generated_email_at" text,
+        "workflow_progress" jsonb,
+        "hold_reason" text,
+        "hold_pending_from" text,
+        "hold_placed_at" text,
+        "triage_notes" text,
+        "triaged_at" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "error_types" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"name" text NOT NULL,
-	"category" text,
-	"description" text,
-	"guidance" text,
-	"recommended_actions" text,
-	"dispute_reasons_library" jsonb,
-	"evidence_requirements" jsonb,
-	"decision_tree" jsonb,
-	"email_template" text,
-	"dispute_instructions" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "name" text NOT NULL,
+        "category" text,
+        "description" text,
+        "guidance" text,
+        "recommended_actions" text,
+        "dispute_reasons_library" jsonb,
+        "evidence_requirements" jsonb,
+        "decision_tree" jsonb,
+        "email_template" text,
+        "dispute_instructions" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "notes" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer NOT NULL,
-	"invoice_group_id" integer,
-	"type" "note_type" DEFAULT 'manual' NOT NULL,
-	"content" text NOT NULL,
-	"author" text,
-	"email_subject" text,
-	"extracted_invoice_numbers" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer NOT NULL,
+        "invoice_group_id" integer,
+        "type" "note_type" DEFAULT 'manual' NOT NULL,
+        "content" text NOT NULL,
+        "author" text,
+        "email_subject" text,
+        "extracted_invoice_numbers" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "audit_logs" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer,
-	"invoice_group_id" integer,
-	"action" text NOT NULL,
-	"details" text NOT NULL,
-	"metadata" jsonb,
-	"user_email" text,
-	"user_name" text,
-	"timestamp" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer,
+        "invoice_group_id" integer,
+        "action" text NOT NULL,
+        "details" text NOT NULL,
+        "metadata" jsonb,
+        "user_email" text,
+        "user_name" text,
+        "timestamp" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "portal_submissions" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer NOT NULL,
-	"invoice_group_id" integer,
-	"status" "portal_submission_status" DEFAULT 'pending' NOT NULL,
-	"issue_type" text,
-	"subject" text,
-	"requester_email" text,
-	"transportation_provider_name" text,
-	"phone_number" text,
-	"invoice_number" text,
-	"gps_breadcrumbs_available" text,
-	"description_html" text,
-	"attachment_urls" jsonb,
-	"conf_number" text,
-	"service_date" text,
-	"ref_number" text,
-	"client_number" text,
-	"car_number" text,
-	"claim_amount" numeric(12, 2),
-	"error_type_name" text,
-	"error_details" text,
-	"dispute_reason" text,
-	"evidence_notes" text,
-	"evidence_files" jsonb,
-	"workflow_history" jsonb,
-	"portal_ticket_id" text,
-	"screenshot_url" text,
-	"error_message" text,
-	"submitted_at" text,
-	"attempts" integer DEFAULT 0 NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer NOT NULL,
+        "invoice_group_id" integer,
+        "status" "portal_submission_status" DEFAULT 'pending' NOT NULL,
+        "issue_type" text,
+        "subject" text,
+        "requester_email" text,
+        "transportation_provider_name" text,
+        "phone_number" text,
+        "invoice_number" text,
+        "gps_breadcrumbs_available" text,
+        "description_html" text,
+        "attachment_urls" jsonb,
+        "conf_number" text,
+        "service_date" text,
+        "ref_number" text,
+        "client_number" text,
+        "car_number" text,
+        "claim_amount" numeric(12, 2),
+        "error_type_name" text,
+        "error_details" text,
+        "dispute_reason" text,
+        "evidence_notes" text,
+        "evidence_files" jsonb,
+        "workflow_history" jsonb,
+        "portal_ticket_id" text,
+        "screenshot_url" text,
+        "error_message" text,
+        "submitted_at" text,
+        "attempts" integer DEFAULT 0 NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "presence_logs" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer NOT NULL,
-	"user_email" text NOT NULL,
-	"user_name" text,
-	"last_heartbeat" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "presence_logs_claim_user" UNIQUE("claim_id","user_email")
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer NOT NULL,
+        "user_email" text NOT NULL,
+        "user_name" text,
+        "last_heartbeat" timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT "presence_logs_claim_user" UNIQUE("claim_id","user_email")
 );
 --> statement-breakpoint
 CREATE TABLE "bot_instances" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"name" text NOT NULL,
-	"status" "bot_status" DEFAULT 'running' NOT NULL,
-	"last_heartbeat" timestamp with time zone DEFAULT now() NOT NULL,
-	"last_poll_at" timestamp with time zone,
-	"submissions_today" integer DEFAULT 0 NOT NULL,
-	"success_count" integer DEFAULT 0 NOT NULL,
-	"fail_count" integer DEFAULT 0 NOT NULL,
-	"session_valid" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "name" text NOT NULL,
+        "status" "bot_status" DEFAULT 'running' NOT NULL,
+        "last_heartbeat" timestamp with time zone DEFAULT now() NOT NULL,
+        "last_poll_at" timestamp with time zone,
+        "submissions_today" integer DEFAULT 0 NOT NULL,
+        "success_count" integer DEFAULT 0 NOT NULL,
+        "fail_count" integer DEFAULT 0 NOT NULL,
+        "session_valid" boolean DEFAULT true NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "bot_activity_log" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"submission_id" integer NOT NULL,
-	"bot_instance_id" integer,
-	"action" text NOT NULL,
-	"success" boolean DEFAULT true NOT NULL,
-	"message" text,
-	"screenshot_path" text,
-	"page_html_path" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "submission_id" integer NOT NULL,
+        "bot_instance_id" integer,
+        "action" text NOT NULL,
+        "success" boolean DEFAULT true NOT NULL,
+        "message" text,
+        "screenshot_path" text,
+        "page_html_path" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "error_detail_mappings" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"normalized_text" text NOT NULL,
-	"original_text" text NOT NULL,
-	"error_type_id" integer NOT NULL,
-	"error_type_name" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "error_detail_mappings_normalized_text_unique" UNIQUE("normalized_text")
+        "id" serial PRIMARY KEY NOT NULL,
+        "normalized_text" text NOT NULL,
+        "original_text" text NOT NULL,
+        "error_type_id" integer NOT NULL,
+        "error_type_name" text NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT "error_detail_mappings_normalized_text_unique" UNIQUE("normalized_text")
 );
 --> statement-breakpoint
 CREATE TABLE "evidence_types" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"name" text NOT NULL,
-	"description" text,
-	"category" text,
-	"accepts_image" boolean DEFAULT true NOT NULL,
-	"accepts_text" boolean DEFAULT false NOT NULL,
-	"instruction_text" text,
-	"instruction_image_url" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "evidence_types_name_unique" UNIQUE("name")
+        "id" serial PRIMARY KEY NOT NULL,
+        "name" text NOT NULL,
+        "description" text,
+        "category" text,
+        "accepts_image" boolean DEFAULT true NOT NULL,
+        "accepts_text" boolean DEFAULT false NOT NULL,
+        "instruction_text" text,
+        "instruction_image_url" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT "evidence_types_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
 CREATE TABLE "claim_evidence" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer NOT NULL,
-	"invoice_group_id" integer,
-	"evidence_type_id" integer,
-	"evidence_type_name" text NOT NULL,
-	"tree_node_id" text,
-	"image_url" text,
-	"notes" text,
-	"collected_by" text,
-	"collected_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer NOT NULL,
+        "invoice_group_id" integer,
+        "evidence_type_id" integer,
+        "evidence_type_name" text NOT NULL,
+        "tree_node_id" text,
+        "image_url" text,
+        "notes" text,
+        "collected_by" text,
+        "collected_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "conversations" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"title" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "title" text NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "messages" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"conversation_id" integer NOT NULL,
-	"role" text NOT NULL,
-	"content" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "conversation_id" integer NOT NULL,
+        "role" text NOT NULL,
+        "content" text NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "app_settings" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"key" text NOT NULL,
-	"value" text,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "app_settings_key_unique" UNIQUE("key")
+        "id" serial PRIMARY KEY NOT NULL,
+        "key" text NOT NULL,
+        "value" text,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT "app_settings_key_unique" UNIQUE("key")
 );
 --> statement-breakpoint
 CREATE TABLE "portal_responses" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"claim_id" integer,
-	"invoice_group_id" integer,
-	"submission_id" integer,
-	"source" "response_source" NOT NULL,
-	"responseType" "response_type" DEFAULT 'other' NOT NULL,
-	"subject" text,
-	"content" text,
-	"raw_content" text,
-	"sender_email" text,
-	"sender_name" text,
-	"matched_via" text,
-	"match_confidence" text,
-	"portal_ticket_id" text,
-	"external_message_id" text,
-	"processed" boolean DEFAULT false NOT NULL,
-	"auto_linked" boolean DEFAULT false NOT NULL,
-	"metadata" jsonb,
-	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" serial PRIMARY KEY NOT NULL,
+        "claim_id" integer,
+        "invoice_group_id" integer,
+        "submission_id" integer,
+        "source" "response_source" NOT NULL,
+        "responseType" "response_type" DEFAULT 'other' NOT NULL,
+        "subject" text,
+        "content" text,
+        "raw_content" text,
+        "sender_email" text,
+        "sender_name" text,
+        "matched_via" text,
+        "match_confidence" text,
+        "portal_ticket_id" text,
+        "external_message_id" text,
+        "processed" boolean DEFAULT false NOT NULL,
+        "auto_linked" boolean DEFAULT false NOT NULL,
+        "metadata" jsonb,
+        "received_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "claims" ADD CONSTRAINT "claims_invoice_group_id_invoice_groups_id_fk" FOREIGN KEY ("invoice_group_id") REFERENCES "public"."invoice_groups"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -324,4 +324,72 @@ CREATE INDEX "portal_responses_claim_id_idx" ON "portal_responses" USING btree (
 CREATE INDEX "portal_responses_submission_id_idx" ON "portal_responses" USING btree ("submission_id");--> statement-breakpoint
 CREATE INDEX "portal_responses_source_idx" ON "portal_responses" USING btree ("source");--> statement-breakpoint
 CREATE INDEX "portal_responses_external_message_id_idx" ON "portal_responses" USING btree ("external_message_id");--> statement-breakpoint
-CREATE INDEX "portal_responses_processed_idx" ON "portal_responses" USING btree ("processed");
+CREATE INDEX "portal_responses_processed_idx" ON "portal_responses" USING btree ("processed");--> statement-breakpoint
+CREATE TYPE "public"."outbound_email_kind" AS ENUM('dispute', 'follow_up', 'manual', 'daily_brief');--> statement-breakpoint
+CREATE TABLE "outbound_emails" (
+"id" serial PRIMARY KEY NOT NULL,
+"message_id" text,
+"conversation_id" text,
+"claim_id" integer,
+"invoice_group_id" integer,
+"submission_id" integer,
+"kind" "outbound_email_kind" NOT NULL,
+"subject" text,
+"recipients" jsonb,
+"body_preview" text,
+"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
+"sent_by_user_email" text,
+"sent_by_user_name" text
+);
+--> statement-breakpoint
+CREATE TABLE "notification_preferences" (
+"user_id" varchar PRIMARY KEY NOT NULL,
+"daily_brief" boolean DEFAULT true NOT NULL,
+"weekly_digest" boolean DEFAULT true NOT NULL,
+"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "cron_runs" (
+"id" serial PRIMARY KEY NOT NULL,
+"job_name" text NOT NULL,
+"started_at" timestamp with time zone DEFAULT now() NOT NULL,
+"finished_at" timestamp with time zone,
+"status" text DEFAULT 'running' NOT NULL,
+"message" text,
+"metadata" jsonb
+);
+--> statement-breakpoint
+CREATE TABLE "email_bounces" (
+"id" serial PRIMARY KEY NOT NULL,
+"recipient_email" text,
+"original_message_id" text,
+"conversation_id" text,
+"subject" text,
+"received_at" timestamp with time zone DEFAULT now() NOT NULL,
+"raw_excerpt" text,
+"matched_outbound_id" text,
+"matched_claim_id" text,
+"matched_invoice_group_id" text,
+"metadata" jsonb,
+"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "connector_health" (
+"connector_name" text PRIMARY KEY NOT NULL,
+"status" text NOT NULL,
+"last_checked_at" timestamp with time zone DEFAULT now() NOT NULL,
+"last_error" text,
+"metadata" jsonb
+);
+--> statement-breakpoint
+ALTER TABLE "outbound_emails" ADD CONSTRAINT "outbound_emails_claim_id_claims_id_fk" FOREIGN KEY ("claim_id") REFERENCES "public"."claims"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "outbound_emails" ADD CONSTRAINT "outbound_emails_invoice_group_id_invoice_groups_id_fk" FOREIGN KEY ("invoice_group_id") REFERENCES "public"."invoice_groups"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "outbound_emails" ADD CONSTRAINT "outbound_emails_submission_id_portal_submissions_id_fk" FOREIGN KEY ("submission_id") REFERENCES "public"."portal_submissions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "notification_preferences" ADD CONSTRAINT "notification_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "outbound_emails_claim_id_idx" ON "outbound_emails" USING btree ("claim_id");--> statement-breakpoint
+CREATE INDEX "outbound_emails_invoice_group_id_idx" ON "outbound_emails" USING btree ("invoice_group_id");--> statement-breakpoint
+CREATE INDEX "outbound_emails_conversation_id_idx" ON "outbound_emails" USING btree ("conversation_id");--> statement-breakpoint
+CREATE INDEX "cron_runs_job_name_started_idx" ON "cron_runs" USING btree ("job_name","started_at");--> statement-breakpoint
+CREATE INDEX "cron_runs_started_idx" ON "cron_runs" USING btree ("started_at");--> statement-breakpoint
+CREATE INDEX "email_bounces_received_idx" ON "email_bounces" USING btree ("received_at");--> statement-breakpoint
+CREATE INDEX "email_bounces_recipient_idx" ON "email_bounces" USING btree ("recipient_email");

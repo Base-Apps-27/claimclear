@@ -1,6 +1,6 @@
 {
-  "id": "59f1c90d-dfcd-4976-8c6d-afbdd31082b5",
-  "prevId": "b1e48eac-269b-4e37-825a-eba9672c347b",
+  "id": "89f52207-1d70-4c83-98fc-ae10519653ff",
+  "prevId": "78b4d108-5dfd-4f93-b71b-53e3f4e512a3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -206,9 +206,64 @@
           "primaryKey": false,
           "notNull": false
         },
-        "workflow_progress": {
-          "name": "workflow_progress",
-          "type": "jsonb",
+        "group_context": {
+          "name": "group_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "understanding_readback": {
+          "name": "understanding_readback",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "understanding_readback_at": {
+          "name": "understanding_readback_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "understanding_readback_by": {
+          "name": "understanding_readback_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "preview_generated_at": {
+          "name": "preview_generated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "preview_generated_by": {
+          "name": "preview_generated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reattest_required": {
+          "name": "reattest_required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reattest_completed_at": {
+          "name": "reattest_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reattest_completed_by": {
+          "name": "reattest_completed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reattest_note": {
+          "name": "reattest_note",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -642,9 +697,83 @@
           "primaryKey": false,
           "notNull": false
         },
-        "workflow_progress": {
-          "name": "workflow_progress",
+        "included_in_dispute": {
+          "name": "included_in_dispute",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "sop_node_id": {
+          "name": "sop_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sop_answers": {
+          "name": "sop_answers",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "sop_outcome": {
+          "name": "sop_outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "drop_reason": {
+          "name": "drop_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "drop_note": {
+          "name": "drop_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dropped_at": {
+          "name": "dropped_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ready_at": {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "per_leg_context": {
+          "name": "per_leg_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mas_action_required": {
+          "name": "mas_action_required",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mas_action_completed_at": {
+          "name": "mas_action_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mas_action_completed_by": {
+          "name": "mas_action_completed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mas_action_note": {
+          "name": "mas_action_note",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -774,6 +903,43 @@
           "primaryKey": false,
           "notNull": false
         },
+        "attestation_state": {
+          "name": "attestation_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'not_required'"
+        },
+        "attested_at": {
+          "name": "attested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attested_by": {
+          "name": "attested_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attestation_note": {
+          "name": "attestation_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attestation_queued_at": {
+          "name": "attestation_queued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attestation_queued_by": {
+          "name": "attestation_queued_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -864,6 +1030,37 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_claims_sop_outcome": {
+          "name": "idx_claims_sop_outcome",
+          "columns": [
+            {
+              "expression": "sop_outcome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_claims_mas_action_pending": {
+          "name": "idx_claims_mas_action_pending",
+          "columns": [
+            {
+              "expression": "invoice_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"claims\".\"mas_action_required\" = 'cancel' AND \"claims\".\"mas_action_completed_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -884,7 +1081,20 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "claims_sop_outcome_chk": {
+          "name": "claims_sop_outcome_chk",
+          "value": "\"claims\".\"sop_outcome\" IS NULL OR \"claims\".\"sop_outcome\" IN ('portal_dispute','dispute','hold','cannot_dispute','non_issue')"
+        },
+        "claims_drop_reason_chk": {
+          "name": "claims_drop_reason_chk",
+          "value": "\"claims\".\"drop_reason\" IS NULL OR \"claims\".\"drop_reason\" IN ('cannot_dispute','non_issue')"
+        },
+        "claims_mas_action_required_chk": {
+          "name": "claims_mas_action_required_chk",
+          "value": "\"claims\".\"mas_action_required\" IS NULL OR \"claims\".\"mas_action_required\" IN ('cancel','none')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.error_types": {
@@ -1372,6 +1582,24 @@
         "dispute_reason": {
           "name": "dispute_reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "special_circumstances": {
+          "name": "special_circumstances",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "understanding_readback": {
+          "name": "understanding_readback",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "understanding_readback_at": {
+          "name": "understanding_readback_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2384,6 +2612,43 @@
           "notNull": true,
           "default": false
         },
+        "ai_summary": {
+          "name": "ai_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extracted_amount": {
+          "name": "extracted_amount",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extracted_deadline": {
+          "name": "extracted_deadline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_action": {
+          "name": "requested_action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "classifier_source": {
+          "name": "classifier_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'keyword'"
+        },
+        "classifier_confidence": {
+          "name": "classifier_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
@@ -2613,6 +2878,12 @@
         "body_preview": {
           "name": "body_preview",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attachment_names": {
+          "name": "attachment_names",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -3171,6 +3442,285 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_verdict": {
+      "name": "claim_verdict",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "numeric(3, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inspection_time_ms": {
+          "name": "inspection_time_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_claim_verdict_claim_created": {
+          "name": "idx_claim_verdict_claim_created",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"created_at\" DESC",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_claim_verdict_source_outcome": {
+          "name": "idx_claim_verdict_source_outcome",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "outcome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"created_at\" DESC",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_verdict_claim_id_claims_id_fk": {
+          "name": "claim_verdict_claim_id_claims_id_fk",
+          "tableFrom": "claim_verdict",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "claim_verdict_source_chk": {
+          "name": "claim_verdict_source_chk",
+          "value": "\"claim_verdict\".\"source\" IN ('ai_suggested','operator_confirmed')"
+        },
+        "claim_verdict_outcome_chk": {
+          "name": "claim_verdict_outcome_chk",
+          "value": "\"claim_verdict\".\"outcome\" IN ('Approved','Denied','Partial')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.state_events": {
+      "name": "state_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invoice_group_id": {
+          "name": "invoice_group_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_state_events_event_key_created": {
+          "name": "idx_state_events_event_key_created",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"created_at\" DESC",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_state_events_group_created": {
+          "name": "idx_state_events_group_created",
+          "columns": [
+            {
+              "expression": "invoice_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"created_at\" DESC",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "state_events_claim_id_claims_id_fk": {
+          "name": "state_events_claim_id_claims_id_fk",
+          "tableFrom": "state_events",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "state_events_invoice_group_id_invoice_groups_id_fk": {
+          "name": "state_events_invoice_group_id_invoice_groups_id_fk",
+          "tableFrom": "state_events",
+          "tableTo": "invoice_groups",
+          "columnsFrom": [
+            "invoice_group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
