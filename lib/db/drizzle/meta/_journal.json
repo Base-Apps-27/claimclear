@@ -31,6 +31,20 @@
       "breakpoints": true
     },
     {
+      "idx": 4,
+      "version": "7",
+      "when": 1777450000000,
+      "tag": "0004_portal_batch_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777500000000,
+      "tag": "0005_presence_resource_keys",
+      "breakpoints": true
+    },
+    {
       "idx": 6,
       "version": "7",
       "when": 1777550329974,
@@ -56,6 +70,13 @@
       "version": "7",
       "when": 1777670000000,
       "tag": "0009_portal_understanding_preflight",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0010_per_leg_state",
       "breakpoints": true
     }
   ]
