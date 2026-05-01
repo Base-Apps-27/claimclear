@@ -734,15 +734,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 }
                 icon={<Paperclip className="w-3.5 h-3.5" />}
                 testId="group-evidence-card"
-                action={
-                  <Link
-                    href={`/invoice-groups/${groupId}`}
-                    className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
-                    style={{ border: "1px solid var(--cc-border)" }}
-                  >
-                    <Plus className="w-3 h-3" /> Attach
-                  </Link>
-                }
                 padded={false}
               >
                 {(() => {
@@ -869,14 +860,19 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               )}
             </CcCard>
 
-            {/* Submission preview & gauntlet (preserves real submit/readback/preview UX) */}
-            <CcCard
-              title="Submission preview"
-              icon={<Sparkles className="w-3.5 h-3.5" />}
-              testId="submission-preview-card"
-            >
-              <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} bare />
-            </CcCard>
+            {/* Submission preview & gauntlet (preserves real submit/readback/preview UX).
+                Only render while the group is still in the pre-submit window
+                (New / Needs Evidence) — once it's past pre-submit the surface
+                has nothing actionable, so we hide the whole card per Task #289. */}
+            {isPreSubmit && (
+              <CcCard
+                title="Submission preview"
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+                testId="submission-preview-card"
+              >
+                <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} bare />
+              </CcCard>
+            )}
 
             {/* Communication thread */}
             <div id="invoice-thread" />

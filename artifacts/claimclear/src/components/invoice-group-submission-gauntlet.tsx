@@ -24,7 +24,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   Loader2,
   Sparkles,
-  AlertTriangle,
   Send,
   Mail,
   CheckCircle2,
@@ -308,14 +307,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
 
   const body = (
     <>
-        {!isPreSubmit && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            This group is past pre-submit ({group.status}); preview generation
-            is no longer available from this surface.
-          </div>
-        )}
-
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Understanding readback</h3>
