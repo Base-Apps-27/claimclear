@@ -53,3 +53,9 @@ id = "ZyjvTbOTY_UzXFOdGL1GQ"
 uri = "file://attached_assets/prod-backups/invoice_groups_workflow_progress_backup_2026-05-01T14-02-00.csv"
 type = "table"
 title = "Invoice groups workflow_progress backup (54 rows)"
+
+[[outputs]]
+id = "FCL1ofXti_AGEGzXO2cNy"
+uri = "file://attached_assets/IMG_0056_1777647751547.png"
+type = "image"
+title = "Current Dashboard (your screenshot)"
