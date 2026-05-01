@@ -1,0 +1,20 @@
+Heads-up before you start — three alignment notes from the parallel main-app work:
+
+The shared communication components already exist and are wired into the invoice-group detail page. Don't write new ones. Consume:
+artifacts/claimclear/src/components/communication/group-communication-thread.tsx — the rich-HTML thread with Tiptap reply composer
+artifacts/claimclear/src/components/communication/response-received-banner.tsx — the amber "new reply" banner
+artifacts/claimclear/src/components/communication/mock-data.ts — the placeholder data layer (until the real group-level email API endpoint exists, consume this same mock layer so the swap-to-real is one-place-not-two)
+artifacts/claimclear/src/components/communication/leg-communication-mentions.tsx — read-only mentions stub (you won't need it on the Responses page, but mentioning it so you don't accidentally rebuild it)
+The right-side action rail must visually match the Group Rail pattern from invoice-group-detail-v2.tsx. Same sticky behavior, similar width, same heading typography, same dashed-border field rows for compact data. Open the invoice-group detail page first and copy the rail's container styles before composing the verdict / continuation / closure stack inside it. Do not invent a new rail aesthetic — we just standardized on this one.
+Reuse the #invoice-thread scroll anchor. The invoice-group detail page's Response-Received Banner already scrolls to #invoice-thread on click. When you implement the "auto-scroll to active message + visually pin" behavior on this page, key off the same anchor and the same scrollIntoView pattern. One implementation, two callers.
+Status reality you can rely on:
+
+Processed claim status is being added by Task #231 — render its picker normally in the per-leg verdict stack.
+Auto-excluded blank siblings (excluded_at IS NOT NULL, reason="non_issue") are being written server-side by Task #232 — render them as one-line read-only summaries above the picker stack, no buttons.
+When the post-filter set of actionable legs is empty, hide the picker and show "All legs already resolved at the group level," but keep continuation + closure visible.
+Out of scope reminders (do NOT touch):
+
+invoice-group-detail-v2.tsx and claim-detail-v2.tsx — leave alone. Just consume their components.
+The per-claim /claims/:id/email-thread endpoint and email-thread.ts server lib — out of scope.
+The MAS Action and Attestation tabs on this page — leave as-is.
+The master list rail's data source, sort, or URL semantics — preserve.
