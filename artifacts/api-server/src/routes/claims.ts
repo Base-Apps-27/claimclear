@@ -1866,6 +1866,31 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
     return;
   }
 
+  let previousGroupPhase: string | null = null;
+  if (leg.invoiceGroupId != null) {
+    const [parentGroup] = await db
+      .select({
+        status: invoiceGroupsTable.status,
+        reattestRequired: invoiceGroupsTable.reattestRequired,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+      })
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId))
+      .limit(1);
+    if (parentGroup) {
+      previousGroupPhase = getGroupMacroPhase(parentGroup);
+      const blockedPhases = new Set(["mas-action-required", "awaiting-payout", "closed"]);
+      if (blockedPhases.has(previousGroupPhase)) {
+        res.status(409).json({
+          error: "Cannot reclassify after the group reaches MAS/payout/closed; use the admin-correction flow",
+          expectedState: "group_phase ∈ {pre-submit, in-flight, response-pending, on-hold}",
+          actualState: previousGroupPhase,
+        });
+        return;
+      }
+    }
+  }
+
   // Submissions are group-scoped post-cutover, so the reclassify-block guard
   // checks for any in-flight or submitted submission on this leg's parent
   // group — reclassifying a leg whose group has gone out the door would
@@ -1889,6 +1914,9 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
     return;
   }
 
+  const previousMasActionRequired = leg.masActionRequired ?? null;
+  const previousMasActionCompletedAt = leg.masActionCompletedAt != null;
+
   const [updated] = await db
     .update(claimsTable)
     .set({
@@ -1904,6 +1932,10 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
       holdReason: null,
       holdPlacedAt: null,
       holdPendingFrom: null,
+      masActionRequired: null,
+      masActionCompletedAt: null,
+      masActionCompletedBy: null,
+      masActionNote: null,
     })
     .where(eq(claimsTable.id, id))
     .returning();
@@ -1911,13 +1943,21 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
   await createAuditLog(id, "leg_reclassified", "Leg reclassified — error type and SOP cleared", req, {
     previousSubStatus: subStatus,
     previousErrorTypeId: leg.errorTypeId,
+    previousMasActionRequired,
+    previousMasActionCompletedAt,
+    previousGroupPhase,
   });
   await emitStateEvent({
     eventKey: "leg.reclassified",
     claimId: id,
     invoiceGroupId: leg.invoiceGroupId,
     actorUserId: req.user?.email ?? null,
-    metadata: { previousErrorTypeId: leg.errorTypeId },
+    metadata: {
+      previousErrorTypeId: leg.errorTypeId,
+      previousMasActionRequired,
+      previousMasActionCompletedAt,
+      previousGroupPhase,
+    },
   });
   await refreshClaimDenormalizedCache(id);
   if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);

@@ -1192,3 +1192,172 @@ test("Operator-hold regression: POST /hold + DELETE /hold path is unchanged by c
     await cleanupErrorType(errType.id);
   }
 });
+
+// --- /reclassify MAS-clear + phase guard (Task #211) ---------------------
+
+test("POST /claims/:id/reclassify clears MAS columns and recomputes group reattest_required", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "cannot_dispute",
+    invoiceGroupId: group.id,
+  });
+  await db.update(claimsTable).set({
+    masActionRequired: "cancel",
+    dropReason: "cannot_dispute",
+    droppedAt: new Date(),
+  }).where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.masActionRequired, null, "masActionRequired must be null after reclassify");
+    assert.equal(res.json.masActionCompletedAt, null, "masActionCompletedAt must be null after reclassify");
+    assert.equal(res.json.masActionCompletedBy, null, "masActionCompletedBy must be null after reclassify");
+    assert.equal(res.json.masActionNote, null, "masActionNote must be null after reclassify");
+
+    const [postGroup] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(postGroup.reattestRequired, false, "group reattest_required must recompute to false when only MAS leg is reclassified");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const reclAudit = audits.find((a) => a.action === "leg_reclassified");
+    assert.ok(reclAudit, "expected leg_reclassified audit row");
+    const meta = reclAudit!.metadata as any;
+    assert.equal(meta.previousMasActionRequired, "cancel", "audit must record prior masActionRequired");
+    assert.equal(meta.previousMasActionCompletedAt, false, "audit must record prior masActionCompletedAt as boolean");
+    assert.equal(meta.previousGroupPhase, "response-pending", "audit must record prior group phase");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify is refused when group is in mas-action-required phase", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true }).where(eq(invoiceGroupsTable.id, group.id));
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "cannot_dispute",
+    invoiceGroupId: group.id,
+  });
+  await db.update(claimsTable).set({
+    masActionRequired: "cancel",
+    dropReason: "cannot_dispute",
+    droppedAt: new Date(),
+  }).where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.actualState, "mas-action-required");
+    assert.ok(res.json.error.includes("admin-correction"), "error message should mention admin-correction flow");
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.masActionRequired, "cancel", "no column writes should happen on 409");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(!audits.find((a) => a.action === "leg_reclassified"), "no audit row should be emitted on 409");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify is refused when group is in closed phase", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Resolved" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+    invoiceGroupId: group.id,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.actualState, "closed");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify — portal guard still fires when group is in pre-submit but has a submitted submission", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+    invoiceGroupId: group.id,
+  });
+  await db.insert(portalSubmissionsTable).values({
+    invoiceGroupId: group.id,
+    status: "submitted",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "no_submission", "portal guard should fire (phase guard passes for pre-submit)");
+    assert.equal(res.json.actualState, "submission_exists");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify with no MAS columns set succeeds and audit records null priors", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+    invoiceGroupId: group.id,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.masActionRequired, null);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const reclAudit = audits.find((a) => a.action === "leg_reclassified");
+    assert.ok(reclAudit, "expected leg_reclassified audit row");
+    const meta = reclAudit!.metadata as any;
+    assert.equal(meta.previousMasActionRequired, null, "prior masActionRequired should be null");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify preserves claim_verdict rows (append-only invariant)", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  await db.insert(claimVerdictTable).values({
+    claimId: claim.id,
+    source: "operator_confirmed",
+    outcome: "Denied",
+  });
+  await db.update(claimsTable).set({ masActionRequired: "cancel" }).where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const verdicts = await db.select().from(claimVerdictTable).where(eq(claimVerdictTable.claimId, claim.id));
+    assert.equal(verdicts.length, 1, "claim_verdict row must still exist after reclassify");
+    assert.equal(verdicts[0].outcome, "Denied", "verdict outcome must be preserved");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
