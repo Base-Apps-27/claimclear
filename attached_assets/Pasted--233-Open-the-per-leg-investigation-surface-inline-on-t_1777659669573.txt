@@ -1,0 +1,24 @@
+#233 - Open the per-leg investigation surface inline on the Queue page
+What & Why
+Task #232 inlined the group-level workspace (aggregate context, legs list, submission gauntlet) into the Queue page so operators can work without leaving the queue. The per-leg investigation surface — currently at /claims/:id — still requires a full page navigation. Inlining it would let operators triage a leg, classify it, walk SOP, attach evidence, and confirm a verdict without ever leaving the Queue.
+Done looks like
+* Selecting a leg row in the inlined Legs List opens an <InlineClaimWorkflow> panel below the gauntlet on the Queue page.
+* The panel mirrors the primary controls from /claims/:id(classify / SOP advance / hold / exclude / include / evidence upload / verdict) without duplicating the form/mutation plumbing.
+* Selection is URL-persisted (e.g. ?leg=) so a refresh keeps the same leg open.
+Relevant files
+* artifacts/claimclear/src/pages/queue.tsx (host)
+* artifacts/claimclear/src/pages/claim-detail.tsx(current full surface — extract subcomponents from here)
+* artifacts/claimclear/src/components/invoice-group-legs-list.tsx(selection trigger)
+Dependencies
+ #234 - Let operators mark blank claims as 'non-issue' or 'cannot dispute' from the inbox
+What & Why
+The classification inbox now shows individual claims with their errorDetails so operators can see at a glance which claims are blank. The backend already accepts non_issue and cannot_dispute as exclude reasons, but the inbox UI doesn't expose per-claim exclude actions yet — operators have to open the triage panel and exclude legs there.
+Adding inline "Mark non-issue" and "Mark cannot dispute" buttons on each blank-claim row would let operators clean up obvious no-issue siblings before classifying the qualifying claim, without round-tripping through the triage panel.
+Done looks like
+* Each blank-claim row in the Classification Inbox renders two small action buttons.
+* Clicking either button calls POST /api/claims/:id/excludewith the matching reason and refreshes the inbox.
+* A small confirmation toast confirms the action.
+Relevant files
+* artifacts/claimclear/src/pages/queue.tsx (ClassificationInboxRow)
+* artifacts/api-server/src/routes/claims.ts (POST /claims/:id/exclude — already accepts the new reasons)
+Dependencies
