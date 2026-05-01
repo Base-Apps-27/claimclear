@@ -9622,6 +9622,12 @@ export const CreatePortalSubmissionBody = zod.object({
     .describe(
       "The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.",
     ),
+  actorType: zod
+    .enum(["operator", "system"])
+    .optional()
+    .describe(
+      'Submission actor path. \"operator\" (default for human users) enforces all four readiness gates. \"system\" requires a valid bot service token and bypasses the readback and preview gates.',
+    ),
 });
 
 /**
@@ -9940,6 +9946,12 @@ export const GeneratePortalSubmissionPreviewBody = zod.object({
     .optional()
     .describe(
       "The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.",
+    ),
+  actorType: zod
+    .enum(["operator", "system"])
+    .optional()
+    .describe(
+      'Submission actor path. \"operator\" (default for human users) enforces all four readiness gates. \"system\" requires a valid bot service token and bypasses the readback and preview gates.',
     ),
 });
 

@@ -1876,6 +1876,17 @@ export interface LintResult {
   message: string;
 }
 
+/**
+ * Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates.
+ */
+export type CreatePortalSubmissionBodyActorType =
+  (typeof CreatePortalSubmissionBodyActorType)[keyof typeof CreatePortalSubmissionBodyActorType];
+
+export const CreatePortalSubmissionBodyActorType = {
+  operator: "operator",
+  system: "system",
+} as const;
+
 export interface CreatePortalSubmissionBody {
   invoiceGroupId?: number;
   issueType?: string;
@@ -1891,6 +1902,8 @@ export interface CreatePortalSubmissionBody {
   specialCircumstances?: string;
   /** The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty. */
   understandingReadback?: string;
+  /** Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates. */
+  actorType?: CreatePortalSubmissionBodyActorType;
 }
 
 export interface PortalUnderstandingPreflightBody {

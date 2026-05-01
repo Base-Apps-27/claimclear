@@ -5318,6 +5318,10 @@ components:
         understandingReadback:
           type: string
           description: The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty.
+        actorType:
+          type: string
+          enum: [operator, system]
+          description: Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates.
 
     PortalUnderstandingPreflightBody:
       type: object

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable, stateEventsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
@@ -9,6 +9,9 @@ import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { lintDraft, type LintResult } from "../lib/draft-lint";
 import { primaryClaimIdForGroup } from "../lib/group-claims";
+import { getMacroPhase } from "../lib/macro-phase";
+import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
+import { emitStateEvent } from "../lib/state-events";
 
 // NOTE: Confirming a draft, queueing a submission, or retrying a failed
 // submission only moves the row to status="pending". The Playwright worker is
@@ -967,6 +970,84 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
 
   const ctx = await resolveContext({ invoiceGroupId });
   if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  const actorResult = resolveSubmissionActor(req, req.body);
+  if ("error" in actorResult) {
+    res.status(actorResult.status).json({ error: actorResult.error });
+    return;
+  }
+  const { actor: submissionActor } = actorResult;
+  const isBot = submissionActor.kind === "system";
+
+  if (ctx.group) {
+    const phase = getMacroPhase(ctx.group.status);
+    if (phase !== "pre-submit") {
+      res.status(409).json({
+        error: "Group is not in pre-submit",
+        expectedState: "pre-submit",
+        actualState: phase,
+        gate: "phase",
+      });
+      return;
+    }
+
+    if (!isBot) {
+      if (ctx.group.understandingReadbackAt == null) {
+        res.status(409).json({
+          error: "Understanding readback not confirmed",
+          expectedState: "readback-confirmed",
+          actualState: "no-readback",
+          gate: "readback",
+        });
+        return;
+      }
+
+      if (ctx.group.previewGeneratedAt == null) {
+        res.status(409).json({
+          error: "Preview not generated",
+          expectedState: "preview-generated",
+          actualState: "no-preview",
+          gate: "preview",
+        });
+        return;
+      }
+    }
+
+    const legsResult = await allDisputedLegsResolved(ctx.group.id);
+    if (!legsResult.ok) {
+      res.status(409).json({
+        error: "Not all disputed legs are resolved",
+        expectedState: "all-legs-resolved",
+        actualState: `${legsResult.unresolved}-unresolved`,
+        gate: "legs",
+      });
+      return;
+    }
+
+    if (isBot) {
+      const bypassPayload = {
+        actorType: "system" as const,
+        bypassed: ["readback", "preview"],
+        requestor: submissionActor.identity,
+      };
+      await db.insert(auditLogsTable).values({
+        claimId: ctx.primaryClaim.id,
+        invoiceGroupId: ctx.group.id,
+        action: "submission_actor_bypass",
+        details: `Bot submission bypassed readback+preview gates`,
+        metadata: bypassPayload,
+        userEmail: null,
+        userName: submissionActor.identity,
+      });
+      await emitStateEvent({
+        eventKey: "group.submission_bypass_used",
+        claimId: ctx.primaryClaim.id,
+        invoiceGroupId: ctx.group.id,
+        actorUserId: submissionActor.identity,
+        metadata: bypassPayload,
+      });
+    }
+  }
 
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
+import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
 import { refreshGroupDerivedFields, getGroupMacroPhase } from "../lib/denormalized-cache";
 import { getMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -1051,22 +1052,6 @@ async function createGroupAuditLog(
   });
 }
 
-// All disputed legs of a group must have a "resolved" sub-status before we
-// can let the operator confirm the readback or generate a preview. The
-// excluded path also counts as resolved (those legs were intentionally
-// left out).
-const RESOLVED_LEG_SUB_STATUSES = new Set(["ready", "dropped", "excluded"]);
-
-async function allDisputedLegsResolved(invoiceGroupId: number): Promise<{ ok: boolean; unresolved: number }> {
-  const legs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, invoiceGroupId));
-  const disputed = legs.filter((l) => l.includedInDispute);
-  let unresolved = 0;
-  for (const l of disputed) {
-    const sub = deriveLegSubStatus(l);
-    if (!RESOLVED_LEG_SUB_STATUSES.has(sub)) unresolved++;
-  }
-  return { ok: unresolved === 0 && disputed.length > 0, unresolved };
-}
 
 // POST /invoice-groups/:id/group-context — operator records the group-level
 // "what's going on with this invoice" narrative used by the dispute write-
@@ -1168,10 +1153,11 @@ router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (re
   res.json(updated);
 }));
 
-// POST /invoice-groups/:id/preview-generated — stamp that a dispute
-// preview was generated. Source-state: pre-submit AND readback confirmed
-// AND all legs resolved. Body is empty; the timestamp/identity come from
-// the request.
+// POST /invoice-groups/:id/preview-generated — stamps that the operator
+// has reviewed a preview. Does NOT transition the group. The transition
+// happens on POST /portal-submissions. Source-state: pre-submit AND
+// readback confirmed AND all legs resolved. Body is empty; the
+// timestamp/identity come from the request.
 router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { CreatePortalSubmissionBodyActorType } from "./createPortalSubmissionBodyActorType";
 
 export interface CreatePortalSubmissionBody {
   invoiceGroupId?: number;
@@ -27,4 +28,6 @@ export interface CreatePortalSubmissionBody {
   specialCircumstances?: string;
   /** The 2–4 sentence AI readback the operator confirmed before generating the draft. Required when `specialCircumstances` is non-empty. */
   understandingReadback?: string;
+  /** Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates. */
+  actorType?: CreatePortalSubmissionBodyActorType;
 }

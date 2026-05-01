@@ -9,6 +9,7 @@ import {
   useStampPreviewGenerated,
   useGetInvoiceGroupValidTransitions,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  useCreatePortalSubmission,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -21,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, Save, FileText, Sparkles, ChevronRight, AlertTriangle, Inbox, ClipboardCheck } from "lucide-react";
+import { Loader2, Save, FileText, Sparkles, ChevronRight, AlertTriangle, Inbox, ClipboardCheck, Send } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
@@ -47,6 +48,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const setContextMutation = useSetGroupContext();
   const confirmReadbackMutation = useConfirmUnderstandingReadback();
   const stampPreviewMutation = useStampPreviewGenerated();
+  const submitMutation = useCreatePortalSubmission();
+  const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId, {
     query: {
       queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
@@ -129,6 +132,45 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           invalidateGroup();
         },
         onError: (e: unknown) => toast({ title: "Preview generation failed", description: String((e as Error).message), variant: "destructive" }),
+      },
+    );
+  }
+
+  function onSubmitToPortal() {
+    setSubmitError(null);
+    submitMutation.mutate(
+      {
+        data: {
+          invoiceGroupId: groupId,
+          actorType: "operator",
+          understandingReadback: group?.understandingReadback ?? readback,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Submitted to portal" });
+          invalidateGroup();
+        },
+        onError: (e: unknown) => {
+          let errorMsg = e instanceof Error ? e.message : String(e);
+          let gate: string | undefined;
+          if (e != null && typeof e === "object" && "response" in e) {
+            const axiosErr = e as { response?: { data?: { error?: string; gate?: string } } };
+            const resp = axiosErr.response?.data;
+            if (resp?.error) errorMsg = resp.error;
+            if (resp?.gate) gate = resp.gate;
+          }
+          if (gate) {
+            setSubmitError({ error: errorMsg, gate });
+          } else {
+            setSubmitError({ error: errorMsg });
+          }
+          toast({
+            title: "Submission failed",
+            description: errorMsg,
+            variant: "destructive",
+          });
+        },
       },
     );
   }
@@ -446,6 +488,77 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               )}
             </ul>
           </div>
+
+          {isPreSubmit && previewGenerated && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Submit to portal</h3>
+                  {(() => {
+                    const missingGates: string[] = [];
+                    if (!allResolved) missingGates.push("legs");
+                    if (!readbackConfirmed) missingGates.push("readback");
+                    const submitDisabledReason: string | null =
+                      missingGates.length > 0
+                        ? `Cannot submit — missing gate${missingGates.length > 1 ? "s" : ""}: ${missingGates.join(", ")}.`
+                        : null;
+                    const button = (
+                      <Button
+                        size="sm"
+                        onClick={onSubmitToPortal}
+                        disabled={submitDisabledReason !== null || submitMutation.isPending}
+                        data-testid="submit-to-portal"
+                      >
+                        {submitMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Submit to Portal
+                      </Button>
+                    );
+                    if (submitDisabledReason) {
+                      return (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span tabIndex={0} data-testid="submit-to-portal-disabled-wrapper">
+                                {button}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              data-testid="submit-to-portal-disabled-tooltip"
+                            >
+                              {submitDisabledReason}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    }
+                    return button;
+                  })()}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Generate Preview calls <code>/portal-submissions/generate-preview</code> (renders preview),
+                  then <code>/api/invoice-groups/:id/preview-generated</code> (stamps acceptance).
+                  Submit is the separate step that triggers the portal transition.
+                </p>
+                {submitError && (
+                  <div
+                    className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900"
+                    data-testid="submit-error"
+                  >
+                    {submitError.error}
+                    {submitError.gate && (
+                      <span className="ml-1 text-xs text-red-700">(gate: {submitError.gate})</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

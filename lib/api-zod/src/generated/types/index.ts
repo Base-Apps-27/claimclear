@@ -95,6 +95,7 @@ export * from "./createErrorTypeBodyDisputeReasonsLibrary";
 export * from "./createErrorTypeBodyEvidenceRequirements";
 export * from "./createNoteBody";
 export * from "./createPortalSubmissionBody";
+export * from "./createPortalSubmissionBodyActorType";
 export * from "./cronJobSummary";
 export * from "./cronRunRecord";
 export * from "./cronRunsResponse";
