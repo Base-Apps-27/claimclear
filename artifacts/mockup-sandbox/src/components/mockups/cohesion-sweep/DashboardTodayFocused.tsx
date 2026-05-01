@@ -1,8 +1,30 @@
 import {
-  AlertTriangle, Mail, Stamp, ChevronRight, Clock, Activity, Server,
+  AlertTriangle, Mail, Stamp, ChevronRight, Activity, Server, TrendingUp,
 } from "lucide-react";
 import { ReactNode } from "react";
 import { PageHeader, StatusPill } from "./_shared";
+
+function KpiTile({ label, value, sub, valueTone = "neutral" }: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  valueTone?: "neutral" | "good" | "danger";
+}) {
+  const valueColor =
+    valueTone === "good"   ? "var(--cc-success)" :
+    valueTone === "danger" ? "var(--cc-destructive)" :
+                             "var(--cc-fg)";
+  return (
+    <div className="cc-card p-4">
+      <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5"
+           style={{ color: "var(--cc-muted-fg)" }}>
+        {label}
+      </div>
+      <div className="text-3xl font-bold mono" style={{ color: valueColor }}>{value}</div>
+      {sub && <div className="text-xs mt-1.5" style={{ color: "var(--cc-muted-fg)" }}>{sub}</div>}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Mock data                                                           */
@@ -98,25 +120,6 @@ function HeroCard({
   );
 }
 
-function BacklogTile({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex items-baseline gap-2 px-3 py-2">
-      <span className="text-sm font-semibold mono">{value}</span>
-      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>{label}</span>
-    </div>
-  );
-}
-
-function MoneyCell({ label, value, tone }: { label: string; value: string; tone?: "good" | "danger" }) {
-  const color = tone === "good" ? "var(--cc-success)" : tone === "danger" ? "var(--cc-destructive)" : "var(--cc-fg)";
-  return (
-    <div className="px-4 py-2 flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: "var(--cc-muted-fg)" }}>{label}</span>
-      <span className="text-base mono font-semibold" style={{ color }}>{value}</span>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
@@ -126,7 +129,7 @@ export function DashboardTodayFocused() {
     <div className="cc-scope p-6 space-y-5" style={{ width: "100%" }}>
       <PageHeader title="Command center" search={false} accent="blue" />
 
-      {/* PERSONALIZED READOUT — the very top line that orients the user */}
+      {/* PERSONALIZED READOUT */}
       <div className="cc-card px-5 py-4">
         <div className="text-base">
           You have{" "}
@@ -137,6 +140,41 @@ export function DashboardTodayFocused() {
         <div className="text-sm mt-1" style={{ color: "var(--cc-muted-fg)" }}>
           Start with filing — <span className="mono">INV-1855844580</span> expires today.
         </div>
+      </div>
+
+      {/* SYSTEM HEALTH BANNER — only renders when something is wrong */}
+      <div className="cc-card flex items-center gap-3 px-4 py-2.5 text-sm"
+           style={{ borderColor: "var(--cc-amber-border)", background: "var(--cc-amber-bg)" }}>
+        <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: "var(--cc-amber-fg)" }} />
+        <span className="font-medium" style={{ color: "var(--cc-amber-fg)" }}>System health: 1 component needs attention</span>
+        <span style={{ color: "var(--cc-amber-fg)", opacity: 0.85 }}>· Portal worker has not run today</span>
+        <a href="#" className="ml-auto text-xs font-medium" style={{ color: "var(--cc-amber-fg)" }}>System health →</a>
+      </div>
+
+      {/* UNIVERSAL KPIs — the always-on numbers */}
+      <div className="grid grid-cols-4 gap-3">
+        <KpiTile
+          label="Invoices pending"
+          value="879"
+          sub="852 need evidence · 27 awaiting response"
+        />
+        <KpiTile
+          label="Total exposure"
+          value="$172,520.13"
+          sub="claim + ~70% vendor prepay"
+          valueTone="danger"
+        />
+        <KpiTile
+          label="Recovered"
+          value="$48,920.40"
+          sub={<span className="inline-flex items-center gap-1"><TrendingUp className="w-3 h-3" /> $4,210 this week</span>}
+          valueTone="good"
+        />
+        <KpiTile
+          label="Lost"
+          value="$2,140.10"
+          sub="4 denied · 0 withdrawn"
+        />
       </div>
 
       {/* TODAY'S WORK — three hero columns */}
@@ -187,37 +225,6 @@ export function DashboardTodayFocused() {
             footer={<>Open Attestation Queue →</>}
           />
         </div>
-      </div>
-
-      {/* ALERTS STRIP — only shown when something is wrong */}
-      <div className="cc-card flex items-center gap-3 px-4 py-2.5 text-sm"
-           style={{ borderColor: "var(--cc-amber-border)", background: "var(--cc-amber-bg)" }}>
-        <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: "var(--cc-amber-fg)" }} />
-        <span className="font-medium" style={{ color: "var(--cc-amber-fg)" }}>System health: 1 component needs attention</span>
-        <span style={{ color: "var(--cc-amber-fg)", opacity: 0.85 }}>· Portal worker has not run today</span>
-        <a href="#" className="ml-auto text-xs font-medium" style={{ color: "var(--cc-amber-fg)" }}>System health →</a>
-      </div>
-
-      {/* BACKLOG STRIP — context, not action */}
-      <div className="cc-card">
-        <div className="px-4 py-2 flex items-center gap-2 text-[11px] uppercase tracking-wide font-semibold"
-             style={{ color: "var(--cc-muted-fg)", borderBottom: "1px solid var(--cc-border)" }}>
-          <Clock className="w-3.5 h-3.5" /> Backlog
-        </div>
-        <div className="grid grid-cols-4 divide-x" style={{ borderColor: "var(--cc-border)" }}>
-          <BacklogTile label="needs evidence"        value="852" />
-          <BacklogTile label="awaiting response"     value="27" />
-          <BacklogTile label="in MAS reattest queue" value="14" />
-          <BacklogTile label="portal queue"          value="5" />
-        </div>
-      </div>
-
-      {/* MONEY STRIP — quiet row */}
-      <div className="cc-card grid grid-cols-4 divide-x" style={{ borderColor: "var(--cc-border)" }}>
-        <MoneyCell label="Total exposure" value="$172,520.13" tone="danger" />
-        <MoneyCell label="Recovered"      value="$0.00"        tone="good" />
-        <MoneyCell label="Denied (4)"     value="$2,140.10" />
-        <MoneyCell label="Withdrawn (0)"  value="$0.00" />
       </div>
 
       {/* RECENT ACTIVITY */}
