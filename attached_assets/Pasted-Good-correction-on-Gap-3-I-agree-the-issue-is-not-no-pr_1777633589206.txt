@@ -1,0 +1,72 @@
+Good correction on Gap 3. I agree the issue is not “no pre-submit → in-flight transition exists.” The issue is that the transition exists on POST /portal-submissions, while the new planned flow added adjacent preview/readback/stamp endpoints without clearly defining the operator-facing sequence and backend gates. So Solution B should be framed as “submit-flow hardening and UX clarity,” not “add missing transition.”
+
+My decisions:
+
+Solution A — APPROVE, with one adjustment.
+I agree we need a real writer for includedInDispute and importer/backfill behavior must stop treating clean legs as work.
+
+But do not silently flip production behavior without surfacing it. Ship it in this order:
+1. Add endpoints.
+2. Add UI affordances.
+3. Add importer behavior for new imports.
+4. Backfill existing clean New legs to excluded, but log/report exactly how many rows changed and include a post-migration verification query.
+
+I accept the backfill. Clean legs should not clutter needs_classification. That clutter is the old model leaking into the new one.
+
+One concern: reason vocabulary is fine, but do not let “other” become a trash can. Require a note when reason = other.
+
+Solution B — APPROVE, but be careful with actor paths.
+The endpoint roles must be explicit:
+
+- /generate-preview = generate preview content
+- /preview-generated = stamp operator review/acceptance of preview
+- /portal-submissions = actual submit + transition to Portal Queued
+
+POST /portal-submissions must enforce the four gates for human/operator submissions.
+
+But do not break non-human/system submission flows by accident. If the bot or internal process calls /portal-submissions directly, define an explicit actor path:
+- actorType = operator requires all preview/readback gates
+- actorType = system/bot must still satisfy invoice readiness, but may bypass previewGeneratedAt only if that is truly the current intended behavior
+
+Do not create a vague bypass. If there is a bypass, it must be named, audited, and limited.
+
+Also yes: move allDisputedLegsResolved into a shared helper. No duplicate readiness logic.
+
+Solution C — APPROVE.
+Keep SOP-hold separate from operator hold. That is the cleanest model.
+
+I agree with rejecting fake holdReason synthesis. SOP hold is not the same thing as an operator-placed hold.
+
+But confirm the player can resume from sopNodeId. If not, do not silently reset the entire tree unless the UI tells the operator clearly. Preferred fallback:
+- preserve sopAnswers
+- preserve sopNodeId if possible
+- if restart is technically required, show “Resume is not available; restart SOP walk” explicitly
+
+Solution D — APPROVE.
+Reclassify must clear MAS columns. A leg returning to needs_classification cannot still owe MAS cancel. That is exactly the kind of stale downstream obligation that recreates trust-breaking inconsistency.
+
+I also approve the phase guard:
+- allow reclassify before MAS/action payout terminal phases
+- block it once the group is mas-action-required, awaiting-payout, or closed
+
+One nuance: if there is ever a legitimate need to correct a classification after MAS phase, it should not be “reclassify.” It should be a separate admin correction flow later. Do not overload reclassify.
+
+Priority/order:
+1. Task #200 first. No exceptions. Schema/migration must be stable before these tasks.
+2. Solution A next, because includedInDispute affects readiness, queues, and importer behavior.
+3. Solution B next, because it hardens the actual submit boundary.
+4. Solution D next, because it prevents stale MAS obligations.
+5. Solution C can ship in parallel with D if low-risk, but it still needs a player capability check.
+
+Convert A–D into tasks with these constraints:
+
+Anti-slop requirements:
+- cite exact files/handlers being changed
+- include before/after behavior
+- include 409 contracts for invalid states
+- include migration/backfill verification queries where applicable
+- include audit + state_event payloads
+- include at least one negative test per task
+- explicitly say what is out of scope
+
+Do not let the agent summarize the architecture again. These are now implementation hardening tasks.
