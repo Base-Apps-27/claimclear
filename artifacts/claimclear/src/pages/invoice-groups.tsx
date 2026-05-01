@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
+import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
@@ -49,7 +50,9 @@ const STATUSES = [
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
 ] as const;
 
-const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
+// `OUTCOMES` is re-exported from @workspace/vocab — the constant must
+// keep its enum spelling ("Non-Issue") because it's also a valid filter
+// value sent over the wire.
 
 // Tabs come from the shared lifecycle vocabulary so Claims and Invoice
 // Groups stay in lockstep when a status is added/renamed.
@@ -282,7 +285,7 @@ export default function InvoiceGroupsList() {
     [],
   );
   const outcomeOptions: FacetOption[] = useMemo(
-    () => OUTCOMES.map(o => ({ id: o, label: o })),
+    () => OUTCOMES.map(o => ({ id: o, label: outcomeLabel(o) })),
     [],
   );
 

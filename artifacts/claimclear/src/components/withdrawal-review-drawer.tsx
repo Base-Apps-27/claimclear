@@ -17,17 +17,14 @@ import type { WithdrawalRow } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
+// Pulled from @workspace/vocab so this drawer reads the same as
+// every other surface that mentions a closure reason.
+import { closureReasonLabel } from "@workspace/vocab";
 
 const REASON_TONE: Record<string, Tone> = {
   cannot_dispute: "amber",
   non_issue: "blue",
   denied_by_payor: "red",
-};
-
-const REASON_LABEL: Record<string, string> = {
-  cannot_dispute: "Cannot Dispute",
-  non_issue: "Non-Issue",
-  denied_by_payor: "Denied by Payor",
 };
 
 interface Props {
@@ -114,7 +111,7 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
                 style={{ background: accentBg, color: accentColor, borderColor: accentColor }}
                 className="border text-[10px] uppercase tracking-wide font-bold"
               >
-                {REASON_LABEL[row.closureReason]}
+                {closureReasonLabel(row.closureReason)}
               </Badge>
               <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
                 {row.kind === "claim" ? "Claim" : "Invoice Group"}

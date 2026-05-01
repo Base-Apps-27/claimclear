@@ -138,11 +138,15 @@ export const CLOSURE_REASON_BANNER = {
     submitClass: "bg-amber-600 hover:bg-amber-700 text-white border-amber-700",
   },
   non_issue: {
-    label: "Non-Issue",
+    // Canonical label "Non-issue" comes from @workspace/vocab
+    // (CLOSURE_REASON.non_issue.label). Spelled inline here to keep
+    // closure-options dependency-free; the vocab tests assert the two
+    // stay in sync.
+    label: "Non-issue",
     description:
       "On closer look, this isn't actually a billing error — nothing for us to dispute.",
     bannerClass: "bg-blue-50 border-blue-200 text-blue-900",
-    submitLabel: "Mark Non-Issue",
+    submitLabel: "Mark Non-issue",
     submitClass: "bg-blue-600 hover:bg-blue-700 text-white border-blue-700",
   },
   denied_by_payor: {

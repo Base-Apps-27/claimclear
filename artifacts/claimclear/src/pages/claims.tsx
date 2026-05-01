@@ -42,6 +42,7 @@ import {
   type LifecycleTabKey,
 } from "@/lib/lifecycle-phase";
 import { type LegSubStatus } from "@workspace/leg-state";
+import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
 
 // v2 claims-list tab strip: spec'd six filters in this order.
@@ -59,7 +60,7 @@ const STATUSES = [
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
 ] as const;
 
-const OUTCOMES = ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue"] as const;
+// `OUTCOMES` is re-exported from @workspace/vocab — keep enum spelling.
 
 // Tabs come from the shared lifecycle vocabulary so Claims and Invoice
 // Groups stay in lockstep when a status is added/renamed.
@@ -295,7 +296,7 @@ export default function ClaimsList() {
     [],
   );
   const outcomeOptions: FacetOption[] = useMemo(
-    () => OUTCOMES.map(o => ({ id: o, label: o })),
+    () => OUTCOMES.map(o => ({ id: o, label: outcomeLabel(o) })),
     [],
   );
 

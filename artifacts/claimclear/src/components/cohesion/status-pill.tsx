@@ -1,24 +1,23 @@
 import type { ReactNode } from "react";
 import { TONE_STYLE, toneForStatus, type Tone } from "./tone";
 import { WrapTooltip } from "@/components/info-tooltip";
+import {
+  CLAIM_STATUS,
+  OUTCOME,
+  claimStatusLabel,
+  outcomeLabel,
+} from "@workspace/vocab";
 
-const statusDescriptions: Record<string, string> = {
-  "New": "Claim just entered the system. Next: Review the claim details and move to evidence gathering.",
-  "Needs Review": "Claim imported with no error details. Check the portal, then classify as non-issue or define the error type.",
-  "Needs Evidence": "Evidence must be collected before this claim can proceed. Next: Gather GPS logs, driver statements, and supporting documents.",
-  "Processed": "Worktree complete on this leg — waiting for the rest of the invoice to be packaged. Next: Finish the remaining legs, then click Ready to package on the invoice.",
-  "Generating Email": "The system is generating a dispute email for this claim. Next: Wait for email generation to complete, then review.",
-  "Ready to Review": "The dispute email or submission is ready for staff review. Next: Review the generated content and approve or edit before sending.",
-  "Awaiting Response": "Dispute has been submitted to the payor portal. Next: Wait for the payor's response — check back periodically.",
-  "On Hold": "Claim is paused, usually waiting for additional information. Next: Follow up on the pending item and resume processing.",
-  "Resolved": "Claim has been successfully resolved with a favorable outcome. No further action needed.",
-  "Denied": "The dispute was denied by the payor. Review if a re-dispute or appeal is possible.",
-  "Portal Queued": "Claim is queued for automated portal submission. Next: The bot will pick this up and submit it.",
-  "Pending": "Outcome has not yet been determined. The claim is still being processed.",
-  "Approved": "The payor approved the dispute. Funds should be recovered.",
-  "Partially Approved": "The payor approved part of the disputed amount. Review the approved amount vs. claimed.",
-  "Non-Issue": "Classified as non-issue. No action needed — financial impact set to $0.",
-};
+// Tooltips and labels are sourced from @workspace/vocab — the glossary
+// is the single source of truth. Tone (color) lives next to the JSX in
+// `./tone.ts` because it's purely presentation.
+
+const statusDescriptions: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of Object.values(CLAIM_STATUS)) out[entry.enumValue] = entry.description;
+  for (const entry of Object.values(OUTCOME)) out[entry.enumValue] = entry.description;
+  return out;
+})();
 
 export type StatusPillProps = {
   tone?: Tone;
@@ -46,7 +45,10 @@ export type StatusPillForStatusProps = {
 export function StatusPillForStatus({ status, className }: StatusPillForStatusProps) {
   const tone = toneForStatus(status);
   const description = statusDescriptions[status];
-  const pill = <StatusPill tone={tone} className={className}>{status}</StatusPill>;
+  const label = CLAIM_STATUS[status as keyof typeof CLAIM_STATUS]
+    ? claimStatusLabel(status)
+    : outcomeLabel(status) || status;
+  const pill = <StatusPill tone={tone} className={className}>{label}</StatusPill>;
   if (!description) return pill;
   return (
     <WrapTooltip content={description}>

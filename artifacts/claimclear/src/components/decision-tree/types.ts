@@ -55,13 +55,19 @@ export interface LegacyTreeNode {
   evidenceRequirements?: EvidenceReq[];
 }
 
+// SOP author-time outcome labels — these label the *kinds of leaves a
+// SOP can produce*, not the per-claim outcome chip. The vocab glossary
+// owns "Non-issue" / "Non-contestable", and we route through it so the
+// editor matches what the operator will see at runtime.
+import { LEG_CONCLUSION } from "@workspace/vocab";
+
 export const OUTCOME_LABELS: Record<OutcomeType, string> = {
   portal_dispute: "Submit Portal Dispute",
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
-  cannot_dispute: "Cannot Dispute (Withdraw)",
-  non_issue: "Non-Issue",
+  cannot_dispute: `${LEG_CONCLUSION.cannot_dispute.label} (Withdraw)`,
+  non_issue: LEG_CONCLUSION.non_issue.label,
 };
 
 export const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string }> = {

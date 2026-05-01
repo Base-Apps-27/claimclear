@@ -52,25 +52,30 @@ const statusPillClass: Record<string, string> = {
   dry_run: "bg-purple-500/20 text-purple-700 border-purple-300",
 };
 
+// Submission stage labels live in the glossary so any rename ripples
+// through here. Color tokens stay above — they're presentation, not
+// vocabulary.
+import { submissionStageLabel } from "@workspace/vocab";
+
 const statusLabels: Record<string, string> = {
-  draft: "Draft",
-  pending: "Pending",
-  queued: "Queued",
-  in_progress: "In Progress",
-  submitted: "Submitted",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  dry_run: "Dry Run",
+  draft: submissionStageLabel("draft"),
+  pending: submissionStageLabel("pending"),
+  queued: submissionStageLabel("queued"),
+  in_progress: submissionStageLabel("in_progress"),
+  submitted: submissionStageLabel("submitted"),
+  failed: submissionStageLabel("failed"),
+  cancelled: submissionStageLabel("cancelled"),
+  dry_run: submissionStageLabel("dry_run"),
 };
 
 const FILTER_TABS: { key: string; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "draft", label: "Draft" },
-  { key: "pending", label: "Pending" },
-  { key: "queued", label: "Queued" },
-  { key: "in_progress", label: "In Progress" },
-  { key: "submitted", label: "Submitted" },
-  { key: "failed", label: "Failed" },
+  { key: "draft", label: submissionStageLabel("draft") },
+  { key: "pending", label: submissionStageLabel("pending") },
+  { key: "queued", label: submissionStageLabel("queued") },
+  { key: "in_progress", label: submissionStageLabel("in_progress") },
+  { key: "submitted", label: submissionStageLabel("submitted") },
+  { key: "failed", label: submissionStageLabel("failed") },
 ];
 
 const STATUS_GROUP_ORDER = ["draft", "pending", "queued", "in_progress", "submitted", "failed", "cancelled", "dry_run"];

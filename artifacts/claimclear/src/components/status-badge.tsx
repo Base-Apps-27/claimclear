@@ -1,80 +1,57 @@
 import { Badge } from "@/components/ui/badge";
 import { WrapTooltip } from "@/components/info-tooltip";
+import {
+  CLAIM_STATUS,
+  OUTCOME,
+  claimStatusLabel,
+  outcomeLabel,
+} from "@workspace/vocab";
 
-const statusDescriptions: Record<string, string> = {
-  "New": "Claim just entered the system. Next: Review the claim details and move to evidence gathering.",
-  "Needs Review": "Claim imported with no error details. Check the portal, then classify as non-issue or define the error type.",
-  "Needs Evidence": "Evidence must be collected before this claim can proceed. Next: Gather GPS logs, driver statements, and supporting documents.",
-  "Generating Email": "The system is generating a dispute email for this claim. Next: Wait for email generation to complete, then review.",
-  "Ready to Review": "The dispute email or submission is ready for staff review. Next: Review the generated content and approve or edit before sending.",
-  "Awaiting Response": "Dispute has been submitted to the payor portal. Next: Wait for the payor's response — check back periodically.",
-  "On Hold": "Claim is paused, usually waiting for additional information. Next: Follow up on the pending item and resume processing.",
-  "Resolved": "Claim has been successfully resolved with a favorable outcome. No further action needed.",
-  "Denied": "The dispute was denied by the payor. Review if a re-dispute or appeal is possible.",
-  "Portal Queued": "Claim is queued for automated portal submission. Next: The bot will pick this up and submit it.",
-  "Pending": "Outcome has not yet been determined. The claim is still being processed.",
-  "Approved": "The payor approved the dispute. Funds should be recovered.",
-  "Partially Approved": "The payor approved part of the disputed amount. Review the approved amount vs. claimed.",
-  "Non-Issue": "Classified as non-issue. No action needed — financial impact set to $0.",
-};
+// Description map sourced from @workspace/vocab so a single edit to the
+// glossary updates every tooltip in the app.
+const statusDescriptions: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const entry of Object.values(CLAIM_STATUS)) out[entry.enumValue] = entry.description;
+  for (const entry of Object.values(OUTCOME)) out[entry.enumValue] = entry.description;
+  return out;
+})();
 
 type StatusBadgeProps = {
   status: string;
   className?: string;
 };
 
+// Color palette stays here — it's a presentation concern next to the JSX.
+const STATUS_COLORS: Record<string, string> = {
+  "New": "bg-blue-100 text-blue-800 border-blue-200",
+  "Needs Review": "bg-orange-100 text-orange-800 border-orange-200",
+  "Needs Evidence": "bg-amber-100 text-amber-800 border-amber-200",
+  "Generating Email": "bg-indigo-100 text-indigo-800 border-indigo-200",
+  "Ready to Review": "bg-cyan-100 text-cyan-800 border-cyan-200",
+  "Awaiting Response": "bg-violet-100 text-violet-800 border-violet-200",
+  "On Hold": "bg-purple-100 text-purple-800 border-purple-200",
+  "Resolved": "bg-green-100 text-green-800 border-green-200",
+  "Denied": "bg-red-100 text-red-800 border-red-200",
+  "Pending": "bg-gray-100 text-gray-800 border-gray-200",
+  "Approved": "bg-green-100 text-green-800 border-green-200",
+  "Partially Approved": "bg-lime-100 text-lime-800 border-lime-200",
+  // The "Non-Issue" enum (TitleCase) is the lookup key here — display
+  // label comes from the glossary below. vocab-allow-next-line
+  "Non-Issue": "bg-slate-100 text-slate-800 border-slate-200",
+};
+
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  let colorClass = "bg-gray-100 text-gray-800 border-gray-200";
-
-  switch (status) {
-    case "New":
-      colorClass = "bg-blue-100 text-blue-800 border-blue-200";
-      break;
-    case "Needs Review":
-      colorClass = "bg-orange-100 text-orange-800 border-orange-200";
-      break;
-    case "Needs Evidence":
-      colorClass = "bg-amber-100 text-amber-800 border-amber-200";
-      break;
-    case "Generating Email":
-      colorClass = "bg-indigo-100 text-indigo-800 border-indigo-200";
-      break;
-    case "Ready to Review":
-      colorClass = "bg-cyan-100 text-cyan-800 border-cyan-200";
-      break;
-    case "Awaiting Response":
-      colorClass = "bg-violet-100 text-violet-800 border-violet-200";
-      break;
-    case "On Hold":
-      colorClass = "bg-purple-100 text-purple-800 border-purple-200";
-      break;
-    case "Resolved":
-      colorClass = "bg-green-100 text-green-800 border-green-200";
-      break;
-    case "Denied":
-      colorClass = "bg-red-100 text-red-800 border-red-200";
-      break;
-    case "Pending":
-      colorClass = "bg-gray-100 text-gray-800 border-gray-200";
-      break;
-    case "Approved":
-      colorClass = "bg-green-100 text-green-800 border-green-200";
-      break;
-    case "Partially Approved":
-      colorClass = "bg-lime-100 text-lime-800 border-lime-200";
-      break;
-    case "Non-Issue":
-      colorClass = "bg-slate-100 text-slate-800 border-slate-200";
-      break;
-  }
-
+  const colorClass = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800 border-gray-200";
+  const label = CLAIM_STATUS[status as keyof typeof CLAIM_STATUS]
+    ? claimStatusLabel(status)
+    : outcomeLabel(status) || status;
   const description = statusDescriptions[status];
 
   if (description) {
     return (
       <WrapTooltip content={description}>
         <Badge variant="outline" className={`${colorClass} ${className} font-medium tracking-tight shadow-none cursor-help`}>
-          {status}
+          {label}
         </Badge>
       </WrapTooltip>
     );
@@ -82,7 +59,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 
   return (
     <Badge variant="outline" className={`${colorClass} ${className} font-medium tracking-tight shadow-none`}>
-      {status}
+      {label}
     </Badge>
   );
 }

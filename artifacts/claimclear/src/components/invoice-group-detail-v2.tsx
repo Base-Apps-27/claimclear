@@ -33,6 +33,7 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
+import { legSubStatusLabel as glossarySubStatusLabel } from "@workspace/vocab";
 import { ClosureActions } from "@/components/closure/closure-actions";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
@@ -159,16 +160,11 @@ function legSubStatusTone(s: LegSubStatus): Tone {
   }
 }
 
+// Thin wrapper around the glossary so existing render call sites
+// (`legSubStatusLabel(sub)`) keep working. See @workspace/vocab for the
+// canonical labels.
 function legSubStatusLabel(s: LegSubStatus): string {
-  switch (s) {
-    case "needs_classification": return "Needs classification";
-    case "investigating": return "Investigating";
-    case "ready": return "Ready";
-    case "dropped": return "Dropped";
-    case "blocked": return "On hold";
-    case "excluded": return "Excluded";
-    default: return s;
-  }
+  return glossarySubStatusLabel(s);
 }
 
 function auditIcon(action: string) {
@@ -651,7 +647,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
             testId="kpi-in-dispute"
           />
           <Kpi
-            label="Excluded"
+            label="Non-issue"
             value={formatCurrency(excludedAmount.toFixed(2))}
             sub={excludedCount > 0 ? `${excludedCount} leg${excludedCount === 1 ? "" : "s"}` : "—"}
             testId="kpi-excluded"

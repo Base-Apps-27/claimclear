@@ -10,11 +10,14 @@
     "backfill:per-leg-state": "tsx ./src/migrations/2026-05-per-leg-state-backfill.ts",
     "backfill:portal-submissions-group-link": "tsx ./src/migrations/2026-05-portal-submissions-group-link-backfill.ts",
     "backfill:auto-non-issue-siblings": "tsx ./src/migrations/2026-05-auto-non-issue-siblings-backfill.ts",
-    "backfill:reclassify-confirmation-emails": "tsx ../artifacts/api-server/src/scripts/reclassify-confirmation-emails-backfill.ts"
+    "backfill:reclassify-confirmation-emails": "tsx ../artifacts/api-server/src/scripts/reclassify-confirmation-emails-backfill.ts",
+    "check:vocab-drift": "tsx ./src/check-vocab-drift.ts"
   },
   "dependencies": {
     "@workspace/api-server": "workspace:*",
+    "@workspace/closure-options": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/vocab": "workspace:*",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {

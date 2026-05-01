@@ -56,6 +56,7 @@ function isSelected(
   // match arm below or this stops compiling at `assertNeverClosureReason`.
   switch (reason) {
     case "non_issue":
+      // vocab-allow-next-line — comparing against the API enum value, not a label.
       return outcome === "Non-Issue";
     case "denied_by_payor":
       return outcome === "Denied" && closureReason === "denied_by_payor";

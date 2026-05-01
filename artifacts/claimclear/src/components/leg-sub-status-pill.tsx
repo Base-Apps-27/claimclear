@@ -4,20 +4,18 @@ import {
   type LegForSubStatus,
   type LegSubStatus,
 } from "@workspace/leg-state";
+import {
+  legSubStatusLabel as glossarySubStatusLabel,
+  legSubStatusDisplayLabel,
+} from "@workspace/vocab";
 
 // Single source of presentation for the per-leg sub-status. Anything that
 // wants to show the inner-tier state of one leg renders this pill —
 // detail page, group rides table, list filters legend.
-
-const LABELS: Record<LegSubStatus, string> = {
-  excluded: "Excluded",
-  needs_classification: "Needs classification",
-  investigating: "Investigating",
-  blocked: "Blocked",
-  ready: "Ready",
-  dropped: "Dropped",
-  frozen: "Frozen",
-};
+//
+// Operator labels live in `@workspace/vocab` (`legSubStatusLabel` /
+// `legSubStatusDisplayLabel`). Colors are still owned here because they
+// belong with the React render, not the vocabulary.
 
 // Colors deliberately mirror the status-badge.tsx palette
 // (`bg-X-100 text-X-800 border-X-200`) so the inner-tier sub-status pill and
@@ -43,17 +41,22 @@ interface LegSubStatusPillProps {
 
 export function LegSubStatusPill({ subStatus, leg, className = "" }: LegSubStatusPillProps) {
   const value: LegSubStatus = subStatus ?? (leg ? deriveLegSubStatus(leg) : "needs_classification");
+  // When we have the leg row in hand, prefer the reason-aware label so a
+  // dropped-via-cannot_dispute leg reads as "Non-contestable" and a
+  // dropped-via-non_issue leg reads as "Non-issue".
+  const label = leg ? legSubStatusDisplayLabel(value, leg) : glossarySubStatusLabel(value);
   return (
     <Badge
       variant="outline"
       className={`${CLASSES[value]} ${className}`}
       data-testid={`leg-sub-status-pill-${value}`}
     >
-      {LABELS[value]}
+      {label}
     </Badge>
   );
 }
 
-export function legSubStatusLabel(s: LegSubStatus): string {
-  return LABELS[s];
-}
+// Re-export the glossary helper under the local name so existing
+// importers continue to compile. New code should import directly from
+// `@workspace/vocab`.
+export { glossarySubStatusLabel as legSubStatusLabel };

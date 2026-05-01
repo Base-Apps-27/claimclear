@@ -8,18 +8,18 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { LEG_HOLD_REASONS, type LegHoldReason } from "@workspace/leg-state";
+import { holdReasonLabel as glossaryHoldReasonLabel } from "@workspace/vocab";
 
-// Single source of truth for the hold-reason picker. The reason vocabulary
-// lives in @workspace/db (mirrors the DB CHECK constraint); this component
-// exposes it to the UI plus the "other → require note" enforcement so
-// every caller gets the same validation semantics.
+// Hold-reason picker. Labels live in @workspace/vocab (the operator
+// glossary); this component owns the picker UX and the
+// "other → require note" enforcement.
 
 const REASON_LABELS: Record<LegHoldReason, string> = {
-  evidence_pending: "Awaiting evidence",
-  awaiting_external_party: "Awaiting external party (e.g. payor, hospital)",
-  awaiting_member_response: "Awaiting member response",
-  awaiting_internal_review: "Awaiting internal review (e.g. supervisor, MAS)",
-  other: "Other (specify below)",
+  evidence_pending: glossaryHoldReasonLabel("evidence_pending"),
+  awaiting_external_party: glossaryHoldReasonLabel("awaiting_external_party"),
+  awaiting_member_response: glossaryHoldReasonLabel("awaiting_member_response"),
+  awaiting_internal_review: glossaryHoldReasonLabel("awaiting_internal_review"),
+  other: glossaryHoldReasonLabel("other"),
 };
 
 interface HoldReasonSelectProps {

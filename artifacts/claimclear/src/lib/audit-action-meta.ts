@@ -29,13 +29,12 @@ import {
   Inbox,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { auditActionLabel } from "@workspace/vocab";
 
-export type ActionMeta = {
-  label: string;
-  icon: LucideIcon;
-  iconClass: string;
-  category: ActionCategory;
-};
+// Audit metadata: icons, categories, and presentation tokens live here
+// next to the React rendering code. The *label* for each action is
+// pulled from the canonical glossary (@workspace/vocab) so a rename
+// only happens in one place.
 
 export type ActionCategory =
   | "status"
@@ -47,63 +46,83 @@ export type ActionCategory =
   | "communication"
   | "other";
 
+export type ActionMeta = {
+  label: string;
+  icon: LucideIcon;
+  iconClass: string;
+  category: ActionCategory;
+};
+
+// Helper that builds an ActionMeta for a given audit action by looking
+// the label up in the glossary. Keeps each table row to icon + tone +
+// category and forces every label through one chokepoint.
+function meta(
+  key: string,
+  kind: "claim" | "group",
+  icon: LucideIcon,
+  iconClass: string,
+  category: ActionCategory,
+): ActionMeta {
+  return { label: auditActionLabel(key, kind), icon, iconClass, category };
+}
+
 export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
-  claim_created: { label: "Claim created", icon: FilePlus2, iconClass: "text-emerald-600", category: "status" },
-  claim_deleted: { label: "Claim deleted", icon: Trash, iconClass: "text-rose-600", category: "status" },
-  claim_edited: { label: "Claim details updated", icon: Pencil, iconClass: "text-slate-600", category: "edit" },
-  status_changed: { label: "Status changed", icon: ActivityIcon, iconClass: "text-blue-600", category: "status" },
-  outcome_changed: { label: "Outcome changed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
-  closure_addressed: { label: "Addressed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
-  closure_review_updated: { label: "Review notes updated", icon: FileEdit, iconClass: "text-muted-foreground", category: "other" },
-  evidence_updated: { label: "Evidence updated", icon: Camera, iconClass: "text-emerald-600", category: "evidence" },
-  hold_placed: { label: "Placed on hold", icon: PauseCircle, iconClass: "text-amber-600", category: "hold" },
-  hold_removed: { label: "Hold removed", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
-  workflow_updated: { label: "Workflow updated", icon: Workflow, iconClass: "text-blue-600", category: "workflow" },
-  portal_understanding_preflight: { label: "AI understanding checked", icon: BrainCircuit, iconClass: "text-violet-600", category: "draft" },
-  portal_draft_created: { label: "Dispute write-up generated", icon: FilePlus2, iconClass: "text-blue-600", category: "draft" },
-  portal_draft_edited: { label: "Dispute write-up edited", icon: FileEdit, iconClass: "text-violet-600", category: "draft" },
-  portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },
-  portal_draft_reverted: { label: "Dispute write-up reverted", icon: Undo2, iconClass: "text-amber-600", category: "draft" },
-  portal_submission_submitted: { label: "Portal submission sent", icon: Send, iconClass: "text-emerald-600", category: "communication" },
-  response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
-  response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
-  outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
-  bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
-  connector_unhealthy: { label: "Connector unhealthy", icon: AlertOctagon, iconClass: "text-amber-600", category: "other" },
-  notification_opt_out_changed: { label: "Notification preferences changed", icon: BellOff, iconClass: "text-slate-600", category: "other" },
-  submission_retry_scheduled: { label: "Portal submission retry scheduled", icon: Timer, iconClass: "text-amber-600", category: "workflow" },
-  submission_retries_exhausted: { label: "Portal submission retries exhausted", icon: AlertOctagon, iconClass: "text-rose-600", category: "workflow" },
-  submission_stuck_reset: { label: "Stuck submission auto-reset", icon: AlarmClockOff, iconClass: "text-amber-600", category: "workflow" },
-  submission_manual_requeue: { label: "Portal submission manually re-queued", icon: RotateCcw, iconClass: "text-blue-600", category: "workflow" },
-  leg_sop_hold_cleared: { label: "SOP hold cleared", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
-  attestation_self_confirmed: { label: "Re-attested in payor portal", icon: ShieldCheck, iconClass: "text-emerald-600", category: "status" },
-  attestation_queued: { label: "Queued for re-attestation", icon: Inbox, iconClass: "text-amber-600", category: "workflow" },
-  attestation_queue_confirmed: { label: "Queued attestation confirmed", icon: ShieldCheck, iconClass: "text-emerald-600", category: "status" },
+  claim_created: meta("claim_created", "claim", FilePlus2, "text-emerald-600", "status"),
+  claim_deleted: meta("claim_deleted", "claim", Trash, "text-rose-600", "status"),
+  claim_edited: meta("claim_edited", "claim", Pencil, "text-slate-600", "edit"),
+  status_changed: meta("status_changed", "claim", ActivityIcon, "text-blue-600", "status"),
+  outcome_changed: meta("outcome_changed", "claim", CheckCircle2, "text-emerald-600", "status"),
+  closure_addressed: meta("closure_addressed", "claim", CheckCircle2, "text-emerald-600", "status"),
+  closure_review_updated: meta("closure_review_updated", "claim", FileEdit, "text-muted-foreground", "other"),
+  evidence_updated: meta("evidence_updated", "claim", Camera, "text-emerald-600", "evidence"),
+  hold_placed: meta("hold_placed", "claim", PauseCircle, "text-amber-600", "hold"),
+  hold_removed: meta("hold_removed", "claim", PlayCircle, "text-emerald-600", "hold"),
+  workflow_updated: meta("workflow_updated", "claim", Workflow, "text-blue-600", "workflow"),
+  portal_understanding_preflight: meta("portal_understanding_preflight", "claim", BrainCircuit, "text-violet-600", "draft"),
+  portal_draft_created: meta("portal_draft_created", "claim", FilePlus2, "text-blue-600", "draft"),
+  portal_draft_edited: meta("portal_draft_edited", "claim", FileEdit, "text-violet-600", "draft"),
+  portal_draft_regenerated: meta("portal_draft_regenerated", "claim", RefreshCw, "text-blue-600", "draft"),
+  portal_draft_reverted: meta("portal_draft_reverted", "claim", Undo2, "text-amber-600", "draft"),
+  portal_submission_submitted: meta("portal_submission_submitted", "claim", Send, "text-emerald-600", "communication"),
+  response_reassigned: meta("response_reassigned", "claim", ArrowRightLeft, "text-blue-600", "communication"),
+  response_unmatched: meta("response_unmatched", "claim", MailQuestion, "text-amber-600", "communication"),
+  outbound_sent: meta("outbound_sent", "claim", Mail, "text-emerald-600", "communication"),
+  bounce_received: meta("bounce_received", "claim", MailX, "text-rose-600", "communication"),
+  connector_unhealthy: meta("connector_unhealthy", "claim", AlertOctagon, "text-amber-600", "other"),
+  notification_opt_out_changed: meta("notification_opt_out_changed", "claim", BellOff, "text-slate-600", "other"),
+  submission_retry_scheduled: meta("submission_retry_scheduled", "claim", Timer, "text-amber-600", "workflow"),
+  submission_retries_exhausted: meta("submission_retries_exhausted", "claim", AlertOctagon, "text-rose-600", "workflow"),
+  submission_stuck_reset: meta("submission_stuck_reset", "claim", AlarmClockOff, "text-amber-600", "workflow"),
+  submission_manual_requeue: meta("submission_manual_requeue", "claim", RotateCcw, "text-blue-600", "workflow"),
+  leg_sop_hold_cleared: meta("leg_sop_hold_cleared", "claim", PlayCircle, "text-emerald-600", "hold"),
+  attestation_self_confirmed: meta("attestation_self_confirmed", "claim", ShieldCheck, "text-emerald-600", "status"),
+  attestation_queued: meta("attestation_queued", "claim", Inbox, "text-amber-600", "workflow"),
+  attestation_queue_confirmed: meta("attestation_queue_confirmed", "claim", ShieldCheck, "text-emerald-600", "status"),
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {
-  group_evidence_added: { label: "Evidence collected", icon: Camera, iconClass: "text-emerald-600", category: "evidence" },
-  group_evidence_removed: { label: "Evidence removed", icon: ImageOff, iconClass: "text-rose-600", category: "evidence" },
-  group_workflow_step: { label: "Workflow step completed", icon: Workflow, iconClass: "text-blue-600", category: "workflow" },
-  group_edited: { label: "Group details updated", icon: Pencil, iconClass: "text-slate-600", category: "edit" },
-  group_error_type_assigned: { label: "Error type assigned", icon: Tag, iconClass: "text-violet-600", category: "edit" },
-  group_deleted: { label: "Group deleted", icon: Trash, iconClass: "text-rose-600", category: "status" },
-  group_held: { label: "Placed on hold", icon: PauseCircle, iconClass: "text-amber-600", category: "hold" },
-  group_hold_removed: { label: "Hold removed", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
-  group_triaged: { label: "Classification completed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
-  group_resolved: { label: "Group resolved", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
-  group_denied: { label: "Group denied", icon: XCircle, iconClass: "text-rose-600", category: "status" },
-  closure_addressed: { label: "Addressed", icon: CheckCircle2, iconClass: "text-emerald-600", category: "status" },
-  closure_review_updated: { label: "Review notes updated", icon: FileEdit, iconClass: "text-muted-foreground", category: "other" },
-  portal_understanding_preflight: { label: "AI understanding checked", icon: BrainCircuit, iconClass: "text-violet-600", category: "draft" },
-  portal_draft_created: { label: "Dispute write-up generated", icon: FilePlus2, iconClass: "text-blue-600", category: "draft" },
-  portal_draft_edited: { label: "Dispute write-up edited", icon: FileEdit, iconClass: "text-violet-600", category: "draft" },
-  portal_draft_regenerated: { label: "Dispute write-up regenerated", icon: RefreshCw, iconClass: "text-blue-600", category: "draft" },
-  portal_draft_reverted: { label: "Dispute write-up reverted", icon: Undo2, iconClass: "text-amber-600", category: "draft" },
-  response_reassigned: { label: "Response reassigned", icon: ArrowRightLeft, iconClass: "text-blue-600", category: "communication" },
-  response_unmatched: { label: "Response unmatched", icon: MailQuestion, iconClass: "text-amber-600", category: "communication" },
-  outbound_sent: { label: "Outbound email sent", icon: Mail, iconClass: "text-emerald-600", category: "communication" },
-  bounce_received: { label: "Email bounce received", icon: MailX, iconClass: "text-rose-600", category: "communication" },
+  group_evidence_added: meta("group_evidence_added", "group", Camera, "text-emerald-600", "evidence"),
+  group_evidence_removed: meta("group_evidence_removed", "group", ImageOff, "text-rose-600", "evidence"),
+  group_workflow_step: meta("group_workflow_step", "group", Workflow, "text-blue-600", "workflow"),
+  group_edited: meta("group_edited", "group", Pencil, "text-slate-600", "edit"),
+  group_error_type_assigned: meta("group_error_type_assigned", "group", Tag, "text-violet-600", "edit"),
+  group_deleted: meta("group_deleted", "group", Trash, "text-rose-600", "status"),
+  group_held: meta("group_held", "group", PauseCircle, "text-amber-600", "hold"),
+  group_hold_removed: meta("group_hold_removed", "group", PlayCircle, "text-emerald-600", "hold"),
+  group_triaged: meta("group_triaged", "group", CheckCircle2, "text-emerald-600", "status"),
+  group_resolved: meta("group_resolved", "group", CheckCircle2, "text-emerald-600", "status"),
+  group_denied: meta("group_denied", "group", XCircle, "text-rose-600", "status"),
+  closure_addressed: meta("closure_addressed", "group", CheckCircle2, "text-emerald-600", "status"),
+  closure_review_updated: meta("closure_review_updated", "group", FileEdit, "text-muted-foreground", "other"),
+  portal_understanding_preflight: meta("portal_understanding_preflight", "group", BrainCircuit, "text-violet-600", "draft"),
+  portal_draft_created: meta("portal_draft_created", "group", FilePlus2, "text-blue-600", "draft"),
+  portal_draft_edited: meta("portal_draft_edited", "group", FileEdit, "text-violet-600", "draft"),
+  portal_draft_regenerated: meta("portal_draft_regenerated", "group", RefreshCw, "text-blue-600", "draft"),
+  portal_draft_reverted: meta("portal_draft_reverted", "group", Undo2, "text-amber-600", "draft"),
+  response_reassigned: meta("response_reassigned", "group", ArrowRightLeft, "text-blue-600", "communication"),
+  response_unmatched: meta("response_unmatched", "group", MailQuestion, "text-amber-600", "communication"),
+  outbound_sent: meta("outbound_sent", "group", Mail, "text-emerald-600", "communication"),
+  bounce_received: meta("bounce_received", "group", MailX, "text-rose-600", "communication"),
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {

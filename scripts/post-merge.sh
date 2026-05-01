@@ -18,6 +18,7 @@ pnpm exec tsc -b \
   lib/api-client-react \
   lib/object-storage-web \
   lib/leg-state \
+  lib/vocab \
   lib/api-zod \
   lib/integrations-anthropic-ai \
   --force

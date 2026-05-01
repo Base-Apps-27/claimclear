@@ -338,9 +338,14 @@ export function ClosureIntakeDialog({
       : null;
     const closureCommunicatedTo = communicatedTo.trim() ? communicatedTo.trim() : null;
 
+    // The literal "Non-Issue" below is the *API enum value* (kept as-is in
+    // the OpenAPI/DB contract). All operator-facing rendering of this
+    // outcome routes through @workspace/vocab.
+    // vocab-allow-next-line
     const outcome = ((): "Non-Issue" | "Denied" | "Withdrawn" => {
       switch (reason) {
         case "non_issue":
+          // vocab-allow-next-line
           return "Non-Issue";
         case "denied_by_payor":
           return "Denied";

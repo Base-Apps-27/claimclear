@@ -42,26 +42,23 @@ import { TONE_STYLE, type Tone } from "@/components/cohesion/tone";
 import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/hooks/use-toast";
 import { WithdrawalReviewDrawer } from "@/components/withdrawal-review-drawer";
+import { closureReasonLabel } from "@workspace/vocab";
 
 type TabKey = "all" | "cannot_dispute" | "non_issue" | "denied_by_payor";
 
+// Tab labels come from the glossary so any rename ripples through here
+// automatically. The "All" tab is the only locally-owned label.
 const TABS: { key: TabKey; label: string; reasons: string[] }[] = [
-  { key: "all",              label: "All",             reasons: [] },
-  { key: "cannot_dispute",   label: "Cannot Dispute",  reasons: ["cannot_dispute"] },
-  { key: "non_issue",        label: "Non-Issue",       reasons: ["non_issue"] },
-  { key: "denied_by_payor",  label: "Denied by Payor", reasons: ["denied_by_payor"] },
+  { key: "all",              label: "All",                              reasons: [] },
+  { key: "cannot_dispute",   label: closureReasonLabel("cannot_dispute"),   reasons: ["cannot_dispute"] },
+  { key: "non_issue",        label: closureReasonLabel("non_issue"),        reasons: ["non_issue"] },
+  { key: "denied_by_payor",  label: closureReasonLabel("denied_by_payor"),  reasons: ["denied_by_payor"] },
 ];
 
 const REASON_TONE: Record<string, Tone> = {
   cannot_dispute: "amber",
   non_issue: "blue",
   denied_by_payor: "red",
-};
-
-const REASON_LABEL: Record<string, string> = {
-  cannot_dispute: "Cannot Dispute",
-  non_issue: "Non-Issue",
-  denied_by_payor: "Denied by Payor",
 };
 
 function rowKey(r: WithdrawalRow): string {
@@ -235,7 +232,7 @@ export default function WithdrawalsPage() {
     const subject = selectedRows.length > 0 ? selectedRows : rows;
     if (subject.length === 0) return;
     const lines = subject.map((r) => {
-      const reason = REASON_LABEL[r.closureReason] ?? r.closureReason;
+      const reason = closureReasonLabel(r.closureReason);
       const amt = r.amount ? formatCurrency(r.amount) : "—";
       const closed = r.closedAt ? formatDate(r.closedAt) : "—";
       const noteBit = r.closureReviewNotes ? ` — ${r.closureReviewNotes}` : "";
@@ -261,7 +258,7 @@ export default function WithdrawalsPage() {
     const out: FilterChip[] = [];
     if (search) out.push({ key: "q", label: `Search: "${search}"`, onRemove: () => set({ q: null, page: null }, false) });
     if (reasons.length > 0 && activeTab === "all") {
-      const labels = reasons.map((r) => REASON_LABEL[r] ?? r).join(", ");
+      const labels = reasons.map((r) => closureReasonLabel(r)).join(", ");
       out.push({ key: "reason", label: `Reason: ${labels}`, onRemove: () => set({ reason: null, page: null }, false) });
     }
     if (closedFrom || closedTo) {
@@ -568,7 +565,7 @@ export default function WithdrawalsPage() {
                               style={{ background: accentBg, color: accentColor, borderColor: accentColor }}
                               className="border text-[10px] uppercase tracking-wide font-bold"
                             >
-                              {REASON_LABEL[r.closureReason]}
+                              {closureReasonLabel(r.closureReason)}
                             </Badge>
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-foreground capitalize">

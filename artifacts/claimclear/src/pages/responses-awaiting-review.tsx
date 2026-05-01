@@ -1101,7 +1101,7 @@ function PerLegVerdictRailSection({
       <div className="px-4 py-2.5 border-b bg-muted/30">
         <h3 className="text-sm font-semibold">Per-leg verdict</h3>
         <p className="text-[11px] text-muted-foreground">
-          Pick the verdict for each actionable leg. Excluded legs are listed
+          Pick the verdict for each actionable leg. Non-issue legs are listed
           but not pickable.
         </p>
       </div>

@@ -46,6 +46,7 @@ import type { Tone } from "@/components/cohesion/tone";
 import { HoldReasonSelect, isHoldReasonValid } from "@/components/hold-reason-select";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { deriveLegSubStatus, type LegHoldReason } from "@workspace/leg-state";
+import { legSubStatusDisplayLabel } from "@workspace/vocab";
 import type { DecisionTree } from "@/components/decision-tree/types";
 
 // Per-leg investigation surface — densified to match LegDetailRedensified
@@ -118,13 +119,16 @@ function FieldRow({ label, value }: { label: string; value: ReactNode }) {
 
 /* --------------------------- Helpers ----------------------------------- */
 
-const SUB_STATUS_TO_TONE: Record<string, { tone: Tone; label: string }> = {
-  needs_classification: { tone: "amber", label: "Needs classification" },
-  investigating: { tone: "amber", label: "Investigating" },
-  ready: { tone: "blue", label: "Ready" },
-  dropped: { tone: "muted", label: "Dropped" },
-  blocked: { tone: "amber", label: "On hold" },
-  excluded: { tone: "muted", label: "Excluded" },
+// Tone mapping owns *color only*; labels come from @workspace/vocab via
+// `legSubStatusDisplayLabel(subStatus, claim)` so a dropped-via-
+// cannot_dispute leg renders as "Non-contestable".
+const SUB_STATUS_TO_TONE: Record<string, Tone> = {
+  needs_classification: "amber",
+  investigating: "amber",
+  ready: "blue",
+  dropped: "muted",
+  blocked: "amber",
+  excluded: "muted",
 };
 
 function relativeTime(iso: string | null | undefined): string {
@@ -202,7 +206,8 @@ export function ClaimDetailV2({ claimId }: Props) {
     () => (claim ? deriveLegSubStatus(claim) : "needs_classification"),
     [claim],
   );
-  const subStatusMeta = SUB_STATUS_TO_TONE[subStatus] ?? SUB_STATUS_TO_TONE.needs_classification;
+  const subStatusTone: Tone = SUB_STATUS_TO_TONE[subStatus] ?? SUB_STATUS_TO_TONE.needs_classification;
+  const subStatusLabel = legSubStatusDisplayLabel(subStatus, claim ?? undefined);
 
   const [legContext, setLegContext] = useState<string>("");
   useEffect(() => {
@@ -540,7 +545,7 @@ export function ClaimDetailV2({ claimId }: Props) {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl font-bold mono">{claim.confNumber || `CLM-${claim.id}`}</h1>
-                  <StatusPill tone={subStatusMeta.tone}>{subStatusMeta.label}</StatusPill>
+                  <StatusPill tone={subStatusTone}>{subStatusLabel}</StatusPill>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                     {claim.date ? (
