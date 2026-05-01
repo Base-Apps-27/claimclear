@@ -92,6 +92,7 @@ import type {
   GetDashboardRepeatOffendersParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
+  GetInvoiceGroupEmailThread404,
   GetSystemHealthBouncesParams,
   HealthStatus,
   HoldInvoiceGroupBody,
@@ -139,6 +140,10 @@ import type {
   ReplyToEmailConversation404,
   ReplyToEmailConversation502,
   ReplyToEmailConversationBody,
+  ReplyToInvoiceGroupEmailConversation400,
+  ReplyToInvoiceGroupEmailConversation404,
+  ReplyToInvoiceGroupEmailConversation502,
+  ReplyToInvoiceGroupEmailConversationBody,
   ResponseStats,
   ResponsesAwaitingReviewCountResponse,
   RevertPortalSubmissionDescriptionBody,
@@ -2296,6 +2301,249 @@ export const useCompleteGroupReattest = <
   TContext
 > => {
   return useMutation(getCompleteGroupReattestMutationOptions(options));
+};
+
+/**
+ * Returns every inbound payor message and outbound staff reply attached
+to this invoice group OR to any of its child claims, plus any
+sibling-claim rows that share an Outlook conversation with the
+group's scope. Same `EmailThreadResponse` shape used by the per-claim
+endpoint, so the UI can render a unified group thread without a new
+type. Each message's `claimId` carries the leg the row originally
+belonged to (null when only attached at the group level).
+
+ * @summary Group-level email thread (aggregates per-claim threads)
+ */
+export const getGetInvoiceGroupEmailThreadUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/email-thread`;
+};
+
+export const getInvoiceGroupEmailThread = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmailThreadResponse> => {
+  return customFetch<EmailThreadResponse>(
+    getGetInvoiceGroupEmailThreadUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetInvoiceGroupEmailThreadQueryKey = (id: number) => {
+  return [`/api/invoice-groups/${id}/email-thread`] as const;
+};
+
+export const getGetInvoiceGroupEmailThreadQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>,
+  TError = ErrorType<GetInvoiceGroupEmailThread404>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetInvoiceGroupEmailThreadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>
+  > = ({ signal }) =>
+    getInvoiceGroupEmailThread(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInvoiceGroupEmailThreadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>
+>;
+export type GetInvoiceGroupEmailThreadQueryError =
+  ErrorType<GetInvoiceGroupEmailThread404>;
+
+/**
+ * @summary Group-level email thread (aggregates per-claim threads)
+ */
+
+export function useGetInvoiceGroupEmailThread<
+  TData = Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>,
+  TError = ErrorType<GetInvoiceGroupEmailThread404>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupEmailThread>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInvoiceGroupEmailThreadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Group-level analogue of `POST /claims/:id/email-thread/:conversationId/reply`.
+Posts a reply to the latest message in the given Outlook conversation
+via Microsoft Graph, persists an outbound_emails row tagged with this
+invoice group's id, and writes an `email_reply_sent` audit row on the
+group. Authorization: the conversation must include at least one row
+attached to the group itself or to one of its child claims. Evidence
+attachments are not supported on the group-level reply yet.
+
+ * @summary Send an in-app reply on a group-level email conversation
+ */
+export const getReplyToInvoiceGroupEmailConversationUrl = (
+  id: number,
+  conversationId: string,
+) => {
+  return `/api/invoice-groups/${id}/email-thread/${conversationId}/reply`;
+};
+
+export const replyToInvoiceGroupEmailConversation = async (
+  id: number,
+  conversationId: string,
+  replyToInvoiceGroupEmailConversationBody: ReplyToInvoiceGroupEmailConversationBody,
+  options?: RequestInit,
+): Promise<EmailThreadMessage> => {
+  return customFetch<EmailThreadMessage>(
+    getReplyToInvoiceGroupEmailConversationUrl(id, conversationId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replyToInvoiceGroupEmailConversationBody),
+    },
+  );
+};
+
+export const getReplyToInvoiceGroupEmailConversationMutationOptions = <
+  TError = ErrorType<
+    | ReplyToInvoiceGroupEmailConversation400
+    | ReplyToInvoiceGroupEmailConversation404
+    | ReplyToInvoiceGroupEmailConversation502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>,
+    TError,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>,
+  TError,
+  {
+    id: number;
+    conversationId: string;
+    data: BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["replyToInvoiceGroupEmailConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+    }
+  > = (props) => {
+    const { id, conversationId, data } = props ?? {};
+
+    return replyToInvoiceGroupEmailConversation(
+      id,
+      conversationId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplyToInvoiceGroupEmailConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>
+>;
+export type ReplyToInvoiceGroupEmailConversationMutationBody =
+  BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+export type ReplyToInvoiceGroupEmailConversationMutationError = ErrorType<
+  | ReplyToInvoiceGroupEmailConversation400
+  | ReplyToInvoiceGroupEmailConversation404
+  | ReplyToInvoiceGroupEmailConversation502
+>;
+
+/**
+ * @summary Send an in-app reply on a group-level email conversation
+ */
+export const useReplyToInvoiceGroupEmailConversation = <
+  TError = ErrorType<
+    | ReplyToInvoiceGroupEmailConversation400
+    | ReplyToInvoiceGroupEmailConversation404
+    | ReplyToInvoiceGroupEmailConversation502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>,
+    TError,
+    {
+      id: number;
+      conversationId: string;
+      data: BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replyToInvoiceGroupEmailConversation>>,
+  TError,
+  {
+    id: number;
+    conversationId: string;
+    data: BodyType<ReplyToInvoiceGroupEmailConversationBody>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getReplyToInvoiceGroupEmailConversationMutationOptions(options),
+  );
 };
 
 /**

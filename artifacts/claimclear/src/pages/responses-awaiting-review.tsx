@@ -17,6 +17,9 @@ import {
   useRecordLegVerdict,
   useCompleteLegMasAction,
   useCompleteGroupReattest,
+  useGetInvoiceGroupEmailThread,
+  useReplyToInvoiceGroupEmailConversation,
+  getGetInvoiceGroupEmailThreadQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -46,9 +49,10 @@ import { ClosureActions } from "@/components/closure/closure-actions";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import { ResponseReceivedBanner } from "@/components/communication/response-received-banner";
 import {
-  getMockConversations,
-  getMockBannerData,
-} from "@/components/communication/mock-data";
+  mapToGroupConversations,
+  pickGroupBannerData,
+  htmlBodyToPlainText,
+} from "@/components/communication/group-thread-adapter";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { useToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
@@ -794,27 +798,43 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   useInvoiceGroupEvents(group.id);
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: detail, isLoading: detailLoading } = useGetInvoiceGroup(group.id);
 
   const submissions: PortalSubmissionResponse[] = detail?.submissions ?? [];
   const responses: PortalResponseItem[] = detail?.responses ?? [];
   const allRides: ClaimResponse[] = detail?.rides ?? [];
 
-  // Mock thread + banner: same data layer used by invoice-group-detail-v2,
-  // so the eventual swap to a real group-level email API is one-place.
-  const mockLegIds = useMemo(
-    () =>
-      allRides.map((r) => ({
-        id: r.id,
-        label: r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`,
-      })),
-    [allRides],
+  // Real group email thread (Task #240). Swap-in for the prior mock — same
+  // data layer feeds the full invoice-group detail page, so reviewers see
+  // identical conversations on either screen.
+  const { data: emailThread } = useGetInvoiceGroupEmailThread(group.id);
+  const legIdToLabel = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const r of allRides) {
+      map.set(r.id, r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`);
+    }
+    return map;
+  }, [allRides]);
+  const conversations = useMemo(
+    () => mapToGroupConversations(emailThread, legIdToLabel),
+    [emailThread, legIdToLabel],
   );
-  const mockConversations = useMemo(
-    () => getMockConversations(mockLegIds),
-    [mockLegIds],
+  // Banner is computed from the latest unread inbound. Keep a per-group
+  // dismissal flag so closing the banner doesn't re-pop on every refetch
+  // until a *newer* unread message arrives.
+  const computedBanner = useMemo(
+    () => pickGroupBannerData(emailThread),
+    [emailThread],
   );
-  const [bannerData, setBannerData] = useState(() => getMockBannerData());
+  const [bannerDismissedAt, setBannerDismissedAt] = useState<string | null>(null);
+  const bannerData =
+    computedBanner &&
+    (!bannerDismissedAt || computedBanner.timestamp > bannerDismissedAt)
+      ? computedBanner
+      : null;
+
+  const replyMutation = useReplyToInvoiceGroupEmailConversation();
 
   // The thread component's own `id="invoice-thread"` anchor is what the
   // banner scrolls to — the same anchor used on the invoice-group detail
@@ -849,11 +869,10 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   const hasReviewableResponse = !!latestResponse;
   // Real-data fallback: a reviewable response exists but no conversation
   // has been linked to it (e.g. portal-only response, email never
-  // synced). Today the mock returns a conversation unconditionally, so
-  // this branch is dormant; once #240 swaps in real conversation data
-  // it activates automatically and the operator gets the response body
-  // inline with a disabled composer rationale.
-  const hasConversations = mockConversations.length > 0;
+  // synced). Now that #240 wires real conversation data, this branch
+  // activates whenever the group has zero email conversations on file
+  // and the operator gets the response body inline instead.
+  const hasConversations = conversations.length > 0;
 
   return (
     <>
@@ -863,21 +882,51 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
       >
         <ResponseReceivedBanner
           response={bannerData}
-          onDismiss={() => setBannerData(null)}
+          onDismiss={() =>
+            setBannerDismissedAt(computedBanner?.timestamp ?? null)
+          }
         />
 
         {hasReviewableResponse && hasConversations ? (
           <GroupCommunicationThread
-            conversations={mockConversations}
+            conversations={conversations}
             groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
-            onSyncInbox={() => {
-              toast({ title: "Inbox sync queued" });
-            }}
+            isSending={replyMutation.isPending}
             onReply={async (input) => {
-              toast({
-                title: "Reply sent",
-                description: `Sent to ${input.to.join(", ")}`,
-              });
+              try {
+                await replyMutation.mutateAsync({
+                  id: group.id,
+                  conversationId: input.conversationId,
+                  data: {
+                    subject: input.subject,
+                    bodyText: htmlBodyToPlainText(input.bodyHtml),
+                    to: input.to,
+                    cc: input.cc.length > 0 ? input.cc : undefined,
+                  },
+                });
+                toast({
+                  title: "Reply sent",
+                  description: `Sent to ${input.to.join(", ")}`,
+                });
+                // Repaint the thread immediately with the persisted
+                // outbound row + refresh other surfaces (group detail,
+                // responses count) that depend on the new audit row.
+                await queryClient.invalidateQueries({
+                  queryKey: getGetInvoiceGroupEmailThreadQueryKey(group.id),
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: getGetInvoiceGroupQueryKey(group.id),
+                });
+              } catch (err) {
+                toast({
+                  title: "Failed to send reply",
+                  description:
+                    err instanceof Error ? err.message : "Please try again.",
+                  variant: "destructive",
+                });
+                // Re-throw so the composer keeps the draft body for retry.
+                throw err;
+              }
             }}
           />
         ) : hasReviewableResponse && latestResponse ? (

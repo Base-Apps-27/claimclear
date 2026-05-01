@@ -799,6 +799,122 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /invoice-groups/{id}/email-thread:
+    get:
+      operationId: getInvoiceGroupEmailThread
+      tags: [invoice-groups]
+      summary: Group-level email thread (aggregates per-claim threads)
+      description: |
+        Returns every inbound payor message and outbound staff reply attached
+        to this invoice group OR to any of its child claims, plus any
+        sibling-claim rows that share an Outlook conversation with the
+        group's scope. Same `EmailThreadResponse` shape used by the per-claim
+        endpoint, so the UI can render a unified group thread without a new
+        type. Each message's `claimId` carries the leg the row originally
+        belonged to (null when only attached at the group level).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Group email thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailThreadResponse'
+        '404':
+          description: Invoice group not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /invoice-groups/{id}/email-thread/{conversationId}/reply:
+    post:
+      operationId: replyToInvoiceGroupEmailConversation
+      tags: [invoice-groups]
+      summary: Send an in-app reply on a group-level email conversation
+      description: |
+        Group-level analogue of `POST /claims/:id/email-thread/:conversationId/reply`.
+        Posts a reply to the latest message in the given Outlook conversation
+        via Microsoft Graph, persists an outbound_emails row tagged with this
+        invoice group's id, and writes an `email_reply_sent` audit row on the
+        group. Authorization: the conversation must include at least one row
+        attached to the group itself or to one of its child claims. Evidence
+        attachments are not supported on the group-level reply yet.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, bodyText, to]
+              properties:
+                subject:
+                  type: string
+                bodyText:
+                  type: string
+                  description: Plain-text body. Sent as text/plain to Graph; line breaks preserved.
+                to:
+                  type: array
+                  items:
+                    type: string
+                cc:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Reply sent — returns the persisted outbound row so the UI can optimistically render it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailThreadMessage'
+        '400':
+          description: Validation error or no recipients on file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Group or conversation not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '502':
+          description: Microsoft Graph rejected the send. Body is preserved client-side so staff can retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /claims:
     get:
       operationId: listClaims

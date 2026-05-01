@@ -6,6 +6,9 @@ import {
   useGetInvoiceGroupValidTransitions,
   getGetInvoiceGroupValidTransitionsQueryKey,
   usePackageInvoiceGroup,
+  useGetInvoiceGroupEmailThread,
+  useReplyToInvoiceGroupEmailConversation,
+  getGetInvoiceGroupEmailThreadQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -29,7 +32,11 @@ import { InvoiceGroupLegsList } from "@/components/invoice-group-legs-list";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import { ResponseReceivedBanner } from "@/components/communication/response-received-banner";
-import { getMockConversations, getMockBannerData } from "@/components/communication/mock-data";
+import {
+  mapToGroupConversations,
+  pickGroupBannerData,
+  htmlBodyToPlainText,
+} from "@/components/communication/group-thread-adapter";
 
 // Invoice-group orchestration surface — the only group detail UI post-cutover (Task #199).
 //
@@ -128,26 +135,38 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
-  // Mock communications wiring (incoming from main): the comm thread
-  // and response banner are still UI-only previews. The submit/save/
-  // readback/preview handlers that used to live here moved into the
-  // extracted subcomponents (GroupAggregateContextPanel +
-  // InvoiceGroupSubmissionGauntlet) in Task #232 — keeping them here
-  // would duplicate the mutation plumbing.
+  // Real group communications wiring (Task #240). Same data layer the
+  // responses-awaiting-review detail pane uses, so reviewers see the
+  // identical thread on either screen. The submit/save/readback/preview
+  // handlers that used to live here moved into the extracted
+  // subcomponents (GroupAggregateContextPanel +
+  // InvoiceGroupSubmissionGauntlet) in Task #232.
   const { toast } = useToast();
-  const mockLegIds = useMemo(
-    () =>
-      allRides.map((r) => ({
-        id: r.id,
-        label: r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`,
-      })),
-    [allRides],
+  const { data: emailThread } = useGetInvoiceGroupEmailThread(groupId);
+  const legIdToLabel = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const r of allRides) {
+      map.set(r.id, r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`);
+    }
+    return map;
+  }, [allRides]);
+  const conversations = useMemo(
+    () => mapToGroupConversations(emailThread, legIdToLabel),
+    [emailThread, legIdToLabel],
   );
-  const mockConversations = useMemo(
-    () => getMockConversations(mockLegIds),
-    [mockLegIds],
+  const computedBanner = useMemo(
+    () => pickGroupBannerData(emailThread),
+    [emailThread],
   );
-  const [bannerData, setBannerData] = useState(getMockBannerData());
+  // Per-mount dismissal flag: closing the banner doesn't re-pop on every
+  // refetch until a *newer* unread message arrives.
+  const [bannerDismissedAt, setBannerDismissedAt] = useState<string | null>(null);
+  const bannerData =
+    computedBanner &&
+    (!bannerDismissedAt || computedBanner.timestamp > bannerDismissedAt)
+      ? computedBanner
+      : null;
+  const replyMutation = useReplyToInvoiceGroupEmailConversation();
 
 
   if (isLoading || !group) {
@@ -164,7 +183,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     <div className="space-y-4 max-w-5xl mx-auto p-4" data-testid="invoice-group-detail-v2">
       <ResponseReceivedBanner
         response={bannerData}
-        onDismiss={() => setBannerData(null)}
+        onDismiss={() =>
+          setBannerDismissedAt(computedBanner?.timestamp ?? null)
+        }
       />
 
       <Card>
@@ -286,16 +307,42 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} />
 
       <GroupCommunicationThread
-        conversations={mockConversations}
+        conversations={conversations}
         groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
-        onSyncInbox={() => {
-          toast({ title: "Inbox sync queued" });
-        }}
+        isSending={replyMutation.isPending}
         onReply={async (input) => {
-          toast({
-            title: "Reply sent",
-            description: `Sent to ${input.to.join(", ")}`,
-          });
+          try {
+            await replyMutation.mutateAsync({
+              id: groupId,
+              conversationId: input.conversationId,
+              data: {
+                subject: input.subject,
+                bodyText: htmlBodyToPlainText(input.bodyHtml),
+                to: input.to,
+                cc: input.cc.length > 0 ? input.cc : undefined,
+              },
+            });
+            toast({
+              title: "Reply sent",
+              description: `Sent to ${input.to.join(", ")}`,
+            });
+            // Refresh thread + group detail so the new outbound row +
+            // audit row show up immediately.
+            await qc.invalidateQueries({
+              queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
+            });
+            await qc.invalidateQueries({
+              queryKey: getGetInvoiceGroupQueryKey(groupId),
+            });
+          } catch (err) {
+            toast({
+              title: "Failed to send reply",
+              description:
+                err instanceof Error ? err.message : "Please try again.",
+              variant: "destructive",
+            });
+            throw err;
+          }
         }}
       />
 

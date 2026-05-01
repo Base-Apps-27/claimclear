@@ -875,4 +875,289 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
   res.json(message);
 }));
 
+/**
+ * Group-level email thread (Task #240).
+ *
+ * Aggregates every inbound payor message and outbound staff reply that is
+ * either pinned directly to the invoice group or that lives on one of the
+ * group's child claims. Then walks any conversation IDs found in that scope
+ * outward so we don't drop sibling-claim messages that share a single
+ * Outlook thread (a common pattern for group disputes covering several
+ * legs). Returns the same `EmailThreadResponse` shape as the per-claim
+ * route — the response review UI consumes it identically.
+ */
+router.get("/invoice-groups/:id/email-thread", asyncHandler(async (req, res): Promise<void> => {
+  const groupId = parseInt(String(req.params.id), 10);
+  if (isNaN(groupId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  // Pull the group's claim ids; messages may be anchored on any of them.
+  const groupClaims = await db.select({
+    id: claimsTable.id,
+    refNumber: claimsTable.refNumber,
+    confNumber: claimsTable.confNumber,
+  }).from(claimsTable).where(eq(claimsTable.invoiceGroupId, groupId));
+  const groupClaimIds = groupClaims.map((c) => c.id);
+
+  // Seed: rows attached to the group itself OR to any of its child claims.
+  const seedInbound = await db.select().from(portalResponsesTable).where(
+    or(
+      eq(portalResponsesTable.invoiceGroupId, groupId),
+      groupClaimIds.length > 0 ? inArray(portalResponsesTable.claimId, groupClaimIds) : undefined,
+    ),
+  );
+  const seedOutbound = await db.select().from(outboundEmailsTable).where(
+    or(
+      eq(outboundEmailsTable.invoiceGroupId, groupId),
+      groupClaimIds.length > 0 ? inArray(outboundEmailsTable.claimId, groupClaimIds) : undefined,
+    ),
+  );
+
+  // Walk outward by conversationId so any sibling-claim rows that share a
+  // thread with the group's scope come along too. Mirrors the per-claim
+  // endpoint's pattern.
+  const conversationIds = new Set<string>();
+  for (const r of seedInbound) if (r.conversationId) conversationIds.add(r.conversationId);
+  for (const o of seedOutbound) if (o.conversationId) conversationIds.add(o.conversationId);
+  const convIdList = Array.from(conversationIds);
+
+  const allInbound = convIdList.length > 0
+    ? await db.select().from(portalResponsesTable).where(
+        or(
+          eq(portalResponsesTable.invoiceGroupId, groupId),
+          groupClaimIds.length > 0 ? inArray(portalResponsesTable.claimId, groupClaimIds) : undefined,
+          inArray(portalResponsesTable.conversationId, convIdList),
+        ),
+      )
+    : seedInbound;
+  const allOutbound = convIdList.length > 0
+    ? await db.select().from(outboundEmailsTable).where(
+        or(
+          eq(outboundEmailsTable.invoiceGroupId, groupId),
+          groupClaimIds.length > 0 ? inArray(outboundEmailsTable.claimId, groupClaimIds) : undefined,
+          inArray(outboundEmailsTable.conversationId, convIdList),
+        ),
+      )
+    : seedOutbound;
+
+  // Build the sibling lookup from every claim id we saw — group's own claims
+  // PLUS any sibling claims pulled in via the conversation join — so the
+  // `claimId` -> human-readable ref mapping the UI uses for "leg" tags
+  // covers both.
+  const seenClaimIds = new Set<number>(groupClaimIds);
+  for (const r of allInbound) if (r.claimId !== null) seenClaimIds.add(r.claimId);
+  for (const o of allOutbound) if (o.claimId !== null) seenClaimIds.add(o.claimId);
+  const extraClaimIds = Array.from(seenClaimIds).filter((id) => !groupClaimIds.includes(id));
+  const extraClaims = extraClaimIds.length > 0
+    ? await db.select({
+        id: claimsTable.id,
+        refNumber: claimsTable.refNumber,
+        confNumber: claimsTable.confNumber,
+      }).from(claimsTable).where(inArray(claimsTable.id, extraClaimIds))
+    : [];
+  const lookup = buildSiblingLookup([...groupClaims, ...extraClaims]);
+
+  // Group context: every row tied to one of the group's child claims (or to
+  // the group itself) is in-scope, so we use the group's own claim ids as
+  // the "current" set when deciding whether a row is sibling. We pass `-1`
+  // as the per-claim "currentClaimId" — anything in `groupClaimIds` is
+  // resolved out below by overwriting `siblingClaimId` / `siblingClaimRef`.
+  const messages: ThreadMessage[] = [
+    ...allInbound.map((r) => inboundToMessage(r, -1, lookup)),
+    ...allOutbound.map((o) => outboundToMessage(o, -1, lookup)),
+  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  // In group context, "sibling" means out-of-group. Any claimId already in
+  // the group's child-claim set is part of the primary thread, not a
+  // sibling — clear those flags so the UI doesn't render leg-internal
+  // messages as out-of-scope. claimId == null (group-only attached) is
+  // never a sibling either.
+  const groupClaimIdSet = new Set(groupClaimIds);
+  for (const m of messages) {
+    if (m.claimId === null || groupClaimIdSet.has(m.claimId)) {
+      m.siblingClaimId = null;
+      m.siblingClaimRef = null;
+    }
+  }
+
+  const isGroupResolved =
+    group.status === "Resolved" ||
+    group.status === "Denied" ||
+    (group.outcome !== "Pending" && group.outcome !== null);
+  const conversations = groupByConversation(messages, isGroupResolved);
+
+  res.json({
+    messages,
+    conversationIds: Array.from(conversationIds),
+    conversations,
+  });
+}));
+
+router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandler(async (req, res): Promise<void> => {
+  const groupId = parseInt(String(req.params.id), 10);
+  if (isNaN(groupId)) { res.status(400).json({ error: "Invalid group id" }); return; }
+
+  const conversationId = String(req.params.conversationId || "").trim();
+  if (!conversationId) { res.status(400).json({ error: "Missing conversationId" }); return; }
+
+  const { subject, bodyText, to, cc } = req.body ?? {};
+  if (typeof subject !== "string" || subject.trim().length === 0) {
+    res.status(400).json({ error: "subject is required" });
+    return;
+  }
+  if (typeof bodyText !== "string" || bodyText.trim().length === 0) {
+    res.status(400).json({ error: "bodyText is required" });
+    return;
+  }
+  const toList = Array.isArray(to)
+    ? (to as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  const ccList = Array.isArray(cc)
+    ? (cc as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  if (toList.length === 0) {
+    res.status(400).json({ error: "At least one 'to' recipient is required" });
+    return;
+  }
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  // Authorize: the conversation must include at least one row pinned to
+  // this group OR to one of its child claims. Sibling-claim rows alone
+  // are NOT sufficient — replying via a group page should never reach
+  // through a shared thread to send mail on a claim that isn't ours.
+  const groupClaimRows = await db.select({ id: claimsTable.id })
+    .from(claimsTable).where(eq(claimsTable.invoiceGroupId, groupId));
+  const groupClaimIds = groupClaimRows.map((c) => c.id);
+
+  const inboundForGroup = await db.select().from(portalResponsesTable)
+    .where(and(
+      eq(portalResponsesTable.conversationId, conversationId),
+      or(
+        eq(portalResponsesTable.invoiceGroupId, groupId),
+        groupClaimIds.length > 0 ? inArray(portalResponsesTable.claimId, groupClaimIds) : undefined,
+      ),
+    ))
+    .orderBy(desc(portalResponsesTable.receivedAt))
+    .limit(1);
+  const outboundForGroup = await db.select().from(outboundEmailsTable)
+    .where(and(
+      eq(outboundEmailsTable.conversationId, conversationId),
+      or(
+        eq(outboundEmailsTable.invoiceGroupId, groupId),
+        groupClaimIds.length > 0 ? inArray(outboundEmailsTable.claimId, groupClaimIds) : undefined,
+      ),
+    ))
+    .orderBy(desc(outboundEmailsTable.sentAt))
+    .limit(1);
+
+  if (inboundForGroup.length === 0 && outboundForGroup.length === 0) {
+    res.status(404).json({ error: "Conversation not found for this group" });
+    return;
+  }
+
+  // Pivot for Graph createReply: prefer the latest in-scope inbound, else
+  // fall back to the latest in-scope outbound. Out-of-scope sibling-claim
+  // rows are deliberately excluded so we never leak a message id across
+  // groups.
+  const originalMessageId: string | null =
+    inboundForGroup[0]?.externalMessageId ?? outboundForGroup[0]?.messageId ?? null;
+  if (!originalMessageId) {
+    res.status(404).json({ error: "No prior message found for this conversation" });
+    return;
+  }
+
+  // Default the persisted-row's claimId to whichever child-claim the latest
+  // in-scope message was anchored on; falls back to null when the row was
+  // group-only. This keeps the per-claim email-thread route's siblings join
+  // consistent across both views.
+  const persistClaimId: number | null =
+    inboundForGroup[0]?.claimId ?? outboundForGroup[0]?.claimId ?? null;
+
+  let sendResult: { messageId: string | null; conversationId: string | null };
+  try {
+    sendResult = await replyImpl({
+      originalMessageId,
+      subject,
+      bodyText,
+      to: toList,
+      cc: ccList.length > 0 ? ccList : undefined,
+    });
+  } catch (err) {
+    logger.error({ err, groupId, conversationId }, "Failed to send group reply via Outlook");
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to send reply",
+    });
+    return;
+  }
+
+  // Persist with the route's conversationId (NOT Graph's echo) so the new
+  // outbound stays grouped with the same thread on the UI.
+  const persistConversationId = conversationId;
+  const bodyPreview = bodyText.replace(/\s+/g, " ").trim().slice(0, 500);
+  const [persisted] = await db.insert(outboundEmailsTable).values({
+    messageId: sendResult.messageId,
+    conversationId: persistConversationId,
+    claimId: persistClaimId,
+    invoiceGroupId: groupId,
+    submissionId: null,
+    kind: "manual",
+    subject,
+    recipients: [...toList, ...ccList],
+    bodyPreview,
+    attachmentNames: null,
+    sentByUserEmail: req.user?.email ?? null,
+    sentByUserName: req.user?.displayName ?? null,
+  }).returning();
+
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: groupId,
+    claimId: persistClaimId,
+    action: "email_reply_sent",
+    details: `Reply sent to ${toList.join(", ")}: "${subject}"`,
+    metadata: {
+      outboundEmailId: persisted.id,
+      conversationId: persistConversationId,
+      messageId: sendResult.messageId,
+      to: toList,
+      cc: ccList,
+      subject,
+      scope: "invoice_group",
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? "User",
+  });
+
+  // Thread-shaped echo for optimistic UI append.
+  const message: ThreadMessage = {
+    id: `out-${persisted.id}`,
+    direction: "outbound",
+    conversationId: persistConversationId,
+    subject: persisted.subject,
+    sender: persisted.sentByUserName || persisted.sentByUserEmail || "ClaimClear",
+    senderEmail: persisted.sentByUserEmail,
+    bodyPreview: persisted.bodyPreview,
+    timestamp: persisted.sentAt.toISOString(),
+    responseId: null,
+    responseType: null,
+    processed: null,
+    aiSummary: null,
+    extractedAmount: null,
+    extractedDeadline: null,
+    requestedAction: null,
+    classifierSource: null,
+    matchedVia: null,
+    matchConfidence: null,
+    claimId: persistClaimId,
+    siblingClaimRef: null,
+    siblingClaimId: null,
+    attachmentNames: null,
+  };
+
+  res.json(message);
+}));
+
 export default router;

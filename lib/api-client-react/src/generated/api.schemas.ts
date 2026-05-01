@@ -3062,6 +3062,30 @@ export type ListInvoiceGroupEvidence200 = {
   evidence: ClaimEvidenceResponse[];
 };
 
+export type GetInvoiceGroupEmailThread404 = {
+  error?: string;
+};
+
+export type ReplyToInvoiceGroupEmailConversationBody = {
+  subject: string;
+  /** Plain-text body. Sent as text/plain to Graph; line breaks preserved. */
+  bodyText: string;
+  to: string[];
+  cc?: string[];
+};
+
+export type ReplyToInvoiceGroupEmailConversation400 = {
+  error?: string;
+};
+
+export type ReplyToInvoiceGroupEmailConversation404 = {
+  error?: string;
+};
+
+export type ReplyToInvoiceGroupEmailConversation502 = {
+  error?: string;
+};
+
 export type ListClaimsParams = {
   /**
    * Comma-separated list of statuses to filter by
