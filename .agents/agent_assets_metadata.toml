@@ -41,3 +41,15 @@ id = "65Oe4Kx8Drg2cG1DKkcew"
 uri = "file://attached_assets/dryrun_other_issue_form_toggle_off.png"
 type = "image"
 title = "Toggle OFF: bot lands on the Other Issue or Question form (no GPS Breadcrumbs field)"
+
+[[outputs]]
+id = "AjCuqaUxVJQ_t_rtcqZlR"
+uri = "file://attached_assets/prod-backups/claims_workflow_progress_backup_2026-05-01T14-02-00.csv"
+type = "table"
+title = "Claims workflow_progress backup (162 rows)"
+
+[[outputs]]
+id = "ZyjvTbOTY_UzXFOdGL1GQ"
+uri = "file://attached_assets/prod-backups/invoice_groups_workflow_progress_backup_2026-05-01T14-02-00.csv"
+type = "table"
+title = "Invoice groups workflow_progress backup (54 rows)"

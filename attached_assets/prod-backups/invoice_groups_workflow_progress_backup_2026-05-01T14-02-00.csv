@@ -1,0 +1,55 @@
+id,invoice_number,status,outcome,workflow_progress,updated_at
+2,1854866980,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:17:49.715+00
+3,1860438520,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 17:00:08.443+00
+4,1859704550,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:25.941+00
+5,1859143100,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:17:32.668+00
+6,1860808110,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:05:13.014+00
+7,1862132970,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:06.538+00
+8,1863025150,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-24 12:30:09.979+00
+9,1863023040,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:21.541+00
+10,1862948450,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-28 12:00:04.459+00
+11,1863023270,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:06:55.04+00
+12,1861627690,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-28 12:00:04.204+00
+13,1861265860,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:18:09.092+00
+14,1806301210,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:15:38.206+00
+15,1851554220,Portal Queued,Pending,"{""currentStep"": ""submit""}",2026-04-28 13:01:43.579+00
+16,1861558600,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:09.771+00
+17,1861471130,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 17:00:08.146+00
+18,1838195850,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 17:00:08.297+00
+19,1811814420,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:08:49.317+00
+20,1861051000,Resolved,Non-Issue,"{""currentStep"": ""submit""}",2026-04-28 14:05:56.183+00
+21,1852398750,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:07:13.044+00
+22,1841897310,Denied,Pending,"{""currentStep"": ""sop""}",2026-04-23 20:40:04.94+00
+23,1856515090,Denied,Pending,"{""currentStep"": ""sop""}",2026-04-23 20:37:20.061+00
+25,1859987390,Denied,Pending,"{""currentStep"": ""sop""}",2026-04-23 20:38:52.214+00
+26,1812371020,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 17:00:08.586+00
+27,1862768710,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:09.211+00
+28,1863088340,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:10.184+00
+29,1862913630,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:08.922+00
+30,1862197090,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:34.841+00
+31,1859948480,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:51.141+00
+32,1861157740,On Hold,Pending,"{""treeState"": {""steps"": [{""answer"": ""No, issue may be different"", ""nodeId"": ""node_1775762257506_3t2v5"", ""question"": ""Is the invoice currently outside the attestation window?"", ""optionIndex"": 1}, {""answer"": ""Yes, internal review needed"", ""nodeId"": ""node_1775762257506_ij8ic"", ""question"": ""Does the claim require internal review for a different timing or invoice issue?"", ""optionIndex"": 0}], ""outcome"": {""type"": ""hold"", ""label"": ""Place on Hold - Pending internal timing or invoice review""}, ""nodeEvidence"": {}, ""currentNodeId"": ""node_1775762257506_ij8ic""}, ""currentStep"": ""sop""}",2026-04-28 14:38:42.347+00
+33,1861920910,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:17:16.192+00
+35,1863091650,Denied,Pending,"{""currentStep"": ""sop""}",2026-04-23 20:39:28.181+00
+36,1829502060,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:07.53+00
+37,1862482040,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:06.961+00
+42,1862785430,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 17:00:08.002+00
+43,1859837380,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:16.741+00
+44,1861794730,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:42.841+00
+45,1859459440,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:17:35.286+00
+46,1863343350,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:15:20.646+00
+47,1863328680,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:15:55.029+00
+48,1861318610,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:09.633+00
+49,1862906690,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:00:32.041+00
+50,1845043220,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:08.226+00
+51,1861285490,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-28 23:17:52.29+00
+53,1859372090,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:10.046+00
+54,1861437570,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:07.947+00
+55,1863274400,Needs Review,Pending,"{""currentStep"": ""submit""}",2026-04-29 12:30:09.908+00
+68,1752987570,New,Pending,"{""currentStep"": ""sop""}",2026-04-30 20:00:50.011+00
+220,1768617340,New,Pending,"{""currentStep"": ""sop""}",2026-04-30 19:56:41.364+00
+232,1850081360,Awaiting Response,Pending,"{""currentStep"": ""sop""}",2026-04-30 22:07:31.18+00
+233,1855855900,Portal Queued,Pending,"{""currentStep"": ""submit""}",2026-04-30 19:37:59.579+00
+234,1761882660,Portal Queued,Pending,"{""currentStep"": ""submit""}",2026-04-30 19:31:29.901+00
+474,1850591540,Awaiting Response,Pending,"{""currentStep"": ""submit""}",2026-04-30 22:13:24.022+00
+482,1859682680,Portal Queued,Pending,"{""currentStep"": ""sop""}",2026-04-30 21:31:00.507+00
