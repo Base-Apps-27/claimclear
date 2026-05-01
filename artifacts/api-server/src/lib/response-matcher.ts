@@ -489,6 +489,19 @@ export function shouldTransitionToNeedsReview(responseType: ClassifiedDecision):
  * and AI-classified rows (even AI-classified acknowledgments) are kept
  * unprocessed so a human can confirm the model's call. Exported for unit
  * testing.
+ *
+ * Note on `retro_phrase_signature`:
+ *   The one-shot `reclassify-confirmation-emails-backfill` retro-relabels
+ *   historical mislabelled rows to `acknowledgment` and stamps them with
+ *   the distinct source `retro_phrase_signature` so the cohort can be
+ *   told apart at a glance. Operationally those rows are identical to
+ *   fresh `phrase_signature` acks (same deterministic phrase match,
+ *   nothing for an operator to do), so the badge cleanup script
+ *   (`2026-05-clear-phrase-signature-ack-processed-backfill.ts`) clears
+ *   them too via the `--include-retro` flag (Task #284). This LIVE rule
+ *   intentionally matches only `phrase_signature` because production
+ *   never produces `retro_phrase_signature` — that source is only ever
+ *   stamped by the retro reclassify backfill.
  */
 export function shouldAutoMarkProcessed(
   responseType: ClassifiedDecision,

@@ -61,11 +61,16 @@ export const BACKFILL_IDS = {
   // an audit row per healed leg.
   disputedChildSync: "api-server-backfill-disputed-child-sync",
 
-  // Task #283: clear the lingering "Unprocessed" badge on phrase-signature
-  // acknowledgment receipts that landed BEFORE `shouldAutoMarkProcessed`
-  // shipped. Writes a single summary audit_logs row when at least one
-  // portal_responses row is flipped (claim_id and invoice_group_id are
-  // both null on that summary row).
+  // Task #283 (+ Task #284 extension): clear the lingering "Unprocessed"
+  // badge on phrase-signature acknowledgment receipts that landed BEFORE
+  // `shouldAutoMarkProcessed` shipped. Writes a single summary audit_logs
+  // row when at least one portal_responses row is flipped (claim_id and
+  // invoice_group_id are both null on that summary row). Task #284 added a
+  // `--include-retro` flag that broadens the cleanup to also clear
+  // retro_phrase_signature acks (operationally identical, just stamped by
+  // the one-shot reclassify-confirmation-emails backfill); the summary
+  // row records `metadata.includeRetro` and `metadata.classifierSources`
+  // so the cohort the run targeted is discoverable after the fact.
   clearPhraseSignatureAckProcessed: "2026-05-clear-phrase-signature-ack-processed",
 } as const;
 

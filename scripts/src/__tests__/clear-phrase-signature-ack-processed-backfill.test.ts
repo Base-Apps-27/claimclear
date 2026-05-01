@@ -269,6 +269,164 @@ test("clear-phrase-signature-ack-processed backfill: scopes to live rule and is 
   }
 });
 
+test("clear-phrase-signature-ack-processed backfill: --include-retro flips retro_phrase_signature acks too (Task #284)", async () => {
+  // Bucket 1 (live rule): phrase-signature ack — must be flipped in
+  //   both modes (sanity check that broadening the filter doesn't drop
+  //   the original cohort).
+  const ackPhrase = await seedResponse({
+    responseType: "acknowledgment",
+    classifierSource: "phrase_signature",
+    processed: false,
+  });
+  // Bucket 2 (Task #284 broadening): retro_phrase_signature ack — must
+  //   be flipped ONLY when --include-retro is passed.
+  const ackRetro = await seedResponse({
+    responseType: "acknowledgment",
+    classifierSource: "retro_phrase_signature",
+    processed: false,
+  });
+  // Bucket 3 (control): AI ack — must NEVER be flipped, in either mode.
+  const ackAi = await seedResponse({
+    responseType: "acknowledgment",
+    classifierSource: "ai",
+    processed: false,
+  });
+  // Bucket 4 (control): abstain row — must NEVER be flipped, in either mode.
+  const otherAbstain = await seedResponse({
+    responseType: "other",
+    classifierSource: "abstain",
+    processed: false,
+  });
+  // Bucket 5 (control): retro_phrase_signature DENIAL (hypothetical —
+  //   the retro reclassify backfill only relabels TO acknowledgment, but
+  //   guarding against future use of the source is cheap). Must NEVER
+  //   be flipped, in either mode.
+  const denialRetro = await seedResponse({
+    responseType: "denial",
+    classifierSource: "retro_phrase_signature",
+    processed: false,
+  });
+
+  const allIds = [ackPhrase.id, ackRetro.id, ackAi.id, otherAbstain.id, denialRetro.id];
+
+  try {
+    // --- Dry-run with --include-retro: must include BOTH ack rows in
+    //     the report and write nothing.
+    const dryReport = await runBackfill({ apply: false, includeRetro: true, silent: true });
+    assert.ok(
+      dryReport.responseIds.includes(ackPhrase.id),
+      "--include-retro dry-run must still include the live-rule ack",
+    );
+    assert.ok(
+      dryReport.responseIds.includes(ackRetro.id),
+      "--include-retro dry-run must include the retro_phrase_signature ack",
+    );
+    assert.ok(
+      !dryReport.responseIds.includes(ackAi.id),
+      "--include-retro dry-run must NOT include the AI ack",
+    );
+    assert.ok(
+      !dryReport.responseIds.includes(otherAbstain.id),
+      "--include-retro dry-run must NOT include the abstain row",
+    );
+    assert.ok(
+      !dryReport.responseIds.includes(denialRetro.id),
+      "--include-retro dry-run must NOT include retro denials (only acks)",
+    );
+
+    // Dry-run must not write.
+    assert.equal(await fetchProcessed(ackRetro.id), false, "dry-run must not flip");
+
+    // --- Apply WITHOUT --include-retro: only the live-rule ack flips,
+    //     the retro one stays unprocessed (proves the default is the
+    //     original Task #283 behaviour).
+    const liveOnlyApply = await runBackfill({ apply: true, silent: true });
+    assert.ok(
+      liveOnlyApply.responseIds.includes(ackPhrase.id),
+      "default-mode apply must flip the live-rule ack",
+    );
+    assert.ok(
+      !liveOnlyApply.responseIds.includes(ackRetro.id),
+      "default-mode apply must NOT flip the retro ack (live rule only)",
+    );
+    assert.equal(await fetchProcessed(ackPhrase.id), true);
+    assert.equal(
+      await fetchProcessed(ackRetro.id),
+      false,
+      "retro ack must remain unprocessed when --include-retro is OFF",
+    );
+
+    // --- Apply WITH --include-retro: the retro ack now flips too. The
+    //     live-rule ack is already processed=true so it's a no-op for it.
+    const auditCountBeforeRetro = await backfillSummaryAuditCount();
+    const retroApply = await runBackfill({ apply: true, includeRetro: true, silent: true });
+    assert.ok(
+      retroApply.responseIds.includes(ackRetro.id),
+      "--include-retro apply must flip the retro_phrase_signature ack",
+    );
+    assert.equal(
+      await fetchProcessed(ackRetro.id),
+      true,
+      "retro ack must be flipped to processed=true by --include-retro",
+    );
+    // Untouched controls remain untouched.
+    assert.equal(await fetchProcessed(ackAi.id), false, "AI ack must remain unprocessed");
+    assert.equal(await fetchProcessed(otherAbstain.id), false, "abstain row must remain unprocessed");
+    assert.equal(
+      await fetchProcessed(denialRetro.id),
+      false,
+      "retro denial must remain unprocessed (only acks qualify)",
+    );
+
+    // Summary audit row from the --include-retro apply must record the
+    // mode so the cohort is discoverable after the fact.
+    const auditCountAfterRetro = await backfillSummaryAuditCount();
+    assert.ok(
+      auditCountAfterRetro > auditCountBeforeRetro,
+      "--include-retro apply must write a summary audit row when it flips rows",
+    );
+    const summaryRows = await db
+      .select()
+      .from(auditLogsTable)
+      .where(sql`${auditLogsTable.metadata}->>'backfillId' = ${BACKFILL_ID}`);
+    const newest = summaryRows.sort((a, b) => b.id - a.id)[0];
+    type RetroMeta = {
+      backfillId?: string;
+      includeRetro?: boolean;
+      classifierSources?: string[];
+      responseIds?: number[];
+    } | null;
+    const meta = newest.metadata as RetroMeta;
+    assert.equal(meta?.includeRetro, true, "summary row must record includeRetro=true");
+    assert.deepEqual(
+      [...(meta?.classifierSources ?? [])].sort(),
+      ["phrase_signature", "retro_phrase_signature"].sort(),
+      "summary row must list both eligible classifier sources",
+    );
+    assert.ok(
+      (meta?.responseIds ?? []).includes(ackRetro.id),
+      "summary row must list the flipped retro ack id",
+    );
+
+    // --- Idempotency: re-running --include-retro must update zero rows
+    //     and write zero new summary audit rows.
+    const auditCountBeforeRerun = await backfillSummaryAuditCount();
+    const rerunReport = await runBackfill({ apply: true, includeRetro: true, silent: true });
+    assert.equal(
+      rerunReport.rowsUpdated,
+      0,
+      "second --apply --include-retro over a clean dataset must update zero rows",
+    );
+    assert.equal(
+      await backfillSummaryAuditCount(),
+      auditCountBeforeRerun,
+      "second --apply --include-retro must not write a new summary audit row",
+    );
+  } finally {
+    await db.delete(portalResponsesTable).where(inArray(portalResponsesTable.id, allIds)).catch(() => undefined);
+  }
+});
+
 test("clear-phrase-signature-ack-processed backfill: --limit caps the scan and update", async () => {
   const seeded: number[] = [];
   for (let i = 0; i < 3; i++) {
