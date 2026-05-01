@@ -1267,8 +1267,21 @@ export interface WithdrawalRow {
   amount?: string | null;
   /** @nullable */
   closedAt?: string | null;
-  /** @nullable */
+  /**
+   * User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.
+   * @nullable
+   */
   closedBy?: string | null;
+  /**
+   * Display name of the staff member who closed this item.
+   * @nullable
+   */
+  closedByName?: string | null;
+  /**
+   * Email of the staff member who closed this item.
+   * @nullable
+   */
+  closedByEmail?: string | null;
   /** @nullable */
   closureReviewState?: string | null;
   /** @nullable */
@@ -1292,11 +1305,25 @@ export type WithdrawalsListResponseCounts = {
   addressed: number;
 };
 
+/**
+ * A staff member who has closed at least one withdrawal in the current filter set.
+ */
+export interface WithdrawalCloser {
+  /** Stable id for the closer — the user's uuid when known, otherwise the closer's email. */
+  id: string;
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  email?: string | null;
+}
+
 export interface WithdrawalsListResponse {
   rows: WithdrawalRow[];
   total: number;
   /** Total counts per closure reason across the entire (unfiltered) dataset. */
   counts: WithdrawalsListResponseCounts;
+  /** Distinct closers across the dataset (ignoring the closedBy and hideAddressed filters), used to populate the "Closed by" facet. */
+  closers: WithdrawalCloser[];
 }
 
 export type BulkAddressBodyItemsItemKind =
@@ -3609,6 +3636,10 @@ export type ListWithdrawalsParams = {
   hideAddressed?: ListWithdrawalsHideAddressed;
   closedFrom?: string;
   closedTo?: string;
+  /**
+   * Comma-separated user ids — only return rows whose closer matches one of these users
+   */
+  closedBy?: string;
   sort?: ListWithdrawalsSort;
   dir?: ListWithdrawalsDir;
   limit?: number;
@@ -3649,6 +3680,10 @@ export type ExportWithdrawalsCsvParams = {
   hideAddressed?: ExportWithdrawalsCsvHideAddressed;
   closedFrom?: string;
   closedTo?: string;
+  /**
+   * Comma-separated user ids — only export rows whose closer matches one of these users
+   */
+  closedBy?: string;
   sort?: ExportWithdrawalsCsvSort;
   dir?: ExportWithdrawalsCsvDir;
 };

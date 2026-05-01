@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Loader2, Calendar as CalendarIcon, Eye } from "lucide-react";
+import { X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Loader2, Calendar as CalendarIcon, Eye, Users } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useUrlParams } from "@/lib/use-url-params";
 import { SortableHeader } from "@/components/list-table/sortable-header";
@@ -27,7 +27,9 @@ import {
   ListTableHeaderStrip,
   FacetCheckboxList,
   FacetDateRange,
+  FacetSearchableCheckboxList,
   type FacetedFilterCategory,
+  type FacetOption,
 } from "@/components/list-table/faceted-filter";
 import {
   PageHeader,
@@ -82,6 +84,7 @@ export default function WithdrawalsPage() {
   const reasons = getAll("reason");
   const closedFrom = get("closedFrom");
   const closedTo = get("closedTo");
+  const closedByIds = getAll("closedBy");
   const hideAddressed = get("hideAddressed") !== "false"; // default true
 
   const activeTab: TabKey = (() => {
@@ -102,6 +105,7 @@ export default function WithdrawalsPage() {
     hideAddressed: hideAddressed ? ListWithdrawalsHideAddressed.true : ListWithdrawalsHideAddressed.false,
     closedFrom: closedFrom || undefined,
     closedTo: closedTo || undefined,
+    closedBy: closedByIds.length > 0 ? closedByIds.join(",") : undefined,
     sort: sortCol as typeof ListWithdrawalsSort[keyof typeof ListWithdrawalsSort],
     dir: sortDir as typeof ListWithdrawalsDir[keyof typeof ListWithdrawalsDir],
     limit: pageSize,
@@ -115,6 +119,31 @@ export default function WithdrawalsPage() {
   const rows: WithdrawalRow[] = data?.rows ?? [];
   const total = data?.total ?? 0;
   const counts = data?.counts ?? { cannot_dispute: 0, non_issue: 0, denied_by_payor: 0, addressed: 0 };
+  const closers = data?.closers ?? [];
+
+  const closerLabel = (c: { id: string; displayName?: string | null; email?: string | null }): string =>
+    c.displayName?.trim() || c.email || c.id;
+
+  // Make sure currently-selected closer ids stay visible in the facet even
+  // if the server's options list rotates them out (e.g. another filter
+  // narrowed the dataset to no rows from that closer). Without this, the
+  // applied chip for the closer would have no toggle in the popover.
+  const closerOptions: FacetOption[] = useMemo(() => {
+    const seen = new Map<string, FacetOption>();
+    for (const c of closers) {
+      seen.set(c.id, { id: c.id, label: closerLabel(c) });
+    }
+    for (const id of closedByIds) {
+      if (!seen.has(id)) seen.set(id, { id, label: id, italic: true });
+    }
+    return Array.from(seen.values());
+  }, [closers, closedByIds]);
+
+  const closerLookup = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of closerOptions) m.set(o.id, o.label);
+    return m;
+  }, [closerOptions]);
 
   // Keep drawer in sync with refreshed data so saved fields appear
   useEffect(() => {
@@ -175,6 +204,7 @@ export default function WithdrawalsPage() {
     hideAddressed: hideAddressed ? "true" : "false",
     closedFrom: closedFrom || undefined,
     closedTo: closedTo || undefined,
+    closedBy: closedByIds.length > 0 ? closedByIds.join(",") : undefined,
     sort: sortCol as typeof ListWithdrawalsSort[keyof typeof ListWithdrawalsSort],
     dir: sortDir as typeof ListWithdrawalsDir[keyof typeof ListWithdrawalsDir],
   } as Parameters<typeof getExportWithdrawalsCsvUrl>[0]);
@@ -222,7 +252,7 @@ export default function WithdrawalsPage() {
 
   const clearFilters = () => {
     set(
-      { q: null, reason: null, closedFrom: null, closedTo: null, hideAddressed: null, page: null },
+      { q: null, reason: null, closedFrom: null, closedTo: null, closedBy: null, hideAddressed: null, page: null },
       false,
     );
   };
@@ -242,6 +272,14 @@ export default function WithdrawalsPage() {
           : `Closed ≤ ${closedTo}`;
       out.push({ key: "closed", label: lbl, onRemove: () => set({ closedFrom: null, closedTo: null, page: null }, false) });
     }
+    if (closedByIds.length > 0) {
+      const labels = closedByIds.map((id) => closerLookup.get(id) ?? id).join(", ");
+      out.push({
+        key: "closedBy",
+        label: `Closed by: ${labels}`,
+        onRemove: () => set({ closedBy: null, page: null }, false),
+      });
+    }
     if (!hideAddressed) {
       out.push({
         key: "showAddressed",
@@ -250,7 +288,7 @@ export default function WithdrawalsPage() {
       });
     }
     return out;
-  }, [search, reasons, activeTab, closedFrom, closedTo, hideAddressed, set]);
+  }, [search, reasons, activeTab, closedFrom, closedTo, closedByIds, closerLookup, hideAddressed, set]);
 
   const tabs: FilterStripTab<TabKey>[] = TABS.map((t) => ({
     key: t.key,
@@ -267,8 +305,16 @@ export default function WithdrawalsPage() {
   // pattern's applied-count rule of thumb). The "Including addressed"
   // toggle counts as 1 only when it diverges from the default (hide).
   const closedDateCount = closedFrom || closedTo ? 1 : 0;
+  const closedByCount = closedByIds.length;
   const visibilityCount = !hideAddressed ? 1 : 0;
-  const totalAppliedFilters = closedDateCount + visibilityCount;
+  const totalAppliedFilters = closedDateCount + closedByCount + visibilityCount;
+
+  const toggleClosedBy = (id: string, next: boolean) => {
+    const nextIds = next
+      ? (closedByIds.includes(id) ? closedByIds : [...closedByIds, id])
+      : closedByIds.filter((v) => v !== id);
+    set({ closedBy: nextIds.length > 0 ? nextIds.join(",") : null, page: null }, false);
+  };
 
   const filterCategories: FacetedFilterCategory[] = useMemo(() => [
     {
@@ -294,6 +340,23 @@ export default function WithdrawalsPage() {
       ),
     },
     {
+      id: "closedBy",
+      label: "Closed by",
+      icon: Users,
+      appliedCount: closedByCount,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={closerOptions}
+          selected={closedByIds}
+          onToggle={toggleClosedBy}
+          placeholder="Filter closers..."
+          pinSelected
+          emptyMessage="No closers in this view yet."
+          testIdPrefix="facet-closedBy"
+        />
+      ),
+    },
+    {
       id: "visibility",
       label: "Visibility",
       icon: Eye,
@@ -313,7 +376,7 @@ export default function WithdrawalsPage() {
         />
       ),
     },
-  ], [closedDateCount, visibilityCount, closedFrom, closedTo, hideAddressed, set]);
+  ], [closedDateCount, closedByCount, visibilityCount, closedFrom, closedTo, closerOptions, closedByIds, hideAddressed, set]);
 
   const colCount = 8;
 

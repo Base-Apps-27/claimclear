@@ -14101,6 +14101,12 @@ export const ListWithdrawalsQueryParams = zod.object({
     .describe("When true (default), hide rows already marked as addressed"),
   closedFrom: zod.coerce.string().optional(),
   closedTo: zod.coerce.string().optional(),
+  closedBy: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated user ids — only return rows whose closer matches one of these users",
+    ),
   sort: zod
     .enum(["closedAt", "reason", "kind", "identifier", "amount", "addressed"])
     .optional(),
@@ -14131,7 +14137,20 @@ export const ListWithdrawalsResponse = zod.object({
         closureAccountabilityTags: zod.array(zod.string()).nullish(),
         amount: zod.string().nullish(),
         closedAt: zod.string().nullish(),
-        closedBy: zod.string().nullish(),
+        closedBy: zod
+          .string()
+          .nullish()
+          .describe(
+            "User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.",
+          ),
+        closedByName: zod
+          .string()
+          .nullish()
+          .describe("Display name of the staff member who closed this item."),
+        closedByEmail: zod
+          .string()
+          .nullish()
+          .describe("Email of the staff member who closed this item."),
         closureReviewState: zod.string().nullish(),
         closureCommunicatedTo: zod.string().nullish(),
         closureReviewNotes: zod.string().nullish(),
@@ -14152,6 +14171,25 @@ export const ListWithdrawalsResponse = zod.object({
     .describe(
       "Total counts per closure reason across the entire (unfiltered) dataset.",
     ),
+  closers: zod
+    .array(
+      zod
+        .object({
+          id: zod
+            .string()
+            .describe(
+              "Stable id for the closer — the user's uuid when known, otherwise the closer's email.",
+            ),
+          displayName: zod.string().nullish(),
+          email: zod.string().nullish(),
+        })
+        .describe(
+          "A staff member who has closed at least one withdrawal in the current filter set.",
+        ),
+    )
+    .describe(
+      'Distinct closers across the dataset (ignoring the closedBy and hideAddressed filters), used to populate the \"Closed by\" facet.',
+    ),
 });
 
 /**
@@ -14163,6 +14201,12 @@ export const ExportWithdrawalsCsvQueryParams = zod.object({
   hideAddressed: zod.enum(["true", "false"]).optional(),
   closedFrom: zod.coerce.string().optional(),
   closedTo: zod.coerce.string().optional(),
+  closedBy: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated user ids — only export rows whose closer matches one of these users",
+    ),
   sort: zod
     .enum(["closedAt", "reason", "kind", "identifier", "amount", "addressed"])
     .optional(),

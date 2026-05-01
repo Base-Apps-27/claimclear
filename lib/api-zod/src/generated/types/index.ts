@@ -319,6 +319,7 @@ export * from "./updatePortalSubmissionDraftBody";
 export * from "./uploadUrlRequest";
 export * from "./uploadUrlResponse";
 export * from "./validTransitionsResponse";
+export * from "./withdrawalCloser";
 export * from "./withdrawalRow";
 export * from "./withdrawalRowClosureReason";
 export * from "./withdrawalRowKind";

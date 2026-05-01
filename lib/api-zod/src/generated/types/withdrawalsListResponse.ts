@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { WithdrawalCloser } from "./withdrawalCloser";
 import type { WithdrawalRow } from "./withdrawalRow";
 import type { WithdrawalsListResponseCounts } from "./withdrawalsListResponseCounts";
 
@@ -19,4 +20,6 @@ export interface WithdrawalsListResponse {
   total: number;
   /** Total counts per closure reason across the entire (unfiltered) dataset. */
   counts: WithdrawalsListResponseCounts;
+  /** Distinct closers across the dataset (ignoring the closedBy and hideAddressed filters), used to populate the "Closed by" facet. */
+  closers: WithdrawalCloser[];
 }

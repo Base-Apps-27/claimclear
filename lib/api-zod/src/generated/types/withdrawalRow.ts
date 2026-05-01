@@ -42,8 +42,21 @@ export interface WithdrawalRow {
   amount?: string | null;
   /** @nullable */
   closedAt?: string | null;
-  /** @nullable */
+  /**
+   * User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.
+   * @nullable
+   */
   closedBy?: string | null;
+  /**
+   * Display name of the staff member who closed this item.
+   * @nullable
+   */
+  closedByName?: string | null;
+  /**
+   * Email of the staff member who closed this item.
+   * @nullable
+   */
+  closedByEmail?: string | null;
   /** @nullable */
   closureReviewState?: string | null;
   /** @nullable */

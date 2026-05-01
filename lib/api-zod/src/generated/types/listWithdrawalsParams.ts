@@ -27,6 +27,10 @@ export type ListWithdrawalsParams = {
   hideAddressed?: ListWithdrawalsHideAddressed;
   closedFrom?: string;
   closedTo?: string;
+  /**
+   * Comma-separated user ids — only return rows whose closer matches one of these users
+   */
+  closedBy?: string;
   sort?: ListWithdrawalsSort;
   dir?: ListWithdrawalsDir;
   limit?: number;

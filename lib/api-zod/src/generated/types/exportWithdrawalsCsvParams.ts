@@ -21,6 +21,10 @@ export type ExportWithdrawalsCsvParams = {
   hideAddressed?: ExportWithdrawalsCsvHideAddressed;
   closedFrom?: string;
   closedTo?: string;
+  /**
+   * Comma-separated user ids — only export rows whose closer matches one of these users
+   */
+  closedBy?: string;
   sort?: ExportWithdrawalsCsvSort;
   dir?: ExportWithdrawalsCsvDir;
 };

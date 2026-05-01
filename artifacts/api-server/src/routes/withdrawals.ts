@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, auditLogsTable, usersTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 
@@ -26,6 +26,8 @@ type WithdrawalRow = {
   amount: string | null;
   closedAt: string | null;
   closedBy: string | null;
+  closedByName: string | null;
+  closedByEmail: string | null;
   closureReviewState: string | null;
   closureCommunicatedTo: string | null;
   closureReviewNotes: string | null;
@@ -34,6 +36,20 @@ type WithdrawalRow = {
   addressed: boolean;
 };
 
+type Closer = { id: string; displayName: string | null; email: string | null };
+
+// Audit-log actions that are emitted whenever an outcome changes (and which
+// therefore identify the user who flipped the row to its current closed
+// state). Both the claim-level and group-level transitions live here so the
+// closer lookup works for both kinds of withdrawals.
+const CLOSURE_AUDIT_ACTIONS = [
+  "outcome_changed",
+  "status_and_outcome_changed",
+  "claim_outcome_changed",
+  "group_outcome_changed",
+  "group_status_and_outcome_changed",
+] as const;
+
 function parseReasons(raw: unknown): WithdrawalReason[] {
   if (typeof raw !== "string" || !raw) return [...WITHDRAWAL_REASONS];
   const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
@@ -41,9 +57,110 @@ function parseReasons(raw: unknown): WithdrawalReason[] {
   return filtered.length ? filtered : [...WITHDRAWAL_REASONS];
 }
 
+// `closedBy` is a comma-separated list of user ids, but the underlying audit
+// log records the user's *email*. The frontend gets the id from the
+// /withdrawals response (where we resolve email → user.id), so on the way
+// back in we resolve the same way. An id that doesn't map to a known user
+// (e.g. if a user was deleted) is treated as the email itself, which is the
+// fallback id we hand back in the closers list.
+function parseClosedBy(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  return Array.from(new Set(raw.split(",").map(s => s.trim()).filter(Boolean)));
+}
+
 function isAddressed(reviewState: string | null, addressedAt: string | Date | null): boolean {
   if (reviewState === "acknowledged" || reviewState === "resolved") return true;
   return !!addressedAt;
+}
+
+// Pull the latest closure-related audit-log entry per claim and per group in
+// one pass, then build a lookup of "who last closed this row?". Callers can
+// then both attach closer fields to rows AND filter rows by closer.
+async function loadClosersFor(rows: WithdrawalRow[]): Promise<{
+  byKey: Map<string, { email: string | null; name: string | null }>;
+  emailToUser: Map<string, { id: string; firstName: string | null; lastName: string | null; email: string | null }>;
+}> {
+  const claimIds = rows.filter(r => r.kind === "claim").map(r => r.id);
+  const groupIds = rows.filter(r => r.kind === "invoice_group").map(r => r.id);
+  const byKey = new Map<string, { email: string | null; name: string | null }>();
+
+  if (claimIds.length === 0 && groupIds.length === 0) {
+    return { byKey, emailToUser: new Map() };
+  }
+
+  // Pull every closure-related audit row touching any of these claims/groups
+  // in one statement, ordered newest-first. Below we walk the list and keep
+  // the first hit per (kind, id) — far cheaper than N per-row queries even
+  // on a large rail.
+  const orParts: SQL[] = [];
+  if (claimIds.length > 0) orParts.push(inArray(auditLogsTable.claimId, claimIds));
+  if (groupIds.length > 0) orParts.push(inArray(auditLogsTable.invoiceGroupId, groupIds));
+
+  const where = and(
+    or(...orParts)!,
+    inArray(auditLogsTable.action, CLOSURE_AUDIT_ACTIONS as unknown as string[]),
+  );
+
+  const auditRows = await db
+    .select({
+      claimId: auditLogsTable.claimId,
+      invoiceGroupId: auditLogsTable.invoiceGroupId,
+      userEmail: auditLogsTable.userEmail,
+      userName: auditLogsTable.userName,
+      timestamp: auditLogsTable.timestamp,
+    })
+    .from(auditLogsTable)
+    .where(where)
+    .orderBy(desc(auditLogsTable.timestamp));
+
+  // Walk newest → oldest and keep the first hit per row. Only "winning"
+  // entries (the latest one) end up in the map.
+  for (const a of auditRows) {
+    if (a.claimId != null) {
+      const k = `claim:${a.claimId}`;
+      if (!byKey.has(k)) byKey.set(k, { email: a.userEmail, name: a.userName });
+    }
+    if (a.invoiceGroupId != null) {
+      const k = `invoice_group:${a.invoiceGroupId}`;
+      if (!byKey.has(k)) byKey.set(k, { email: a.userEmail, name: a.userName });
+    }
+  }
+
+  const emails = Array.from(new Set(
+    Array.from(byKey.values()).map(v => v.email).filter((e): e is string => !!e),
+  ));
+  const emailToUser = new Map<string, { id: string; firstName: string | null; lastName: string | null; email: string | null }>();
+  if (emails.length > 0) {
+    const users = await db
+      .select({
+        id: usersTable.id,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        email: usersTable.email,
+      })
+      .from(usersTable)
+      .where(inArray(usersTable.email, emails));
+    for (const u of users) {
+      if (u.email) emailToUser.set(u.email.toLowerCase(), u);
+    }
+  }
+
+  return { byKey, emailToUser };
+}
+
+function userDisplayName(u: { firstName: string | null; lastName: string | null; email: string | null }): string | null {
+  const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
+  return name || u.email || null;
+}
+
+// Resolve the id we use for a closer: prefer the user's uuid (so the URL is
+// stable across renames), fall back to the lowercased email so
+// audit-log-only closers (e.g. users that have since been deleted) are still
+// filterable.
+function closerIdFor(email: string | null, emailToUser: Map<string, { id: string }>): string | null {
+  if (!email) return null;
+  const u = emailToUser.get(email.toLowerCase());
+  return u?.id ?? email.toLowerCase();
 }
 
 async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalRow[]> {
@@ -52,6 +169,7 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
   const closedFrom = typeof query.closedFrom === "string" ? query.closedFrom : "";
   const closedTo = typeof query.closedTo === "string" ? query.closedTo : "";
   const hideAddressed = String(query.hideAddressed ?? "true") !== "false";
+  const closedByIds = parseClosedBy(query.closedBy);
 
   const claimWhere: SQL[] = [inArray(claimsTable.closureReason, reasons as unknown as string[])];
   const groupWhere: SQL[] = [inArray(invoiceGroupsTable.closureReason, reasons as unknown as string[])];
@@ -100,7 +218,6 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     closureAccountabilityTags: invoiceGroupsTable.closureAccountabilityTags,
     amount: invoiceGroupsTable.totalAmount,
     closedAt: sql<string | null>`COALESCE(${invoiceGroupsTable.closureAddressedAt}::text, ${invoiceGroupsTable.updatedAt}::text)`,
-    closedBy: sql<string | null>`NULL::text`,
     closureReviewState: invoiceGroupsTable.closureReviewState,
     closureCommunicatedTo: invoiceGroupsTable.closureCommunicatedTo,
     closureReviewNotes: invoiceGroupsTable.closureReviewNotes,
@@ -151,7 +268,9 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     closureAccountabilityTags: (g.closureAccountabilityTags as string[] | null) ?? null,
     amount: g.amount,
     closedAt: g.closedAt,
-    closedBy: g.closedBy,
+    closedBy: null,
+    closedByName: null,
+    closedByEmail: null,
     closureReviewState: g.closureReviewState,
     closureCommunicatedTo: g.closureCommunicatedTo,
     closureReviewNotes: g.closureReviewNotes,
@@ -178,6 +297,8 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
       amount: c.amount,
       closedAt: c.closedAt,
       closedBy: null,
+      closedByName: null,
+      closedByEmail: null,
       closureReviewState: c.closureReviewState,
       closureCommunicatedTo: c.closureCommunicatedTo,
       closureReviewNotes: c.closureReviewNotes,
@@ -192,7 +313,53 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     rows = rows.filter(r => !r.addressed);
   }
 
+  // Stamp every row with its closer (derived from audit logs) so the
+  // frontend can show "closed by X" and so the closedBy filter has the
+  // right values to compare against.
+  const { byKey, emailToUser } = await loadClosersFor(rows);
+  for (const r of rows) {
+    const closer = byKey.get(`${r.kind}:${r.id}`);
+    if (!closer) continue;
+    r.closedByEmail = closer.email;
+    r.closedByName = closer.name;
+    r.closedBy = closerIdFor(closer.email, emailToUser);
+    // Prefer the canonical user display name over whatever was stamped on
+    // the audit row at the time, so renames flow through.
+    if (closer.email) {
+      const u = emailToUser.get(closer.email.toLowerCase());
+      if (u) r.closedByName = userDisplayName(u);
+    }
+  }
+
+  if (closedByIds.length > 0) {
+    const wanted = new Set(closedByIds.map(id => id.toLowerCase()));
+    rows = rows.filter(r => r.closedBy != null && wanted.has(r.closedBy.toLowerCase()));
+  }
+
   return rows;
+}
+
+// Build the "Closed by" facet options from a row set. Rows are expected to
+// already have closer fields populated (so the caller has run
+// `loadClosersFor`/`fetchAllRows`). We dedupe by closer id and sort
+// alphabetically, with rows whose closer cannot be resolved omitted —
+// they'll just be missing from the facet but still show up in the list.
+function buildClosers(rows: WithdrawalRow[]): Closer[] {
+  const seen = new Map<string, Closer>();
+  for (const r of rows) {
+    if (!r.closedBy) continue;
+    if (seen.has(r.closedBy)) continue;
+    seen.set(r.closedBy, {
+      id: r.closedBy,
+      displayName: r.closedByName,
+      email: r.closedByEmail,
+    });
+  }
+  return Array.from(seen.values()).sort((a, b) => {
+    const an = (a.displayName ?? a.email ?? a.id).toLowerCase();
+    const bn = (b.displayName ?? b.email ?? b.id).toLowerCase();
+    return an < bn ? -1 : an > bn ? 1 : 0;
+  });
 }
 
 function sortRows(rows: WithdrawalRow[], sortKey: string, dir: "asc" | "desc"): WithdrawalRow[] {
@@ -236,10 +403,18 @@ router.get("/withdrawals", asyncHandler(async (req, res): Promise<void> => {
     addressed:       countsRows.filter(r => r.addressed).length,
   };
 
+  // Closers list mirrors the counts approach: we ignore both hideAddressed
+  // AND closedBy so toggling closer checkboxes never causes other closers
+  // to vanish from the rail. Other filters (search, reason, date range) DO
+  // apply, which keeps the option list scoped to what the user is
+  // currently looking at.
+  const closersRows = await fetchAllRows({ ...req.query, hideAddressed: "false", closedBy: undefined });
+  const closers = buildClosers(closersRows);
+
   const sorted = sortRows(rows, sortKey, dir);
   const paged = sorted.slice(offset, offset + limit);
 
-  res.json({ rows: paged, total: rows.length, counts });
+  res.json({ rows: paged, total: rows.length, counts, closers });
 }));
 
 router.get("/withdrawals/export-csv", asyncHandler(async (req, res): Promise<void> => {
@@ -261,6 +436,8 @@ router.get("/withdrawals/export-csv", asyncHandler(async (req, res): Promise<voi
     { key: "closureRootCause", label: "Root Cause" },
     { key: "amount", label: "Amount" },
     { key: "closedAt", label: "Closed At" },
+    { key: "closedByName", label: "Closed By" },
+    { key: "closedByEmail", label: "Closed By Email" },
     { key: "closureCommunicatedTo", label: "Communicated To" },
     { key: "closureReviewNotes", label: "Review Notes" },
     { key: "addressed", label: "Addressed" },

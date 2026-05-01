@@ -3698,6 +3698,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: closedBy
+          in: query
+          description: Comma-separated user ids — only return rows whose closer matches one of these users
+          schema:
+            type: string
         - name: sort
           in: query
           schema:
@@ -3751,6 +3756,11 @@ paths:
             type: string
         - name: closedTo
           in: query
+          schema:
+            type: string
+        - name: closedBy
+          in: query
+          description: Comma-separated user ids — only export rows whose closer matches one of these users
           schema:
             type: string
         - name: sort
@@ -4641,6 +4651,13 @@ components:
           type: ["string", "null"]
         closedBy:
           type: ["string", "null"]
+          description: User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.
+        closedByName:
+          type: ["string", "null"]
+          description: Display name of the staff member who closed this item.
+        closedByEmail:
+          type: ["string", "null"]
+          description: Email of the staff member who closed this item.
         closureReviewState:
           type: ["string", "null"]
         closureCommunicatedTo:
@@ -4683,10 +4700,30 @@ components:
             addressed:
               type: integer
           required: [cannot_dispute, non_issue, denied_by_payor, addressed]
+        closers:
+          type: array
+          description: Distinct closers across the dataset (ignoring the closedBy and hideAddressed filters), used to populate the "Closed by" facet.
+          items:
+            $ref: "#/components/schemas/WithdrawalCloser"
       required:
         - rows
         - total
         - counts
+        - closers
+
+    WithdrawalCloser:
+      type: object
+      description: A staff member who has closed at least one withdrawal in the current filter set.
+      properties:
+        id:
+          type: string
+          description: Stable id for the closer — the user's uuid when known, otherwise the closer's email.
+        displayName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+      required:
+        - id
 
     BulkAddressBody:
       type: object
