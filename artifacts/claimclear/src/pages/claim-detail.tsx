@@ -27,6 +27,7 @@ import {
 import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, PostResponseActionBodyAction } from "@workspace/api-client-react";
 import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
+import { MasReattestHistory } from "@/components/mas-reattest-history";
 import { ConversationsCard } from "@/components/conversations-card";
 import { AttestationPrompt } from "@/components/attestation-prompt";
 import { StatusBadge } from "@/components/status-badge";
@@ -816,6 +817,8 @@ function ClaimDetailLegacy({ claimId }: { claimId: number }) {
               {claim.invoiceNumbers && <p className="text-xs text-muted-foreground mt-1">Invoice: {claim.invoiceNumbers}</p>}
             </div>
           )}
+
+          <MasReattestHistory claim={claim} group={parentGroup ?? null} />
 
           <Card>
             <CardHeader><CardTitle>Evidence</CardTitle></CardHeader>

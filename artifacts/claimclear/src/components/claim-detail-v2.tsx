@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { HoldReasonSelect, isHoldReasonValid } from "@/components/hold-reason-select";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
+import { MasReattestHistory } from "@/components/mas-reattest-history";
 import { deriveLegSubStatus, type LegHoldReason } from "@workspace/leg-state";
 import type { DecisionTree } from "@/components/decision-tree/types";
 
@@ -414,30 +415,16 @@ export function ClaimDetailV2({ claimId }: Props) {
           <div className="space-y-2" data-testid="leg-mas-section">
             <h3 className="text-sm font-semibold">MAS action</h3>
             {claim.masActionRequired && claim.masActionRequired !== "none" ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm space-y-1">
-                <p className="text-amber-900">
-                  Required:{" "}
-                  <code className="font-mono">{claim.masActionRequired}</code>
-                </p>
-                {claim.masActionCompletedAt ? (
-                  <p className="text-xs text-amber-800">
-                    Completed {formatDateTime(claim.masActionCompletedAt)}
-                    {claim.masActionCompletedBy
-                      ? ` by ${claim.masActionCompletedBy}`
-                      : ""}
-                    {claim.masActionNote ? ` · ${claim.masActionNote}` : ""}
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-800">
-                    Not yet completed — confirm in the legacy claim page.
-                  </p>
-                )}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Required:{" "}
+                <code className="font-mono">{claim.masActionRequired}</code>
+              </p>
             ) : (
               <p className="text-sm text-muted-foreground italic" data-testid="leg-mas-empty">
                 No MAS action required.
               </p>
             )}
+            <MasReattestHistory claim={claim} group={parentGroup} />
           </div>
 
           <Separator />
