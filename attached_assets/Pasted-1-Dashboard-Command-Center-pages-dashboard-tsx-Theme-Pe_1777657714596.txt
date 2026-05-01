@@ -1,0 +1,41 @@
+1. Dashboard (Command Center) — pages/dashboard.tsx
+Theme: Personalized "what's on my plate today" instead of global stats.
+
+Personalized Readout card at the very top — a single sentence like "You have 3 to file, 2 responses to review, and 1 reattest waiting." Gives the operator a one-glance verdict before any chart loads.
+Three Hero columns under the readout, color-coded by urgency:
+File Today (red) — disputed legs ready to submit
+Responses to Review (blue) — payor replies needing a verdict
+MAS Reattest (amber) — re-attestation outstanding
+KPI tile grid moved below — Invoices pending / Total exposure / Recovery YTD now live as a secondary strip rather than the headline. Still visible, but no longer competing with the action cards.
+The Repeat Offenders, Activity Trend, and Team Activity panels are still on the page but pushed below the fold so the action stack is what greets you on login.
+2. Invoice-group detail — components/invoice-group-detail-v2.tsx
+Theme: Treat the invoice group as the unit of work; surface payor activity loud and early.
+
+Two-column 8:4 layout. Left = orchestration body, right = a sticky "Group Rail" with parent info, latest verdicts, MAS action card, and audit timeline.
+Response-Received Banner — amber callout that appears between the header and body when there's a fresh substantive payor reply. Shows sender, subject, snippet; "Jump to thread ↓" anchors directly to the Communication card. Auto-confirmations / ticket receipts are filtered out so you only see real replies. Dismissible.
+Aggregate context + per-leg rollup at the top of the body — narrative and decision logic before raw data.
+Legs Queue table filtered to included_in_dispute = true, with inline Hold / Remove Hold / Reclassify actions per row.
+Submission Preview gating — the "Generate Preview" / "Submit to Portal" CTAs explicitly list the gates blocking submission (readback confirmed, every disputed leg resolved, group still pre-submit) via a tooltip on the disabled button. No more guessing why the button is greyed out.
+Communication Thread card (anchored #invoice-thread) — full email thread between you and the payor, at the invoice level (not per-leg):
+Each message renders as rich HTML (bold, italic, lists, blockquotes, links, tables) — sanitized via DOMPurify
+Inbound messages get amber mail icons; outbound get purple reply arrows
+Unread messages highlight blue with a "New" badge; "Show full message" toggle for long emails
+Attachment chips and clickable leg-mention links inline
+Reply composer is a Tiptap rich-text editor — bold/italic, bullet & numbered lists, blockquote, link, undo/redo. What you compose is what the payor sees.
+Close-this-group card mounts the existing closure intake dialog so withdrawals and non-issue closures share the same structured-closure path as before.
+3. Claim (leg) detail — components/claim-detail-v2.tsx
+Theme: This is a sub-page of the invoice group — investigation only, no decisions live here that belong at the group level.
+
+Same 8:4 layout as the group page for visual consistency. Left = leg-specific work; right = read-only "Parent context" rail summarizing the parent invoice.
+Parent-group breadcrumb at the top with leg sub-status pill (excluded / needs_classification / blocked / investigating / ready / dropped / frozen) so the operator always knows which state the leg is in.
+SOP Advance Player is the centerpiece — the decision-tree walk that drives the leg toward a sopOutcome. Terminal cards now include the guidance line "Outcome set by SOP — Reclassify if wrong".
+Reclassify button in the action rail — opens a destructive-confirm modal warning that the SOP walk + drop reason will be reset (so misclassified error types can be corrected without backend gymnastics).
+Hold / Clear-hold actions inline (with hold-reason select; note required when reason is "other").
+Per-leg context editor for free-text investigation notes scoped to this leg.
+Read-only "Latest Claim Verdict" + MAS Action cards so the leg page reflects, but doesn't double-edit, what the group/portal already recorded.
+Communication Mentions stub at the bottom — instead of duplicating the full email thread, the leg page shows "N mentions of this leg" with an "Open invoice thread →" link back to the parent group. A small lock-icon explainer reminds the user that conversations are intentionally invoice-level.
+Underlying primitives that all three pages share:
+
+The leg-state vocabulary (SOP_OUTCOMES, LEG_DROP_REASONS, LEG_HOLD_REASONS, sub-status precedence) lives in lib/leg-state and is used by both the server and the client — one implementation, no drift.
+All status/outcome changes route through claim-transitions.ts / group-transitions.ts so the audit log, timeline notes, and SSE broadcasts stay consistent regardless of where the click came from.
+The new communication components (group-communication-thread, response-received-banner, leg-communication-mentions, rich-text-editor) are isolated under components/communication/ and currently driven by mock-data.ts until the group-level email API endpoint exists — at which point only the data hook needs to swap.
