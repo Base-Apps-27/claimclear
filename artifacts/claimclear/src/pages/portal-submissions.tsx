@@ -23,6 +23,19 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
+import {
+  getInitialCollapsedGroups,
+  getCheckedDraftIds,
+  selectionIsAllDrafts,
+  formatCompletedElsewhereLabel,
+  formatCompletedElsewhereTooltip,
+  countDraftsAlreadyDoneElsewhere,
+  makePillClickHandler,
+  makeDiscardArmState,
+  isDiscardStillArmed,
+  DISCARD_ARM_TTL_MS,
+  type DiscardArmState,
+} from "@/lib/portal-submissions-helpers";
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
 import { usePortalBatchEvents } from "@/hooks/use-portal-batch-events";
 import { useAuth } from "@workspace/replit-auth-web";
@@ -137,7 +150,7 @@ export default function PortalSubmissions() {
   const [search, setSearch] = useState("");
   const [drawerId, setDrawerId] = useState<number | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(["submitted"]));
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => getInitialCollapsedGroups());
 
   const [batchTriggering, setBatchTriggering] = useState(false);
   const [completedJob, setCompletedJob] = useState<BatchJob | null>(null);
@@ -247,6 +260,14 @@ export default function PortalSubmissions() {
   };
 
   const checkedCount = checkedIds.size;
+  const checkedDraftIds = useMemo(
+    () => getCheckedDraftIds(normalizedSubs, checkedIds),
+    [normalizedSubs, checkedIds],
+  );
+  const allCheckedAreDrafts = useMemo(
+    () => selectionIsAllDrafts(normalizedSubs, checkedIds),
+    [normalizedSubs, checkedIds],
+  );
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -490,6 +511,7 @@ export default function PortalSubmissions() {
                   onOpenRow={(id) => setDrawerId(id)}
                   onSandbox={handleSandboxRow}
                   onRetry={async (id) => { await retrySubmission.mutateAsync({ id }); invalidate(); }}
+                  onDiscardDraft={async (id) => { await cancelSubmission.mutateAsync({ id }); invalidate(); }}
                   onCancel={async (id) => { await cancelSubmission.mutateAsync({ id }); invalidate(); }}
                 />
               ))
@@ -511,6 +533,8 @@ export default function PortalSubmissions() {
               <RunQueueRail
                 pendingCount={pendingSubmissions.length}
                 checkedCount={checkedCount}
+                checkedDraftCount={checkedDraftIds.length}
+                allCheckedAreDrafts={allCheckedAreDrafts}
                 buttonsDisabled={buttonsDisabled}
                 lockedTooltip={lockedTooltip}
                 otherUserOwnsBatch={otherUserOwnsBatch}
@@ -523,9 +547,18 @@ export default function PortalSubmissions() {
                   invalidate();
                 }}
                 onCancelSelected={async () => {
-                  if (!confirm(`Cancel ${checkedCount} submission${checkedCount === 1 ? "" : "s"}?`)) return;
                   for (const id of Array.from(checkedIds)) { await cancelSubmission.mutateAsync({ id }); }
                   setCheckedIds(new Set());
+                  invalidate();
+                }}
+                onDiscardSelectedDrafts={async () => {
+                  if (checkedDraftIds.length === 0) return;
+                  for (const id of checkedDraftIds) { await cancelSubmission.mutateAsync({ id }); }
+                  setCheckedIds(prev => {
+                    const next = new Set(prev);
+                    for (const id of checkedDraftIds) next.delete(id);
+                    return next;
+                  });
                   invalidate();
                 }}
                 onClearSelection={() => setCheckedIds(new Set())}
@@ -646,12 +679,15 @@ function InFlightRail({ sharedBatch, isMyBatch, canStop, aborting, onAbort }: {
 // Run-the-queue rail (resting state)
 // =====================================================================
 function RunQueueRail({
-  pendingCount, checkedCount, buttonsDisabled, lockedTooltip, otherUserOwnsBatch,
+  pendingCount, checkedCount, checkedDraftCount, allCheckedAreDrafts,
+  buttonsDisabled, lockedTooltip, otherUserOwnsBatch,
   batchOwnerName, batchInFlight,
-  onProcessAll, onProcessSelected, onSandboxSelected, onCancelSelected, onClearSelection,
+  onProcessAll, onProcessSelected, onSandboxSelected, onCancelSelected, onDiscardSelectedDrafts, onClearSelection,
 }: {
   pendingCount: number;
   checkedCount: number;
+  checkedDraftCount: number;
+  allCheckedAreDrafts: boolean;
   buttonsDisabled: boolean;
   lockedTooltip?: string;
   otherUserOwnsBatch: boolean;
@@ -661,8 +697,41 @@ function RunQueueRail({
   onProcessSelected: () => void;
   onSandboxSelected: () => void;
   onCancelSelected: () => void;
+  onDiscardSelectedDrafts: () => void;
   onClearSelection: () => void;
 }) {
+  // Inline 2-step confirm for the cancel/discard bulk action — no modal,
+  // just an in-rail "click again to confirm" arming that auto-disarms.
+  const [bulkArm, setBulkArm] = useState<DiscardArmState | null>(null);
+  useEffect(() => {
+    if (!bulkArm) return;
+    const t = setTimeout(() => setBulkArm(null), DISCARD_ARM_TTL_MS);
+    return () => clearTimeout(t);
+  }, [bulkArm]);
+  // Disarm when the selection set changes underneath the user.
+  useEffect(() => { setBulkArm(null); }, [checkedCount, allCheckedAreDrafts]);
+
+  const isArmed = isDiscardStillArmed(bulkArm);
+  const cancelLabelDefault = allCheckedAreDrafts && checkedDraftCount > 0
+    ? `Discard selected drafts${checkedDraftCount > 0 ? ` (${checkedDraftCount})` : ""}`
+    : `Cancel selected${checkedCount > 0 ? ` (${checkedCount})` : ""}`;
+  const cancelLabelArmed = allCheckedAreDrafts
+    ? `Click again to confirm — discard ${checkedDraftCount} draft${checkedDraftCount === 1 ? "" : "s"}`
+    : `Click again to confirm — cancel ${checkedCount} submission${checkedCount === 1 ? "" : "s"}`;
+  const cancelSub = allCheckedAreDrafts
+    ? "Removes drafts from the queue. The underlying claims are unchanged."
+    : "Cancels the selected submissions.";
+
+  const handleCancelSelected = () => {
+    if (!isArmed) {
+      setBulkArm(makeDiscardArmState());
+      return;
+    }
+    setBulkArm(null);
+    if (allCheckedAreDrafts) onDiscardSelectedDrafts();
+    else onCancelSelected();
+  };
+
   const meta = checkedCount > 0 ? `${checkedCount} selected` : `${pendingCount} pending`;
   const recommendedNode = pendingCount > 0 ? (
     <ActionsRailRecommended
@@ -716,13 +785,15 @@ function RunQueueRail({
           testId="action-sandbox-selected"
         />
         <ActionRow
-          icon={<X className="h-4 w-4" />}
-          label="Cancel selected"
-          muted
+          icon={allCheckedAreDrafts ? <XCircle className="h-4 w-4" /> : <X className="h-4 w-4" />}
+          label={isArmed ? cancelLabelArmed : cancelLabelDefault}
+          sub={isArmed ? "Click again to confirm, or wait to cancel." : cancelSub}
+          warn={isArmed}
+          muted={!isArmed}
           disabled={checkedCount === 0}
           disabledReason={checkedCount === 0 ? "Select one or more submissions to enable." : undefined}
-          onClick={onCancelSelected}
-          testId="action-cancel-selected"
+          onClick={handleCancelSelected}
+          testId={allCheckedAreDrafts ? "action-discard-selected-drafts" : "action-cancel-selected"}
         />
       </ActionGroup>
 
@@ -759,7 +830,7 @@ function RunQueueRail({
 // =====================================================================
 function StatusGroupCard({
   status, rows, collapsed, onToggleCollapsed, checkedIds, onToggle,
-  buttonsDisabled, lockedTooltip, onOpenRow, onSandbox, onRetry, onCancel,
+  buttonsDisabled, lockedTooltip, onOpenRow, onSandbox, onRetry, onCancel, onDiscardDraft,
 }: {
   status: string;
   rows: (PortalSubmissionResponse & { _displayStatus: string })[];
@@ -773,10 +844,12 @@ function StatusGroupCard({
   onSandbox: (id: number) => void;
   onRetry: (id: number) => void;
   onCancel: (id: number) => void;
+  onDiscardDraft: (id: number) => void;
 }) {
   const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.id));
   const partiallyChecked = !allChecked && rows.some(r => checkedIds.has(r.id));
   const canBulkSelect = status === "draft" || status === "pending";
+  const draftsAlreadyDoneElsewhere = status === "draft" ? countDraftsAlreadyDoneElsewhere(rows) : 0;
 
   return (
     <Card className="overflow-hidden" data-testid={`status-group-${status}`}>
@@ -801,6 +874,14 @@ function StatusGroupCard({
           {statusLabels[status] || status}
         </Badge>
         <span className="text-xs font-medium text-muted-foreground">{rows.length} {rows.length === 1 ? "item" : "items"}</span>
+        {status === "draft" && draftsAlreadyDoneElsewhere > 0 && (
+          <span
+            className="text-xs text-amber-700 dark:text-amber-300"
+            data-testid="drafts-already-submitted-subtitle"
+          >
+            · {draftsAlreadyDoneElsewhere} of {rows.length} {rows.length === 1 ? "is" : "are"} for invoices already submitted in another run
+          </span>
+        )}
         <button
           className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
           onClick={onToggleCollapsed}
@@ -818,9 +899,11 @@ function StatusGroupCard({
           buttonsDisabled={buttonsDisabled}
           lockedTooltip={lockedTooltip}
           onOpen={() => onOpenRow(row.id)}
+          onOpenById={(id) => onOpenRow(id)}
           onSandbox={() => onSandbox(row.id)}
           onRetry={() => onRetry(row.id)}
           onCancel={() => onCancel(row.id)}
+          onDiscardDraft={() => onDiscardDraft(row.id)}
         />
       ))}
     </Card>
@@ -831,7 +914,8 @@ function StatusGroupCard({
 // One-line submission row
 // =====================================================================
 function SubmissionRow({
-  sub, checked, onToggle, buttonsDisabled, lockedTooltip, onOpen, onSandbox, onRetry, onCancel,
+  sub, checked, onToggle, buttonsDisabled, lockedTooltip,
+  onOpen, onOpenById, onSandbox, onRetry, onCancel, onDiscardDraft,
 }: {
   sub: PortalSubmissionResponse & { _displayStatus: string };
   checked: boolean;
@@ -839,15 +923,33 @@ function SubmissionRow({
   buttonsDisabled: boolean;
   lockedTooltip?: string;
   onOpen: () => void;
+  onOpenById: (id: number) => void;
   onSandbox: () => void;
   onRetry: () => void;
   onCancel: () => void;
+  onDiscardDraft: () => void;
 }) {
   const isQueued = sub._displayStatus === "queued";
   const showCheckbox = sub.status === "pending" || sub.status === "draft";
   const canSandbox = ["draft", "pending", "failed", "dry_run"].includes(sub.status) && !isQueued;
   const canRetry = sub.status === "failed";
   const canCancel = (sub.status === "draft" || sub.status === "pending") && !isQueued;
+
+  const [discardArm, setDiscardArm] = useState<DiscardArmState | null>(null);
+  useEffect(() => {
+    if (!discardArm) return;
+    const t = setTimeout(() => setDiscardArm(null), DISCARD_ARM_TTL_MS);
+    return () => clearTimeout(t);
+  }, [discardArm]);
+  const discardArmed = isDiscardStillArmed(discardArm);
+  const onDiscardClick = () => {
+    if (!discardArmed) {
+      setDiscardArm(makeDiscardArmState());
+      return;
+    }
+    setDiscardArm(null);
+    onDiscardDraft();
+  };
 
   return (
     <div
@@ -906,6 +1008,20 @@ function SubmissionRow({
             </Badge>
           </WrapTooltip>
         )}
+        {sub.completedElsewhere && (
+          <WrapTooltip content={formatCompletedElsewhereTooltip(sub.completedElsewhere)}>
+            <button
+              type="button"
+              onClick={makePillClickHandler(sub.completedElsewhere, onOpenById)}
+              className="cursor-pointer inline-flex items-center text-[10px] h-5 px-1.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+              data-testid={`row-completed-elsewhere-${sub.id}`}
+              aria-label={formatCompletedElsewhereLabel(sub.completedElsewhere) + " — open that submission"}
+            >
+              <CheckCircle className="h-2.5 w-2.5 mr-1" />
+              {formatCompletedElsewhereLabel(sub.completedElsewhere)}
+            </button>
+          </WrapTooltip>
+        )}
         {isQueued && sub.claimedByUserName && (
           <span className="text-[11px] italic text-muted-foreground">claimed by {sub.claimedByUserName}</span>
         )}
@@ -941,6 +1057,39 @@ function SubmissionRow({
       </span>
       <span className="text-sm font-medium font-mono min-w-[64px] text-right">{formatCurrency(sub.claimAmount || "0")}</span>
       <span className="text-[11px] text-muted-foreground min-w-[56px] text-right">{timeAgo(sub.createdAt)}</span>
+
+      {sub.status === "draft" && (
+        <div onClick={e => e.stopPropagation()} className="flex items-center gap-1">
+          <WrapTooltip content={discardArmed
+            ? "Click again within a few seconds to confirm. The underlying claim is unchanged."
+            : "Removes this draft from the queue. The underlying claim is unchanged."}>
+            <Button
+              variant={discardArmed ? "destructive" : "ghost"}
+              size="sm"
+              className={discardArmed
+                ? "h-7 px-2 text-xs"
+                : "h-7 px-2 text-xs text-muted-foreground hover:text-destructive"}
+              onClick={onDiscardClick}
+              data-testid={`button-discard-draft-${sub.id}`}
+              data-armed={discardArmed ? "true" : "false"}
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1" />
+              {discardArmed ? "Confirm discard" : "Discard"}
+            </Button>
+          </WrapTooltip>
+          {discardArmed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1.5 text-xs text-muted-foreground"
+              onClick={() => setDiscardArm(null)}
+              data-testid={`button-discard-draft-cancel-${sub.id}`}
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      )}
 
       <div onClick={e => e.stopPropagation()}>
         <DropdownMenu>

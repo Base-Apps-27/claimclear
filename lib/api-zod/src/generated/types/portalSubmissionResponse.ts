@@ -12,6 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { PortalSubmissionResponseAttachmentUrls } from "./portalSubmissionResponseAttachmentUrls";
+import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
 import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
 import type { PortalSubmissionResponseEvidenceFiles } from "./portalSubmissionResponseEvidenceFiles";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
@@ -111,6 +112,17 @@ export interface PortalSubmissionResponse {
    * @nullable
    */
   claimedAt?: string | null;
+  /**
+   * Populated when a *different* portal_submissions row sharing the same
+`invoiceGroupId` has reached status='submitted'. Lets the UI render
+an inline "Already submitted in run #N" pill on draft / cancelled /
+failed rows whose underlying invoice has already been resolved by
+another attempt. Null when no sibling success exists, and always
+null on the success row itself. The latest sibling success wins.
+
+   * @nullable
+   */
+  completedElsewhere?: PortalSubmissionResponseCompletedElsewhere;
   createdAt?: string;
   updatedAt?: string;
 }

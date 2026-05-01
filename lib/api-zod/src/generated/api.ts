@@ -972,6 +972,36 @@ export const GetInvoiceGroupResponse = zod
               .describe(
                 "Timestamp when the row was claimed by the current batch.",
               ),
+            completedElsewhere: zod
+              .object({
+                submissionId: zod
+                  .number()
+                  .describe(
+                    "ID of the sibling portal_submissions row that holds the success.",
+                  ),
+                runId: zod
+                  .number()
+                  .nullish()
+                  .describe(
+                    "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+                  ),
+                runLabel: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+                  ),
+                submittedAt: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "ISO timestamp of when the sibling submission reached status='submitted'.",
+                  ),
+              })
+              .nullish()
+              .describe(
+                "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+              ),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
           }),
@@ -10238,6 +10268,36 @@ export const ListPortalSubmissionsResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10372,6 +10432,36 @@ export const GetPortalSubmissionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10469,6 +10559,36 @@ export const RetryPortalSubmissionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10566,6 +10686,36 @@ export const CancelPortalSubmissionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10690,6 +10840,36 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10829,6 +11009,36 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -10926,6 +11136,36 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -11031,6 +11271,36 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -11151,6 +11421,36 @@ export const ConfirmPortalSubmissionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -11248,6 +11548,36 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
     .string()
     .nullish()
     .describe("Timestamp when the row was claimed by the current batch."),
+  completedElsewhere: zod
+    .object({
+      submissionId: zod
+        .number()
+        .describe(
+          "ID of the sibling portal_submissions row that holds the success.",
+        ),
+      runId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.",
+        ),
+      runLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'User-facing label for the run, e.g. \"#287\". Null if `runId` is null.',
+        ),
+      submittedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "ISO timestamp of when the sibling submission reached status='submitted'.",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });

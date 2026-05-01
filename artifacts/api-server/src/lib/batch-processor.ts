@@ -731,7 +731,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
         });
       }
 
-      await processViaExternalBot(sub);
+      await processViaExternalBot(sub, job.id);
 
       if (subClaimId) {
         broadcastPresenceEvent({
@@ -919,6 +919,7 @@ export function __setBatchWorkerForTests(
 async function processDirectEmail(
   sub: typeof portalSubmissionsTable.$inferSelect,
   defaults: Awaited<ReturnType<typeof getPortalDefaults>>,
+  batchId?: string | null,
 ): Promise<void> {
   const { sendDirectEmailDispute } = await import("./direct-email-dispatch");
 
@@ -963,11 +964,14 @@ async function processDirectEmail(
 
   // Mark submitted. Reuse `portalTicketId` to store the Outlook messageId so
   // the existing UI (which surfaces ticketId on the row) shows a meaningful
-  // reference for email-path submissions too.
+  // reference for email-path submissions too. `submittedInBatchId` is set
+  // here (and not cleared later) so sibling rows on the same invoice group
+  // can show "Already submitted in run #N" pills.
   await db.update(portalSubmissionsTable).set({
     status: "submitted",
     portalTicketId: result.messageId,
     submittedAt: new Date().toISOString(),
+    submittedInBatchId: batchId ?? null,
   }).where(eq(portalSubmissionsTable.id, sub.id));
 
   const submittedAtIso = new Date().toISOString();
@@ -1001,6 +1005,7 @@ async function processDirectEmail(
 
 async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
+  batchId?: string | null,
 ): Promise<void> {
   const defaults = await getPortalDefaults();
   const issueType = sub.issueType || "Other Issue or Question";
@@ -1011,7 +1016,7 @@ async function processViaExternalBot(
   // success so the rest of the system (drawer, history, group transitions)
   // is path-agnostic.
   if (issueType === "Direct Email") {
-    await processDirectEmail(sub, defaults);
+    await processDirectEmail(sub, defaults, batchId);
     return;
   }
 
@@ -1065,6 +1070,10 @@ async function processViaExternalBot(
       status: "submitted",
       portalTicketId: result.ticketId || null,
       submittedAt: new Date().toISOString(),
+      // Persist the originating batch run so other rows on the same invoice
+      // group can render an "Already submitted in run #N" pill. Set once on
+      // the pending → submitted transition; never cleared.
+      submittedInBatchId: batchId ?? null,
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     const submittedAtIso = new Date().toISOString();

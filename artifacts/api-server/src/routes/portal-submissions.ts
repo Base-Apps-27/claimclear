@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable, stateEventsTable } from "@workspace/db";
+import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable, stateEventsTable, portalBatchRunsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
@@ -422,7 +422,66 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
     .where(statusStr ? eq(portalSubmissionsTable.status, statusStr as (typeof portalSubmissionsTable.status.enumValues)[number]) : undefined)
     .orderBy(desc(portalSubmissionsTable.createdAt));
 
-  res.json(submissions);
+  // For each group present, find the latest sibling submitted row and
+  // attach it as `completedElsewhere` on every other row in the group.
+  // Legacy rows (no submittedInBatchId) surface with runId/runLabel = null.
+  const groupIds = Array.from(
+    new Set(submissions.map((s) => s.invoiceGroupId).filter((g): g is number => typeof g === "number")),
+  );
+
+  type SiblingSuccess = {
+    submissionId: number;
+    runId: number | null;
+    runLabel: string | null;
+    submittedAt: string | null;
+  };
+  const successByGroup = new Map<number, SiblingSuccess>();
+
+  if (groupIds.length > 0) {
+    const successRows = await db
+      .select({
+        id: portalSubmissionsTable.id,
+        invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
+        submittedAt: portalSubmissionsTable.submittedAt,
+        createdAt: portalSubmissionsTable.createdAt,
+        runId: portalBatchRunsTable.id,
+      })
+      .from(portalSubmissionsTable)
+      .leftJoin(
+        portalBatchRunsTable,
+        eq(portalSubmissionsTable.submittedInBatchId, portalBatchRunsTable.batchId),
+      )
+      .where(and(
+        inArray(portalSubmissionsTable.invoiceGroupId, groupIds),
+        eq(portalSubmissionsTable.status, "submitted"),
+      ))
+      .orderBy(
+        sql`${portalSubmissionsTable.submittedAt} desc nulls last`,
+        desc(portalSubmissionsTable.createdAt),
+        desc(portalSubmissionsTable.id),
+      );
+
+    // Latest success wins: ORDER BY submittedAt desc nulls last, createdAt
+    // desc, id desc → first seen per group is the truly most recent
+    // successful submission (drafts can be created early but submitted late).
+    for (const row of successRows) {
+      if (successByGroup.has(row.invoiceGroupId)) continue;
+      successByGroup.set(row.invoiceGroupId, {
+        submissionId: row.id,
+        runId: row.runId ?? null,
+        runLabel: row.runId != null ? `#${row.runId}` : null,
+        submittedAt: row.submittedAt ?? (row.createdAt instanceof Date ? row.createdAt.toISOString() : null),
+      });
+    }
+  }
+
+  const enriched = submissions.map((s) => {
+    const sibling = successByGroup.get(s.invoiceGroupId);
+    const completedElsewhere = sibling && sibling.submissionId !== s.id ? sibling : null;
+    return { ...s, completedElsewhere };
+  });
+
+  res.json(enriched);
 }));
 
 /**

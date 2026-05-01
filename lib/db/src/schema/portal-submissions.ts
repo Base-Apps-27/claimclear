@@ -59,6 +59,15 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   claimedByBatchId: text("claimed_by_batch_id"),
   claimedByUserName: text("claimed_by_user_name"),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  // Persisted reference to the batch run that brought this row to status
+  // 'submitted'. Unlike `claimedByBatchId` (which is cleared the moment a
+  // row leaves the pending queue), this column is set once on the
+  // pending → submitted transition and never overwritten, so the Portal
+  // Submissions list can render "Already submitted in run #N" pills on
+  // sibling rows whose invoice group has an in-the-clear submission
+  // elsewhere. Joined against `portal_batch_runs.batch_id` to resolve the
+  // numeric run id used in the user-facing label.
+  submittedInBatchId: text("submitted_in_batch_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

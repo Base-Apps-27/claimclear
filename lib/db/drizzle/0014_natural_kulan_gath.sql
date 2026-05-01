@@ -1,0 +1,1 @@
+ALTER TABLE "portal_submissions" ADD COLUMN "submitted_in_batch_id" text;

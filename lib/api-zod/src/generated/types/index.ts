@@ -227,6 +227,7 @@ export * from "./portalResponseItemResponseType";
 export * from "./portalResponseItemSource";
 export * from "./portalSubmissionResponse";
 export * from "./portalSubmissionResponseAttachmentUrls";
+export * from "./portalSubmissionResponseCompletedElsewhere";
 export * from "./portalSubmissionResponseDescriptionHistoryItem";
 export * from "./portalSubmissionResponseEvidenceFiles";
 export * from "./portalSubmissionResponseStatus";

@@ -667,6 +667,36 @@ export type PortalSubmissionResponseWorkflowHistory = {
   [key: string]: unknown;
 } | null;
 
+/**
+ * Populated when a *different* portal_submissions row sharing the same
+`invoiceGroupId` has reached status='submitted'. Lets the UI render
+an inline "Already submitted in run #N" pill on draft / cancelled /
+failed rows whose underlying invoice has already been resolved by
+another attempt. Null when no sibling success exists, and always
+null on the success row itself. The latest sibling success wins.
+
+ * @nullable
+ */
+export type PortalSubmissionResponseCompletedElsewhere = {
+  /** ID of the sibling portal_submissions row that holds the success. */
+  submissionId: number;
+  /**
+   * Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.
+   * @nullable
+   */
+  runId?: number | null;
+  /**
+   * User-facing label for the run, e.g. "#287". Null if `runId` is null.
+   * @nullable
+   */
+  runLabel?: string | null;
+  /**
+   * ISO timestamp of when the sibling submission reached status='submitted'.
+   * @nullable
+   */
+  submittedAt?: string | null;
+} | null;
+
 export interface PortalSubmissionResponse {
   id: number;
   invoiceGroupId: number;
@@ -761,6 +791,17 @@ export interface PortalSubmissionResponse {
    * @nullable
    */
   claimedAt?: string | null;
+  /**
+   * Populated when a *different* portal_submissions row sharing the same
+`invoiceGroupId` has reached status='submitted'. Lets the UI render
+an inline "Already submitted in run #N" pill on draft / cancelled /
+failed rows whose underlying invoice has already been resolved by
+another attempt. Null when no sibling success exists, and always
+null on the success row itself. The latest sibling success wins.
+
+   * @nullable
+   */
+  completedElsewhere?: PortalSubmissionResponseCompletedElsewhere;
   createdAt?: string;
   updatedAt?: string;
 }

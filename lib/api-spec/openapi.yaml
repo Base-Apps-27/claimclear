@@ -5577,6 +5577,30 @@ components:
         claimedAt:
           type: ["string", "null"]
           description: Timestamp when the row was claimed by the current batch.
+        completedElsewhere:
+          type: ["object", "null"]
+          description: |
+            Populated when a *different* portal_submissions row sharing the same
+            `invoiceGroupId` has reached status='submitted'. Lets the UI render
+            an inline "Already submitted in run #N" pill on draft / cancelled /
+            failed rows whose underlying invoice has already been resolved by
+            another attempt. Null when no sibling success exists, and always
+            null on the success row itself. The latest sibling success wins.
+          properties:
+            submissionId:
+              type: integer
+              description: ID of the sibling portal_submissions row that holds the success.
+            runId:
+              type: ["integer", "null"]
+              description: Numeric ID of the portal_batch_runs row that processed the sibling success, or null if the row was completed outside a tracked batch run.
+            runLabel:
+              type: ["string", "null"]
+              description: User-facing label for the run, e.g. "#287". Null if `runId` is null.
+            submittedAt:
+              type: ["string", "null"]
+              description: ISO timestamp of when the sibling submission reached status='submitted'.
+          required:
+            - submissionId
         createdAt:
           type: string
         updatedAt:
