@@ -19,7 +19,13 @@ export const OUTCOMES = [
   "Non-Issue",
 ] as const;
 
-export const ERROR_TYPES = [
+export type ErrorTypeOption = {
+  id: string;
+  name: string;
+  italic?: boolean;
+};
+
+export const ERROR_TYPES: readonly ErrorTypeOption[] = [
   { id: "unassigned", name: "Unassigned", italic: true },
   { id: "1", name: "Invoice Number Not in System" },
   { id: "2", name: "GPS Pickup Too Far from Residence" },
@@ -33,7 +39,7 @@ export const ERROR_TYPES = [
   { id: "10", name: "Documentation Missing" },
   { id: "11", name: "Pickup Address Mismatch" },
   { id: "12", name: "Drop-off Address Mismatch" },
-] as const;
+];
 
 export const DEADLINES = [
   { value: "all", label: "All deadlines" },
