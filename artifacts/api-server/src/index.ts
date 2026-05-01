@@ -50,23 +50,10 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
 }
 
 (async () => {
-  try {
-    await runWithDbWarmupRetry("attachment_urls backfill", () => db.execute(sql`
-      UPDATE portal_submissions ps
-      SET attachment_urls = (
-        SELECT COALESCE(json_agg(ce.image_url), '[]'::json)
-        FROM claim_evidence ce
-        WHERE ce.claim_id = ps.claim_id
-          AND ce.image_url IS NOT NULL
-          AND ce.image_url != ''
-      )
-      WHERE (ps.attachment_urls IS NULL OR ps.attachment_urls::text = '[]' OR ps.attachment_urls::text = 'null')
-        AND ps.claim_id IS NOT NULL
-    `));
-    logger.info("One-time migration: backfilled attachment_urls from claim_evidence");
-  } catch (err) {
-    logger.warn({ err }, "One-time migration: attachment_urls backfill failed");
-  }
+  // Removed (Task #199): one-time attachment_urls backfill from claim_evidence.
+  // The source column portal_submissions.claim_id was dropped during the
+  // per-invoice cutover; the backfill ran in production prior to drop, so
+  // this code is no longer needed and would error on every boot.
 
   try {
     await runWithDbWarmupRetry("conversation_id backfill", () => db.execute(sql`

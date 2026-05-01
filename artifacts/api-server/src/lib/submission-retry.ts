@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
+import { primaryClaimIdForGroup } from "./group-claims";
 
 const RETRY_BACKOFF_MINUTES = [5, 30, 240, 480];
 
@@ -86,10 +87,11 @@ export async function scheduleRetryOrFail({
     return { outcome: "not_found", attempts: attemptsSoFar, maxAttempts, nextRetryAt: null, updated: null };
   }
 
+  const auditClaimId = await primaryClaimIdForGroup(updated.invoiceGroupId);
   if (exhausted) {
     await db.insert(auditLogsTable).values({
-      claimId: updated.claimId,
-      invoiceGroupId: updated.invoiceGroupId ?? null,
+      claimId: auditClaimId,
+      invoiceGroupId: updated.invoiceGroupId,
       action: "submission_retries_exhausted",
       details: `Portal submission #${submissionId} failed after ${attemptsSoFar} attempt${attemptsSoFar === 1 ? "" : "s"} (max ${maxAttempts}) [source: ${source}]: ${errMsg.slice(0, 200)}`,
       metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, lastError: errMsg },
@@ -98,8 +100,8 @@ export async function scheduleRetryOrFail({
     });
   } else {
     await db.insert(auditLogsTable).values({
-      claimId: updated.claimId,
-      invoiceGroupId: updated.invoiceGroupId ?? null,
+      claimId: auditClaimId,
+      invoiceGroupId: updated.invoiceGroupId,
       action: "submission_retry_scheduled",
       details: `Portal submission #${submissionId} retry ${attemptsSoFar + 1}/${maxAttempts} scheduled for ${nextRetryAt!.toISOString()} [source: ${source}] (after: ${errMsg.slice(0, 200)})`,
       metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, nextRetryAt: nextRetryAt!.toISOString(), lastError: errMsg },

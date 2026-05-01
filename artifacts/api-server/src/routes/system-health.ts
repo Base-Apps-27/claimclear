@@ -182,7 +182,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
   const [lastSuccess] = await db
     .select({
       id: portalSubmissionsTable.id,
-      claimId: portalSubmissionsTable.claimId,
+      invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
       submittedAt: portalSubmissionsTable.submittedAt,
       updatedAt: portalSubmissionsTable.updatedAt,
       confNumber: portalSubmissionsTable.confNumber,
@@ -196,7 +196,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
   const [lastFailed] = await db
     .select({
       id: portalSubmissionsTable.id,
-      claimId: portalSubmissionsTable.claimId,
+      invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
       attempts: portalSubmissionsTable.attempts,
       maxAttempts: portalSubmissionsTable.maxAttempts,
       errorMessage: portalSubmissionsTable.errorMessage,
@@ -227,7 +227,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     lastSuccessfulSubmission: lastSuccess
       ? {
           submissionId: lastSuccess.id,
-          claimId: lastSuccess.claimId,
+          invoiceGroupId: lastSuccess.invoiceGroupId,
           confNumber: lastSuccess.confNumber,
           submittedAt: lastSuccess.submittedAt,
           at: lastSuccess.updatedAt.toISOString(),
@@ -236,7 +236,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     lastFailedSubmission: lastFailed
       ? {
           submissionId: lastFailed.id,
-          claimId: lastFailed.claimId,
+          invoiceGroupId: lastFailed.invoiceGroupId,
           attempts: lastFailed.attempts,
           maxAttempts: lastFailed.maxAttempts,
           errorMessage: lastFailed.errorMessage,

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { presenceLogsTable, portalSubmissionsTable } from "@workspace/db";
+import { presenceLogsTable, portalSubmissionsTable, claimsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent, type PresenceResourceType } from "../lib/sse";
 import { getActiveBotProcesses } from "../lib/bot-presence";
@@ -122,17 +122,29 @@ router.get("/presence/:resourceType/:resourceId", asyncHandler(async (req, res):
     startedAt: string | null;
   }> = [];
 
-  // Bot presence is only tracked for claim resources today: portal submissions
-  // and AI email generation are recorded against claim IDs, so invoice-group
-  // viewers don't see bot activity yet.
-  if (resourceType === "claim") {
+  // Bot presence covers both claim and invoice-group resources. Portal
+  // submissions are now group-scoped, so when the resource is a claim we
+  // resolve its invoice group first and report any active submissions on the
+  // group; in-memory bot processes (AI email generation) remain per-claim.
+  let groupIdForBots: number | null = null;
+  if (resourceType === "invoice_group") {
+    groupIdForBots = resourceId;
+  } else if (resourceType === "claim") {
+    const [claim] = await db.select({ invoiceGroupId: claimsTable.invoiceGroupId })
+      .from(claimsTable)
+      .where(eq(claimsTable.id, resourceId))
+      .limit(1);
+    groupIdForBots = claim?.invoiceGroupId ?? null;
+  }
+
+  if (groupIdForBots !== null) {
     const activeSubmissions = await db.select({
       id: portalSubmissionsTable.id,
       status: portalSubmissionsTable.status,
       createdAt: portalSubmissionsTable.createdAt,
     }).from(portalSubmissionsTable)
       .where(and(
-        eq(portalSubmissionsTable.claimId, resourceId),
+        eq(portalSubmissionsTable.invoiceGroupId, groupIdForBots),
         eq(portalSubmissionsTable.status, "in_progress")
       ));
 
@@ -144,7 +156,9 @@ router.get("/presence/:resourceType/:resourceId", asyncHandler(async (req, res):
         startedAt: s.createdAt?.toISOString() ?? null,
       });
     }
+  }
 
+  if (resourceType === "claim") {
     const inMemoryProcesses = getActiveBotProcesses(resourceId);
     for (const proc of inMemoryProcesses) {
       botActivity.push({

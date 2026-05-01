@@ -173,29 +173,45 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
 
   let unsubmittedDrafts: NeedsYouItem[] = [];
   if (draftClaimIds.length > 0) {
-    const rows = await db
-      .select({
-        id: portalSubmissionsTable.id,
-        claimId: portalSubmissionsTable.claimId,
-        confNumber: portalSubmissionsTable.confNumber,
-        updatedAt: portalSubmissionsTable.updatedAt,
-      })
-      .from(portalSubmissionsTable)
-      .where(
-        and(
-          inArray(portalSubmissionsTable.claimId, draftClaimIds),
-          eq(portalSubmissionsTable.status, "draft"),
-        ),
-      )
-      .orderBy(desc(portalSubmissionsTable.updatedAt))
-      .limit(10);
-    unsubmittedDrafts = rows.map((r) => ({
-      id: r.claimId,
-      confNumber: r.confNumber ?? `Claim #${r.claimId}`,
-      status: "draft",
-      reason: "Draft you edited but never submitted",
-      href: `/claims/${r.claimId}`,
-    }));
+    // Audit-log rows give us per-claim attribution, but submissions are now
+    // group-scoped. Translate the touched claim ids to their invoice groups
+    // and look up active drafts on those groups.
+    const groupRows = await db
+      .select({ invoiceGroupId: claimsTable.invoiceGroupId })
+      .from(claimsTable)
+      .where(inArray(claimsTable.id, draftClaimIds));
+    const groupIds = Array.from(
+      new Set(
+        groupRows
+          .map((g) => g.invoiceGroupId)
+          .filter((id): id is number => id != null),
+      ),
+    );
+    if (groupIds.length > 0) {
+      const rows = await db
+        .select({
+          id: portalSubmissionsTable.id,
+          invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
+          confNumber: portalSubmissionsTable.confNumber,
+          updatedAt: portalSubmissionsTable.updatedAt,
+        })
+        .from(portalSubmissionsTable)
+        .where(
+          and(
+            inArray(portalSubmissionsTable.invoiceGroupId, groupIds),
+            eq(portalSubmissionsTable.status, "draft"),
+          ),
+        )
+        .orderBy(desc(portalSubmissionsTable.updatedAt))
+        .limit(10);
+      unsubmittedDrafts = rows.map((r) => ({
+        id: r.invoiceGroupId,
+        confNumber: r.confNumber ?? `Invoice group #${r.invoiceGroupId}`,
+        status: "draft",
+        reason: "Draft you edited but never submitted",
+        href: `/invoice-groups/${r.invoiceGroupId}`,
+      }));
+    }
   }
 
   // Needs Review claims (shared worklist)

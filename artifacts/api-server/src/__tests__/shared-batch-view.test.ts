@@ -34,7 +34,7 @@ import {
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
 import type { BatchEvent } from "../lib/sse";
-import { db, pool, portalSubmissionsTable, claimsTable } from "@workspace/db";
+import { db, pool, portalSubmissionsTable, claimsTable, invoiceGroupsTable } from "@workspace/db";
 
 // ---- Test server boot ----------------------------------------------------
 let server: http.Server;
@@ -181,31 +181,39 @@ async function waitForGateIdle(timeoutMs = 5000): Promise<void> {
 }
 
 // ---- DB seeding helpers --------------------------------------------------
-interface SeededRow { claimId: number; submissionId: number; }
+interface SeededRow { claimId: number; submissionId: number; invoiceGroupId: number; }
 
 async function seedPendingSubmission(opts: {
   confNumber: string;
   attempts?: number;
   maxAttempts?: number;
 }): Promise<SeededRow> {
+  const [group] = await db.insert(invoiceGroupsTable).values({
+    invoiceNumber: `${opts.confNumber}-G`,
+    status: "Portal Queued",
+  }).returning({ id: invoiceGroupsTable.id });
   const [claim] = await db.insert(claimsTable).values({
     confNumber: opts.confNumber,
     status: "Portal Queued",
+    invoiceGroupId: group.id,
   }).returning({ id: claimsTable.id });
   const [sub] = await db.insert(portalSubmissionsTable).values({
-    claimId: claim.id,
+    invoiceGroupId: group.id,
     status: "pending",
     confNumber: opts.confNumber,
     attempts: opts.attempts ?? 0,
     maxAttempts: opts.maxAttempts ?? 4,
   }).returning({ id: portalSubmissionsTable.id });
-  return { claimId: claim.id, submissionId: sub.id };
+  return { claimId: claim.id, submissionId: sub.id, invoiceGroupId: group.id };
 }
 
 async function cleanupSeeded(rows: SeededRow[]): Promise<void> {
   for (const row of rows) {
     await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, row.submissionId)).catch(() => undefined);
     await db.delete(claimsTable).where(eq(claimsTable.id, row.claimId)).catch(() => undefined);
+    if (row.invoiceGroupId) {
+      await db.delete(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, row.invoiceGroupId)).catch(() => undefined);
+    }
   }
 }
 

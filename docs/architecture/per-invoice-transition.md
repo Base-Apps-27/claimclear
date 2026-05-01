@@ -1,8 +1,11 @@
 # ClaimClear Architecture Transition: Per-Claim → Per-Invoice
 
-**Status:** Design committed, implementation in flight
-**Last updated:** 2026-04-30
+**Status:** Implementation complete (Task #199 cutover landed 2026-05-01)
+**Last updated:** 2026-05-01
 **Owners:** Adam (product), agent team (engineering)
+
+## Changelog
+- **2026-05-01 — Cutover landed (Task #199).** `PER_INVOICE_TRANSITION_ENABLED` flag, all `feature-flags` plumbing, the legacy `workflow-player.tsx` / `workflow-player-group.tsx`, the `WorkflowProgress` / `WorkflowStep` types, and the `portal_submissions.claim_id` column have been removed. `portal_submissions.invoice_group_id` is now `NOT NULL`. The v2 invoice-group + per-leg surfaces are the only UIs. OpenAPI version bumped to `0.2.0`. There is one code path, one schema shape, one set of UI surfaces.
 
 ---
 

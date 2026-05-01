@@ -101,7 +101,13 @@ async function fetchJson<T = unknown>(
 async function createSeedClaim(opts: {
   status?: "New" | "Needs Review" | "Needs Evidence";
   errorTypeId?: string | null;
+  withGroup?: boolean;
 } = {}): Promise<typeof claimsTable.$inferSelect> {
+  let invoiceGroupId: number | null = null;
+  if (opts.withGroup) {
+    const group = await createSeedGroup();
+    invoiceGroupId = group.id;
+  }
   const confNumber = `T130-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const [row] = await db.insert(claimsTable).values({
     confNumber,
@@ -109,6 +115,7 @@ async function createSeedClaim(opts: {
     outcome: "Pending",
     errorTypeId: opts.errorTypeId ?? null,
     errorTypeName: opts.errorTypeId ? "Seeded Error" : null,
+    invoiceGroupId,
   }).returning();
   return row;
 }
@@ -124,12 +131,16 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
 }
 
 async function cleanupClaim(id: number) {
+  const [claim] = await db.select({ invoiceGroupId: claimsTable.invoiceGroupId })
+    .from(claimsTable).where(eq(claimsTable.id, id)).catch(() => [{ invoiceGroupId: null as number | null }]);
   await db.delete(portalResponsesTable).where(eq(portalResponsesTable.claimId, id)).catch(() => undefined);
-  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);
   await db.delete(claimsTable).where(eq(claimsTable.id, id)).catch(() => undefined);
+  if (claim?.invoiceGroupId) {
+    await cleanupGroup(claim.invoiceGroupId);
+  }
 }
 
 async function cleanupGroup(id: number) {
@@ -810,9 +821,9 @@ test("PATCH /invoice-groups/:id/outcome rejects Non-Issue + denied_by_payor", as
 // ---- Stage-aware closure-reason gates (Task #160) ----------------------
 
 test("PATCH /claims/:id/outcome rejects Withdrawn/cannot_dispute once a portal_submission exists for the claim", async () => {
-  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x", withGroup: true });
   await db.insert(portalSubmissionsTable).values({
-    claimId: seed.id,
+    invoiceGroupId: seed.invoiceGroupId!,
     status: "submitted",
   });
   try {
@@ -847,9 +858,9 @@ test("PATCH /claims/:id/outcome rejects Withdrawn/cannot_dispute once a portal_s
 });
 
 test("PATCH /claims/:id/outcome rejects Denied when no portal_response (or email response) is on file", async () => {
-  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x", withGroup: true });
   await db.insert(portalSubmissionsTable).values({
-    claimId: seed.id,
+    invoiceGroupId: seed.invoiceGroupId!,
     status: "submitted",
   });
   try {
@@ -872,14 +883,10 @@ test("PATCH /claims/:id/outcome rejects Denied when no portal_response (or email
 
 test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/cannot_dispute once any portal_submission exists for the group", async () => {
   const seed = await createSeedGroup();
-  // portal_submissions.claim_id is NOT NULL in the schema. Group-level
-  // submissions are tracked by attaching the submission to a child claim
-  // and setting invoiceGroupId — groupHasEverBeenSubmitted scans both
-  // direct group submissions and submissions on the group's child claims.
-  const child = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
-  await db.update(claimsTable).set({ invoiceGroupId: seed.id }).where(eq(claimsTable.id, child.id));
+  // Post-cutover, portal_submissions are group-scoped (claim_id was dropped)
+  // — we just attach a submission directly to the group and the cannot_dispute
+  // gate should fire on groupHasEverBeenSubmitted.
   await db.insert(portalSubmissionsTable).values({
-    claimId: child.id,
     invoiceGroupId: seed.id,
     status: "submitted",
   });
@@ -908,7 +915,6 @@ test("PATCH /invoice-groups/:id/outcome rejects Withdrawn/cannot_dispute once an
     assert.equal(row.outcome, "Pending");
     assert.equal(row.closureReason, null);
   } finally {
-    await cleanupClaim(child.id);
     await cleanupGroup(seed.id);
   }
 });

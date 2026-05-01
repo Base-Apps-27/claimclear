@@ -1,7 +1,6 @@
 import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { claimsTable } from "./claims";
 import { invoiceGroupsTable } from "./invoice-groups";
 
 export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
@@ -10,8 +9,7 @@ export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
 
 export const portalSubmissionsTable = pgTable("portal_submissions", {
   id: serial("id").primaryKey(),
-  claimId: integer("claim_id").notNull().references(() => claimsTable.id, { onDelete: "cascade" }),
-  invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "set null" }),
+  invoiceGroupId: integer("invoice_group_id").notNull().references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
   status: portalSubmissionStatusEnum().notNull().default("pending"),
   issueType: text("issue_type"),
   subject: text("subject"),
@@ -64,7 +62,7 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
-  index("portal_submissions_claim_id_idx").on(table.claimId),
+  index("portal_submissions_invoice_group_id_idx").on(table.invoiceGroupId),
   index("portal_submissions_status_idx").on(table.status),
 ]);
 

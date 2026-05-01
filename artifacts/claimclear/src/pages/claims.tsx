@@ -23,7 +23,7 @@ import { DensityToggle, type Density } from "@/components/list-table/density-tog
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
 import { useUrlParams } from "@/lib/use-url-params";
 import {
-  PageHeader, FilterStrip, type FilterStripTab,
+  PageHeader,
   StatusStrip, StatusDot, StatusPillForStatus,
   Recommended, ToneButton, CrossPageNudge, TONE_STYLE,
 } from "@/components/cohesion";
@@ -34,7 +34,6 @@ import {
   deriveLifecycleTab,
   type LifecycleTabKey,
 } from "@/lib/lifecycle-phase";
-import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
 import { type LegSubStatus } from "@workspace/leg-state";
 import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
 
@@ -119,13 +118,11 @@ export default function ClaimsList() {
   const filterExpiring: "" | "soon" | "urgent" =
     filterExpiringRaw === "soon" || filterExpiringRaw === "urgent" ? filterExpiringRaw : "";
 
-  // PER_INVOICE_TRANSITION_ENABLED: secondary tab strip that filters the
-  // list by per-leg sub-status. When the flag is off this URL param is
-  // simply ignored (it isn't read from this page) and the strip isn't
-  // rendered, so the legacy claims list behaviour is preserved.
-  const perInvoiceOn = isPerInvoiceTransitionEnabled();
+  // Post-cutover: the secondary tab strip that filters the list by
+  // per-leg sub-status is always shown (the legacy status-tab strip was
+  // removed in Task #199).
   const filterLegSubStatusRaw = get("legSubStatus");
-  const filterLegSubStatus = perInvoiceOn && (CLAIM_LEG_TABS as readonly string[]).includes(filterLegSubStatusRaw)
+  const filterLegSubStatus = (CLAIM_LEG_TABS as readonly string[]).includes(filterLegSubStatusRaw)
     ? (filterLegSubStatusRaw as LegSubStatus)
     : "";
 
@@ -216,13 +213,6 @@ export default function ClaimsList() {
     set({ sort: key || null, dir: dir || null, page: null }, false);
   };
 
-  const handleTabChange = (key: ClaimsTabKey) => {
-    const tab = CLAIM_TABS.find(t => t.key === key);
-    if (!tab) return;
-    const statusValue = tab.statuses.length > 0 ? tab.statuses.join(",") : null;
-    set({ status: statusValue, page: null }, false);
-  };
-
   const clearFilters = () => {
     set({ status: null, outcome: null, errorTypeId: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, clientNumber: null, expiring: null, page: null }, false);
   };
@@ -290,12 +280,6 @@ export default function ClaimsList() {
 
   const tdPy = density === "compact" ? "py-1.5" : "py-3";
 
-  const tabs: FilterStripTab<ClaimsTabKey>[] = CLAIM_TABS.map(t => ({
-    key: t.key,
-    label: t.label,
-    count: t.key === activeTab ? total : null,
-  }));
-
   const blueRowTint = TONE_STYLE.blue.bg;
 
   return (
@@ -319,40 +303,30 @@ export default function ClaimsList() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        {perInvoiceOn ? (
-          <div
-            className="flex flex-wrap items-center gap-1"
-            role="tablist"
-            aria-label="Filter claims by leg sub-status"
-            data-testid="leg-sub-status-tabs"
-          >
-            {CLAIM_LEG_TABS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={filterLegSubStatus === s}
-                onClick={() => set({ legSubStatus: s })}
-                className={`px-3 py-1.5 rounded-full border text-sm ${
-                  filterLegSubStatus === s
-                    ? "bg-foreground text-background border-foreground"
-                    : "bg-background text-foreground border-border hover:bg-muted"
-                }`}
-                data-testid={`leg-sub-status-tab-${s}`}
-              >
-                {legSubStatusLabel(s)}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <FilterStrip<ClaimsTabKey>
-            tabs={tabs}
-            active={activeTab}
-            onChange={handleTabChange}
-            accent="blue"
-            ariaLabel="Filter claims by status"
-          />
-        )}
+        <div
+          className="flex flex-wrap items-center gap-1"
+          role="tablist"
+          aria-label="Filter claims by leg sub-status"
+          data-testid="leg-sub-status-tabs"
+        >
+          {CLAIM_LEG_TABS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="tab"
+              aria-selected={filterLegSubStatus === s}
+              onClick={() => set({ legSubStatus: s })}
+              className={`px-3 py-1.5 rounded-full border text-sm ${
+                filterLegSubStatus === s
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-background text-foreground border-border hover:bg-muted"
+              }`}
+              data-testid={`leg-sub-status-tab-${s}`}
+            >
+              {legSubStatusLabel(s)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <StatusStrip>

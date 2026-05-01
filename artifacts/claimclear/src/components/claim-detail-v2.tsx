@@ -37,7 +37,7 @@ import { MasReattestHistory } from "@/components/mas-reattest-history";
 import { deriveLegSubStatus, type LegHoldReason } from "@workspace/leg-state";
 import type { DecisionTree } from "@/components/decision-tree/types";
 
-// v2 per-leg investigation surface mounted when PER_INVOICE_TRANSITION_ENABLED is on.
+// Per-leg investigation surface — the only claim detail UI post-cutover (Task #199).
 
 interface Props {
   claimId: number;
@@ -649,9 +649,6 @@ export function ClaimDetailV2({ claimId }: Props) {
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground italic text-center">
-        v2 per-leg investigation surface · disable PER_INVOICE_TRANSITION_ENABLED to return to the legacy claim page.
-      </p>
     </div>
   );
 }

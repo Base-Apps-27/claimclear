@@ -25,10 +25,9 @@ import { db, stateEventsTable, type InsertStateEvent } from "@workspace/db";
 import { logger } from "./logger";
 import type { DbExecutor } from "./claim-transitions";
 
-export type EmitStateEventInput = Pick<
-  InsertStateEvent,
-  "eventKey" | "claimId" | "invoiceGroupId" | "actorUserId" | "durationMs" | "metadata"
->;
+export type EmitStateEventInput =
+  & Pick<InsertStateEvent, "eventKey">
+  & Partial<Pick<InsertStateEvent, "claimId" | "invoiceGroupId" | "actorUserId" | "durationMs" | "metadata">>;
 
 export async function emitStateEvent(
   input: EmitStateEventInput,

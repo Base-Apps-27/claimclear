@@ -4,11 +4,11 @@ import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, a
 import { logger } from "./logger";
 import { broadcastPresenceEvent, broadcastBatchEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
-import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
 import { invoiceGroupsTable } from "@workspace/db";
 import { scheduleRetryOrFail } from "./submission-retry";
 import { createWorkerGate } from "./worker-gate";
+import { primaryClaimIdForGroup } from "./group-claims";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -693,7 +693,7 @@ async function processSequentially(job: BatchJob): Promise<void> {
         job.processed++;
         continue;
       }
-      subClaimId = sub.claimId;
+      subClaimId = await primaryClaimIdForGroup(sub.invoiceGroupId);
 
       await db.update(portalSubmissionsTable).set({
         status: "in_progress",
@@ -720,25 +720,29 @@ async function processSequentially(job: BatchJob): Promise<void> {
         message: `Claimed by batch job ${job.id} (triggered by ${job.triggeredBy})`,
       });
 
-      broadcastPresenceEvent({
-        type: "bot_started",
-        resourceType: "claim", resourceId: sub.claimId,
-        userName: "Batch Processor",
-        userEmail: null,
-        botProcess: "portal_submission",
-        timestamp: new Date().toISOString(),
-      });
+      if (subClaimId) {
+        broadcastPresenceEvent({
+          type: "bot_started",
+          resourceType: "claim", resourceId: subClaimId,
+          userName: "Batch Processor",
+          userEmail: null,
+          botProcess: "portal_submission",
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       await processViaExternalBot(sub);
 
-      broadcastPresenceEvent({
-        type: "bot_completed",
-        resourceType: "claim", resourceId: sub.claimId,
-        userName: "Batch Processor",
-        userEmail: null,
-        botProcess: "portal_submission",
-        timestamp: new Date().toISOString(),
-      });
+      if (subClaimId) {
+        broadcastPresenceEvent({
+          type: "bot_completed",
+          resourceType: "claim", resourceId: subClaimId,
+          userName: "Batch Processor",
+          userEmail: null,
+          botProcess: "portal_submission",
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       broadcastBatchEvent({
         type: "row_status_changed",
@@ -938,6 +942,7 @@ async function processDirectEmail(
     "processDirectEmail: dispatching",
   );
 
+  const subClaimId = await primaryClaimIdForGroup(sub.invoiceGroupId);
   const result = await sendDirectEmailDispute(
     {
       id: sub.id,
@@ -945,8 +950,8 @@ async function processDirectEmail(
       subject,
       descriptionHtml: sub.descriptionHtml || "",
       attachmentUrls,
-      claimId: sub.claimId,
-      invoiceGroupId: sub.invoiceGroupId ?? null,
+      claimId: subClaimId,
+      invoiceGroupId: sub.invoiceGroupId,
     },
     { to: recipientTo, cc: recipientCc },
     {
@@ -967,33 +972,18 @@ async function processDirectEmail(
 
   const submittedAtIso = new Date().toISOString();
   const reason = `Direct email dispute sent successfully${result.messageId ? ` - Message ID: ${result.messageId}` : ""}`;
-  if (sub.invoiceGroupId) {
-    await transitionGroupStatus({
-      groupId: sub.invoiceGroupId,
-      newStatus: "Awaiting Response",
-      source: "batch_processor",
-      reason,
-      actor: { userEmail: null, userName: "Batch Processor" },
-      systemOverride: true,
-      extraFields: {
-        disputeEmailSent: true,
-        disputeEmailSentAt: submittedAtIso,
-      },
-    });
-  } else {
-    await transitionClaimStatus({
-      claimId: sub.claimId,
-      newStatus: "Awaiting Response",
-      source: "batch_processor",
-      reason,
-      actor: { userEmail: null, userName: "Batch Processor" },
-      systemOverride: true,
-      extraFields: {
-        disputeEmailSent: true,
-        disputeEmailSentAt: submittedAtIso,
-      },
-    });
-  }
+  await transitionGroupStatus({
+    groupId: sub.invoiceGroupId,
+    newStatus: "Awaiting Response",
+    source: "batch_processor",
+    reason,
+    actor: { userEmail: null, userName: "Batch Processor" },
+    systemOverride: true,
+    extraFields: {
+      disputeEmailSent: true,
+      disputeEmailSentAt: submittedAtIso,
+    },
+  });
 
   await db.insert(botActivityLogTable).values({
     submissionId: sub.id,
@@ -1078,33 +1068,18 @@ async function processViaExternalBot(
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     const submittedAtIso = new Date().toISOString();
-    if (sub.invoiceGroupId) {
-      await transitionGroupStatus({
-        groupId: sub.invoiceGroupId,
-        newStatus: "Awaiting Response",
-        source: "batch_processor",
-        reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
-        actor: { userEmail: null, userName: "Batch Processor" },
-        systemOverride: true,
-        extraFields: {
-          disputeEmailSent: true,
-          disputeEmailSentAt: submittedAtIso,
-        },
-      });
-    } else {
-      await transitionClaimStatus({
-        claimId: sub.claimId,
-        newStatus: "Awaiting Response",
-        source: "batch_processor",
-        reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
-        actor: { userEmail: null, userName: "Batch Processor" },
-        systemOverride: true,
-        extraFields: {
-          disputeEmailSent: true,
-          disputeEmailSentAt: submittedAtIso,
-        },
-      });
-    }
+    await transitionGroupStatus({
+      groupId: sub.invoiceGroupId,
+      newStatus: "Awaiting Response",
+      source: "batch_processor",
+      reason: `Portal ticket submitted successfully${result.ticketId ? ` - Ticket ID: ${result.ticketId}` : ""}`,
+      actor: { userEmail: null, userName: "Batch Processor" },
+      systemOverride: true,
+      extraFields: {
+        disputeEmailSent: true,
+        disputeEmailSentAt: submittedAtIso,
+      },
+    });
 
     await db.insert(botActivityLogTable).values({
       submissionId: sub.id,
@@ -1138,7 +1113,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
   broadcastPresenceEvent({
     type: "bot_started",
-    resourceType: "claim", resourceId: sub.claimId,
+    resourceType: "invoice_group", resourceId: sub.invoiceGroupId,
     userName: "Sandbox Runner",
     userEmail: null,
     botProcess: "portal_sandbox",
@@ -1210,7 +1185,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     broadcastPresenceEvent({
       type: "bot_completed",
-      resourceType: "claim", resourceId: sub.claimId,
+      resourceType: "invoice_group", resourceId: sub.invoiceGroupId,
       userName: "Sandbox Runner",
       userEmail: null,
       botProcess: "portal_sandbox",
@@ -1266,7 +1241,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     broadcastPresenceEvent({
       type: "bot_completed",
-      resourceType: "claim", resourceId: sub.claimId,
+      resourceType: "invoice_group", resourceId: sub.invoiceGroupId,
       userName: "Sandbox Runner",
       userEmail: null,
       botProcess: "portal_sandbox",

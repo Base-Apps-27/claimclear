@@ -33,7 +33,6 @@ import type {
 } from "@workspace/api-client-react";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
-import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { useAiCalibrations } from "@/hooks/use-ai-calibration";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -46,7 +45,6 @@ import { StatusBadge } from "@/components/status-badge";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { ConversationsCard } from "@/components/conversations-card";
 import {
-  QueueResponseReviewPanel,
   pickLatestReviewableResponse,
   getResponseTypeLabel,
   getResponseTypePillClass,
@@ -154,14 +152,15 @@ export default function ResponsesAwaitingReview() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [sortMode, setSortMode] = useState<SortMode>(() => readStoredSort());
-  const { perInvoiceTransitionEnabled } = useFeatureFlags();
   const [activeTab, setActiveTab] = useState<ActiveTab>("verdict-pending");
 
   const selectedId = params.id ? parseInt(params.id, 10) || null : null;
 
-  const verdictPendingQuery = perInvoiceTransitionEnabled
-    ? ({ macroPhase: "response-pending", limit: 500 } as const)
-    : ({ status: "Needs Review", limit: 500 } as const);
+  // Post-cutover: the Verdict Pending list is sourced from the
+  // `response-pending` macro phase and the MAS Action tab is always
+  // available. The legacy "Needs Review" status query and the
+  // PER_INVOICE_TRANSITION_ENABLED gate were removed in Task #199.
+  const verdictPendingQuery = { macroPhase: "response-pending", limit: 500 } as const;
   const { data, isLoading, isError, refetch } = useListInvoiceGroups(
     verdictPendingQuery,
     {
@@ -171,7 +170,6 @@ export default function ResponsesAwaitingReview() {
     },
   );
 
-  const masActionEnabled = perInvoiceTransitionEnabled;
   const {
     data: masData,
     isLoading: masLoading,
@@ -185,7 +183,6 @@ export default function ResponsesAwaitingReview() {
           macroPhase: "mas-action-required",
           limit: 500,
         }),
-        enabled: masActionEnabled,
       },
     },
   );
@@ -358,17 +355,15 @@ export default function ResponsesAwaitingReview() {
                 </Badge>
               )}
             </TabsTrigger>
-            {masActionEnabled && (
-              <TabsTrigger value="mas-action" data-testid="tab-mas-action">
-                <ListChecks className="h-4 w-4 mr-1.5" />
-                MAS action
-                {masGroups.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {masGroups.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="mas-action" data-testid="tab-mas-action">
+              <ListChecks className="h-4 w-4 mr-1.5" />
+              MAS action
+              {masGroups.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {masGroups.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="attestation" data-testid="tab-attestation">
               <ShieldCheck className="h-4 w-4 mr-1.5" />
               Attestation
@@ -415,19 +410,16 @@ export default function ResponsesAwaitingReview() {
             selectedGroup={selectedGroup}
             onSelect={selectGroup}
             onAfterVerdict={onAfterVerdict}
-            perInvoiceTransitionEnabled={perInvoiceTransitionEnabled}
           />
         </TabsContent>
-        {masActionEnabled && (
-          <TabsContent value="mas-action" className="mt-4">
-            <MasActionWorkspace
-              isLoading={masLoading}
-              isError={masIsError}
-              onRetry={() => refetchMas()}
-              groups={masGroups}
-            />
-          </TabsContent>
-        )}
+        <TabsContent value="mas-action" className="mt-4">
+          <MasActionWorkspace
+            isLoading={masLoading}
+            isError={masIsError}
+            onRetry={() => refetchMas()}
+            groups={masGroups}
+          />
+        </TabsContent>
         <TabsContent value="attestation" className="mt-4">
           <AttestationPointerCard
             pending={attestationPending}
@@ -491,7 +483,6 @@ interface WorkspaceProps {
   selectedGroup: InvoiceGroupResponse | null;
   onSelect: (id: number) => void;
   onAfterVerdict: (message: string) => void;
-  perInvoiceTransitionEnabled: boolean;
 }
 
 function Workspace({
@@ -502,7 +493,6 @@ function Workspace({
   selectedGroup,
   onSelect,
   onAfterVerdict,
-  perInvoiceTransitionEnabled,
 }: WorkspaceProps) {
   if (isLoading) {
     return (
@@ -565,7 +555,6 @@ function Workspace({
           key={selectedGroup.id}
           group={selectedGroup}
           onAfterVerdict={onAfterVerdict}
-          perInvoiceTransitionEnabled={perInvoiceTransitionEnabled}
         />
       )}
     </div>
@@ -772,13 +761,11 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
 interface DetailPaneProps {
   group: InvoiceGroupResponse;
   onAfterVerdict: (message: string) => void;
-  perInvoiceTransitionEnabled: boolean;
 }
 
 function DetailPane({
   group,
   onAfterVerdict,
-  perInvoiceTransitionEnabled,
 }: DetailPaneProps) {
   // Subscribe to per-group SSE events so the detail pane refreshes as the
   // payor's response gets re-tagged or as siblings move through verdict
@@ -1013,22 +1000,10 @@ function DetailPane({
         </Card>
       )}
 
-      {perInvoiceTransitionEnabled && detail && (
+      {detail && (
         <PerLegPickerStack
           group={detail as InvoiceGroupDetailResponse}
           onAfterVerdict={onAfterVerdict}
-        />
-      )}
-
-      {/*
-        Legacy group-level/bulk verdict panel only renders when the
-        per-invoice transition is OFF. Per-leg confirm-only is the rule
-        once the flag is on — no bulk shortcuts on this surface.
-      */}
-      {!perInvoiceTransitionEnabled && (
-        <QueueResponseReviewPanel
-          group={group}
-          onCompleted={onAfterVerdict}
         />
       )}
     </div>

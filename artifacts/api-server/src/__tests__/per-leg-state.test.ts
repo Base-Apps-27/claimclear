@@ -167,7 +167,6 @@ async function cleanupClaim(id: number) {
   await db.delete(claimVerdictTable).where(eq(claimVerdictTable.claimId, id)).catch(() => undefined);
   await db.delete(stateEventsTable).where(eq(stateEventsTable.claimId, id)).catch(() => undefined);
   await db.delete(portalResponsesTable).where(eq(portalResponsesTable.claimId, id)).catch(() => undefined);
-  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);
@@ -428,7 +427,6 @@ test("POST /claims/:id/reclassify is refused once a portal submission is in flig
   });
   // Insert a submitted portal submission to lock the leg.
   await db.insert(portalSubmissionsTable).values({
-    claimId: claim.id,
     invoiceGroupId: group.id,
     status: "submitted",
   });

@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle, Inbox, Loader2 } from "lucide-react";
-import { WorkflowPlayerGroup } from "@/components/workflow-player-group";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
 import {
   QueueResponseReviewPanel,
@@ -558,16 +557,33 @@ export default function Queue() {
                 </Link>
               </div>
               <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
-              <WorkflowPlayerGroup
-                group={selectedWorkflowGroup}
-                showGroupContext={true}
-                showDetailsLink={true}
-                presenceLockReason={lockReason}
-                onComplete={() => {
-                  setSelectedWorkflowId(null);
-                  invalidate();
-                }}
-              />
+              {/*
+                Post-cutover: the in-queue WorkflowPlayerGroup was removed
+                (Task #199). The actual group orchestration surface lives at
+                /invoice-groups/:id (InvoiceGroupDetailV2), so the queue now
+                only shows a quick-summary card and a CTA to open the full
+                detail page.
+              */}
+              <Card>
+                <CardContent className="py-6 space-y-3">
+                  <div className="text-sm">
+                    <div className="font-medium">Invoice {selectedWorkflowGroup.invoiceNumber}</div>
+                    <div className="text-muted-foreground">
+                      {selectedWorkflowGroup.rideCount} ride{selectedWorkflowGroup.rideCount !== 1 ? "s" : ""}
+                      {" · "}
+                      {selectedWorkflowGroup.status}
+                    </div>
+                  </div>
+                  {lockReason && (
+                    <p className="text-xs text-muted-foreground">{lockReason}</p>
+                  )}
+                  <Button asChild size="sm" data-testid="open-group-from-queue">
+                    <Link href={`/invoice-groups/${selectedWorkflowGroup.id}`}>
+                      Open invoice-group workspace <ChevronRight className="h-4 w-4 ml-1" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           ) : (
             <Card>

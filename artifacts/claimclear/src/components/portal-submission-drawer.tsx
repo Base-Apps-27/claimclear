@@ -641,8 +641,8 @@ export function PortalSubmissionDrawer({
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onOpenChange(false)} data-testid="drawer-close">
                 <X className="h-3.5 w-3.5" /> Cancel
               </Button>
-              <Link href={`/claims/${submission.claimId}`} className="ml-auto text-xs flex items-center gap-1 text-primary hover:underline" data-testid="drawer-open-claim">
-                Open claim <ChevronRight className="h-3 w-3" />
+              <Link href={`/invoice-groups/${submission.invoiceGroupId}`} className="ml-auto text-xs flex items-center gap-1 text-primary hover:underline" data-testid="drawer-open-claim">
+                Open invoice group <ChevronRight className="h-3 w-3" />
               </Link>
             </div>
           </Tabs>

@@ -75,7 +75,6 @@ export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResul
   if (ticketIds.length > 0) {
     const submissions = await db.select({
       id: portalSubmissionsTable.id,
-      claimId: portalSubmissionsTable.claimId,
       invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
       portalTicketId: portalSubmissionsTable.portalTicketId,
     }).from(portalSubmissionsTable)
@@ -91,7 +90,7 @@ export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResul
         t.toLowerCase() === sub.portalTicketId!.toLowerCase()
       )) {
         return {
-          claimId: sub.invoiceGroupId ? null : sub.claimId,
+          claimId: null,
           invoiceGroupId: sub.invoiceGroupId,
           submissionId: sub.id,
           matchedVia: `portal_ticket_id:${sub.portalTicketId}`,
@@ -435,7 +434,7 @@ export function typeLabelFor(t: ClassifiedDecision): string {
 }
 
 export async function processPortalResponse(data: {
-  claimId: number;
+  claimId: number | null;
   invoiceGroupId?: number | null;
   submissionId: number;
   portalTicketId: string;
@@ -456,11 +455,18 @@ export async function processPortalResponse(data: {
   senderName?: string;
   metadata?: Record<string, unknown> | null;
 }): Promise<number> {
-  const isGroup = data.invoiceGroupId !== null && data.invoiceGroupId !== undefined;
+  // Post-cutover all portal submissions are group-scoped. Reject any caller
+  // still passing a claim-only payload so we surface stragglers immediately.
+  if (data.invoiceGroupId === null || data.invoiceGroupId === undefined) {
+    throw new Error(
+      "processPortalResponse requires invoiceGroupId — claim-only submissions are no longer supported",
+    );
+  }
+  const invoiceGroupId = data.invoiceGroupId;
 
   const [response] = await db.insert(portalResponsesTable).values({
-    claimId: isGroup ? null : data.claimId,
-    invoiceGroupId: data.invoiceGroupId ?? null,
+    claimId: null,
+    invoiceGroupId,
     submissionId: data.submissionId,
     source: "portal",
     responseType: data.responseType,
@@ -478,82 +484,43 @@ export async function processPortalResponse(data: {
     metadata: data.metadata || null,
   }).returning();
 
-  if (isGroup) {
-    await db.insert(notesTable).values({
-      claimId: null,
-      invoiceGroupId: data.invoiceGroupId,
-      type: "reply_parsed",
-      content: `Portal response received for ticket ${data.portalTicketId}: ${data.responseType}`,
-      author: "Response Tracker",
-    });
+  await db.insert(notesTable).values({
+    claimId: null,
+    invoiceGroupId,
+    type: "reply_parsed",
+    content: `Portal response received for ticket ${data.portalTicketId}: ${data.responseType}`,
+    author: "Response Tracker",
+  });
 
-    await db.insert(auditLogsTable).values({
-      invoiceGroupId: data.invoiceGroupId,
-      action: "response_received",
-      details: `${data.responseType} response from portal (ticket: ${data.portalTicketId})`,
-      metadata: {
-        responseId: response.id,
-        source: "portal",
-        responseType: data.responseType,
-        portalTicketId: data.portalTicketId,
-      },
-      userEmail: "system",
-      userName: "Response Tracker",
-    });
-
-    await transitionGroupStatus({
-      groupId: data.invoiceGroupId!,
-      newStatus: "Needs Review",
-      source: "portal_response_matcher",
-      reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
-      actor: { userEmail: "system", userName: "Response Tracker" },
-      systemOverride: true,
-    });
-
-    logger.info({
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId,
+    action: "response_received",
+    details: `${data.responseType} response from portal (ticket: ${data.portalTicketId})`,
+    metadata: {
       responseId: response.id,
-      invoiceGroupId: data.invoiceGroupId,
+      source: "portal",
       responseType: data.responseType,
       portalTicketId: data.portalTicketId,
-    }, "Portal response processed and linked to invoice group");
-  } else {
-    await db.insert(notesTable).values({
-      claimId: data.claimId,
-      type: "reply_parsed",
-      content: `Portal response received for ticket ${data.portalTicketId}: ${data.responseType}`,
-      author: "Response Tracker",
-    });
+    },
+    userEmail: "system",
+    userName: "Response Tracker",
+  });
 
-    await db.insert(auditLogsTable).values({
-      claimId: data.claimId,
-      action: "response_received",
-      details: `${data.responseType} response from portal (ticket: ${data.portalTicketId})`,
-      metadata: {
-        responseId: response.id,
-        source: "portal",
-        responseType: data.responseType,
-        portalTicketId: data.portalTicketId,
-      },
-      userEmail: "system",
-      userName: "Response Tracker",
-    });
+  await transitionGroupStatus({
+    groupId: invoiceGroupId,
+    newStatus: "Needs Review",
+    source: "portal_response_matcher",
+    reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
+    actor: { userEmail: "system", userName: "Response Tracker" },
+    systemOverride: true,
+  });
 
-    await transitionClaimStatus({
-      claimId: data.claimId,
-      newStatus: "Needs Review",
-      source: "portal_response_matcher",
-      reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
-      actor: { userEmail: "system", userName: "Response Tracker" },
-      systemOverride: true,
-    });
-
-    logger.info({
-      responseId: response.id,
-      claimId: data.claimId,
-      responseType: data.responseType,
-      portalTicketId: data.portalTicketId,
-    }, "Portal response processed and linked to claim");
-  }
+  logger.info({
+    responseId: response.id,
+    invoiceGroupId,
+    responseType: data.responseType,
+    portalTicketId: data.portalTicketId,
+  }, "Portal response processed and linked to invoice group");
 
   return response.id;
 }

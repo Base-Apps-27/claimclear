@@ -276,8 +276,8 @@ export default function SystemHealth() {
                       <div>
                         <span className="text-muted-foreground">Submission </span>
                         <span className="font-mono">#{workerData.lastSuccessfulSubmission.submissionId}</span>
-                        <span className="text-muted-foreground"> · claim </span>
-                        <span className="font-mono">#{workerData.lastSuccessfulSubmission.claimId}</span>
+                        <span className="text-muted-foreground"> · invoice group </span>
+                        <span className="font-mono">#{workerData.lastSuccessfulSubmission.invoiceGroupId}</span>
                       </div>
                       {workerData.lastSuccessfulSubmission.confNumber ? (
                         <div><span className="text-muted-foreground">Conf #</span> <span className="font-mono">{workerData.lastSuccessfulSubmission.confNumber}</span></div>
@@ -295,8 +295,8 @@ export default function SystemHealth() {
                       <div>
                         <span className="text-muted-foreground">Submission </span>
                         <span className="font-mono">#{workerData.lastFailedSubmission.submissionId}</span>
-                        <span className="text-muted-foreground"> · claim </span>
-                        <span className="font-mono">#{workerData.lastFailedSubmission.claimId}</span>
+                        <span className="text-muted-foreground"> · invoice group </span>
+                        <span className="font-mono">#{workerData.lastFailedSubmission.invoiceGroupId}</span>
                       </div>
                       <div className="text-muted-foreground">
                         Attempts {workerData.lastFailedSubmission.attempts}/{workerData.lastFailedSubmission.maxAttempts}

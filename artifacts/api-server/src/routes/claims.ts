@@ -542,16 +542,23 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  const activeSubmissions = await db.select().from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.claimId, id),
-      inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
-    ));
+  // Submissions are now invoice-group-scoped, so we look up "is anything in
+  // flight on this claim's parent group?" via claim.invoiceGroupId. Standalone
+  // legs (no group) cannot have submissions.
+  const activeSubmissions = claim.invoiceGroupId
+    ? await db.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, claim.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+        ))
+    : [];
 
-  const allSubmissions = await db.select({ id: portalSubmissionsTable.id })
-    .from(portalSubmissionsTable)
-    .where(eq(portalSubmissionsTable.claimId, id))
-    .limit(1);
+  const allSubmissions = claim.invoiceGroupId
+    ? await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.invoiceGroupId, claim.invoiceGroupId))
+        .limit(1)
+    : [];
   const hasBeenSubmitted = allSubmissions.length > 0;
 
   const validStatuses = activeSubmissions.length > 0 ? [] : (VALID_MANUAL_STATUS_TRANSITIONS[claim.status] || []);
@@ -1083,24 +1090,6 @@ router.post("/claims/:id/clear-sop-hold", asyncHandler(async (req, res): Promise
   res.json(updated);
 }));
 
-router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  // TEMP STUB — removed in cutover task. The legacy `workflow_progress`
-  // JSONB column has been dropped (see Task #195). The new per-leg state
-  // machine writes to discrete columns through the contracts task. This
-  // endpoint is left as a no-op write that still emits the audit + bus
-  // event so that any in-flight UI calls don't 404 during the transition.
-  void req.body;
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  await createAuditLog(id, "workflow_step", "Workflow progress updated (stub)", req);
-  emitClaimEvent(id, "workflow_updated", req);
-  res.json(claim);
-}));
-
 router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -1225,11 +1214,15 @@ router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): P
           reason: `${actionLabel} — claim returned to evidence gathering for re-submission${notes ? `. ${notes}` : ""}`,
           actor: actorFromReq(req),
           systemOverride: true,
-          // TEMP STUB — removed in cutover task. The legacy
-          // `workflow_progress` JSONB column has been dropped; the
-          // contracts task will reset the per-leg sop_node_id /
-          // sop_answers / sop_outcome / ready_at fields here instead.
-          extraFields: {},
+          extraFields: {
+            sopNodeId: null,
+            sopAnswers: [],
+            sopOutcome: null,
+            dropReason: null,
+            dropNote: null,
+            droppedAt: null,
+            readyAt: null,
+          },
         });
         break;
     }
@@ -1873,17 +1866,23 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
     return;
   }
 
-  const submittedCount = await db
-    .select({ id: portalSubmissionsTable.id })
-    .from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.claimId, id),
-      inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
-    ))
-    .limit(1);
+  // Submissions are group-scoped post-cutover, so the reclassify-block guard
+  // checks for any in-flight or submitted submission on this leg's parent
+  // group — reclassifying a leg whose group has gone out the door would
+  // invalidate the dispute regardless of which leg it was attributed to.
+  const submittedCount = leg.invoiceGroupId
+    ? await db
+        .select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, leg.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
+        ))
+        .limit(1)
+    : [];
   if (submittedCount.length > 0) {
     res.status(409).json({
-      error: "Cannot reclassify a leg that has been submitted to the payor",
+      error: "Cannot reclassify a leg whose invoice group has been submitted to the payor",
       expectedState: "no_submission",
       actualState: "submission_exists",
     });

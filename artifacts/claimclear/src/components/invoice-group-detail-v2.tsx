@@ -28,7 +28,7 @@ import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { ClosureActions } from "@/components/closure/closure-actions";
 
-// v2 invoice-group orchestration surface mounted when PER_INVOICE_TRANSITION_ENABLED is on.
+// Invoice-group orchestration surface — the only group detail UI post-cutover (Task #199).
 
 interface Props {
   groupId: number;
@@ -640,9 +640,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground italic text-center">
-        v2 invoice-group orchestration surface · disable PER_INVOICE_TRANSITION_ENABLED to return to the legacy group page.
-      </p>
     </div>
   );
 }

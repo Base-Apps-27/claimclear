@@ -6,7 +6,8 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "backfill:per-leg-state": "tsx ./src/migrations/2026-05-per-leg-state-backfill.ts"
+    "backfill:per-leg-state": "tsx ./src/migrations/2026-05-per-leg-state-backfill.ts",
+    "backfill:portal-submissions-group-link": "tsx ./src/migrations/2026-05-portal-submissions-group-link-backfill.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",

@@ -14,8 +14,12 @@ export interface DirectEmailSubmission {
   subject: string;
   descriptionHtml: string;
   attachmentUrls: string[];
-  claimId: number;
-  invoiceGroupId: number | null;
+  // Post-cutover, submissions are group-scoped. The claimId is the resolved
+  // primary leg of the group, used only as a back-pointer on outbound_emails
+  // / portal_responses for backwards-compatible filtering. May be null when
+  // the group has no rides (defensive — shouldn't happen in practice).
+  claimId: number | null;
+  invoiceGroupId: number;
 }
 
 export interface DirectEmailResult {

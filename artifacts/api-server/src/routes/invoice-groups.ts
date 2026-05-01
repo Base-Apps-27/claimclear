@@ -788,31 +788,6 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
   });
 }));
 
-router.patch("/invoice-groups/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  // TEMP STUB — removed in cutover task. The legacy `workflow_progress`
-  // JSONB column has been dropped (see Task #195). The new per-invoice
-  // lifecycle phase + group-level context columns are owned by the
-  // contracts task. This endpoint stays as a no-op write that still
-  // emits the audit + bus event so in-flight UI calls don't 404.
-  void req.body;
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
-
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_workflow_step",
-    details: `Workflow progress updated for invoice group ${group.invoiceNumber} (stub)`,
-    ...actor,
-  });
-
-  emitGroupEvent(id, "group_workflow_updated", req);
-  res.json(group);
-}));
-
 router.get("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

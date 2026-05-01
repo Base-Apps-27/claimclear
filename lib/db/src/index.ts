@@ -15,4 +15,3 @@ export const db = drizzle(pool, { schema });
 
 export * from "./schema";
 export * from "./enums/leg-state";
-export * from "./feature-flags";

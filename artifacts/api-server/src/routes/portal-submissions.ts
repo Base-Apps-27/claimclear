@@ -8,6 +8,7 @@ import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { lintDraft, type LintResult } from "../lib/draft-lint";
+import { primaryClaimIdForGroup } from "../lib/group-claims";
 
 // NOTE: Confirming a draft, queueing a submission, or retrying a failed
 // submission only moves the row to status="pending". The Playwright worker is
@@ -19,17 +20,16 @@ import { lintDraft, type LintResult } from "../lib/draft-lint";
 // the instant it's queued.
 
 async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, submission.claimId));
-  let evidence: { evidenceTypeName: string | null }[] = [];
-  if (submission.invoiceGroupId) {
-    evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
-      .from(claimEvidenceTable)
-      .where(eq(claimEvidenceTable.invoiceGroupId, submission.invoiceGroupId));
-  } else {
-    evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
-      .from(claimEvidenceTable)
-      .where(eq(claimEvidenceTable.claimId, submission.claimId));
-  }
+  // Lint runs against the group's primary leg — pick the lowest-id ride in
+  // the group as the representative claim so the lint signal stays stable
+  // across re-runs. Submissions are always group-scoped after the cutover.
+  const [claim] = await db.select().from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, submission.invoiceGroupId))
+    .orderBy(claimsTable.id)
+    .limit(1);
+  const evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
+    .from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.invoiceGroupId, submission.invoiceGroupId));
   return { claim: claim || null, evidence };
 }
 
@@ -48,6 +48,8 @@ async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext 
     .where(eq(claimsTable.invoiceGroupId, groupId))
     .orderBy(claimsTable.id);
   if (rides.length === 0) return null;
+  // primaryClaim is the lowest-id ride in the group — the stable
+  // representative we use for audit-log row attribution.
   return { group, rides, primaryClaim: rides[0] };
 }
 
@@ -63,7 +65,7 @@ async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext 
  */
 async function filterRidesForSubmission(
   rides: (typeof claimsTable.$inferSelect)[],
-  groupId: number | null,
+  groupId: number,
 ): Promise<{
   rides: (typeof claimsTable.$inferSelect)[];
   excludedHeld: (typeof claimsTable.$inferSelect)[];
@@ -73,32 +75,28 @@ async function filterRidesForSubmission(
   let candidate = rides.filter(r => r.status !== "On Hold");
   let excludedAlreadySubmitted: (typeof claimsTable.$inferSelect)[] = [];
 
-  if (groupId && candidate.length > 0) {
-    const activeSubs = await db.select({ claimId: portalSubmissionsTable.claimId })
+  if (candidate.length > 0) {
+    // Submissions are now group-scoped: if any in-flight submission exists
+    // for this group, every eligible ride on the group is blocked from a
+    // new submission until the existing one resolves. (Pre-cutover this
+    // filter was per-leg; per-leg blocking has no meaning in the
+    // group-only model.)
+    const activeSubs = await db.select({ id: portalSubmissionsTable.id })
       .from(portalSubmissionsTable)
       .where(and(
         eq(portalSubmissionsTable.invoiceGroupId, groupId),
         inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
       ));
-    const blockedIds = new Set(activeSubs.map(s => s.claimId));
-    excludedAlreadySubmitted = candidate.filter(r => blockedIds.has(r.id));
-    candidate = candidate.filter(r => !blockedIds.has(r.id));
+    if (activeSubs.length > 0) {
+      excludedAlreadySubmitted = candidate;
+      candidate = [];
+    }
   }
 
   return { rides: candidate, excludedHeld, excludedAlreadySubmitted };
 }
 
-async function loadGroupContextByClaimId(claimId: number): Promise<GroupContext | { primaryClaim: typeof claimsTable.$inferSelect; group: null; rides: (typeof claimsTable.$inferSelect)[] } | null> {
-  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
-  if (!claim) return null;
-  if (claim.invoiceGroupId) {
-    const ctx = await loadGroupContextByGroupId(claim.invoiceGroupId);
-    if (ctx) return ctx;
-  }
-  return { primaryClaim: claim, group: null, rides: [claim] };
-}
-
-async function collectGroupEvidenceUrls(ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; rides: (typeof claimsTable.$inferSelect)[] }): Promise<string[]> {
+async function collectGroupEvidenceUrls(ctx: GroupContext): Promise<string[]> {
   const urls: string[] = [];
   const seen = new Set<string>();
   const add = (u: unknown) => {
@@ -108,16 +106,14 @@ async function collectGroupEvidenceUrls(ctx: { group: typeof invoiceGroupsTable.
     }
   };
 
-  if (ctx.group) {
-    const groupEvidence = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
-      .from(claimEvidenceTable)
-      .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
-    for (const r of groupEvidence) add(r.imageUrl);
+  const groupEvidence = await db.select({ imageUrl: claimEvidenceTable.imageUrl })
+    .from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+  for (const r of groupEvidence) add(r.imageUrl);
 
-    if (ctx.group.evidenceFiles && Array.isArray(ctx.group.evidenceFiles)) {
-      for (const f of ctx.group.evidenceFiles as Array<Record<string, string> | string>) {
-        add(typeof f === "string" ? f : f.url);
-      }
+  if (ctx.group.evidenceFiles && Array.isArray(ctx.group.evidenceFiles)) {
+    for (const f of ctx.group.evidenceFiles as Array<Record<string, string> | string>) {
+      add(typeof f === "string" ? f : f.url);
     }
   }
 
@@ -225,55 +221,38 @@ interface SubmissionSnapshot {
   subjectFallback: string;
 }
 
-function buildSnapshot(ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] }): SubmissionSnapshot {
+function buildSnapshot(ctx: GroupContext): SubmissionSnapshot {
   const { group, rides, primaryClaim } = ctx;
   const allConfs = joinNonEmpty(rides.map(r => r.confNumber));
   const allDates = joinNonEmpty(Array.from(new Set(rides.map(r => r.date || ""))));
   const allCars = joinNonEmpty(Array.from(new Set(rides.map(r => r.carNumber || ""))));
 
-  if (group) {
-    const totalAmount = group.totalAmount ?? sumAmounts(rides);
-    const subject = `Dispute - Invoice #${group.invoiceNumber} - ${group.errorTypeName || "Claim Correction"} (${rides.length} ride${rides.length === 1 ? "" : "s"})`;
-    return {
-      invoiceNumber: group.invoiceNumber,
-      confNumber: allConfs,
-      serviceDate: allDates,
-      refNumber: group.invoiceNumber,
-      clientNumber: group.clientNumber || primaryClaim.clientNumber || "",
-      carNumber: allCars,
-      claimAmount: totalAmount ? String(totalAmount) : null,
-      errorTypeName: group.errorTypeName || "",
-      errorDetails: group.errorDetails || "",
-      evidenceNotes: group.evidenceNotes || "",
-      evidenceFiles: group.evidenceFiles || null,
-      // TEMP STUB — removed in cutover task. The legacy
-      // `workflow_progress` JSONB has been dropped (see Task #195). The
-      // contracts task swaps in a snapshot built from the new discrete
-      // sop_answers / lifecycle_phase columns.
-      workflowHistory: null,
-      subjectFallback: subject,
-    };
-  }
+  const totalAmount = group.totalAmount ?? sumAmounts(rides);
+  const subject = `Dispute - Invoice #${group.invoiceNumber} - ${group.errorTypeName || "Claim Correction"} (${rides.length} ride${rides.length === 1 ? "" : "s"})`;
   return {
-    invoiceNumber: primaryClaim.invoiceNumbers || "",
-    confNumber: primaryClaim.confNumber || "",
-    serviceDate: primaryClaim.date || "",
-    refNumber: primaryClaim.refNumber || "",
-    clientNumber: primaryClaim.clientNumber || "",
-    carNumber: primaryClaim.carNumber || "",
-    claimAmount: primaryClaim.claimAmount || null,
-    errorTypeName: primaryClaim.errorTypeName || "",
-    errorDetails: primaryClaim.errorDetails || "",
-    evidenceNotes: primaryClaim.evidenceNotes || "",
-    evidenceFiles: primaryClaim.evidenceFiles || null,
-    // TEMP STUB — removed in cutover task. See note above.
+    invoiceNumber: group.invoiceNumber,
+    confNumber: allConfs,
+    serviceDate: allDates,
+    refNumber: group.invoiceNumber,
+    clientNumber: group.clientNumber || primaryClaim.clientNumber || "",
+    carNumber: allCars,
+    claimAmount: totalAmount ? String(totalAmount) : null,
+    errorTypeName: group.errorTypeName || "",
+    errorDetails: group.errorDetails || "",
+    evidenceNotes: group.evidenceNotes || "",
+    evidenceFiles: group.evidenceFiles || null,
+    // workflowHistory was once a per-claim JSONB blob carried into the
+    // submission snapshot. The blob was retired in Task #195 (per-leg
+    // foundation) in favour of discrete `sop_answers` / `lifecycle_phase`
+    // columns; the snapshot field is kept (null) only because the bot
+    // worker still reads it as an opaque pass-through.
     workflowHistory: null,
-    subjectFallback: `Dispute - Conf #${primaryClaim.confNumber || "N/A"} - ${primaryClaim.errorTypeName || "Claim Correction"}`,
+    subjectFallback: subject,
   };
 }
 
 async function generatePortalDescription(
-  ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] },
+  ctx: GroupContext,
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
   settings: PortalSettings,
@@ -289,8 +268,7 @@ async function generatePortalDescription(
 
   const ridesBlock = rides.map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"} | Amount: $${r.claimAmount || "0.00"}`).join("\n");
 
-  const groupHeader = group
-    ? `This dispute is filed at the invoice level and covers ${rides.length} ride${rides.length === 1 ? "" : "s"} on a single invoice.
+  const groupHeader = `This dispute is filed at the invoice level and covers ${rides.length} ride${rides.length === 1 ? "" : "s"} on a single invoice.
 
 Invoice details:
 - Invoice number: ${group.invoiceNumber}
@@ -300,23 +278,14 @@ Invoice details:
 - Group-level error details: ${group.errorDetails || "N/A"}
 
 Affected rides on this invoice:
-${ridesBlock}`
-    : `Claim details:
-- Confirmation number: ${rides[0].confNumber}
-- Service date: ${rides[0].date || "N/A"}
-- Reference number: ${rides[0].refNumber || "N/A"}
-- Client number: ${rides[0].clientNumber || "N/A"}
-- Car/vehicle number: ${rides[0].carNumber || "N/A"}
-- Claim amount: $${rides[0].claimAmount || "0.00"}
-- Error type: ${rides[0].errorTypeName || "N/A"}
-- Error details: ${rides[0].errorDetails || "N/A"}`;
+${ridesBlock}`;
 
-  const evidenceSummary = group?.evidenceNotes || rides.map(r => r.evidenceNotes).filter(Boolean).join("; ");
+  const evidenceSummary = group.evidenceNotes || rides.map(r => r.evidenceNotes).filter(Boolean).join("; ");
 
   const formatRules = isDirectEmail
     ? `Write a clear, factual dispute message that:
 - States the reason for the dispute/correction request
-- ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
+- References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers
 - References specific evidence (and notes that supporting files are attached, when applicable)
 - Is professional but sounds natural and human — vary phrasing
 - Is concise (2-4 paragraphs maximum)
@@ -376,7 +345,7 @@ Return ONLY the note text, no JSON wrapping.`;
 }
 
 function buildFallbackDescription(
-  ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] },
+  ctx: GroupContext,
   disputeReason: string,
   specialCircumstances?: string | null,
 ): string {
@@ -386,9 +355,8 @@ function buildFallbackDescription(
   // doesn't silently drop it from the write-up.
   const trimmedSpecial = (specialCircumstances || "").trim();
   const specialPrefix = trimmedSpecial ? `Special Circumstances: ${trimmedSpecial}\n\n` : "";
-  if (group) {
-    const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"} — $${r.claimAmount || "0.00"}`).join("\n");
-    return `${specialPrefix}Dispute for Invoice Number: ${group.invoiceNumber}
+  const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"} — $${r.claimAmount || "0.00"}`).join("\n");
+  return `${specialPrefix}Dispute for Invoice Number: ${group.invoiceNumber}
 Client Number: ${group.clientNumber || "N/A"}
 Total Amount: $${snap.claimAmount || "0.00"}
 Error Type: ${group.errorTypeName || "N/A"}
@@ -400,24 +368,10 @@ ${ridesBlock}
 Dispute Reason: ${disputeReason || "N/A"}
 
 Evidence Notes: ${group.evidenceNotes || "N/A"}`;
-  }
-  const r = rides[0];
-  return `${specialPrefix}Dispute for Confirmation Number: ${r.confNumber || "N/A"}
-Service Date: ${r.date || "N/A"}
-Reference Number: ${r.refNumber || "N/A"}
-Client Number: ${r.clientNumber || "N/A"}
-Car Number: ${r.carNumber || "N/A"}
-Claim Amount: $${r.claimAmount || "0.00"}
-Error Type: ${r.errorTypeName || "N/A"}
-Error Details: ${r.errorDetails || "N/A"}
-
-Dispute Reason: ${disputeReason || "N/A"}
-
-Evidence Notes: ${r.evidenceNotes || "N/A"}`;
 }
 
-async function loadErrorTypeForContext(ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; primaryClaim: typeof claimsTable.$inferSelect }): Promise<typeof errorTypesTable.$inferSelect | null> {
-  const errorTypeId = ctx.group?.errorTypeId || ctx.primaryClaim.errorTypeId;
+async function loadErrorTypeForContext(ctx: GroupContext): Promise<typeof errorTypesTable.$inferSelect | null> {
+  const errorTypeId = ctx.group.errorTypeId || ctx.primaryClaim.errorTypeId;
   if (!errorTypeId) return null;
   const id = parseInt(errorTypeId, 10);
   if (isNaN(id)) return null;
@@ -426,32 +380,21 @@ async function loadErrorTypeForContext(ctx: { group: typeof invoiceGroupsTable.$
 }
 
 async function transitionContext(opts: {
-  ctx: { group: typeof invoiceGroupsTable.$inferSelect | null; primaryClaim: typeof claimsTable.$inferSelect };
+  ctx: GroupContext;
   newStatus: "Portal Queued" | "Awaiting Response" | "Needs Evidence";
   source: string;
   reason: string;
   actor: { userEmail: string | null; userName: string | null };
 }): Promise<void> {
   const { ctx, newStatus, source, reason, actor } = opts;
-  if (ctx.group) {
-    await transitionGroupStatus({
-      groupId: ctx.group.id,
-      newStatus,
-      source,
-      reason,
-      actor,
-      systemOverride: true,
-    });
-  } else {
-    await transitionClaimStatus({
-      claimId: ctx.primaryClaim.id,
-      newStatus,
-      source,
-      reason,
-      actor,
-      systemOverride: true,
-    });
-  }
+  await transitionGroupStatus({
+    groupId: ctx.group.id,
+    newStatus,
+    source,
+    reason,
+    actor,
+    systemOverride: true,
+  });
 }
 
 function parseId(raw: string | string[]): number {
@@ -459,22 +402,13 @@ function parseId(raw: string | string[]): number {
   return parseInt(s, 10);
 }
 
-async function resolveContext(body: { invoiceGroupId?: number; claimId?: number }): Promise<GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] } | null> {
-  if (body.invoiceGroupId) {
-    return loadGroupContextByGroupId(body.invoiceGroupId);
-  }
-  if (body.claimId) {
-    return loadGroupContextByClaimId(body.claimId);
-  }
-  return null;
+async function resolveContext(body: { invoiceGroupId?: number }): Promise<GroupContext | null> {
+  if (!body.invoiceGroupId) return null;
+  return loadGroupContextByGroupId(body.invoiceGroupId);
 }
 
-async function loadContextForSubmission(sub: typeof portalSubmissionsTable.$inferSelect) {
-  if (sub.invoiceGroupId) {
-    const ctx = await loadGroupContextByGroupId(sub.invoiceGroupId);
-    if (ctx) return ctx;
-  }
-  return loadGroupContextByClaimId(sub.claimId);
+async function loadContextForSubmission(sub: typeof portalSubmissionsTable.$inferSelect): Promise<GroupContext | null> {
+  return loadGroupContextByGroupId(sub.invoiceGroupId);
 }
 
 router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
@@ -497,27 +431,24 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
  * verified AI understanding before generating the full draft.
  */
 router.post("/portal-submissions/preflight-understanding", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, claimId, disputeReason, specialCircumstances } = req.body as {
+  const { invoiceGroupId, disputeReason, specialCircumstances } = req.body as {
     invoiceGroupId?: number;
-    claimId?: number;
     disputeReason?: string;
     specialCircumstances?: string;
   };
-  if (!invoiceGroupId && !claimId) {
-    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+  if (!invoiceGroupId) {
+    res.status(400).json({ error: "invoiceGroupId is required" });
     return;
   }
 
-  const ctx = await resolveContext({ invoiceGroupId, claimId });
-  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+  const ctx = await resolveContext({ invoiceGroupId });
+  if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
   const errorType = await loadErrorTypeForContext(ctx);
   const reason = (disputeReason || "").trim();
   const trimmedSpecial = (specialCircumstances || "").trim();
 
-  const headline = ctx.group
-    ? `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`
-    : `Conf #${ctx.primaryClaim.confNumber || "N/A"} — Error Type: ${ctx.primaryClaim.errorTypeName || errorType?.name || "Unclassified"}.`;
+  const headline = `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`;
 
   const guidance = errorType?.guidance ? `\nSOP guidance for this error type: ${errorType.guidance}` : "";
   const treeLine = reason ? `\nDecision-tree outcome: ${reason}` : "";
@@ -546,7 +477,7 @@ Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no pre
 
   await db.insert(auditLogsTable).values({
     claimId: ctx.primaryClaim.id,
-    invoiceGroupId: ctx.group?.id ?? null,
+    invoiceGroupId: ctx.group.id,
     action: "portal_understanding_preflight",
     details: trimmedSpecial
       ? `AI understanding preflight returned (with special circumstances, ${trimmedSpecial.length} chars)`
@@ -564,15 +495,14 @@ Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no pre
 }));
 
 router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, claimId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
+  const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
     invoiceGroupId?: number;
-    claimId?: number;
     disputeReason?: string;
     specialCircumstances?: string;
     understandingReadback?: string;
   };
-  if (!invoiceGroupId && !claimId) {
-    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+  if (!invoiceGroupId) {
+    res.status(400).json({ error: "invoiceGroupId is required" });
     return;
   }
   const trimmedSpecial = (specialCircumstances || "").trim();
@@ -585,15 +515,15 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     return;
   }
 
-  const rawCtx = await resolveContext({ invoiceGroupId, claimId });
-  if (!rawCtx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+  const rawCtx = await resolveContext({ invoiceGroupId });
+  if (!rawCtx) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  const groupIdForCancel = rawCtx.group?.id ?? null;
+  const groupId = rawCtx.group.id;
   const totalLegs = rawCtx.rides.length;
 
   // Filter held legs and already-submitted legs out of the snapshot so the
   // submission only covers the legs the user actually wants to file right now.
-  const filtered = await filterRidesForSubmission(rawCtx.rides, groupIdForCancel);
+  const filtered = await filterRidesForSubmission(rawCtx.rides, groupId);
   if (filtered.rides.length === 0) {
     const heldCount = filtered.excludedHeld.length;
     const subCount = filtered.excludedAlreadySubmitted.length;
@@ -605,17 +535,12 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     });
     return;
   }
-  const ctx: GroupContext | { group: null; primaryClaim: typeof claimsTable.$inferSelect; rides: (typeof claimsTable.$inferSelect)[] } =
-    rawCtx.group
-      ? { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] }
-      : { group: null, rides: filtered.rides, primaryClaim: filtered.rides[0] };
+  const ctx: GroupContext = { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] };
   const isPartialSubmission = filtered.rides.length < totalLegs;
 
   const existingDrafts = await db.select().from(portalSubmissionsTable)
     .where(and(
-      groupIdForCancel
-        ? eq(portalSubmissionsTable.invoiceGroupId, groupIdForCancel)
-        : eq(portalSubmissionsTable.claimId, ctx.primaryClaim.id),
+      eq(portalSubmissionsTable.invoiceGroupId, groupId),
       eq(portalSubmissionsTable.status, "draft"),
     ));
   for (const draft of existingDrafts) {
@@ -640,11 +565,10 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
 
-  logger.info({ groupId: ctx.group?.id, claimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length, hasSpecialCircumstances: trimmedSpecial.length > 0 }, "Portal draft: evidence and GPS resolved");
+  logger.info({ groupId: ctx.group.id, primaryClaimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length, hasSpecialCircumstances: trimmedSpecial.length > 0 }, "Portal draft: evidence and GPS resolved");
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
-    claimId: ctx.primaryClaim.id,
-    invoiceGroupId: ctx.group?.id ?? null,
+    invoiceGroupId: ctx.group.id,
     status: "draft",
     issueType,
     subject: snap.subjectFallback,
@@ -681,7 +605,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const contextSuffix = trimmedSpecial ? " — with operator special circumstances" : "";
   await db.insert(auditLogsTable).values({
     claimId: ctx.primaryClaim.id,
-    invoiceGroupId: ctx.group?.id ?? null,
+    invoiceGroupId: ctx.group.id,
     action: "portal_draft_created",
     details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}${contextSuffix}`,
     metadata: {
@@ -784,7 +708,7 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
         : " — operator special circumstances cleared")
       : "";
     await db.insert(auditLogsTable).values({
-      claimId: existing.claimId,
+      claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
       invoiceGroupId: existing.invoiceGroupId,
       action: "portal_draft_edited",
       details: `Portal submission #${id} ${editedParts.join(", ")} edited${detailSuffix}`,
@@ -882,7 +806,7 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   await db.insert(auditLogsTable).values({
-    claimId: existing.claimId,
+    claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
     invoiceGroupId: existing.invoiceGroupId,
     action: "portal_draft_regenerated",
     details: `Portal submission #${id} description regenerated`,
@@ -938,7 +862,7 @@ router.post("/portal-submissions/:id/revert-description", asyncHandler(async (re
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   await db.insert(auditLogsTable).values({
-    claimId: existing.claimId,
+    claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
     invoiceGroupId: existing.invoiceGroupId,
     action: "portal_draft_reverted",
     details: `Portal submission #${id} description reverted to history entry ${index}`,
@@ -1006,8 +930,8 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   }
 
   await db.insert(auditLogsTable).values({
-    claimId: existing.claimId,
-    invoiceGroupId: existing.invoiceGroupId ?? null,
+    claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
+    invoiceGroupId: existing.invoiceGroupId,
     action: "portal_submission_confirmed",
     details: `Portal submission #${id} confirmed${warnings.length > 0 ? ` with ${warnings.length} warning(s) acknowledged` : ""}`,
     metadata: {
@@ -1023,12 +947,12 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
 }));
 
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, claimId, issueType, subject, requesterEmail, transportationProviderName,
+  const { invoiceGroupId, issueType, subject, requesterEmail, transportationProviderName,
     phoneNumber, invoiceNumber, gpsBreadcrumbsAvailable, descriptionHtml, disputeReason,
     specialCircumstances, understandingReadback } = req.body;
 
-  if (!invoiceGroupId && !claimId) {
-    res.status(400).json({ error: "invoiceGroupId or claimId is required" });
+  if (!invoiceGroupId) {
+    res.status(400).json({ error: "invoiceGroupId is required" });
     return;
   }
 
@@ -1041,8 +965,8 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const ctx = await resolveContext({ invoiceGroupId, claimId });
-  if (!ctx) { res.status(404).json({ error: "Invoice group or claim not found" }); return; }
+  const ctx = await resolveContext({ invoiceGroupId });
+  if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
@@ -1067,8 +991,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   const gpsBreadcrumbs = gpsBreadcrumbsAvailable || resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
-    claimId: ctx.primaryClaim.id,
-    invoiceGroupId: ctx.group?.id ?? null,
+    invoiceGroupId: ctx.group.id,
     status: "pending",
     issueType: resolvedIssueType,
     subject: subject || snap.subjectFallback,
@@ -1170,16 +1093,12 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
   if (existing.status === "pending") {
-    const otherActiveWhere = existing.invoiceGroupId
-      ? and(
-          eq(portalSubmissionsTable.invoiceGroupId, existing.invoiceGroupId),
-          inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
-        )
-      : and(
-          eq(portalSubmissionsTable.claimId, existing.claimId),
-          inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
-        );
-    const otherActive = await db.select().from(portalSubmissionsTable).where(otherActiveWhere);
+    const otherActive = await db.select().from(portalSubmissionsTable).where(
+      and(
+        eq(portalSubmissionsTable.invoiceGroupId, existing.invoiceGroupId),
+        inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
+      ),
+    );
     if (otherActive.length === 0) {
       const ctx = await loadContextForSubmission(existing);
       if (ctx) {
@@ -1194,8 +1113,8 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
     }
   } else {
     await db.insert(auditLogsTable).values({
-      claimId: existing.claimId,
-      invoiceGroupId: existing.invoiceGroupId ?? null,
+      claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
+      invoiceGroupId: existing.invoiceGroupId,
       action: "portal_submission_cancelled",
       details: `Portal submission #${id} cancelled from "${existing.status}" status`,
       metadata: { submissionId: id, previousStatus: existing.status, source: "portal_submission_cancel" },

@@ -254,23 +254,14 @@ export async function transitionGroupStatus(opts: {
 }
 
 export async function groupHasEverBeenSubmitted(groupId: number, executor?: DbExecutor): Promise<boolean> {
+  // Submissions are now exclusively group-scoped (Task #199 cutover); the
+  // legacy "linked-via-children" lookup that fanned out to claim ids is gone.
   const ex: DbExecutor = executor ?? db;
   const direct = await ex.select({ id: portalSubmissionsTable.id })
     .from(portalSubmissionsTable)
     .where(eq(portalSubmissionsTable.invoiceGroupId, groupId))
     .limit(1);
-  if (direct.length > 0) return true;
-
-  const childClaims = await ex.select({ id: claimsTable.id })
-    .from(claimsTable)
-    .where(eq(claimsTable.invoiceGroupId, groupId));
-  if (childClaims.length === 0) return false;
-
-  const linked = await ex.select({ id: portalSubmissionsTable.id })
-    .from(portalSubmissionsTable)
-    .where(inArray(portalSubmissionsTable.claimId, childClaims.map(c => c.id)))
-    .limit(1);
-  return linked.length > 0;
+  return direct.length > 0;
 }
 
 export async function groupHasResponse(groupId: number, executor?: DbExecutor): Promise<boolean> {

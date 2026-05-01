@@ -143,7 +143,6 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
 
 async function cleanupClaim(id: number) {
   await db.delete(portalResponsesTable).where(eq(portalResponsesTable.claimId, id)).catch(() => undefined);
-  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
   await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);

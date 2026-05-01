@@ -350,7 +350,7 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
   if (!submission) { res.status(404).json({ error: "Submission not found" }); return; }
 
   const responseId = await processPortalResponse({
-    claimId: submission.claimId,
+    claimId: null,
     invoiceGroupId: submission.invoiceGroupId,
     submissionId: submission.id,
     portalTicketId: submission.portalTicketId || "",
@@ -364,25 +364,15 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
     metadata: req.body.metadata || null,
   });
 
-  if (submission.invoiceGroupId) {
-    broadcastGroupEvent({
-      type: "response_received",
-      invoiceGroupId: submission.invoiceGroupId,
-      userName: "Response Tracker",
-      userEmail: null,
-      timestamp: new Date().toISOString(),
-    });
-  } else {
-    broadcastClaimEvent({
-      type: "response_received",
-      claimId: submission.claimId,
-      userName: "Response Tracker",
-      userEmail: null,
-      timestamp: new Date().toISOString(),
-    });
-  }
+  broadcastGroupEvent({
+    type: "response_received",
+    invoiceGroupId: submission.invoiceGroupId,
+    userName: "Response Tracker",
+    userEmail: null,
+    timestamp: new Date().toISOString(),
+  });
 
-  res.json({ responseId, claimId: submission.claimId, invoiceGroupId: submission.invoiceGroupId });
+  res.json({ responseId, invoiceGroupId: submission.invoiceGroupId });
 }));
 
 router.get("/responses/stats", asyncHandler(async (_req, res): Promise<void> => {

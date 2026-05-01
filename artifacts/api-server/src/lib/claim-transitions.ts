@@ -101,13 +101,18 @@ export async function transitionClaimStatus(opts: {
   }
 
   if (!systemOverride) {
-    const activeSubmissions = await ex.select().from(portalSubmissionsTable)
-      .where(and(
-        eq(portalSubmissionsTable.claimId, claimId),
-        inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
-      ));
-    if (activeSubmissions.length > 0) {
-      throw new Error(`Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first.`);
+    // Submissions are group-scoped post-cutover, so the "is a submission in
+    // flight on this claim?" check has to look at the claim's invoice group.
+    // Standalone legs (no group) can't have submissions and skip the guard.
+    if (old.invoiceGroupId) {
+      const activeSubmissions = await ex.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+        ));
+      if (activeSubmissions.length > 0) {
+        throw new Error(`Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first.`);
+      }
     }
 
     if (SYSTEM_CONTROLLED_STATUSES.includes(newStatus)) {
@@ -173,13 +178,15 @@ export async function transitionClaimOutcome(opts: {
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
   if (!systemOverride) {
-    const activeSubmissions = await db.select().from(portalSubmissionsTable)
-      .where(and(
-        eq(portalSubmissionsTable.claimId, claimId),
-        inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
-      ));
-    if (activeSubmissions.length > 0) {
-      throw new Error(`Cannot change outcome while a portal submission is in progress.`);
+    if (old.invoiceGroupId) {
+      const activeSubmissions = await db.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+        ));
+      if (activeSubmissions.length > 0) {
+        throw new Error(`Cannot change outcome while a portal submission is in progress.`);
+      }
     }
 
     const allowed = VALID_OUTCOME_BY_STATUS[old.status] || [];
@@ -203,20 +210,20 @@ export async function transitionClaimOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
-        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
         .limit(1);
       if (submissionCount.length > 0) {
         throw new Error(`Cannot close as "Cannot Dispute" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
       }
     }
   } else if (newOutcome === "Non-Issue") {
-    if (!systemOverride) {
+    if (!systemOverride && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
-        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
         .limit(1);
       if (submissionCount.length > 0) {
         throw new Error(`Cannot close as "Non-Issue" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
@@ -319,10 +326,10 @@ export async function transitionClaimStatusAndOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
-        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
         .limit(1);
       if (submissionCount.length > 0) {
         throw new Error(`Cannot close as "Cannot Dispute" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
@@ -342,10 +349,10 @@ export async function transitionClaimStatusAndOutcome(opts: {
     if (closureReason === undefined) closureReason = "denied_by_payor";
   }
   if (newOutcome === "Non-Issue") {
-    if (!systemOverride) {
+    if (!systemOverride && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
-        .where(eq(portalSubmissionsTable.claimId, claimId))
+        .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
         .limit(1);
       if (submissionCount.length > 0) {
         throw new Error(`Cannot close as "Non-Issue" once this claim has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);

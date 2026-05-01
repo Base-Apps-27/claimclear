@@ -55,20 +55,6 @@ export interface LegacyTreeNode {
   evidenceRequirements?: EvidenceReq[];
 }
 
-export interface WorkflowStep {
-  nodeId: string;
-  question: string;
-  answer: string;
-  timestamp: string;
-}
-
-export interface WorkflowProgress {
-  currentNodeId: string;
-  history: WorkflowStep[];
-  completed: boolean;
-  resolutionType?: OutcomeType;
-}
-
 export const OUTCOME_LABELS: Record<OutcomeType, string> = {
   portal_dispute: "Submit Portal Dispute",
   dispute: "Send Dispute Email",

@@ -27,7 +27,6 @@ import invoiceGroupsRouter from "./invoice-groups";
 import withdrawalsRouter from "./withdrawals";
 import adminRouter from "./admin";
 import systemHealthRouter from "./system-health";
-import featureFlagsRouter from "./feature-flags";
 import aiCalibrationRouter from "./ai-calibration";
 
 const router: IRouter = Router();
@@ -65,7 +64,6 @@ router.use(invoiceGroupsRouter);
 router.use(withdrawalsRouter);
 router.use(adminRouter);
 router.use(systemHealthRouter);
-router.use(featureFlagsRouter);
 router.use(aiCalibrationRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 

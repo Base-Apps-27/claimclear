@@ -16,7 +16,6 @@ import { EmptyState } from "@/components/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
 import { SortableHeader } from "@/components/list-table/sortable-header";
@@ -97,11 +96,9 @@ export default function InvoiceGroupsList() {
   const { get, getAll, set } = useUrlParams();
   const [, navigate] = useLocation();
 
-  // PER_INVOICE_TRANSITION_ENABLED gates the per-row leg sub-status
-  // breakdown rendered next to the ride count. Aliased to keep the
-  // expression in the row JSX readable.
-  const perInvoiceOnRow = isPerInvoiceTransitionEnabled();
-
+  // Post-cutover: the per-row leg sub-status breakdown is always
+  // rendered next to the ride count when the group is in a state where
+  // it's meaningful. The feature-flag gate was removed in Task #199.
   const search = get("q");
   const sortCol = get("sort");
   const sortDir = (get("dir") || "") as "asc" | "desc" | "";
@@ -641,8 +638,7 @@ export default function InvoiceGroupsList() {
                               <td className={`px-4 ${tdPy}`}>
                                 <div className="flex flex-col gap-1">
                                   <Badge variant="secondary" className="text-xs">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</Badge>
-                                  {perInvoiceOnRow &&
-                                    group.legSubStatusCounts &&
+                                  {group.legSubStatusCounts &&
                                     (group.status === "New" || group.status === "Needs Evidence") && (
                                     <div className="flex flex-wrap gap-0.5" data-testid={`leg-breakdown-${group.id}`}>
                                       {LEG_SUB_STATUSES.map((s) => {
