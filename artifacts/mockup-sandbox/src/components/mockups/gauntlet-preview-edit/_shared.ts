@@ -1,11 +1,16 @@
 // Shared mock data for the gauntlet-preview-edit variants (E1 inline,
 // E2 slide-over) and the queue-flow integration map.
 //
-// Conceptual model — INTENTIONALLY no "aggregate / group context" layer.
-// The operator captures notes PER LEG. The AI then weaves the per-leg
-// content (data the leg already has — error, GPS, dates, amounts) and
-// the per-leg context (operator's explanation of THAT leg) into a single
-// dispute write-up. There is no third "group context" editorial surface.
+// Two-panel model:
+//   • Panel A — Rides & legs. Each leg goes through SOP (with per-leg
+//     content + per-leg context) OR is marked Non-issue / Non-contestable.
+//     Panel A is "complete" when every leg has reached one of those
+//     conclusions. There is intentionally no "aggregate / group context"
+//     surface — context lives per leg.
+//   • Panel B — Submission preview. Locked until Panel A is complete.
+//     Collects every disputed (SOP) leg's content + context, lets the
+//     AI compose the dispute write-up, the operator reviews/edits, and
+//     the result is queued for portal or email submission.
 
 export const group = {
   id: 4218,
@@ -14,7 +19,13 @@ export const group = {
   status: "New" as const,
   totalAmount: "$184.50",
   errorTypeName: "GPS Pickup Too Far from Residence",
+  // Submission channel is determined by error-type config in the real app.
+  // GPS variance is portal-submittable; some error types route to email.
+  submissionChannel: "portal" as const,
+  portalName: "MAS Portal",
 };
+
+export type LegConclusion = "sop" | "non-issue" | "non-contestable";
 
 export type Leg = {
   id: number;
@@ -22,15 +33,21 @@ export type Leg = {
   date: string;
   amount: string;
   // --- Per-leg content (the data the leg itself carries — surfaced as
-  // "what the leg says" in the Rides & legs section). ---
+  // "what the leg says" in Panel A · Rides & legs). ---
   errorTypeName: string;
   gpsVarianceMeters: number;
   pickupAddressOnFile: string;
   pickupAddressActual: string;
   driverNote: string;
-  subStatus: "ready";
+  // --- Per-leg conclusion. The Panel A → Panel B gate is satisfied when
+  // every leg has a conclusion. Only "sop" legs are included in the
+  // dispute write-up; the others are excluded with a brief mention. ---
+  conclusion: LegConclusion;
+  conclusionReason?: string;
+  conclusionDecidedAt?: string;
+  conclusionDecidedBy?: string;
   // --- Per-leg context (operator's notes about THIS leg, used by the
-  // AI when composing the write-up). ---
+  // AI when composing the write-up). Only meaningful for "sop" legs. ---
   perLegContext: string | null;
   perLegContextSavedAt?: string;
   perLegContextSavedBy?: string;
@@ -47,7 +64,9 @@ export const legs: Leg[] = [
     pickupAddressOnFile: "418 Elm St, Springfield",
     pickupAddressActual: "Sunrise Assisted Living, 22 Maple Way",
     driverNote: "Member came out front door of assisted living facility; 5 min wait.",
-    subStatus: "ready",
+    conclusion: "sop",
+    conclusionDecidedAt: "Apr 28, 11:18 AM",
+    conclusionDecidedBy: "M. Rivera",
     perLegContext:
       "Member confirmed by phone (call log 04/24 14:02) that this leg's pickup was at the new assisted living facility, not the address on file. Driver notes match.",
     perLegContextSavedAt: "Apr 28, 11:18 AM",
@@ -63,7 +82,9 @@ export const legs: Leg[] = [
     pickupAddressOnFile: "418 Elm St, Springfield",
     pickupAddressActual: "Sunrise Assisted Living (return from dialysis)",
     driverNote: "Return leg of pair with #88412; same dialysis clinic dropoff origin.",
-    subStatus: "ready",
+    conclusion: "sop",
+    conclusionDecidedAt: "Apr 28, 11:19 AM",
+    conclusionDecidedBy: "M. Rivera",
     perLegContext:
       "Same trip pair as #88412 — return leg from dialysis clinic. GPS variance identical because the destination is the new assisted living.",
     perLegContextSavedAt: "Apr 28, 11:19 AM",
@@ -79,8 +100,13 @@ export const legs: Leg[] = [
     pickupAddressOnFile: "418 Elm St, Springfield",
     pickupAddressActual: "Sunrise Assisted Living",
     driverNote: "No notes recorded.",
-    subStatus: "ready",
-    perLegContext: null, // Operator hasn't added notes yet for this leg.
+    // SOP path chosen — but operator hasn't added per-leg context yet.
+    // Conclusion gate is still satisfied (Panel B unlocked); write-up
+    // quality for this leg degrades to "generic mention only".
+    conclusion: "sop",
+    conclusionDecidedAt: "Apr 28, 11:21 AM",
+    conclusionDecidedBy: "M. Rivera",
+    perLegContext: null,
   },
   {
     id: 88415,
@@ -92,31 +118,45 @@ export const legs: Leg[] = [
     pickupAddressOnFile: "418 Elm St, Springfield",
     pickupAddressActual: "Sunrise Assisted Living (return from dialysis)",
     driverNote: "Return pair of #88414.",
-    subStatus: "ready",
-    perLegContext:
-      "Dropoff was at the same dialysis clinic. Variance explained by member's relocation.",
-    perLegContextSavedAt: "Apr 28, 11:22 AM",
-    perLegContextSavedBy: "M. Rivera",
+    // Excluded from dispute as a non-issue. Reaches a conclusion (so
+    // Panel A is complete) but does not feed Panel B's write-up.
+    conclusion: "non-issue",
+    conclusionReason:
+      "Reviewed against latest manifest — this leg was already corrected via address update on Apr 26. No dispute needed.",
+    conclusionDecidedAt: "Apr 28, 11:24 AM",
+    conclusionDecidedBy: "M. Rivera",
+    perLegContext: null,
   },
 ];
 
-export const specialCircumstances =
-  "MAS portal has been down intermittently this week — second submission attempt if first 5xx's.";
+// Aggregated counts derived once so every mockup uses the same numbers.
+export const legCounts = {
+  total: legs.length,
+  sop: legs.filter((l) => l.conclusion === "sop").length,
+  nonIssue: legs.filter((l) => l.conclusion === "non-issue").length,
+  nonContestable: legs.filter((l) => l.conclusion === "non-contestable").length,
+  pending: 0, // every leg in the demo has reached a conclusion
+  sopWithContext: legs.filter((l) => l.conclusion === "sop" && l.perLegContext).length,
+  sopMissingContext: legs.filter((l) => l.conclusion === "sop" && !l.perLegContext).length,
+};
 
-export const aiRestatement = `You're disputing 4 legs (INV-2026-04812, $184.50 total) for member CLT-44210 because every leg is flagged "GPS Pickup Too Far from Residence." The root cause is the SAME for all 4 legs — the member moved to an assisted living facility on Apr 1 and the residence on file is stale. You've spoken to the member to confirm. Two of the legs (#88412, #88413) are a trip pair to a dialysis clinic on Apr 24; the other two (#88414, #88415) are the same pair on Apr 25. You want all 4 reconsidered together as a single relocation-based variance, not 4 separate driver-routing disputes.`;
+export const disputedTotal = "$152.50"; // 48.50 + 56.00 + 48.00
+export const excludedTotal = "$32.00";  // 32.00 (non-issue)
+
+export const aiRestatement = `You're disputing 3 of 4 legs on INV-2026-04812 ($152.50 of $184.50 billed) for member CLT-44210. The 4th leg (#88415) was reviewed and excluded as a non-issue. The 3 disputed legs share one root cause — the member relocated to assisted living on Apr 1 and the address on file is stale. You've spoken to the member to confirm. You want all 3 disputed legs reconsidered together as a single relocation-based variance, not 3 separate driver-routing disputes.`;
 
 export const aiRestatementGeneratedAt = "Apr 28, 11:30 AM";
 
 export const draftSubject =
-  "Dispute — INV-2026-04812 — GPS pickup variance reflects member relocation, not routing error";
+  "Dispute — INV-2026-04812 — GPS pickup variance reflects member relocation, not routing error (3 of 4 legs)";
 
-export const draftDescriptionHtml = `<p>This dispute covers 4 legs on invoice <strong>INV-2026-04812</strong> for member CLT-44210 (total billed $184.50). All 4 legs were flagged with the same error code, "GPS Pickup Too Far from Residence." The variance is real, but it shares a single root cause that is not visible from the GPS data alone.</p>
+export const draftDescriptionHtml = `<p>This dispute covers 3 legs on invoice <strong>INV-2026-04812</strong> for member CLT-44210 (3 of 4 legs disputed; total disputed billing $152.50). Leg C-2026-04812-D was reviewed and <strong>excluded as a non-issue</strong> (resolved separately by the Apr 26 address update) and is not part of this submission. The disputed legs were all flagged with the same error code, "GPS Pickup Too Far from Residence." The variance is real, but it shares a single root cause that is not visible from the GPS data alone.</p>
 
-<p>The member relocated to an assisted living facility on April 1, 2026. The residential address on file at the time of these trips (April 24 and 25) was the member's prior residence. We confirmed the relocation through the member's intake form dated 04/02 and a follow-up call with the member on April 24 at 14:02 (call log on file). Each of the four legs picked up or dropped off at the new assisted living facility, not the stale address that GPS is comparing against.</p>
+<p>The member relocated to an assisted living facility on April 1, 2026. The residential address on file at the time of these trips (April 24 and 25) was the member's prior residence. We confirmed the relocation through the member's intake form dated 04/02 and a follow-up call with the member on April 24 at 14:02 (call log on file). Each of the three disputed legs picked up at the new assisted living facility, not the stale address that GPS is comparing against.</p>
 
-<p>Legs C-2026-04812-A and C-2026-04812-B are an outbound/return pair to the member's dialysis clinic on April 24. Legs C-2026-04812-C and C-2026-04812-D are the same pair on April 25. Driver notes for both days are consistent with the member's stated pickup location.</p>
+<p>Legs C-2026-04812-A and C-2026-04812-B are an outbound/return pair to the member's dialysis clinic on April 24. Leg C-2026-04812-C is the outbound leg of the same pair on April 25 (no driver-supplied notes; included on the strength of the relocation context). Driver notes for the others are consistent with the member's stated pickup location.</p>
 
-<p>Please reconsider all 4 legs together under the relocation context — they are not independent routing errors. We have updated the member's address of record and have attached the intake form and call log as evidence.</p>`;
+<p>Please reconsider all 3 disputed legs together under the relocation context — they are not independent routing errors. We have updated the member's address of record and have attached the intake form and call log as evidence.</p>`;
 
 // Evidence files attach to one or more specific legs — there is no
 // "group" scope. Files that apply to every leg list every leg id.
@@ -138,10 +178,18 @@ export const previewMeta = {
   model: "claude-sonnet-4-6",
   tokensIn: 1842,
   tokensOut: 421,
+  legsCovered: 3, // SOP-conclusion legs only
+  legsExcluded: 1, // non-issue / non-contestable
 };
 
-export const transitionSteps = [
-  { key: "legs", label: "Every leg resolved", done: true, detail: "4 ready, 0 dropped, 0 excluded" },
-  { key: "readback", label: "Understanding readback confirmed", done: true, detail: "Apr 28, 11:31 AM" },
-  { key: "preview", label: "Preview generated", done: true, detail: "Apr 28, 11:34 AM" },
-];
+export const conclusionLabel = (c: LegConclusion): string => {
+  switch (c) {
+    case "sop": return "SOP";
+    case "non-issue": return "Non-issue";
+    case "non-contestable": return "Non-contestable";
+  }
+};
+
+export const conclusionTone = (c: LegConclusion): "dispute" | "excluded" => {
+  return c === "sop" ? "dispute" : "excluded";
+};
