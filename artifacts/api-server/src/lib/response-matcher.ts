@@ -6,6 +6,7 @@ import { logger } from "./logger";
 import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
 import { tryClassifyInboundEmail, type ClassifiedDecision, type InboundEmailContext } from "./inbound-email-classifier";
+import { classifyByPhrase } from "./email-phrase-classifier";
 
 interface MatchResult {
   claimId: number | null;
@@ -53,19 +54,14 @@ function extractIdentifiers(text: string): { ticketIds: string[]; confNumbers: s
   return { ticketIds, confNumbers, refNumbers, invoiceNumbers };
 }
 
-function detectResponseType(subject: string, body: string): "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other" {
-  const text = `${subject} ${body}`.toLowerCase();
-
-  if (/\bapproved\b|\bapproval\b|\bgranted\b|\baccepted\b/.test(text)) {
-    if (/\bpartial\b|\bpartially\b/.test(text)) return "partial_approval";
-    return "approval";
-  }
-  if (/\bdenied\b|\bdenial\b|\brejected\b|\bdeclined\b/.test(text)) return "denial";
-  if (/\badditional information\b|\bmore info\b|\bplease provide\b|\brequesting\b|\bneeded\b/.test(text)) return "info_request";
-  if (/\breceived\b|\backnowledge\b|\bunder review\b|\bin process\b/.test(text)) return "acknowledgment";
-
-  return "other";
-}
+// detectResponseType has been removed in favour of `classifyByPhrase` in
+// `./email-phrase-classifier`. The legacy keyword detector matched single
+// tokens against subject + body and produced ~85% false positives in the
+// production audit because "approved"/"denied" routinely appear in our own
+// quoted outbound dispute, in template chrome, or in standard footers.
+// The new deterministic classifier looks for full multi-word phrases in the
+// NORMALIZED body only and returns an explicit "unknown" abstain so the AI
+// backstop only runs on genuinely novel content.
 
 export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResult | null> {
   const fullText = `${email.subject} ${email.bodyPreview} ${email.body?.content || ""}`;
@@ -260,13 +256,34 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
   const bodyFormat: "html" | "text" =
     (email.body?.contentType || "").toLowerCase() === "html" ? "html" : "text";
 
-  // 1. Run AI classifier (best-effort). Falls back to keyword detector if it fails.
-  const ctx = await loadInboundContext(match);
-  const aiResult = await tryClassifyInboundEmail(email.subject || "", bodyText, ctx);
+  // 1. Deterministic phrase-signature classifier first. The vast majority of
+  //    payor traffic on this dataset matches a known template; only call the
+  //    AI when the deterministic side abstains. This is the inversion of the
+  //    legacy "AI first, keyword fallback" pipeline that produced the
+  //    false-positive backlog.
+  const phraseResult = classifyByPhrase(bodyText);
 
-  const keywordType = detectResponseType(email.subject, bodyText);
-  const responseType: ClassifiedDecision = aiResult ? aiResult.decision : keywordType;
-  const classifierSource = aiResult ? "ai" : "keyword";
+  let responseType: ClassifiedDecision;
+  let classifierSource: "phrase_signature" | "ai" | "abstain";
+  let aiResult: Awaited<ReturnType<typeof tryClassifyInboundEmail>> = null;
+
+  if (phraseResult.outcome !== "unknown") {
+    responseType = phraseResult.outcome;
+    classifierSource = "phrase_signature";
+  } else {
+    // Only escalate to the AI on genuinely novel content. If the AI is
+    // unavailable, store as "other" + "abstain" so the row shows up in the
+    // existing manual-review flow without producing an automatic transition.
+    const ctx = await loadInboundContext(match);
+    aiResult = await tryClassifyInboundEmail(email.subject || "", bodyText, ctx);
+    if (aiResult) {
+      responseType = aiResult.decision;
+      classifierSource = "ai";
+    } else {
+      responseType = "other";
+      classifierSource = "abstain";
+    }
+  }
 
   // 2. Persist the response row, including AI-extracted fields when present.
   const [response] = await db.insert(portalResponsesTable).values({
@@ -303,27 +320,41 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     metadata: {
       conversationId: email.conversationId,
       isRead: email.isRead,
-      keywordClassification: keywordType,
+      phraseSignature: phraseResult.selectedSignatureId,
+      phraseSignatureMatches: phraseResult.matchedSignatureIds,
     },
   }).returning();
 
   const senderLabel = email.from?.emailAddress?.name || email.from?.emailAddress?.address || "unknown";
   const isAcknowledgment = responseType === "acknowledgment";
+  // Abstained rows must NOT trigger a Needs Review transition — that is
+  // the whole point of the new abstain path. Operators handle them
+  // manually via the existing PATCH /responses/:id/process endpoint.
+  const skipTransition = isAcknowledgment || classifierSource === "abstain";
 
   // 3. Compose a note that surfaces the AI summary when we have one, and is
-  //    tagged "Acknowledged" vs. "Response received" so the timeline reads naturally.
+  //    tagged "Acknowledged" vs. "Response received" vs. "Unclassified" so
+  //    the timeline reads naturally for all three deterministic outcomes.
   const noteContent = (() => {
     if (isAcknowledgment) {
       const base = `Acknowledged by ${senderLabel} (proof of receipt — no action required)`;
       return aiResult?.summary ? `${base}: ${aiResult.summary}` : `${base}.`;
     }
+    if (classifierSource === "abstain") {
+      return `Unclassified response received via email from ${senderLabel} — left for manual review (no signature match and AI unavailable): "${email.subject}"`;
+    }
     const headline = `${typeLabelFor(responseType)} response received via email from ${senderLabel}`;
     return aiResult?.summary ? `${headline}: ${aiResult.summary}` : `${headline}: "${email.subject}"`;
   })();
 
-  const auditDetails = aiResult
-    ? `${responseType} response (AI confidence: ${aiResult.confidence}, match confidence: ${match.confidence})`
-    : `${responseType} response detected from email (confidence: ${match.confidence})`;
+  const sourceTag =
+    classifierSource === "phrase_signature"
+      ? `phrase: ${phraseResult.selectedSignatureId}`
+      : classifierSource === "ai"
+      ? `AI confidence: ${aiResult?.confidence}`
+      : "abstain (no signature match, AI unavailable)";
+  const auditDetails =
+    `${responseType} response detected from email (${sourceTag}, match confidence: ${match.confidence})`;
 
   const auditMetadata = {
     responseId: response.id,
@@ -331,6 +362,8 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     responseType,
     matchedVia: match.matchedVia,
     classifierSource,
+    phraseSignature: phraseResult.selectedSignatureId,
+    phraseSignatureMatches: phraseResult.matchedSignatureIds,
     senderEmail: email.from?.emailAddress?.address,
     aiSummary: aiResult?.summary,
   };
@@ -354,7 +387,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       userName: "Response Tracker",
     });
 
-    if (!isAcknowledgment) {
+    if (!skipTransition) {
       await transitionGroupStatus({
         groupId: match.invoiceGroupId!,
         newStatus: "Needs Review",
@@ -370,10 +403,14 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       invoiceGroupId: match.invoiceGroupId,
       responseType,
       classifierSource,
+      phraseSignature: phraseResult.selectedSignatureId,
       acknowledgmentSkipped: isAcknowledgment,
+      transitionSkipped: skipTransition,
       matchedVia: match.matchedVia,
-    }, isAcknowledgment
-      ? "Acknowledgment received and logged (no status transition)"
+    }, skipTransition
+      ? (isAcknowledgment
+        ? "Acknowledgment received and logged (no status transition)"
+        : "Unclassified email response logged (no status transition — abstain)")
       : "Email response processed and linked to invoice group");
   } else {
     await db.insert(notesTable).values({
@@ -393,7 +430,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       userName: "Response Tracker",
     });
 
-    if (!isAcknowledgment) {
+    if (!skipTransition) {
       await transitionClaimStatus({
         claimId: match.claimId!,
         newStatus: "Needs Review",
@@ -409,10 +446,14 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       claimId: match.claimId,
       responseType,
       classifierSource,
+      phraseSignature: phraseResult.selectedSignatureId,
       acknowledgmentSkipped: isAcknowledgment,
+      transitionSkipped: skipTransition,
       matchedVia: match.matchedVia,
-    }, isAcknowledgment
-      ? "Acknowledgment received and logged (no status transition)"
+    }, skipTransition
+      ? (isAcknowledgment
+        ? "Acknowledgment received and logged (no status transition)"
+        : "Unclassified email response logged (no status transition — abstain)")
       : "Email response processed and linked to claim");
   }
 

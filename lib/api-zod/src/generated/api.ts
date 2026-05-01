@@ -1202,10 +1202,17 @@ export const GetInvoiceGroupResponse = zod
                 "Specific action the payor is requesting from the provider, if any.",
               ),
             classifierSource: zod
-              .enum(["keyword", "ai", "manual"])
+              .enum([
+                "phrase_signature",
+                "ai",
+                "abstain",
+                "manual",
+                "keyword",
+                "retro_phrase_signature",
+              ])
               .optional()
               .describe(
-                "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+                "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
               ),
             classifierConfidence: zod
               .union([
@@ -14108,10 +14115,17 @@ export const ListResponsesResponse = zod.object({
             "Specific action the payor is requesting from the provider, if any.",
           ),
         classifierSource: zod
-          .enum(["keyword", "ai", "manual"])
+          .enum([
+            "phrase_signature",
+            "ai",
+            "abstain",
+            "manual",
+            "keyword",
+            "retro_phrase_signature",
+          ])
           .optional()
           .describe(
-            "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+            "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
           ),
         classifierConfidence: zod
           .union([
@@ -14193,10 +14207,17 @@ export const GetResponseResponse = zod.object({
       "Specific action the payor is requesting from the provider, if any.",
     ),
   classifierSource: zod
-    .enum(["keyword", "ai", "manual"])
+    .enum([
+      "phrase_signature",
+      "ai",
+      "abstain",
+      "manual",
+      "keyword",
+      "retro_phrase_signature",
+    ])
     .optional()
     .describe(
-      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+      "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
     ),
   classifierConfidence: zod
     .union([
@@ -14289,10 +14310,17 @@ export const ProcessResponseResponse = zod.object({
       "Specific action the payor is requesting from the provider, if any.",
     ),
   classifierSource: zod
-    .enum(["keyword", "ai", "manual"])
+    .enum([
+      "phrase_signature",
+      "ai",
+      "abstain",
+      "manual",
+      "keyword",
+      "retro_phrase_signature",
+    ])
     .optional()
     .describe(
-      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+      "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
     ),
   classifierConfidence: zod
     .union([
@@ -14375,10 +14403,17 @@ export const LinkResponseResponse = zod.object({
       "Specific action the payor is requesting from the provider, if any.",
     ),
   classifierSource: zod
-    .enum(["keyword", "ai", "manual"])
+    .enum([
+      "phrase_signature",
+      "ai",
+      "abstain",
+      "manual",
+      "keyword",
+      "retro_phrase_signature",
+    ])
     .optional()
     .describe(
-      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+      "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
     ),
   classifierConfidence: zod
     .union([
@@ -14463,10 +14498,17 @@ export const ReassignResponseResponse = zod.object({
       "Specific action the payor is requesting from the provider, if any.",
     ),
   classifierSource: zod
-    .enum(["keyword", "ai", "manual"])
+    .enum([
+      "phrase_signature",
+      "ai",
+      "abstain",
+      "manual",
+      "keyword",
+      "retro_phrase_signature",
+    ])
     .optional()
     .describe(
-      "Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.",
+      "Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.",
     ),
   classifierConfidence: zod
     .union([

@@ -6994,8 +6994,8 @@ components:
           description: Specific action the payor is requesting from the provider, if any.
         classifierSource:
           type: string
-          enum: [keyword, ai, manual]
-          description: Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers.
+          enum: [phrase_signature, ai, abstain, manual, keyword, retro_phrase_signature]
+          description: Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.
         classifierConfidence:
           type: string
           nullable: true

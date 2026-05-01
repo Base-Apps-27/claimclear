@@ -49,7 +49,7 @@ with whitespace preserved.
   extractedDeadline?: string | null;
   /** Specific action the payor is requesting from the provider, if any. */
   requestedAction?: string | null;
-  /** Which classifier produced `responseType`. AI is preferred; keyword is the fallback when AI fails or isn't run; manual is set by reviewers. */
+  /** Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh. */
   classifierSource?: PortalResponseItemClassifierSource;
   /** AI's self-reported confidence in its classification, if classifierSource is "ai". */
   classifierConfidence?: PortalResponseItemClassifierConfidence;
