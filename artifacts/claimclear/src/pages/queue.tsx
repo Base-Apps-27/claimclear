@@ -26,7 +26,19 @@ import {
   AlertTriangle,
   Inbox,
   Loader2,
+  Sparkles,
+  X,
 } from "lucide-react";
+import {
+  parseExpiringParam,
+  filterByExpiringParam,
+  formatDeadlineLabel,
+  formatTabBadge,
+  computeAggregateUrgentCount,
+  emptyStateCopy,
+  type ExpiringFilter,
+  type DeadlineTier,
+} from "@/lib/queue-urgency";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
 import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
@@ -47,6 +59,241 @@ const VALID_TABS = ["actionable", "portal-queued", "on-hold"] as const;
 type QueueTab = typeof VALID_TABS[number];
 const DEFAULT_TAB: QueueTab = "actionable";
 
+/**
+ * Big urgency hero at the top of the Queue. Mirrors the Dashboard's
+ * "File today" card so the operator who clicked through doesn't lose
+ * context. Three states:
+ * - red    → urgent groups exist; file-today bloodbath, intensified
+ *            (full-width + sticky) when arrived via `?expiring=urgent`.
+ * - amber  → on the `?expiring=soon` view; softer signal, no sticky.
+ * - green  → urgentCount === 0; calm "all clear" relief state.
+ */
+function QueueUrgencyHero({
+  urgentCount,
+  soonCount,
+  filter,
+}: {
+  urgentCount: number;
+  soonCount: number;
+  filter: ExpiringFilter;
+}) {
+  if (filter === "soon") {
+    return (
+      <div
+        data-testid="queue-urgency-hero"
+        data-tone="amber"
+        className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+        style={{
+          background: "hsl(var(--cc-amber-bg))",
+          borderColor: "hsl(var(--cc-amber-border))",
+          color: "hsl(var(--cc-amber-fg))",
+        }}
+      >
+        <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span
+            className="text-3xl font-bold tabular-nums"
+            data-testid="queue-urgency-hero-count"
+          >
+            {soonCount}
+          </span>
+          <span className="text-sm">due in the next 3 days · stay ahead of the clock</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (urgentCount > 0) {
+    const intensified = filter === "urgent";
+    return (
+      <div
+        data-testid="queue-urgency-hero"
+        data-tone="red"
+        data-intensified={intensified ? "true" : undefined}
+        className={`rounded-lg border-2 px-5 py-4 flex items-center gap-4 ${
+          intensified ? "sticky top-0 z-20 shadow-lg" : ""
+        }`}
+        style={{
+          background: "hsl(var(--cc-red-bg))",
+          borderColor: "hsl(var(--cc-red-border))",
+          color: "hsl(var(--cc-red-fg))",
+        }}
+      >
+        <AlertTriangle className="h-7 w-7 shrink-0" style={{ color: "hsl(var(--destructive))" }} />
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span
+            className="text-4xl font-bold tabular-nums"
+            style={{ color: "hsl(var(--destructive))" }}
+            data-testid="queue-urgency-hero-count"
+          >
+            {urgentCount}
+          </span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold">
+              {urgentCount === 1 ? "group" : "groups"} must be submitted before EOD
+            </span>
+            <span className="text-xs opacity-80">
+              File today across Action Required, Portal Queued, and On Hold.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Green "all clear" relief state — calm white-to-green gradient so it
+  // celebrates the cleared bloodbath without screaming.
+  return (
+    <div
+      data-testid="queue-urgency-hero"
+      data-tone="green"
+      className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+      style={{
+        background:
+          "linear-gradient(90deg, hsl(var(--card)) 0%, hsl(var(--cc-green-bg)) 100%)",
+        borderColor: "hsl(var(--cc-green-border))",
+        color: "hsl(var(--cc-green-fg))",
+      }}
+    >
+      <Sparkles className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-green-fg))" }} />
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <span
+          className="text-3xl font-bold tabular-nums"
+          style={{ color: "hsl(var(--cc-green-fg))" }}
+          data-testid="queue-urgency-hero-count"
+        >
+          0
+        </span>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold">All clear — nothing must file today.</span>
+          <span className="text-xs opacity-80">
+            Bloodbath cleared. Work the next tier so it stays that way.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline filter chip below the hero — lets the operator see (and clear)
+ * the `?expiring=` filter without spelunking the URL bar.
+ */
+function ExpiringFilterChip({
+  filter,
+  count,
+  onClear,
+}: {
+  filter: NonNullable<ExpiringFilter>;
+  count: number;
+  onClear: () => void;
+}) {
+  const tone = filter === "urgent"
+    ? {
+        bg: "hsl(var(--cc-red-bg))",
+        border: "hsl(var(--cc-red-border))",
+        fg: "hsl(var(--cc-red-fg))",
+        label: `Urgent — file today (${count})`,
+      }
+    : {
+        bg: "hsl(var(--cc-amber-bg))",
+        border: "hsl(var(--cc-amber-border))",
+        fg: "hsl(var(--cc-amber-fg))",
+        label: `Due within 3 days (${count})`,
+      };
+  return (
+    <div className="flex items-center gap-2" data-testid="expiring-filter-chip">
+      <span className="text-xs text-muted-foreground">Showing:</span>
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+        style={{ background: tone.bg, borderColor: tone.border, color: tone.fg }}
+      >
+        {tone.label}
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear filter"
+          data-testid="expiring-filter-chip-clear"
+          className="rounded-full p-0.5 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-1"
+          style={{ color: tone.fg }}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+      >
+        Clear filter
+      </button>
+    </div>
+  );
+}
+
+/**
+ * On-clock tab badge with optional urgent split.
+ *
+ * - No filter      → "<total>" + red "<N> urgent" pill (when applicable).
+ * - ?expiring=urgent → just the red urgent count (totals would lie since
+ *   the filter is hiding non-urgent rows).
+ * - ?expiring=soon → just the amber soon count for this lane (urgent
+ *   pill would mismatch — soon rows are non-urgent by definition).
+ */
+function TabBadgeSplit({
+  total,
+  urgent,
+  soon,
+  filterMode,
+  testid,
+}: {
+  total: number;
+  urgent: number;
+  soon: number;
+  filterMode: ExpiringFilter;
+  testid?: string;
+}) {
+  const badge = formatTabBadge(total, urgent, filterMode, soon);
+  if (!badge.total && !badge.urgent && !badge.soon) return null;
+  return (
+    <span className="ml-2 inline-flex items-center gap-1" data-testid={testid}>
+      {badge.total != null && (
+        <Badge variant="secondary" data-testid={testid ? `${testid}-total` : undefined}>
+          {badge.total}
+        </Badge>
+      )}
+      {badge.urgent != null && (
+        <Badge
+          variant="outline"
+          data-testid={testid ? `${testid}-urgent` : undefined}
+          style={{
+            background: "hsl(var(--cc-red-bg))",
+            borderColor: "hsl(var(--cc-red-border))",
+            color: "hsl(var(--destructive))",
+            fontWeight: 700,
+          }}
+        >
+          {badge.urgent}
+        </Badge>
+      )}
+      {badge.soon != null && (
+        <Badge
+          variant="outline"
+          data-testid={testid ? `${testid}-soon` : undefined}
+          style={{
+            background: "hsl(var(--cc-amber-bg))",
+            borderColor: "hsl(var(--cc-amber-border))",
+            color: "hsl(var(--cc-amber-fg))",
+            fontWeight: 700,
+          }}
+        >
+          {badge.soon}
+        </Badge>
+      )}
+    </span>
+  );
+}
+
 export default function Queue() {
   useInvoiceGroupsListEvents();
   const queryClient = useQueryClient();
@@ -56,6 +303,13 @@ export default function Queue() {
   const activeTab: QueueTab = (VALID_TABS as readonly string[]).includes(tabParam)
     ? (tabParam as QueueTab)
     : DEFAULT_TAB;
+
+  // `?expiring=urgent|soon` is the link payload from the Dashboard's
+  // "File today" hero (urgent) and "+ N in next 3 days" footer (soon).
+  // Anything else collapses to null so a stale share link can't pin the
+  // queue to a state that no longer exists.
+  const expiringFilter: ExpiringFilter = parseExpiringParam(get("expiring"));
+  const clearExpiringFilter = () => set({ expiring: null }, false);
 
   // URL-persisted: which workflow group is open in the inline workspace,
   // and whether the Classification Inbox is expanded.
@@ -153,19 +407,45 @@ export default function Queue() {
       return aDays - bDays;
     });
 
-  const actionableGroups = sortByUrgency([...newGroups, ...needsGroups]);
-  const portalQueuedSorted = sortByUrgency(portalQueuedGroups);
-  const onHoldSorted = sortByUrgency(onHoldGroups);
+  // Unfiltered, sorted lists drive the urgent split badges (so the
+  // "62 urgent" hint still reflects reality even when the operator has
+  // narrowed the visible set with `?expiring=`).
+  const actionableAll = sortByUrgency([...newGroups, ...needsGroups]);
+  const portalQueuedAll = sortByUrgency(portalQueuedGroups);
+  const onHoldAll = sortByUrgency(onHoldGroups);
 
-  const urgentCount =
-    actionableGroups.filter(g => g.isUrgent).length +
-    portalQueuedSorted.filter(g => g.isUrgent).length +
-    onHoldSorted.filter(g => g.isUrgent).length;
+  // Filtered lists are what the row renderer sees.
+  const actionableGroups = filterByExpiringParam(actionableAll, expiringFilter);
+  const portalQueuedSorted = filterByExpiringParam(portalQueuedAll, expiringFilter);
+  const onHoldSorted = filterByExpiringParam(onHoldAll, expiringFilter);
+
+  const actionableUrgent = actionableAll.filter(g => g.isUrgent).length;
+  const portalQueuedUrgent = portalQueuedAll.filter(g => g.isUrgent).length;
+  const onHoldUrgent = onHoldAll.filter(g => g.isUrgent).length;
+  // Hero count comes from the shared helper so the value the Queue's
+  // hero shows is provably the same number the Dashboard's "File today"
+  // card derives from the same data.
+  const urgentCount = computeAggregateUrgentCount(
+    actionableAll,
+    portalQueuedAll,
+    onHoldAll,
+  );
+
+  // Per-lane "soon" counts feed the soon-mode tab badge so it reflects
+  // what's visible in that lane under `?expiring=soon`.
+  const actionableSoonCount = actionableGroups.length;
+  const portalQueuedSoonCount = portalQueuedSorted.length;
+  const onHoldSoonCount = onHoldSorted.length;
+
+  // Visible-set count for the chip — reflects what the operator is
+  // actually looking at, post-filter.
+  const visibleFilteredCount =
+    actionableGroups.length + portalQueuedSorted.length + onHoldSorted.length;
 
   const allGroups = [
-    ...actionableGroups,
-    ...portalQueuedSorted,
-    ...onHoldSorted,
+    ...actionableAll,
+    ...portalQueuedAll,
+    ...onHoldAll,
   ];
   const selectedWorkflowGroupSummary = selectedWorkflowId
     ? allGroups.find(g => g.id === selectedWorkflowId) || null
@@ -176,6 +456,8 @@ export default function Queue() {
   // tab change and lands on the only candidate immediately. We deliberately
   // don't auto-select once the user has cleared a selection within the same
   // tab — that's tracked by URL state, so any click survives a re-render.
+  // Filtered candidates so we don't auto-jump to a row that's hidden by
+  // `?expiring=` and leave the operator looking at a phantom workspace.
   useEffect(() => {
     if (selectedWorkflowId != null) return;
     const candidates =
@@ -208,38 +490,51 @@ export default function Queue() {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   };
 
-  // Per-row deadline pill that complements UrgentTodayBadge: shows a soft
-  // "Xd left" hint for items inside the warning window so the operator can
-  // see what's about to become urgent — not just what's urgent right now.
+  // Per-row deadline pill — renders for *every* on-clock row that has
+  // an `effectiveDaysLeft`, including rows past a week. Before Task #274
+  // anything beyond the 7-day window rendered nothing, so the legend
+  // promised tiers the operator never saw. Tier styling lines up
+  // exactly with the legend wording on the Action Required tab.
   const renderDeadlineHint = (group: InvoiceGroupResponse) => {
-    if (group.isUrgent) return null;
-    const days = group.effectiveDaysLeft;
-    if (days == null) return null;
-    if (days < 0) {
-      return (
-        <span
-          data-testid={`deadline-hint-${group.invoiceNumber}`}
-          className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap"
-          style={{ background: "hsl(var(--destructive))", color: "white" }}
-          title="Past deadline — file immediately"
-        >
-          Overdue
-        </span>
-      );
-    }
-    if (days > 7) return null;
-    const tone = days <= 2 ? "amber" : "neutral";
-    const styles = tone === "amber"
-      ? { background: "hsl(var(--cc-amber-bg))", color: "hsl(var(--cc-amber-fg))", borderColor: "hsl(var(--cc-amber-border))" }
-      : { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))", borderColor: "transparent" };
+    const labelInfo = formatDeadlineLabel(group);
+    if (!labelInfo) return null;
+    const tierStyles: Record<DeadlineTier, React.CSSProperties> = {
+      today: {
+        background: "hsl(var(--destructive))",
+        color: "white",
+        borderColor: "hsl(var(--destructive))",
+      },
+      overdue: {
+        background: "hsl(var(--destructive))",
+        color: "white",
+        borderColor: "hsl(var(--destructive))",
+      },
+      soon: {
+        background: "hsl(var(--cc-amber-bg))",
+        color: "hsl(var(--cc-amber-fg))",
+        borderColor: "hsl(var(--cc-amber-border))",
+      },
+      week: {
+        background: "hsl(var(--cc-amber-bg))",
+        color: "hsl(var(--cc-amber-fg))",
+        borderColor: "hsl(var(--cc-amber-border))",
+        opacity: 0.85,
+      },
+      later: {
+        background: "hsl(var(--muted))",
+        color: "hsl(var(--muted-foreground))",
+        borderColor: "transparent",
+      },
+    };
     return (
       <span
         data-testid={`deadline-hint-${group.invoiceNumber}`}
+        data-tier={labelInfo.tier}
         className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-        style={styles}
-        title={`${days} day${days === 1 ? "" : "s"} until the filing deadline (earliest service date drives the clock).`}
+        style={tierStyles[labelInfo.tier]}
+        title={labelInfo.tooltip}
       >
-        {days}d left
+        {labelInfo.label}
       </span>
     );
   };
@@ -258,13 +553,40 @@ export default function Queue() {
         {group.errorTypeName}
       </span>
     ) : null;
+    // Urgent rows get the strong red row treatment: tinted background,
+    // red left border, larger TODAY badge, currency in red. Non-urgent
+    // rows that match an active "soon" filter get a softer amber tint
+    // so the filter context reads on the row itself, not just the chip.
+    const isSoonRow =
+      !group.isUrgent &&
+      group.effectiveDaysLeft != null &&
+      group.effectiveDaysLeft >= 1 &&
+      group.effectiveDaysLeft <= 3;
+    let rowStyle: React.CSSProperties = {};
+    if (group.isUrgent) {
+      rowStyle = {
+        background: "hsl(var(--cc-red-bg))",
+        borderColor: "hsl(var(--cc-red-border))",
+        borderLeftWidth: 4,
+        borderLeftColor: "hsl(var(--destructive))",
+      };
+    } else if (expiringFilter === "soon" && isSoonRow) {
+      rowStyle = {
+        background: "hsl(var(--cc-amber-bg))",
+        borderColor: "hsl(var(--cc-amber-border))",
+        borderLeftWidth: 4,
+        borderLeftColor: "hsl(var(--cc-amber-fg))",
+      };
+    }
     return (
       <button
         key={group.id}
         type="button"
         data-testid={`queue-row-${group.invoiceNumber}`}
+        data-urgent={group.isUrgent ? "true" : undefined}
         aria-pressed={isSelected}
         onClick={() => opts.onSelect(group.id)}
+        style={rowStyle}
         className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
           isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
         }`}
@@ -272,7 +594,7 @@ export default function Queue() {
         <div className="py-3 px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0 shrink-0">
             <div className="whitespace-nowrap flex items-center gap-2">
-              <UrgentTodayBadge isUrgent={group.isUrgent} />
+              <UrgentTodayBadge isUrgent={group.isUrgent} size={group.isUrgent ? "md" : "sm"} />
               <span className="font-mono font-semibold">{group.invoiceNumber}</span>
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
@@ -281,7 +603,12 @@ export default function Queue() {
           </div>
           <div className="flex items-center gap-4 text-sm min-w-0 flex-1 justify-end">
             {meta}
-            <span className="font-medium whitespace-nowrap">{formatCurrency(group.totalAmount)}</span>
+            <span
+              className={`whitespace-nowrap ${group.isUrgent ? "font-bold" : "font-medium"}`}
+              style={group.isUrgent ? { color: "hsl(var(--destructive))" } : undefined}
+            >
+              {formatCurrency(group.totalAmount)}
+            </span>
             <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
           </div>
         </div>
@@ -298,22 +625,18 @@ export default function Queue() {
         </p>
       </div>
 
-      {urgentCount > 0 && (
-        <div
-          className="rounded-lg border px-4 py-3 flex items-center gap-3"
-          style={{
-            background: "hsl(var(--cc-red-bg))",
-            borderColor: "hsl(var(--cc-red-border))",
-            color: "hsl(var(--cc-red-fg))",
-          }}
-          data-testid="queue-urgent-banner"
-        >
-          <AlertTriangle className="h-5 w-5 shrink-0" style={{ color: "hsl(var(--destructive))" }} />
-          <div className="text-sm">
-            <span className="font-bold">{urgentCount} {urgentCount === 1 ? "group" : "groups"} must file today</span>
-            <span className="opacity-80"> · check Action Required, Portal Queued, and On Hold</span>
-          </div>
-        </div>
+      <QueueUrgencyHero
+        urgentCount={urgentCount}
+        soonCount={visibleFilteredCount}
+        filter={expiringFilter}
+      />
+
+      {expiringFilter && (
+        <ExpiringFilterChip
+          filter={expiringFilter}
+          count={visibleFilteredCount}
+          onClear={clearExpiringFilter}
+        />
       )}
 
       {successMessage && (
@@ -361,32 +684,51 @@ export default function Queue() {
         <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="max-w-full overflow-x-auto">
-              <TabsTrigger value="actionable">
+              <TabsTrigger value="actionable" data-testid="tab-actionable">
                 Action Required
-                {actionableTotal > 0 && (
-                  <Badge variant="secondary" className="ml-2">{actionableTotal}</Badge>
-                )}
+                <TabBadgeSplit
+                  total={actionableTotal}
+                  urgent={actionableUrgent}
+                  soon={actionableSoonCount}
+                  filterMode={expiringFilter}
+                  testid="tab-badge-actionable"
+                />
               </TabsTrigger>
-              <TabsTrigger value="portal-queued">
+              <TabsTrigger value="portal-queued" data-testid="tab-portal-queued">
                 Portal Queued
-                {portalQueuedTotal > 0 && (
-                  <Badge variant="secondary" className="ml-2">{portalQueuedTotal}</Badge>
-                )}
+                <TabBadgeSplit
+                  total={portalQueuedTotal}
+                  urgent={portalQueuedUrgent}
+                  soon={portalQueuedSoonCount}
+                  filterMode={expiringFilter}
+                  testid="tab-badge-portal-queued"
+                />
               </TabsTrigger>
-              <TabsTrigger value="on-hold">
+              <TabsTrigger value="on-hold" data-testid="tab-on-hold">
                 On Hold
-                {onHoldTotal > 0 && (
-                  <Badge variant="secondary" className="ml-2">{onHoldTotal}</Badge>
-                )}
+                <TabBadgeSplit
+                  total={onHoldTotal}
+                  urgent={onHoldUrgent}
+                  soon={onHoldSoonCount}
+                  filterMode={expiringFilter}
+                  testid="tab-badge-on-hold"
+                />
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="actionable" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-actionable">
-                <span className="font-medium text-foreground">New + Needs Evidence.</span> Groups you can act on right now. Sorted earliest service date first; <span className="font-semibold" style={{ color: "hsl(var(--destructive))" }}>red Today</span> = must file before end of day, <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>amber</span> = within 2 days, neutral = within a week.
+                <span className="font-medium text-foreground">New + Needs Evidence.</span> Groups you can act on right now. Sorted earliest service date first.{" "}
+                <span className="font-semibold" style={{ color: "hsl(var(--destructive))" }}>Today</span> = must file before EOD,{" "}
+                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>≤2d</span> = within two days,{" "}
+                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.85 }}>≤7d</span> = within a week, neutral = anything past a week. Every row shows its tier.
               </p>
               {actionableGroups.length === 0 ? (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups need action right now.</CardContent></Card>
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    {emptyStateCopy("actionable", expiringFilter)}
+                  </CardContent>
+                </Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
                   {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
@@ -396,10 +738,14 @@ export default function Queue() {
 
             <TabsContent value="portal-queued" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-portal-queued">
-                <span className="font-medium text-foreground">Drafted, waiting for the next portal submission batch.</span> The clock is still running — urgency badges still apply.
+                <span className="font-medium text-foreground">Drafted, waiting for the next portal submission batch.</span> The clock is still running — every row shows its deadline tier.
               </p>
               {portalQueuedSorted.length === 0 ? (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups queued for portal submission.</CardContent></Card>
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    {emptyStateCopy("portal-queued", expiringFilter)}
+                  </CardContent>
+                </Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
                   {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
@@ -409,10 +755,14 @@ export default function Queue() {
 
             <TabsContent value="on-hold" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-on-hold">
-                <span className="font-medium text-foreground">Manually parked or blocked.</span> Still on the deadline clock — urgency badges apply. Resume from the workflow when you're unblocked.
+                <span className="font-medium text-foreground">Manually parked or blocked.</span> Still on the deadline clock — every row shows its deadline tier. Resume from the workflow when you're unblocked.
               </p>
               {onHoldSorted.length === 0 ? (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups on hold.</CardContent></Card>
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    {emptyStateCopy("on-hold", expiringFilter)}
+                  </CardContent>
+                </Card>
               ) : (
                 <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
                   {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
