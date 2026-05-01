@@ -36,6 +36,8 @@ import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player"
 import { MasReattestHistory } from "@/components/mas-reattest-history";
 import { deriveLegSubStatus, type LegHoldReason } from "@workspace/leg-state";
 import type { DecisionTree } from "@/components/decision-tree/types";
+import { LegCommunicationMentions } from "@/components/communication/leg-communication-mentions";
+import { getMockLegMentions } from "@/components/communication/mock-data";
 
 // Per-leg investigation surface — the only claim detail UI post-cutover (Task #199).
 
@@ -648,6 +650,14 @@ export function ClaimDetailV2({ claimId }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {parentGroupId && (
+        <LegCommunicationMentions
+          legLabel={claim.confNumber || `Leg #${claim.id}`}
+          parentGroupId={parentGroupId}
+          mentions={getMockLegMentions(claim.confNumber || `Leg #${claim.id}`)}
+        />
+      )}
 
     </div>
   );

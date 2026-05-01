@@ -28,6 +28,9 @@ import { useToast } from "@/hooks/use-toast";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { ClosureActions } from "@/components/closure/closure-actions";
+import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
+import { ResponseReceivedBanner } from "@/components/communication/response-received-banner";
+import { getMockConversations, getMockBannerData } from "@/components/communication/mock-data";
 
 // Invoice-group orchestration surface — the only group detail UI post-cutover (Task #199).
 
@@ -175,6 +178,20 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
+  const mockLegIds = useMemo(
+    () =>
+      allRides.map((r) => ({
+        id: r.id,
+        label: r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`,
+      })),
+    [allRides],
+  );
+  const mockConversations = useMemo(
+    () => getMockConversations(mockLegIds),
+    [mockLegIds],
+  );
+  const [bannerData, setBannerData] = useState(getMockBannerData());
+
   if (isLoading || !group) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground gap-2">
@@ -185,6 +202,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto p-4" data-testid="invoice-group-detail-v2">
+      <ResponseReceivedBanner
+        response={bannerData}
+        onDismiss={() => setBannerData(null)}
+      />
+
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
@@ -561,6 +583,20 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <GroupCommunicationThread
+        conversations={mockConversations}
+        groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
+        onSyncInbox={() => {
+          toast({ title: "Inbox sync queued" });
+        }}
+        onReply={async (input) => {
+          toast({
+            title: "Reply sent",
+            description: `Sent to ${input.to.join(", ")}`,
+          });
+        }}
+      />
 
       {/* Post-submit response / verdict summary — read-only.
           Shown once the group has actually been submitted (anything past pre-submit). */}

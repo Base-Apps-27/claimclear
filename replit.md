@@ -202,6 +202,17 @@ Notes:
 - Never log or paste the raw token.
 - The token comparison is constant-time (`crypto.timingSafeEqual`) to avoid timing leaks.
 
+## Communication (Email Thread) Components
+
+The invoice-group and leg detail pages now include graduated communication components:
+
+- **`components/communication/group-communication-thread.tsx`** — Full email thread card for the group detail page. Renders message bodies as rich HTML (sanitized via DOMPurify with `prose prose-sm`), shows message metadata (sender, timestamps, attachments, leg mentions), and includes a Tiptap-powered rich text reply composer. Uses `GroupConversation` / `GroupEmailMessage` types. Currently wired to mock data via `mock-data.ts`; will be backed by a group-level email thread API endpoint when available.
+- **`components/communication/response-received-banner.tsx`** — Amber "New response from [payor]" banner that appears below the header card when there's an unread substantive payor reply (auto-confirmations and ticket receipts are suppressed via regex). Clicking scrolls to the `#invoice-thread` anchor on the Communication card. Dismissible via X button.
+- **`components/communication/leg-communication-mentions.tsx`** — Read-only "N mentions of this leg" stub on the leg detail page. Links to the parent group's invoice thread. Shows a Lock-icon explainer that conversations are invoice-level.
+- **`components/communication/rich-text-editor.tsx`** — Tiptap-based rich text editor with bold, italic, lists, blockquote, link, undo/redo toolbar. Used in the group thread reply composer.
+- **`components/communication/mock-data.ts`** — Mock conversation data (5 messages, 1 unread) and leg mentions used until a real group-level email API is available.
+- **Dependencies:** `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-link`, `@tiptap/extension-placeholder`, `@tiptap/pm` (installed in `@workspace/claimclear`). CSS for Tiptap placeholder and blockquote styles added to `index.css`.
+
 ## Troubleshooting the on-demand portal worker
 
 - **Submissions sit in `pending` and never run.** First, remember `pending` is intentional now — rows wait for the next scheduled sweep or an admin batch click rather than firing immediately. If you expected something to have gone out, either click "Process Pending" / "Process Selected" on the Portal Submissions page, or wait for the next scheduled `portal_batch_sweeper` tick (8am / 11am / 2pm / 6pm ET, Mon–Fri). If a sweep ran and rows still didn't move, open System Health → Worker Activity and check the "Pending due" / "Overdue" tiles; if overdue is non-zero the rollup banner will say "degraded" — click into the Worker Activity card to see the last run's `lastError`, and confirm `portal_batch_sweeper` has fresh runs in the Scheduled Jobs table (most failures are Playwright login or Neon cold-start).
