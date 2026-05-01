@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
+import DOMPurify from "dompurify";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   useListInvoiceGroups,
@@ -7,20 +8,15 @@ import {
   useGetInvoiceGroup,
   getInvoiceGroup,
   getGetInvoiceGroupQueryKey,
-  useGetClaimEmailThread,
-  useReplyToEmailConversation,
-  useProcessResponse,
-  getGetClaimEmailThreadQueryKey,
-  getListResponsesQueryKey,
+  useGetInvoiceGroupValidTransitions,
+  getGetInvoiceGroupValidTransitionsQueryKey,
+  useUpdateInvoiceGroupStatus,
   getGetClaimQueryKey,
-  getListClaimAuditLogsQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
-  useListClaimEvidence,
-  getListClaimEvidenceQueryKey,
+  getListWithdrawalsQueryKey,
   useRecordLegVerdict,
   useCompleteLegMasAction,
   useCompleteGroupReattest,
-  ProcessResponseBodyResponseType,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -28,8 +24,6 @@ import type {
   InvoiceGroupResponse,
   PortalResponseItem,
   PortalSubmissionResponse,
-  EmailThreadConversation,
-  ClaimResponseClosureReason,
 } from "@workspace/api-client-react";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
@@ -43,12 +37,19 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
-import { ConversationsCard } from "@/components/conversations-card";
 import {
   pickLatestReviewableResponse,
   getResponseTypeLabel,
   getResponseTypePillClass,
 } from "@/components/queue-response-review-panel";
+import { ClosureActions } from "@/components/closure/closure-actions";
+import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
+import { ResponseReceivedBanner } from "@/components/communication/response-received-banner";
+import {
+  getMockConversations,
+  getMockBannerData,
+} from "@/components/communication/mock-data";
+import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { useToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -57,15 +58,19 @@ import {
   CheckCircle,
   AlertTriangle,
   Clock,
-  Edit2,
   Eye,
   ExternalLink,
   Inbox,
-  FileText,
+  ChevronDown,
+  ChevronUp,
   ArrowDownWideNarrow,
   ArrowRight,
   ListChecks,
   ShieldCheck,
+  Send,
+  RefreshCw,
+  Loader2,
+  FileText,
 } from "lucide-react";
 import {
   Select,
@@ -78,34 +83,13 @@ import {
 /**
  * "Responses Awaiting Review" — top-nav stage-2 verdict workspace.
  *
- * The Queue page card from Task #162 is a peek; this is the dedicated
- * workspace for sitting in response review. Master/detail layout: list of
- * verdict-pending groups on the left, full review context (response thread,
- * submission details, verdict actions) on the right. URL reflects the
- * selected group id so direct links and back/forward work.
- *
- * Data shape mirrors the Queue card on purpose: same filter (Needs Review +
- * has errorTypeId) and same row meta (`pickLatestReviewableResponse`,
- * `ResponseReviewRowMeta`), so the two surfaces stay in lockstep visually.
- *
- * The body is intentionally wrapped in a Tabs container with a single
- * "Verdict pending" tab today. Task #165 will plug the Attestation surface
- * in as a second tab here without restructuring.
+ * Reworked under Task #236 around the email thread itself: the right pane
+ * is a 3-column layout — master list (left), group-level email thread
+ * (middle), sticky action rail with verdict / continuation / closure
+ * (right). The page sources the thread from the shared
+ * `components/communication` mock data layer so the eventual swap to a
+ * real group-level email API is a single-place change.
  */
-/**
- * Narrow `PortalResponseItem.responseType` to the subset the
- * /process endpoint accepts. Both unions resolve to the same string set
- * today, but they're distinct branded types from codegen — using the
- * runtime enum as the source of truth keeps this honest if either side
- * adds a value later.
- */
-function toProcessResponseType(
-  type: string | null | undefined,
-): ProcessResponseBodyResponseType | null {
-  if (!type) return null;
-  const allowed = Object.values(ProcessResponseBodyResponseType) as string[];
-  return allowed.includes(type) ? (type as ProcessResponseBodyResponseType) : null;
-}
 
 type SortMode = "oldest_response" | "newest_response" | "urgency" | "amount";
 
@@ -494,9 +478,25 @@ function Workspace({
   onSelect,
   onAfterVerdict,
 }: WorkspaceProps) {
+  // Per-group scroll position cache. Each row click captures the
+  // current scroll position under the *previous* selection, so when the
+  // operator returns to that group the page restores their place
+  // instead of jerking back to the top of the thread. Lives in the
+  // parent so it survives DetailPane unmount/remount across selections.
+  const scrollByGroupRef = useRef<Map<number, number>>(new Map());
+  const previousIdRef = useRef<number | null>(selectedGroup?.id ?? null);
+  useEffect(() => {
+    const prev = previousIdRef.current;
+    const next = selectedGroup?.id ?? null;
+    if (prev !== null && prev !== next && typeof window !== "undefined") {
+      scrollByGroupRef.current.set(prev, window.scrollY);
+    }
+    previousIdRef.current = next;
+  }, [selectedGroup?.id]);
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4">
+        <Skeleton className="h-[480px] w-full" />
         <Skeleton className="h-[480px] w-full" />
         <Skeleton className="h-[480px] w-full" />
       </div>
@@ -534,7 +534,10 @@ function Workspace({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4 items-start">
+    <div
+      className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4 items-start"
+      data-testid="awaiting-review-workspace"
+    >
       <Card className="lg:sticky lg:top-4">
         <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
           <ul className="divide-y" data-testid="awaiting-review-list">
@@ -555,6 +558,7 @@ function Workspace({
           key={selectedGroup.id}
           group={selectedGroup}
           onAfterVerdict={onAfterVerdict}
+          restoreScrollY={scrollByGroupRef.current.get(selectedGroup.id) ?? null}
         />
       )}
     </div>
@@ -695,8 +699,16 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
   // Lightweight per-row enrichment: pull the group's latest reviewable
   // response so the row can show the response-type pill + AI summary one-
   // liner. Same data the Queue card surfaces — kept in sync deliberately.
+  // Per Task #236: the visible "X of Y rides" reflects post-exclusion
+  // counts so the master list and the detail rail agree.
   const { data: detail } = useGetInvoiceGroup(group.id);
   const latestResponse = pickLatestReviewableResponse(detail?.responses);
+  const includedCount = useMemo(() => {
+    const rides = detail?.rides;
+    if (!Array.isArray(rides)) return null;
+    return rides.filter((r) => r.includedInDispute !== false).length;
+  }, [detail?.rides]);
+  const totalCount = group.rideCount;
 
   return (
     <li>
@@ -715,7 +727,9 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
             #{group.invoiceNumber}
           </span>
           <span className="text-xs text-muted-foreground">
-            {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}
+            {includedCount !== null && includedCount !== totalCount
+              ? `${includedCount} of ${totalCount} rides`
+              : `${totalCount} ride${totalCount !== 1 ? "s" : ""}`}
           </span>
           <span className="ml-auto text-sm font-medium whitespace-nowrap">
             {formatCurrency(group.totalAmount)}
@@ -761,248 +775,244 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
 interface DetailPaneProps {
   group: InvoiceGroupResponse;
   onAfterVerdict: (message: string) => void;
+  /** Cached window.scrollY from the last time this group was viewed.
+   *  Null means "first visit, leave scroll alone". Restored once on
+   *  mount so the operator returns to the message they were reading. */
+  restoreScrollY: number | null;
 }
 
-function DetailPane({
-  group,
-  onAfterVerdict,
-}: DetailPaneProps) {
+/**
+ * The right side of the workspace — renders two grid cells (thread main +
+ * sticky action rail) as siblings inside the parent grid. Returning a
+ * fragment lets the parent CSS Grid place each in its own column without
+ * an extra wrapping element.
+ */
+function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) {
   // Subscribe to per-group SSE events so the detail pane refreshes as the
   // payor's response gets re-tagged or as siblings move through verdict
   // actions in another tab.
   useInvoiceGroupEvents(group.id);
 
-  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: detail, isLoading: detailLoading } = useGetInvoiceGroup(group.id);
 
   const submissions: PortalSubmissionResponse[] = detail?.submissions ?? [];
   const responses: PortalResponseItem[] = detail?.responses ?? [];
-  const latestResponse = pickLatestReviewableResponse(responses);
+  const allRides: ClaimResponse[] = detail?.rides ?? [];
 
-  // Conversations live on the claim that received the inbound response —
-  // there is no group-level email thread endpoint. We pull the thread for
-  // the latest reviewable response's claim so the operator can read the
-  // exchange and reply via the same composer used on the claim page.
-  const threadClaimId = latestResponse?.claimId ?? null;
-  const { data: emailThreadData } = useGetClaimEmailThread(threadClaimId ?? 0, {
-    query: {
-      queryKey: getGetClaimEmailThreadQueryKey(threadClaimId ?? 0),
-      enabled: threadClaimId !== null && threadClaimId > 0,
-    },
-  });
-  const conversations: EmailThreadConversation[] =
-    emailThreadData?.conversations ?? [];
-  const claimResponses: PortalResponseItem[] = useMemo(
-    () => responses.filter((r) => r.claimId === threadClaimId),
-    [responses, threadClaimId],
+  // Mock thread + banner: same data layer used by invoice-group-detail-v2,
+  // so the eventual swap to a real group-level email API is one-place.
+  const mockLegIds = useMemo(
+    () =>
+      allRides.map((r) => ({
+        id: r.id,
+        label: r.confNumber ? `${r.confNumber}` : `Leg #${r.id}`,
+      })),
+    [allRides],
   );
+  const mockConversations = useMemo(
+    () => getMockConversations(mockLegIds),
+    [mockLegIds],
+  );
+  const [bannerData, setBannerData] = useState(() => getMockBannerData());
 
-  // Available evidence for the reply composer's attach picker. Mirrors the
-  // claim-detail filter: only file-backed `/objects/...` rows are eligible
-  // (the API rejects arbitrary URLs). Stays empty when no claim is selected
-  // (e.g. response with no matched claim).
-  const { data: evidenceList } = useListClaimEvidence(threadClaimId ?? 0, {
-    query: {
-      queryKey: getListClaimEvidenceQueryKey(threadClaimId ?? 0),
-      enabled: threadClaimId !== null && threadClaimId > 0,
-    },
-  });
-  const availableEvidence = useMemo(() => {
-    const items = Array.isArray(evidenceList?.evidence) ? evidenceList.evidence : [];
-    return items
-      .filter(
-        (ev) =>
-          typeof ev.imageUrl === "string" &&
-          (ev.imageUrl as string).trim().startsWith("/objects/"),
-      )
-      .map((ev) => {
-        const url = (ev.imageUrl as string).trim();
-        const tail = url.split("?")[0]?.split("/").pop() ?? "";
-        const fileName = tail && tail !== "" ? decodeURIComponent(tail) : null;
-        return {
-          id: ev.id as number,
-          label: ev.evidenceTypeName as string,
-          fileName,
-        };
-      });
-  }, [evidenceList]);
+  // The thread component's own `id="invoice-thread"` anchor is what the
+  // banner scrolls to — the same anchor used on the invoice-group detail
+  // page, so one implementation serves both callers. On first visit we
+  // jump to the thread anchor; on a return visit we restore the
+  // operator's previous scroll position so re-reading mid-thread doesn't
+  // bounce them back to the top.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = window.requestAnimationFrame(() => {
+      if (restoreScrollY !== null) {
+        window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+      } else {
+        const el = document.getElementById("invoice-thread");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    return () => window.cancelAnimationFrame(id);
+    // Intentionally only on mount of this specific group — the parent
+    // remounts DetailPane via `key={selectedGroup.id}`, so this effect
+    // runs exactly once per selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const replyMutation = useReplyToEmailConversation();
-  const processResponseMutation = useProcessResponse();
-
-  const invalidateThread = () => {
-    if (threadClaimId === null) return;
-    queryClient.invalidateQueries({
-      queryKey: getGetClaimEmailThreadQueryKey(threadClaimId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: getListResponsesQueryKey({ claimId: threadClaimId }),
-    });
-    queryClient.invalidateQueries({
-      queryKey: getGetClaimQueryKey(threadClaimId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: getListClaimAuditLogsQueryKey(threadClaimId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: getGetInvoiceGroupQueryKey(group.id),
-    });
-  };
-
-  // ConversationsCard expects a `Pick<ClaimResponse, "closureReason">`.
-  // The group's closureReason enum mirrors the claim's enum value-for-value
-  // (`denied_by_payor` / `cannot_dispute` / `non_issue`), so we cast across
-  // — same string union, just a different brand from codegen.
-  const claimContext: { closureReason: ClaimResponseClosureReason | undefined } = {
-    closureReason: detail?.closureReason as ClaimResponseClosureReason | undefined,
-  };
+  const latestResponse = useMemo(
+    () => pickLatestReviewableResponse(responses),
+    [responses],
+  );
+  // Empty-thread state: the group has no reviewable responses at all.
+  // Hide the action rail entirely (no work to record) and surface a
+  // single link out so the operator can investigate.
+  const hasReviewableResponse = !!latestResponse;
+  // Real-data fallback: a reviewable response exists but no conversation
+  // has been linked to it (e.g. portal-only response, email never
+  // synced). Today the mock returns a conversation unconditionally, so
+  // this branch is dormant; once #240 swaps in real conversation data
+  // it activates automatically and the operator gets the response body
+  // inline with a disabled composer rationale.
+  const hasConversations = mockConversations.length > 0;
 
   return (
-    <div className="space-y-4" data-testid={`detail-pane-${group.id}`}>
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="space-y-1 min-w-0">
-              <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
-                <span className="font-mono">#{group.invoiceNumber}</span>
-                <StatusBadge status={group.status} />
-                <UrgentTodayBadge isUrgent={group.isUrgent} />
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {group.errorTypeName ?? "Unclassified"} ·{" "}
-                {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""} ·{" "}
-                {formatCurrency(group.totalAmount)}
+    <>
+      <div
+        className="space-y-4 min-w-0"
+        data-testid={`detail-pane-${group.id}`}
+      >
+        <ResponseReceivedBanner
+          response={bannerData}
+          onDismiss={() => setBannerData(null)}
+        />
+
+        {hasReviewableResponse && hasConversations ? (
+          <GroupCommunicationThread
+            conversations={mockConversations}
+            groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
+            onSyncInbox={() => {
+              toast({ title: "Inbox sync queued" });
+            }}
+            onReply={async (input) => {
+              toast({
+                title: "Reply sent",
+                description: `Sent to ${input.to.join(", ")}`,
+              });
+            }}
+          />
+        ) : hasReviewableResponse && latestResponse ? (
+          <InlineResponseFallback
+            response={latestResponse}
+            invoiceNumber={group.invoiceNumber || `#${group.id}`}
+            groupId={group.id}
+          />
+        ) : (
+          <Card data-testid="thread-empty-state">
+            <CardContent className="py-10 text-center space-y-3">
+              <Inbox className="h-6 w-6 mx-auto text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                No payor reply on file for this group yet — open full details
+                to investigate.
               </p>
-            </div>
-            <div className="flex items-center gap-2">
               <Link href={`/invoice-groups/${group.id}`}>
-                <Button variant="outline" size="sm" data-testid="open-full-invoice">
+                <Button variant="outline" size="sm" data-testid="empty-thread-open-full">
                   Open full details
                   <ExternalLink className="h-3.5 w-3.5 ml-1" />
                 </Button>
               </Link>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
-      <SubmissionDetailsBlock
-        submissions={submissions}
-        loading={detailLoading && !detail}
-      />
-
-      {threadClaimId !== null && conversations.length > 0 ? (
-        <ConversationsCard
-          conversations={conversations}
-          claimResponses={claimResponses}
-          claim={claimContext}
-          availableEvidence={availableEvidence}
-          isReplying={replyMutation.isPending}
-          onApprove={async (responseId) => {
-            await processResponseMutation.mutateAsync({
-              id: responseId,
-              data: { responseType: "approval" },
-            });
-            invalidateThread();
-          }}
-          onDeny={async (responseId) => {
-            await processResponseMutation.mutateAsync({
-              id: responseId,
-              data: { responseType: "denial" },
-            });
-            invalidateThread();
-          }}
-          onMarkReviewed={async (resp) => {
-            // PortalResponseItem.responseType and ProcessResponseBody.responseType
-            // are two distinct codegen unions over the same string values
-            // (`approval`/`denial`/`partial_approval`/`info_request`/
-            // `acknowledgment`/`other`). Narrow through the runtime enum so
-            // the call is type-safe — and bail with a clear error if the
-            // payor response carries an unexpected value (the API would
-            // reject it anyway).
-            const narrowed = toProcessResponseType(resp.responseType);
-            if (!narrowed) {
-              throw new Error(
-                `Cannot mark response reviewed — unsupported response type: ${resp.responseType}`,
-              );
-            }
-            await processResponseMutation.mutateAsync({
-              id: resp.id,
-              data: { responseType: narrowed },
-            });
-            invalidateThread();
-          }}
-          onReassign={() => {
-            // Reassign opens a chooser dialog on the claim-detail page; from
-            // this surface we deep-link there so operators don't need a
-            // duplicate dialog implementation here.
-            if (threadClaimId !== null) {
-              window.open(`/claims/${threadClaimId}#reassign`, "_blank");
-            }
-          }}
-          onReply={async (input) => {
-            if (threadClaimId === null) {
-              throw new Error("No claim is associated with this response yet.");
-            }
-            try {
-              const created = await replyMutation.mutateAsync({
-                id: threadClaimId,
-                // Outlook conversation IDs may contain reserved URL chars
-                // (+, /, =) so encode before the codegen interpolates them.
-                conversationId: encodeURIComponent(input.conversationId),
-                data: {
-                  subject: input.subject,
-                  bodyText: input.bodyText,
-                  to: input.to,
-                  cc: input.cc,
-                  evidenceIds: input.evidenceIds,
-                },
-              });
-              invalidateThread();
-              toast({
-                title: "Reply sent",
-                description: `Threaded into the conversation with ${input.to.join(", ")}.`,
-                duration: 3500,
-              });
-              return created;
-            } catch (err) {
-              const msg =
-                err instanceof Error ? err.message : "Failed to send reply.";
-              toast({
-                title: "Couldn't send reply",
-                description: msg,
-                variant: "destructive",
-              });
-              throw err;
-            }
-          }}
+      {hasReviewableResponse && (
+        <ActionRail
+          group={group}
+          detail={detail as InvoiceGroupDetailResponse | undefined}
+          detailLoading={detailLoading}
+          submissions={submissions}
+          allRides={allRides}
+          onAfterVerdict={onAfterVerdict}
         />
-      ) : threadClaimId !== null ? (
-        <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground text-center space-y-2">
-            <Inbox className="h-5 w-5 mx-auto text-muted-foreground" />
-            <p>
-              No email conversation is associated with this response yet. The
-              verdict actions below still apply.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground text-center space-y-2">
-            <Inbox className="h-5 w-5 mx-auto text-muted-foreground" />
-            <p>
-              The latest response isn't matched to a specific claim. Open the
-              full invoice page to read the response and pick a verdict.
-            </p>
-          </CardContent>
-        </Card>
+      )}
+    </>
+  );
+}
+
+interface ActionRailProps {
+  group: InvoiceGroupResponse;
+  detail: InvoiceGroupDetailResponse | undefined;
+  detailLoading: boolean;
+  submissions: PortalSubmissionResponse[];
+  allRides: ClaimResponse[];
+  onAfterVerdict: (message: string) => void;
+}
+
+/**
+ * Sticky right-side action rail. Mirrors the Group Rail pattern: rounded
+ * card container, sticky on lg+, single-column field stack. Hosts the
+ * group header, the submissions strip, the per-leg verdict picker, and
+ * the continuation/closure actions.
+ */
+function ActionRail({
+  group,
+  detail,
+  detailLoading,
+  submissions,
+  allRides,
+  onAfterVerdict,
+}: ActionRailProps) {
+  // Real, actionable legs the operator can pick a verdict on. Mirrors
+  // the predicate from invoice-group-detail-v2: included, not excluded,
+  // has errorTypeId. Auto-excluded legs (per #232) and `Processed` legs
+  // (per #231) flow through naturally — excluded legs render below as a
+  // read-only summary and Processed legs stay in the picker stack.
+  const actionableRides = useMemo(
+    () =>
+      allRides.filter(
+        (r) => r.includedInDispute !== false && !!r.errorTypeId,
+      ),
+    [allRides],
+  );
+  const excludedRides = useMemo(
+    () => allRides.filter((r) => r.includedInDispute === false),
+    [allRides],
+  );
+
+  return (
+    <div className="lg:sticky lg:top-4 space-y-3" data-testid="action-rail">
+      <div className="rounded-md border bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b bg-muted/30">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm font-semibold">
+              #{group.invoiceNumber}
+            </span>
+            <StatusBadge status={group.status} />
+            <UrgentTodayBadge isUrgent={group.isUrgent} />
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs">
+            <RailField label="Error type">
+              {group.errorTypeName || "—"}
+            </RailField>
+            <RailField label="Total">
+              {formatCurrency(group.totalAmount)}
+            </RailField>
+            <RailField label="Rides">
+              {actionableRides.length === allRides.length
+                ? `${allRides.length}`
+                : `${actionableRides.length} of ${allRides.length}`}
+            </RailField>
+          </div>
+          <div className="mt-2">
+            <Link
+              href={`/invoice-groups/${group.id}`}
+              className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1"
+              data-testid="open-full-invoice"
+            >
+              Open full details
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+
+        <SubmissionsStrip
+          submissions={submissions}
+          loading={detailLoading && !detail}
+        />
+      </div>
+
+      {detail && (
+        <PerLegVerdictRailSection
+          actionableRides={actionableRides}
+          excludedRides={excludedRides}
+          onAfterVerdict={onAfterVerdict}
+          groupId={group.id}
+        />
       )}
 
       {detail && (
-        <PerLegPickerStack
-          group={detail as InvoiceGroupDetailResponse}
+        <ContinuationAndClosureSection
+          group={group}
           onAfterVerdict={onAfterVerdict}
         />
       )}
@@ -1010,199 +1020,541 @@ function DetailPane({
   );
 }
 
-interface PerLegPickerStackProps {
-  group: InvoiceGroupDetailResponse;
+function RailField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 border-b border-dashed border-border/60 last:border-b-0 pb-1 last:pb-0">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
+        {label}
+      </span>
+      <span className="text-xs text-foreground font-medium text-right truncate">
+        {children}
+      </span>
+    </div>
+  );
+}
+
+interface PerLegVerdictRailSectionProps {
+  actionableRides: ClaimResponse[];
+  excludedRides: ClaimResponse[];
+  onAfterVerdict: (message: string) => void;
+  groupId: number;
+}
+
+function PerLegVerdictRailSection({
+  actionableRides,
+  excludedRides,
+  onAfterVerdict,
+  groupId,
+}: PerLegVerdictRailSectionProps) {
+  const queryClient = useQueryClient();
+  const recordVerdict = useRecordLegVerdict();
+  const { calibrationByErrorType } = useAiCalibrations(
+    actionableRides.map((r) => r.errorTypeId),
+  );
+
+  const allResolved = actionableRides.length === 0;
+
+  return (
+    <div
+      className="rounded-md border bg-card overflow-hidden"
+      data-testid="per-leg-picker-stack"
+    >
+      <div className="px-4 py-2.5 border-b bg-muted/30">
+        <h3 className="text-sm font-semibold">Per-leg verdict</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Pick the verdict for each actionable leg. Excluded legs are listed
+          but not pickable.
+        </p>
+      </div>
+      <div className="p-3 space-y-3">
+        {excludedRides.length > 0 && (
+          <ul
+            className="space-y-1.5 text-xs"
+            data-testid="excluded-legs-summary"
+          >
+            {excludedRides.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-start gap-2 text-muted-foreground"
+                data-testid={`excluded-leg-${r.id}`}
+              >
+                <span className="font-mono shrink-0">#{r.confNumber}</span>
+                <span className="italic">
+                  auto: {(r.dropReason as string | null) ?? "non-issue"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {allResolved ? (
+          <p
+            className="text-xs text-muted-foreground italic"
+            data-testid="all-legs-resolved"
+          >
+            All legs already resolved at the group level.
+          </p>
+        ) : (
+          actionableRides.map((claim) => (
+            <PerLegVerdictPicker
+              key={claim.id}
+              claim={claim}
+              latestVerdict={claim.latestVerdict ?? null}
+              latestSuggestion={claim.latestAiSuggestion ?? null}
+              calibration={
+                claim.errorTypeId
+                  ? calibrationByErrorType.get(claim.errorTypeId)
+                  : undefined
+              }
+              onConfirm={async (outcome, note, inspectionTimeMs) => {
+                await recordVerdict.mutateAsync({
+                  id: claim.id,
+                  data: {
+                    source: "operator_confirmed",
+                    outcome,
+                    note,
+                    inspectionTimeMs,
+                  },
+                });
+                queryClient.invalidateQueries({
+                  queryKey: getGetInvoiceGroupQueryKey(groupId),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: getGetClaimQueryKey(claim.id),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: getListInvoiceGroupsQueryKey(),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+                });
+                onAfterVerdict(`Verdict recorded for #${claim.confNumber}.`);
+              }}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ContinuationActionDef {
+  key: string;
+  label: string;
+  sub: string;
+  icon: React.ReactNode;
+  toneClass: string;
+  targetStatus: string;
+  reason: string;
+}
+
+interface ContinuationAndClosureSectionProps {
+  group: InvoiceGroupResponse;
   onAfterVerdict: (message: string) => void;
 }
 
-function PerLegPickerStack({ group, onAfterVerdict }: PerLegPickerStackProps) {
+/**
+ * Continuation actions (re-dispute / re-attest / submit new invoice) and
+ * closure actions live together in one rail card. Continuation logic is
+ * the same as the Queue page panel — reading
+ * `validTransitions.postResponseActions` for the legal set, every action
+ * routes through `Needs Evidence` until #185 wires per-action endpoints.
+ */
+function ContinuationAndClosureSection({
+  group,
+  onAfterVerdict,
+}: ContinuationAndClosureSectionProps) {
   const queryClient = useQueryClient();
-  const recordVerdict = useRecordLegVerdict();
-  const rides: ClaimResponse[] = useMemo(
-    () =>
-      (group.rides ?? []).filter(
-        (r) => r.includedInDispute && !!r.errorTypeId,
-      ),
-    [group.rides],
-  );
-  const { calibrationByErrorType } = useAiCalibrations(
-    rides.map((r) => r.errorTypeId),
-  );
+  const { toast } = useToast();
+  const updateStatus = useUpdateInvoiceGroupStatus();
 
-  if (rides.length === 0) return null;
+  const { data: validTransitions } = useGetInvoiceGroupValidTransitions(group.id);
+  const postResponseActions = (validTransitions?.postResponseActions || []) as string[];
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(group.id) });
+    queryClient.invalidateQueries({
+      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(group.id),
+    });
+    queryClient.invalidateQueries({
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+    });
+  };
+
+  const continuationActions: ContinuationActionDef[] = [];
+  if (postResponseActions.includes("re_dispute")) {
+    continuationActions.push({
+      key: "re_dispute",
+      label: "Re-dispute",
+      sub: "Gather more evidence and re-submit",
+      icon: <Send className="h-3.5 w-3.5" />,
+      toneClass: "bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900",
+      targetStatus: "Needs Evidence",
+      reason:
+        "Re-dispute with additional points — returned to evidence gathering after payor response",
+    });
+  }
+  if (postResponseActions.includes("resolve_reattest")) {
+    continuationActions.push({
+      key: "resolve_reattest",
+      label: "Re-attest",
+      sub: "Capture re-attestation; keep the dispute moving",
+      icon: <RefreshCw className="h-3.5 w-3.5" />,
+      toneClass: "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-900",
+      targetStatus: "Needs Evidence",
+      reason:
+        "Resolve via re-attestation — returned to evidence gathering to attach re-attested documentation",
+    });
+  }
+  if (postResponseActions.includes("resolve_new_invoice")) {
+    continuationActions.push({
+      key: "resolve_new_invoice",
+      label: "Submit new invoice",
+      sub: "Set up the new invoice # and re-submit",
+      icon: <CheckCircle className="h-3.5 w-3.5" />,
+      toneClass: "bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-900",
+      targetStatus: "Needs Evidence",
+      reason:
+        "Resolve via new invoice number — returned to evidence gathering for re-issued invoice details",
+    });
+  }
+
+  const handleContinuation = async (action: ContinuationActionDef) => {
+    try {
+      await updateStatus.mutateAsync({
+        id: group.id,
+        data: { status: action.targetStatus, reason: action.reason },
+      });
+      invalidate();
+      onAfterVerdict(`${action.label} — moved to ${action.targetStatus}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Action failed.";
+      toast({
+        title: `Couldn't apply "${action.label}"`,
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const isPending = updateStatus.isPending;
 
   return (
-    <Card data-testid="per-leg-picker-stack">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Per-leg verdict</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Capture the verdict for each leg individually. The legacy
-          group-level verdict panel below still works as a fallback.
+    <div
+      className="rounded-md border bg-card overflow-hidden"
+      data-testid="continuation-and-closure"
+    >
+      <div className="px-4 py-2.5 border-b bg-muted/30">
+        <h3 className="text-sm font-semibold">What's next?</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Continue the dispute or close it out.
         </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {rides.map((claim) => (
-          <PerLegVerdictPicker
-            key={claim.id}
-            claim={claim}
-            latestVerdict={claim.latestVerdict ?? null}
-            latestSuggestion={claim.latestAiSuggestion ?? null}
-            calibration={
-              claim.errorTypeId
-                ? calibrationByErrorType.get(claim.errorTypeId)
-                : undefined
-            }
-            onConfirm={async (outcome, note, inspectionTimeMs) => {
-              await recordVerdict.mutateAsync({
-                id: claim.id,
-                data: {
-                  source: "operator_confirmed",
-                  outcome,
-                  note,
-                  inspectionTimeMs,
-                },
-              });
-              queryClient.invalidateQueries({
-                queryKey: getGetInvoiceGroupQueryKey(group.id),
-              });
-              queryClient.invalidateQueries({
-                queryKey: getGetClaimQueryKey(claim.id),
-              });
-              queryClient.invalidateQueries({
-                queryKey: getListInvoiceGroupsQueryKey(),
-              });
-              queryClient.invalidateQueries({
-                queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
-              });
-              onAfterVerdict(`Verdict recorded for #${claim.confNumber}.`);
+      </div>
+      <div className="p-3 space-y-3">
+        <div className="space-y-1.5" data-testid="verdict-lane-continuation">
+          <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
+            Continuation
+          </div>
+          {continuationActions.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">
+              No continuation actions available for this response type.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5">
+              {continuationActions.map((action) => (
+                <Button
+                  key={action.key}
+                  variant="outline"
+                  className={`h-auto py-2 px-3 flex flex-col items-start gap-0.5 ${action.toneClass}`}
+                  disabled={isPending}
+                  onClick={() => handleContinuation(action)}
+                  data-testid={`button-continuation-${action.key}`}
+                >
+                  <span className="flex items-center gap-2 font-semibold text-xs">
+                    {action.icon}
+                    {action.label}
+                  </span>
+                  <span className="text-[11px] font-normal opacity-80 text-left">
+                    {action.sub}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <Separator />
+
+        <div className="space-y-1.5" data-testid="verdict-lane-closure">
+          <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
+            Closure — payor formally denied
+          </div>
+          <ClosureActions
+            target={{ kind: "invoice_group", id: group.id }}
+            outcome={group.outcome}
+            closureReason={group.closureReason}
+            triggers={[
+              {
+                reason: "denied_by_payor",
+                label: "Denied by Payor",
+                sub: "Payor formally denied — close out, no further dispute",
+                icon: <ArrowRight className="h-3.5 w-3.5" />,
+                testId: "button-closure-denied-by-payor",
+              },
+            ]}
+            onAfterSuccess={() => {
+              invalidate();
+              onAfterVerdict(`#${group.invoiceNumber} closed as Denied by Payor`);
             }}
           />
-        ))}
-      </CardContent>
-    </Card>
+        </div>
+
+        {isPending && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Applying verdict…
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-interface SubmissionDetailsBlockProps {
+interface SubmissionsStripProps {
   submissions: PortalSubmissionResponse[];
   loading: boolean;
 }
 
 /**
- * Compact summary of every portal submission filed for the group. Includes
- * status, ticket id, dispute body excerpt, and a link to the canonical
- * preview drawer on the invoice-group page so operators can drill in.
- *
- * Kept on the page (rather than reusing the bigger SubmissionCard from the
- * claim-detail page) because we only want at-a-glance context here — the
- * deep dive lives on the full-details surface.
+ * Compact, collapsible "Submissions ({n}, latest: {status})" strip in the
+ * action rail. Replaces the old top-of-pane SubmissionDetailsBlock card
+ * which competed with the thread for vertical space and excerpted the
+ * dispute body. Expanding a row opens the canonical PortalSubmissionDrawer
+ * — same drawer used elsewhere — so there's no inline excerpt.
  */
-function SubmissionDetailsBlock({ submissions, loading }: SubmissionDetailsBlockProps) {
-  if (loading) {
-    return <Skeleton className="h-24 w-full" />;
-  }
+function SubmissionsStrip({ submissions, loading }: SubmissionsStripProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [drawerSubmissionId, setDrawerSubmissionId] = useState<number | null>(null);
 
-  if (submissions.length === 0) {
+  // Newest first — operators care most about the most recent filing.
+  const sorted = useMemo(
+    () =>
+      [...submissions].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      }),
+    [submissions],
+  );
+  const latest = sorted[0];
+
+  if (loading) {
     return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground" />
-            Submission details
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground italic">
-          No portal submissions on file for this group yet.
-        </CardContent>
-      </Card>
+      <div className="px-4 py-2.5 border-t">
+        <Skeleton className="h-4 w-32" />
+      </div>
     );
   }
 
-  // Newest first — operators care most about the most recent filing when
-  // they're weighing a follow-up reply. Sort by createdAt desc.
-  const sorted = [...submissions].sort((a, b) => {
-    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return bTime - aTime;
-  });
+  if (sorted.length === 0) {
+    return (
+      <div
+        className="px-4 py-2.5 border-t text-xs text-muted-foreground italic"
+        data-testid="submissions-strip-empty"
+      >
+        <FileText className="h-3.5 w-3.5 inline mr-1" />
+        No submissions on file yet.
+      </div>
+    );
+  }
 
   return (
-    <Card data-testid="submission-details-block">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-          Submission details
-          <Badge variant="secondary">{submissions.length}</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {sorted.map((sub, idx) => (
-          <div key={sub.id} className="space-y-2">
-            {idx > 0 && <Separator />}
-            <SubmissionSummary submission={sub} />
-          </div>
-        ))}
-      </CardContent>
-    </Card>
+    <div className="border-t" data-testid="submissions-strip">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-muted/40 text-xs"
+        data-testid="submissions-strip-toggle"
+        aria-expanded={expanded}
+      >
+        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="font-medium">
+          Submissions ({sorted.length}
+          {latest?.status ? `, latest: ${latest.status}` : ""})
+        </span>
+        {expanded ? (
+          <ChevronUp className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
+        )}
+      </button>
+      {expanded && (
+        <ul
+          className="border-t divide-y"
+          data-testid="submissions-strip-list"
+        >
+          {sorted.map((sub) => (
+            <li key={sub.id}>
+              <button
+                type="button"
+                onClick={() => setDrawerSubmissionId(sub.id)}
+                className="w-full px-4 py-2 flex items-center gap-2 text-left text-xs hover:bg-muted/40"
+                data-testid={`submissions-strip-row-${sub.id}`}
+              >
+                <Badge variant="outline" className="text-[10px]">
+                  {sub.status}
+                </Badge>
+                <span className="text-muted-foreground truncate">
+                  {sub.createdAt ? formatDateTime(sub.createdAt) : "—"}
+                </span>
+                <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground shrink-0" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <PortalSubmissionDrawer
+        submissionId={drawerSubmissionId}
+        open={drawerSubmissionId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDrawerSubmissionId(null);
+        }}
+      />
+    </div>
   );
 }
 
-function SubmissionSummary({ submission: sub }: { submission: PortalSubmissionResponse }) {
-  const statusVariant: "default" | "destructive" | "outline" | "secondary" =
-    sub.status === "submitted" ? "default" :
-    sub.status === "failed" ? "destructive" :
-    sub.status === "draft" || sub.status === "dry_run" ? "outline" :
-    "secondary";
+interface InlineResponseFallbackProps {
+  response: PortalResponseItem;
+  invoiceNumber: string;
+  groupId: number;
+}
 
-  // Trim the dispute body to a few lines so it's a peek; the deep link goes
-  // to the full preview/edit drawer on the invoice-group detail page.
-  const excerpt = (() => {
-    const raw = (sub.descriptionHtml || "").replace(/<[^>]+>/g, "").trim();
+/**
+ * Fallback rendered when a reviewable response exists but no email
+ * conversation has been linked to the group (the response came in via
+ * the portal and was never attached to an email thread, or the email
+ * sync hasn't run yet). Surfaces the response body inline so the
+ * operator can still read the payor's words and pick a verdict from
+ * the rail. The composer is intentionally absent — there's no thread
+ * to reply into — and a short rationale explains why, with a deep link
+ * to the full invoice page where the operator can sync or attach a
+ * conversation.
+ */
+function InlineResponseFallback({
+  response,
+  invoiceNumber,
+  groupId,
+}: InlineResponseFallbackProps) {
+  const sanitizedHtml = useMemo(() => {
+    if (response.bodyFormat !== "html") return null;
+    const raw = response.content || response.rawContent || "";
     if (!raw) return null;
-    const compact = raw.replace(/\s+/g, " ");
-    return compact.length > 220 ? compact.slice(0, 217) + "…" : compact;
-  })();
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: [
+        "p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li",
+        "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4",
+        "h5", "h6", "span", "div",
+      ],
+      ALLOWED_ATTR: ["href", "target", "rel"],
+    });
+  }, [response.bodyFormat, response.content, response.rawContent]);
+
+  const plainText = response.content || response.rawContent || "";
+  const senderLabel =
+    response.senderName ||
+    response.senderEmail ||
+    "Payor";
 
   return (
-    <div className="space-y-1.5" data-testid={`submission-summary-${sub.id}`}>
-      <div className="flex items-center gap-2 flex-wrap text-sm">
-        <span className="font-medium">Submission #{sub.id}</span>
-        <Badge variant={statusVariant} className="text-[10px]">
-          {sub.status === "submitted" && <CheckCircle className="h-3 w-3 mr-1" />}
-          {sub.status === "failed" && <AlertTriangle className="h-3 w-3 mr-1" />}
-          {sub.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
-          {sub.status === "draft" && <Edit2 className="h-3 w-3 mr-1" />}
-          {sub.status === "dry_run" && <Eye className="h-3 w-3 mr-1" />}
-          {sub.status === "dry_run" ? "Dry Run" : sub.status === "draft" ? "Draft" : sub.status}
-        </Badge>
-        {sub.issueType && (
-          <span className="text-xs text-muted-foreground">{sub.issueType}</span>
+    <Card
+      id="invoice-thread"
+      data-testid="inline-response-fallback"
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="space-y-1 min-w-0">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Inbox className="h-4 w-4" />
+              Response from {senderLabel}
+            </CardTitle>
+            {response.subject && (
+              <p
+                className="text-sm font-medium truncate"
+                title={response.subject}
+              >
+                {response.subject}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Received {formatDateTime(response.receivedAt)} ·{" "}
+              {invoiceNumber}
+            </p>
+          </div>
+          <span
+            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${getResponseTypePillClass(response.responseType)}`}
+            title="AI / keyword classification — a hint, not the verdict"
+          >
+            {getResponseTypeLabel(response.responseType)}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2"
+          data-testid="inline-response-fallback-rationale"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-medium">No email conversation linked yet.</p>
+            <p>
+              This response came in without a matching email thread, so
+              the reply composer is unavailable here. Open the full
+              invoice page to sync the inbox or attach a conversation.
+            </p>
+          </div>
+        </div>
+
+        {sanitizedHtml ? (
+          <div
+            className="prose prose-sm max-w-none text-sm"
+            data-testid="inline-response-fallback-body-html"
+            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+          />
+        ) : plainText ? (
+          <pre
+            className="whitespace-pre-wrap text-sm font-sans"
+            data-testid="inline-response-fallback-body-text"
+          >
+            {plainText}
+          </pre>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No body content recorded for this response.
+          </p>
         )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {sub.createdAt ? formatDateTime(sub.createdAt) : ""}
-        </span>
-      </div>
-      {sub.portalTicketId && (
-        <div className="text-xs">
-          <span className="text-muted-foreground">Ticket: </span>
-          <span className="font-mono">{sub.portalTicketId}</span>
+
+        <div className="flex items-center justify-end pt-1">
+          <Link href={`/invoice-groups/${groupId}`}>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="inline-response-fallback-open-full"
+            >
+              Open full details
+              <ExternalLink className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </Link>
         </div>
-      )}
-      {sub.subject && (
-        <div className="text-xs text-muted-foreground truncate" title={sub.subject}>
-          Subject: {sub.subject}
-        </div>
-      )}
-      {sub.errorMessage && (
-        <div className="text-xs text-red-700 bg-red-50 rounded px-2 py-1">
-          {sub.errorMessage}
-        </div>
-      )}
-      {excerpt && (
-        <p className="text-xs text-muted-foreground line-clamp-2" title={excerpt}>
-          {excerpt}
-        </p>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
