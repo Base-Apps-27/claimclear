@@ -21,6 +21,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   let skipped = 0;
   let updated = 0;
   let groupsCreated = 0;
+  let excludedCount = 0;
   const duplicates: string[] = [];
 
   const seenConfNumbers = new Set<string>();
@@ -39,7 +40,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   skipped += skippedCount;
 
   if (validRows.length === 0) {
-    res.json({ success: true, created: 0, skipped: rows.length, updated: 0, duplicates: [], total: rows.length, batchId, groupsCreated: 0 });
+    res.json({ success: true, created: 0, skipped: rows.length, updated: 0, excludedCount: 0, duplicates: [], total: rows.length, batchId, groupsCreated: 0 });
     return;
   }
 
@@ -148,6 +149,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
           skipped++;
         }
       } else {
+        const hasErrorType = row.errorTypeId != null;
         await db.insert(claimsTable).values({
           invoiceGroupId: groupId,
           confNumber: row.confNumber,
@@ -163,8 +165,10 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
           outcome: "Pending",
           importBatch: batchId,
           invoiceNumbers: invoiceNumber,
+          includedInDispute: hasErrorType,
         });
         created++;
+        if (!hasErrorType) excludedCount++;
       }
     }
   }
@@ -194,6 +198,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         skipped++;
       }
     } else {
+      const hasErrorType = row.errorTypeId != null;
       await db.insert(claimsTable).values({
         confNumber: row.confNumber,
         date: row.date || null,
@@ -207,8 +212,10 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         status: (!row.errorDetails || !row.errorDetails.trim()) ? "Needs Review" : "New",
         outcome: "Pending",
         importBatch: batchId,
+        includedInDispute: hasErrorType,
       });
       created++;
+      if (!hasErrorType) excludedCount++;
     }
   }
 
@@ -225,6 +232,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         created,
         updated,
         skipped,
+        excludedCount,
         groupsCreated,
         invoiceGroupCount: invoiceMap.size,
         total: rows.length,
@@ -239,6 +247,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
     created,
     skipped,
     updated,
+    excludedCount,
     duplicates,
     total: rows.length,
     batchId,

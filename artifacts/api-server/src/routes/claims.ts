@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, LEG_EXCLUSION_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
@@ -1683,6 +1683,126 @@ router.post("/claims/:id/per-leg-context", asyncHandler(async (req, res): Promis
     metadata: { contextLength: context.length },
   });
   emitClaimEvent(id, "per_leg_context_set", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/exclude — mark a needs_classification leg as "not a
+// dispute candidate". The leg disappears from the dispute work queues but
+// stays visible on the invoice as a clean line.
+router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const reason = (req.body?.reason ?? "") as string;
+  const note = (req.body?.note ?? null) as string | null;
+
+  if (!(LEG_EXCLUSION_REASONS as readonly string[]).includes(reason)) {
+    res.status(400).json({ error: `reason must be one of: ${LEG_EXCLUSION_REASONS.join(", ")}` });
+    return;
+  }
+  if (reason === "other" && (!note || !note.trim())) {
+    res.status(400).json({ error: "note required when reason=other" });
+    return;
+  }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "needs_classification") {
+    res.status(409).json({
+      error: "Cannot exclude from this leg state",
+      expectedState: "needs_classification",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ includedInDispute: false })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_excluded", `Leg excluded: ${reason}${note ? ` — ${note}` : ""}`, req, {
+    reason,
+    note,
+    previousSubStatus: "needs_classification",
+  });
+  await emitStateEvent({
+    eventKey: "leg.excluded",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { reason },
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "excluded", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/include — re-include a previously excluded leg while the
+// parent group is still in pre-submit. Two-stage source-state check: leg
+// sub-status must be `excluded`, then the parent group must be pre-submit.
+router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const note = (req.body?.note ?? null) as string | null;
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "excluded") {
+    res.status(409).json({
+      error: "Leg is not excluded",
+      expectedState: "excluded",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  if (leg.invoiceGroupId != null) {
+    const [parentGroup] = await db
+      .select()
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+    if (parentGroup) {
+      const phase = getGroupMacroPhase(parentGroup);
+      if (phase !== "pre-submit") {
+        res.status(409).json({
+          error: "Cannot re-include a leg after the group leaves pre-submit",
+          expectedState: "pre-submit",
+          actualState: phase,
+        });
+        return;
+      }
+    }
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ includedInDispute: true })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_included", `Leg re-included in dispute${note ? `: ${note}` : ""}`, req, {
+    note,
+    previousSubStatus: "excluded",
+  });
+  await emitStateEvent({
+    eventKey: "leg.included",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: {},
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "included", req);
 
   res.json(updated);
 }));

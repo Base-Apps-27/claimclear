@@ -18,11 +18,15 @@
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { eq, and, desc } from "drizzle-orm";
 
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
+import importRouter from "../routes/import";
 import {
   db,
   pool,
@@ -56,6 +60,7 @@ before(async () => {
 
   app.use("/api", claimsRouter);
   app.use("/api", invoiceGroupsRouter);
+  app.use("/api", importRouter);
 
   await new Promise<void>((resolveListen, rejectListen) => {
     server = app.listen(0, () => {
@@ -835,5 +840,206 @@ test("POST /invoice-groups/:id/reattest/complete on a group that doesn't need re
     assert.equal(res.json.expectedState, "mas-action-required");
   } finally {
     await cleanupGroup(group.id);
+  }
+});
+
+// --- /exclude + /include -----------------------------------------------
+
+test("POST /claims/:id/exclude from needs_classification writes includedInDispute=false and emits leg.excluded", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "clean_leg" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_excluded"), "expected leg_excluded audit row");
+
+    const events = await db.select().from(stateEventsTable).where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(events.find((e) => e.eventKey === "leg.excluded"), "expected leg.excluded state_events row");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/exclude against a leg with sub-status `investigating` returns 409", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "clean_leg" },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "needs_classification");
+    assert.equal(res.json.actualState, "investigating");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/exclude with reason=other and missing note returns 400", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "other" },
+    });
+    assert.equal(res.status, 400);
+    assert.ok(res.json.error.includes("note required"), `expected note-required error, got: ${res.json.error}`);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/include re-includes an excluded leg in pre-submit and emits leg.included", async () => {
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+    includedInDispute: false,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { note: "re-including after review" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, true);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_included"), "expected leg_included audit row");
+
+    const events = await db.select().from(stateEventsTable).where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(events.find((e) => e.eventKey === "leg.included"), "expected leg.included state_events row");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include against an excluded leg whose group is in response-pending returns 409 group-phase variant", async () => {
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+    includedInDispute: false,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "pre-submit");
+    assert.equal(res.json.actualState, "response-pending");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+// --- Importer excludedCount + includedInDispute default ----------------
+
+test("Importer sets includedInDispute=false for rows without errorTypeId and reports excludedCount", async () => {
+  const base = Date.now() % 1_000_000_000;
+  const withError = String(base * 10 + 1);
+  const withoutError = String(base * 10 + 2);
+  try {
+    const res = await fetchJson("/api/import", {
+      method: "POST",
+      body: {
+        rows: [
+          { confNumber: withError, errorTypeId: "99", errorTypeName: "Test Error", errorDetails: "something" },
+          { confNumber: withoutError, errorDetails: "clean" },
+        ],
+      },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.created, 2);
+    assert.equal(res.json.excludedCount, 1, "one row has no errorTypeId → excluded");
+
+    const [withErrRow] = await db.select().from(claimsTable).where(eq(claimsTable.confNumber, withError));
+    assert.equal(withErrRow.includedInDispute, true, "row with errorTypeId must be included");
+
+    const [noErrRow] = await db.select().from(claimsTable).where(eq(claimsTable.confNumber, withoutError));
+    assert.equal(noErrRow.includedInDispute, false, "row without errorTypeId must be excluded");
+  } finally {
+    const rows = await db.select({ id: claimsTable.id }).from(claimsTable)
+      .where(eq(claimsTable.confNumber, withError));
+    for (const r of rows) await cleanupClaim(r.id);
+    const rows2 = await db.select({ id: claimsTable.id }).from(claimsTable)
+      .where(eq(claimsTable.confNumber, withoutError));
+    for (const r of rows2) await cleanupClaim(r.id);
+  }
+});
+
+// --- Backfill migration 0012 -------------------------------------------
+
+test("Backfill migration 0012 flips matching rows to false and is idempotent", async () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const sqlPath = path.resolve(here, "../../../../lib/db/drizzle/0012_backfill_excluded_legs.sql");
+  const sql = fs.readFileSync(sqlPath, "utf8");
+
+  const seedNoErr = `T209-BF-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const seedWithErr = `T209-BF-${Date.now()}-${Math.floor(Math.random() * 1e6 + 1e6)}`;
+  const seedAlreadyFalse = `T209-BF-${Date.now()}-${Math.floor(Math.random() * 1e6 + 2e6)}`;
+
+  const [matching] = await db.insert(claimsTable).values({
+    confNumber: seedNoErr,
+    status: "New",
+    outcome: "Pending",
+    errorTypeId: null,
+    includedInDispute: true,
+    claimAmount: "100.00",
+  }).returning();
+
+  const [withErr] = await db.insert(claimsTable).values({
+    confNumber: seedWithErr,
+    status: "New",
+    outcome: "Pending",
+    errorTypeId: "42",
+    errorTypeName: "Some Error",
+    includedInDispute: true,
+    claimAmount: "100.00",
+  }).returning();
+
+  const [alreadyFalse] = await db.insert(claimsTable).values({
+    confNumber: seedAlreadyFalse,
+    status: "New",
+    outcome: "Pending",
+    errorTypeId: null,
+    includedInDispute: false,
+    claimAmount: "100.00",
+  }).returning();
+
+  try {
+    await pool.query(sql);
+
+    const [m1] = await db.select().from(claimsTable).where(eq(claimsTable.id, matching.id));
+    assert.equal(m1.includedInDispute, false, "matching New + no-error row must flip to false");
+
+    const [w1] = await db.select().from(claimsTable).where(eq(claimsTable.id, withErr.id));
+    assert.equal(w1.includedInDispute, true, "row with errorTypeId must NOT flip");
+
+    const [f1] = await db.select().from(claimsTable).where(eq(claimsTable.id, alreadyFalse.id));
+    assert.equal(f1.includedInDispute, false, "already-false row must remain false");
+
+    await pool.query(sql);
+
+    const [m2] = await db.select().from(claimsTable).where(eq(claimsTable.id, matching.id));
+    assert.equal(m2.includedInDispute, false, "second run is idempotent — still false");
+
+    const [w2] = await db.select().from(claimsTable).where(eq(claimsTable.id, withErr.id));
+    assert.equal(w2.includedInDispute, true, "second run does not touch error-type rows");
+  } finally {
+    await cleanupClaim(matching.id);
+    await cleanupClaim(withErr.id);
+    await cleanupClaim(alreadyFalse.id);
   }
 });

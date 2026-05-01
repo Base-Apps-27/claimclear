@@ -73,6 +73,7 @@ import type {
   ErrorTypeResponse,
   EvidenceTypeBody,
   EvidenceTypeResponse,
+  ExcludeLegBody,
   ExportClaimsCsvParams,
   ExportInvoiceGroupsCsvParams,
   ExportWithdrawalsCsvParams,
@@ -91,6 +92,7 @@ import type {
   HoldInvoiceGroupBody,
   ImportClaimsBody,
   ImportSummary,
+  IncludeLegBody,
   InvoiceGroupDetailResponse,
   InvoiceGroupResponse,
   InvoiceGroupsListResponse,
@@ -4245,6 +4247,189 @@ export const useSopAdvanceLeg = <
   TContext
 > => {
   return useMutation(getSopAdvanceLegMutationOptions(options));
+};
+
+/**
+ * Mark a `needs_classification` leg as "not a dispute candidate". The
+leg disappears from the dispute work queues but stays visible on the
+invoice as a clean line. Source-state contract:
+`deriveLegSubStatus(leg) === "needs_classification"`.
+
+ * @summary Exclude a leg from the dispute
+ */
+export const getExcludeLegUrl = (id: number) => {
+  return `/api/claims/${id}/exclude`;
+};
+
+export const excludeLeg = async (
+  id: number,
+  excludeLegBody: ExcludeLegBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getExcludeLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(excludeLegBody),
+  });
+};
+
+export const getExcludeLegMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeLeg>>,
+    TError,
+    { id: number; data: BodyType<ExcludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof excludeLeg>>,
+  TError,
+  { id: number; data: BodyType<ExcludeLegBody> },
+  TContext
+> => {
+  const mutationKey = ["excludeLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof excludeLeg>>,
+    { id: number; data: BodyType<ExcludeLegBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return excludeLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExcludeLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof excludeLeg>>
+>;
+export type ExcludeLegMutationBody = BodyType<ExcludeLegBody>;
+export type ExcludeLegMutationError = ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Exclude a leg from the dispute
+ */
+export const useExcludeLeg = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof excludeLeg>>,
+    TError,
+    { id: number; data: BodyType<ExcludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof excludeLeg>>,
+  TError,
+  { id: number; data: BodyType<ExcludeLegBody> },
+  TContext
+> => {
+  return useMutation(getExcludeLegMutationOptions(options));
+};
+
+/**
+ * Re-include an excluded leg while the parent group is still in
+pre-submit. Two-stage source-state check: leg sub-status must be
+`excluded`, and `getGroupMacroPhase(parentGroup) === "pre-submit"`.
+
+ * @summary Re-include a previously excluded leg in the dispute
+ */
+export const getIncludeLegUrl = (id: number) => {
+  return `/api/claims/${id}/include`;
+};
+
+export const includeLeg = async (
+  id: number,
+  includeLegBody?: IncludeLegBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getIncludeLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(includeLegBody),
+  });
+};
+
+export const getIncludeLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof includeLeg>>,
+    TError,
+    { id: number; data: BodyType<IncludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof includeLeg>>,
+  TError,
+  { id: number; data: BodyType<IncludeLegBody> },
+  TContext
+> => {
+  const mutationKey = ["includeLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof includeLeg>>,
+    { id: number; data: BodyType<IncludeLegBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return includeLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IncludeLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof includeLeg>>
+>;
+export type IncludeLegMutationBody = BodyType<IncludeLegBody>;
+export type IncludeLegMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Re-include a previously excluded leg in the dispute
+ */
+export const useIncludeLeg = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof includeLeg>>,
+    TError,
+    { id: number; data: BodyType<IncludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof includeLeg>>,
+  TError,
+  { id: number; data: BodyType<IncludeLegBody> },
+  TContext
+> => {
+  return useMutation(getIncludeLegMutationOptions(options));
 };
 
 /**

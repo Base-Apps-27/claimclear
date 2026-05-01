@@ -11,11 +11,14 @@ import {
   usePlaceLegOnHold,
   useClearLegHold,
   useReclassifyLeg,
+  useExcludeLeg,
+  useIncludeLeg,
   useListClaimEvidence,
   getListClaimEvidenceQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ErrorTypeResponse,
+  ExcludeLegBodyReason,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Loader2, ArrowLeft, PauseCircle, Play, RefreshCw, Save, FileText, Gavel, AlertTriangle, Paperclip } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, ArrowLeft, PauseCircle, Play, RefreshCw, Save, FileText, Gavel, AlertTriangle, Paperclip, XCircle, RotateCcw } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
@@ -91,6 +95,8 @@ export function ClaimDetailV2({ claimId }: Props) {
   const placeHoldMutation = usePlaceLegOnHold();
   const clearHoldMutation = useClearLegHold();
   const reclassifyMutation = useReclassifyLeg();
+  const excludeMutation = useExcludeLeg();
+  const includeMutation = useIncludeLeg();
 
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReason, setHoldReason] = useState<LegHoldReason | "">("");
@@ -99,6 +105,13 @@ export function ClaimDetailV2({ claimId }: Props) {
 
   // Reclassify discards SOP walk + drop reason; require explicit confirm.
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
+
+  const [excludeOpen, setExcludeOpen] = useState(false);
+  const [excludeReason, setExcludeReason] = useState<ExcludeLegBodyReason | "">("");
+  const [excludeNote, setExcludeNote] = useState("");
+  const excludeValid =
+    excludeReason !== "" &&
+    (excludeReason !== "other" || excludeNote.trim().length > 0);
 
   function invalidateLeg() {
     qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
@@ -162,6 +175,36 @@ export function ClaimDetailV2({ claimId }: Props) {
           invalidateLeg();
         },
         onError: (e: unknown) => toast({ title: "Reclassify failed", description: String((e as Error).message), variant: "destructive" }),
+      },
+    );
+  }
+
+  function onExclude() {
+    if (!excludeValid || !excludeReason) return;
+    excludeMutation.mutate(
+      { id: claimId, data: { reason: excludeReason, note: excludeNote || undefined } },
+      {
+        onSuccess: () => {
+          toast({ title: "Leg excluded from dispute" });
+          setExcludeOpen(false);
+          setExcludeReason("");
+          setExcludeNote("");
+          invalidateLeg();
+        },
+        onError: (e: unknown) => toast({ title: "Exclude failed", description: String((e as Error).message), variant: "destructive" }),
+      },
+    );
+  }
+
+  function onInclude() {
+    includeMutation.mutate(
+      { id: claimId, data: {} },
+      {
+        onSuccess: () => {
+          toast({ title: "Leg re-included in dispute" });
+          invalidateLeg();
+        },
+        onError: (e: unknown) => toast({ title: "Include failed", description: String((e as Error).message), variant: "destructive" }),
       },
     );
   }
@@ -280,6 +323,88 @@ export function ClaimDetailV2({ claimId }: Props) {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+              )}
+              {subStatus === "needs_classification" && (
+                <Dialog open={excludeOpen} onOpenChange={setExcludeOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" data-testid="leg-exclude-trigger">
+                      <XCircle className="h-3.5 w-3.5 mr-1" />
+                      Exclude leg
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Exclude this leg from the dispute?</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        The leg will stay visible on the invoice but won't appear in dispute work queues.
+                      </p>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Reason</label>
+                        <Select
+                          value={excludeReason}
+                          onValueChange={(v) => setExcludeReason(v as ExcludeLegBodyReason)}
+                        >
+                          <SelectTrigger data-testid="leg-exclude-reason">
+                            <SelectValue placeholder="Select a reason…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="clean_leg">Clean leg</SelectItem>
+                            <SelectItem value="out_of_scope">Out of scope</SelectItem>
+                            <SelectItem value="duplicate">Duplicate</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {excludeReason === "other" && (
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Note (required)</label>
+                          <Textarea
+                            value={excludeNote}
+                            onChange={(e) => setExcludeNote(e.target.value)}
+                            placeholder="Explain why this leg is excluded…"
+                            rows={3}
+                            data-testid="leg-exclude-note"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setExcludeOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={onExclude}
+                        disabled={!excludeValid || excludeMutation.isPending}
+                        data-testid="leg-exclude-confirm"
+                      >
+                        {excludeMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Exclude
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+              {subStatus === "excluded" && groupIsPreSubmit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onInclude}
+                  disabled={includeMutation.isPending}
+                  data-testid="leg-include"
+                >
+                  {includeMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Include in dispute
+                </Button>
               )}
               {(subStatus === "investigating" ||
                 subStatus === "ready" ||

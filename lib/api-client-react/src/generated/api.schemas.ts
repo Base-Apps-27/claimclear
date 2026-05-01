@@ -1439,6 +1439,32 @@ export interface RecordVerdictBody {
   inspectionTimeMs?: number | null;
 }
 
+export type ExcludeLegBodyReason =
+  (typeof ExcludeLegBodyReason)[keyof typeof ExcludeLegBodyReason];
+
+export const ExcludeLegBodyReason = {
+  clean_leg: "clean_leg",
+  out_of_scope: "out_of_scope",
+  duplicate: "duplicate",
+  other: "other",
+} as const;
+
+/**
+ * Body for `POST /claims/{id}/exclude`. When `reason` is `"other"`,
+the `note` field is required and must be non-empty.
+
+ */
+export interface ExcludeLegBody {
+  reason: ExcludeLegBodyReason;
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface IncludeLegBody {
+  /** @nullable */
+  note?: string | null;
+}
+
 export interface SetLegContextBody {
   /** Free-form per-leg narrative. Empty string clears the field. */
   context: string;

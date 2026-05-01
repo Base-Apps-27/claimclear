@@ -22,6 +22,9 @@ export type SopOutcome = typeof SOP_OUTCOMES[number];
 export const LEG_DROP_REASONS = ["cannot_dispute", "non_issue"] as const;
 export type LegDropReason = typeof LEG_DROP_REASONS[number];
 
+export const LEG_EXCLUSION_REASONS = ["clean_leg", "out_of_scope", "duplicate", "other"] as const;
+export type LegExclusionReason = typeof LEG_EXCLUSION_REASONS[number];
+
 // Re-exported from @workspace/leg-state — see file footer for the full set.
 
 export const MAS_ACTION_REQUIRED = ["cancel", "none"] as const;

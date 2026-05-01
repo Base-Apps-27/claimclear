@@ -1487,6 +1487,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /claims/{id}/exclude:
+    post:
+      operationId: excludeLeg
+      tags: [claims]
+      summary: Exclude a leg from the dispute
+      description: |
+        Mark a `needs_classification` leg as "not a dispute candidate". The
+        leg disappears from the dispute work queues but stays visible on the
+        invoice as a clean line. Source-state contract:
+        `deriveLegSubStatus(leg) === "needs_classification"`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExcludeLegBody"
+      responses:
+        "200":
+          description: Leg excluded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "400":
+          description: Validation error (e.g. missing note when reason is "other")
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/include:
+    post:
+      operationId: includeLeg
+      tags: [claims]
+      summary: Re-include a previously excluded leg in the dispute
+      description: |
+        Re-include an excluded leg while the parent group is still in
+        pre-submit. Two-stage source-state check: leg sub-status must be
+        `excluded`, and `getGroupMacroPhase(parentGroup) === "pre-submit"`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncludeLegBody"
+      responses:
+        "200":
+          description: Leg re-included
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation (leg state or group phase)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /claims/{id}/reclassify:
     post:
       operationId: reclassifyLeg
@@ -4619,6 +4692,25 @@ components:
           type: ["string", "null"]
         inspectionTimeMs:
           type: ["integer", "null"]
+
+    ExcludeLegBody:
+      type: object
+      required: [reason]
+      description: |
+        Body for `POST /claims/{id}/exclude`. When `reason` is `"other"`,
+        the `note` field is required and must be non-empty.
+      properties:
+        reason:
+          type: string
+          enum: [clean_leg, out_of_scope, duplicate, other]
+        note:
+          type: ["string", "null"]
+
+    IncludeLegBody:
+      type: object
+      properties:
+        note:
+          type: ["string", "null"]
 
     SetLegContextBody:
       type: object
