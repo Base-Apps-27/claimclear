@@ -8,7 +8,6 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useSetLegContext,
   useConcludeLeg,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
@@ -17,7 +16,6 @@ import type { ClaimResponse } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronDown,
   ChevronUp,
@@ -25,7 +23,6 @@ import {
   XCircle,
   PauseCircle,
   Loader2,
-  Save,
   Workflow,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -35,27 +32,17 @@ import { useToast } from "@/hooks/use-toast";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 
 // ─────────────────────────────────────────────────────────────────────────
-// LegConclusionRow — the Queue Panel A row introduced in Task #265.
+// LegConclusionRow — the Queue Panel A row.
 //
-// What it replaces: InlineClaimWorkflow (collapsed-only header → optional
-// expanded ClaimDetailV2). The replacement keeps that affordance but adds
-// inline per-leg context capture + a three-button conclusion control
-// directly on the row, so an operator can resolve a leg without opening
-// the full investigation surface.
+// Design intent (restored): each leg is a thin strip. The strip carries
+// identity + status, and ONE primary action: a button that opens the
+// worktree (SOP) inline beneath the strip. Per-leg context is NOT
+// captured here as a free-text field — it is derived and persisted as
+// the operator walks the worktree (see SopAdvancePlayer).
 //
-// Conclusion control:
-//   - "Open SOP"      → expands the row; the operator walks the existing
-//                       SOP tree inside ClaimDetailV2.
-//   - "Non-issue"     → calls /claims/:id/conclude-leg with reason=non_issue
-//                       (drops the leg as not actually a billing issue).
-//   - "Non-contest."  → calls /claims/:id/conclude-leg with
-//                       reason=cannot_dispute (drops the leg as something
-//                       we can't push back on).
-//
-// Per-leg context Textarea autosaves on blur (or via Save) using the
-// existing /claims/:id/per-leg-context endpoint. The save is required
-// before conclusion (visual hint, not a hard backend gate) so the AI
-// dispute draft has narrative to work with.
+// Quick-conclude buttons (Non-issue / Non-contestable) are only shown
+// when the leg has NO error type defined. With an error type set, the
+// leg is contestable by definition and must go through the worktree.
 // ─────────────────────────────────────────────────────────────────────────
 
 const PROCESSED_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set([
@@ -111,14 +98,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     const qc = useQueryClient();
     const { toast } = useToast();
     const [expanded, setExpanded] = useState(initiallyExpanded);
-    const [perLegDraft, setPerLegDraft] = useState<string>(claim.perLegContext ?? "");
     const rootRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      // Reset the draft whenever the upstream claim's perLegContext shifts
-      // (e.g. another tab saved it). Avoids the local draft going stale.
-      setPerLegDraft(claim.perLegContext ?? "");
-    }, [claim.perLegContext]);
 
     useImperativeHandle(ref, () => ({
       expand: () => {
@@ -135,7 +115,6 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     const isResolved = PROCESSED_SUB_STATUSES.has(subStatus);
     const isOpen = !isResolved && variant !== "terminal";
 
-    const setLegContextMutation = useSetLegContext();
     const concludeLegMutation = useConcludeLeg();
 
     function invalidateGroup() {
@@ -146,60 +125,27 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
       qc.invalidateQueries({ queryKey: ["invoice-groups"] });
     }
 
-    const dirtyContext =
-      (perLegDraft || "").trim() !== ((claim.perLegContext ?? "").trim());
-
-    function onSaveContext() {
-      if (!dirtyContext) return;
-      setLegContextMutation.mutate(
-        { id: claim.id, data: { context: perLegDraft } },
+    function onConclude(reason: "non_issue" | "cannot_dispute") {
+      concludeLegMutation.mutate(
+        { id: claim.id, data: { reason } },
         {
           onSuccess: () => {
+            toast({
+              title:
+                reason === "non_issue"
+                  ? "Leg marked Non-issue"
+                  : "Leg marked Non-contestable",
+            });
             invalidateGroup();
           },
           onError: (e: unknown) =>
             toast({
-              title: "Save failed",
+              title: "Could not conclude leg",
               description: String((e as Error).message),
               variant: "destructive",
             }),
         },
       );
-    }
-
-    function onConclude(reason: "non_issue" | "cannot_dispute") {
-      // Persist any unsaved per-leg context first so the AI write-up has
-      // the operator's reasoning when it regenerates.
-      const finalize = () => {
-        concludeLegMutation.mutate(
-          { id: claim.id, data: { reason } },
-          {
-            onSuccess: () => {
-              toast({
-                title:
-                  reason === "non_issue"
-                    ? "Leg marked Non-issue"
-                    : "Leg marked Non-contestable",
-              });
-              invalidateGroup();
-            },
-            onError: (e: unknown) =>
-              toast({
-                title: "Could not conclude leg",
-                description: String((e as Error).message),
-                variant: "destructive",
-              }),
-          },
-        );
-      };
-      if (dirtyContext) {
-        setLegContextMutation.mutate(
-          { id: claim.id, data: { context: perLegDraft } },
-          { onSuccess: finalize, onError: finalize },
-        );
-      } else {
-        finalize();
-      }
     }
 
     const handleToggle = () => {
@@ -235,7 +181,9 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     }, [highlight, variant]);
 
     const concluding = concludeLegMutation.isPending;
-    const savingContext = setLegContextMutation.isPending;
+    const hasErrorType = !!claim.errorTypeId;
+    const sopStarted = !!claim.sopNodeId;
+    const sopButtonLabel = sopStarted ? "Continue" : "Process";
 
     return (
       <Card
@@ -293,103 +241,67 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
             </span>
           </button>
 
-          {/* Inline per-leg context + conclusion controls. Shown for open
-              legs only — once the leg has reached a terminal sub-status we
-              keep the body collapsed by default to reduce visual noise. */}
+          {/* Strip action area. Shown only for active (open) legs. The
+              primary action is the worktree button; quick-conclude
+              fallbacks appear ONLY when no error type has been
+              classified for this leg. */}
           {isOpen && (
             <div
-              className="border-t px-4 py-3 space-y-3"
+              className="border-t px-4 py-2 flex flex-wrap items-center gap-2"
               data-testid={`leg-conclusion-controls-${claim.id}`}
             >
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor={`leg-context-${claim.id}`}
-                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Per-leg context
-                  </label>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  if (!expanded) {
+                    setExpanded(true);
+                    onExpandedChange?.(true);
+                  }
+                }}
+                disabled={!!lockReason}
+                title={lockReason ?? undefined}
+                data-testid={`leg-conclude-sop-${claim.id}`}
+              >
+                <Workflow className="h-3.5 w-3.5 mr-1" />
+                {sopButtonLabel}
+              </Button>
+
+              {!hasErrorType && (
+                <>
+                  <span className="text-xs text-muted-foreground mx-1">
+                    or quick-conclude:
+                  </span>
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
-                    onClick={onSaveContext}
-                    disabled={
-                      !!lockReason || !dirtyContext || savingContext
-                    }
+                    variant="outline"
+                    onClick={() => onConclude("non_issue")}
+                    disabled={!!lockReason || concluding}
                     title={lockReason ?? undefined}
-                    data-testid={`leg-context-save-${claim.id}`}
+                    data-testid={`leg-conclude-non-issue-${claim.id}`}
                   >
-                    {savingContext ? (
+                    {concluding ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                    ) : (
-                      <Save className="h-3.5 w-3.5 mr-1" />
-                    )}
-                    Save
+                    ) : null}
+                    Non-issue
                   </Button>
-                </div>
-                <Textarea
-                  id={`leg-context-${claim.id}`}
-                  value={perLegDraft}
-                  onChange={(e) => setPerLegDraft(e.target.value)}
-                  onBlur={onSaveContext}
-                  rows={2}
-                  placeholder="What does the dispute write-up need to know about this leg? (driver swap, GPS gap, MAS error message, …)"
-                  disabled={!!lockReason}
-                  data-testid={`leg-context-input-${claim.id}`}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground mr-1">
-                  Conclude this leg as:
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (!expanded) {
-                      setExpanded(true);
-                      onExpandedChange?.(true);
-                    }
-                  }}
-                  disabled={!!lockReason}
-                  title={lockReason ?? undefined}
-                  data-testid={`leg-conclude-sop-${claim.id}`}
-                >
-                  <Workflow className="h-3.5 w-3.5 mr-1" />
-                  Open SOP
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onConclude("non_issue")}
-                  disabled={!!lockReason || concluding}
-                  title={lockReason ?? undefined}
-                  data-testid={`leg-conclude-non-issue-${claim.id}`}
-                >
-                  {concluding ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                  ) : null}
-                  Non-issue
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onConclude("cannot_dispute")}
-                  disabled={!!lockReason || concluding}
-                  title={lockReason ?? undefined}
-                  data-testid={`leg-conclude-cannot-dispute-${claim.id}`}
-                >
-                  {concluding ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                  ) : null}
-                  Non-contestable
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onConclude("cannot_dispute")}
+                    disabled={!!lockReason || concluding}
+                    title={lockReason ?? undefined}
+                    data-testid={`leg-conclude-cannot-dispute-${claim.id}`}
+                  >
+                    {concluding ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : null}
+                    Non-contestable
+                  </Button>
+                </>
+              )}
             </div>
           )}
 

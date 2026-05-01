@@ -26,8 +26,8 @@ export type LegConclusion = typeof LEG_CONCLUSIONS[number];
 export const LEG_CONCLUSION: Record<LegConclusion, GlossaryEntry> = {
   sop: {
     enumValue: "sop",
-    label: "Open SOP",
-    description: "Walk the existing SOP decision tree to investigate this leg.",
+    label: "Process",
+    description: "Walk the existing SOP decision tree (worktree) to investigate and conclude this leg.",
     domain: "leg_conclusion",
   },
   non_issue: {

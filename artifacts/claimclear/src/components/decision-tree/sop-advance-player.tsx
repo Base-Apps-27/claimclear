@@ -43,6 +43,7 @@ interface LegLite {
   sopAnswers?: unknown;
   dropReason?: string | null;
   invoiceGroupId?: number | null;
+  perLegContext?: string | null;
 }
 
 interface Props {
@@ -133,6 +134,44 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
 
   const [pendingAnswer, setPendingAnswer] = useState<string | null>(null);
 
+  // Derive a human-readable per-leg context string from the breadcrumb
+  // of (question → answer) pairs. This is what gets persisted to the
+  // leg's perLegContext field so the AI dispute write-up can pick it up
+  // — replacing the previous standalone textarea on the queue strip.
+  function deriveContextFromAnswers(rows: SopAnswerRow[]): string {
+    const lines: string[] = [];
+    for (const r of rows) {
+      const node = tree.nodes.find((n) => n.id === r.nodeId);
+      const q = (node?.question ?? r.nodeId).trim();
+      lines.push(`• ${q} — ${r.answer}`);
+    }
+    return lines.join("\n");
+  }
+
+  async function persistDerivedContext(updated: LegLite) {
+    const rows = normalizeAnswers(updated.sopAnswers);
+    if (rows.length === 0) return;
+    const derived = deriveContextFromAnswers(rows);
+    if (!derived) return;
+    // Don't clobber a manually-edited context that already differs
+    // meaningfully from a pure derivation. We treat the existing context
+    // as user-edited if it doesn't start with a derived-style bullet.
+    const existing = (updated.perLegContext ?? "").trim();
+    const looksDerived = existing === "" || existing.startsWith("• ");
+    if (!looksDerived) return;
+    try {
+      await fetch(`${apiBase()}/api/claims/${leg.id}/per-leg-context`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ context: derived }),
+      });
+    } catch {
+      // Non-fatal: the worktree advance itself succeeded; context
+      // sync is a best-effort enrichment.
+    }
+  }
+
   const advanceMutation = useMutation({
     mutationFn: async ({ nodeId, answer }: { nodeId: string; answer: string }) => {
       const res = await fetch(`${apiBase()}/api/claims/${leg.id}/sop-advance`, {
@@ -147,8 +186,11 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
       }
       return res.json() as Promise<LegLite & { sopOutcome: string | null }>;
     },
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       const isTerminal = updated.sopOutcome != null;
+      // Persist the derived per-leg context BEFORE invalidating, so the
+      // refetched claim already carries the worktree-derived narrative.
+      await persistDerivedContext(updated);
       // Invalidate every cache key that includes this leg or its parent
       // group so the rest of the v2 surface (Aggregate Context, Legs Queue,
       // group preview gate) reflects the new server state on next render.

@@ -1033,13 +1033,16 @@ function ClassificationInboxRow({
   );
 }
 
-// Inline group workspace — Task #265 two-panel layout. Panel A (Legs)
-// hosts the per-leg context Textarea + Open SOP / Non-issue /
-// Non-contestable conclusion control via <LegConclusionRow />. Panel B
-// is the submission gauntlet — readback → preview → editable AI
-// write-up → channel-aware Submit. The aggregate-context surface from
-// the prior layout was retired since the editable draft replaces its
-// only remaining job.
+// Inline group workspace — stacked layout (restored to original
+// design). Top: Legs section, rendering each leg as a thin strip via
+// <LegConclusionRow />. Each strip's primary action is "Process" /
+// "Continue", which expands the worktree (SopAdvancePlayer) inline
+// beneath the strip; per-leg context is captured AS the operator
+// walks the tree, not via a standalone field. Quick-conclude
+// Non-issue / Non-contestable buttons appear ONLY when no error type
+// is set on the leg.
+// Bottom: the submission gauntlet — readback → preview → editable
+// AI write-up → channel-aware Submit.
 //
 // Gauntlet → leg jump: when a submit fails with `gate: "legs"`, the
 // gauntlet calls `onJumpToLeg(legId)` and we ring + auto-expand the
@@ -1079,22 +1082,20 @@ function InlineGroupWorkspace({
 
   return (
     <div
-      className="grid gap-4 lg:grid-cols-2"
+      className="space-y-4"
       data-testid="inline-group-workspace"
     >
-      {/* Panel A — Legs (per-leg context + conclusion control). The
-          group-aggregate-context surface was removed in Task #265: legs
-          carry their own narrative, and the AI write-up is editable in
-          Panel B, so the duplicated group-level form had no remaining
-          job. */}
+      {/* Legs section (above) — thin strips, one per leg. Each strip
+          opens the worktree (SOP) inline. Per-leg context is captured
+          inside the worktree as the operator advances, not via a
+          standalone field on the strip. */}
       <Card data-testid="legs-panel">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="h-4 w-4" /> Legs
           </CardTitle>
           <CardDescription>
-            Capture per-leg context, then conclude each leg via SOP,
-            Non-issue, or Non-contestable.
+            Walk each leg through its worktree to conclude it.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1111,7 +1112,8 @@ function InlineGroupWorkspace({
           />
         </CardContent>
       </Card>
-      {/* Panel B — Submission preview + editable AI write-up. */}
+
+      {/* Submission preview (below) — editable AI write-up. */}
       <InvoiceGroupSubmissionGauntlet
         group={detail}
         groupId={groupId}
