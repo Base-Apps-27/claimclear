@@ -4,7 +4,7 @@ import {
   Mail, MailOpen, Gavel, Stamp, FileText, Activity, Pin, Eye, ChevronRight,
   AlertTriangle, CheckCircle2, XCircle, PauseCircle, Lock, ArrowUpRight,
   ListChecks, RefreshCw, Sparkles, Layers, Reply, Inbox, Clock,
-  CornerDownRight,
+  CornerDownRight, BellRing, X, ArrowDown,
 } from "lucide-react";
 import { StatusPill } from "./_shared";
 
@@ -129,6 +129,59 @@ export function GroupDetailRedensified() {
             </div>
           </div>
         </div>
+
+        {/* Response-received banner — only shows for substantive payor replies */}
+        <a href="#invoice-thread"
+           className="cc-card block no-underline hover:shadow-sm transition-shadow"
+           style={{
+             background: "var(--cc-amber-bg)",
+             border: "1px solid var(--cc-amber-fg)",
+             borderLeftWidth: "4px",
+             color: "var(--cc-fg)",
+             padding: "10px 14px",
+           }}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                 style={{ background: "var(--cc-amber-fg)", color: "white" }}>
+              <BellRing className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-sm font-bold" style={{ color: "var(--cc-amber-fg)" }}>
+                  New response from Modivcare
+                </span>
+                <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
+                <span className="text-xs font-medium" style={{ color: "var(--cc-fg)" }}>
+                  Reattestation reminder
+                </span>
+                <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
+                <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                  Apr 29, 03:48 PM · 2h ago
+                </span>
+              </div>
+              <div className="text-xs mt-0.5 truncate" style={{ color: "var(--cc-fg)" }}>
+                "Reattestation still pending. Reminder: appeal window expires Apr 30 at 23:59."
+              </div>
+              <div className="text-[11px] mt-0.5 inline-flex items-center gap-1"
+                   style={{ color: "var(--cc-muted-fg)" }}>
+                <Lock className="w-2.5 h-2.5" />
+                <span>Auto-confirmations and ticket receipts are suppressed.</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5 font-semibold"
+                    style={{ background: "var(--cc-amber-fg)", color: "white" }}>
+                Jump to thread <ArrowDown className="w-3 h-3" />
+              </span>
+              <button title="Mark read"
+                      className="w-7 h-7 rounded inline-flex items-center justify-center"
+                      style={{ color: "var(--cc-muted-fg)" }}
+                      onClick={(e) => { e.preventDefault(); }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </a>
 
         {/* KPI strip */}
         <div className="grid grid-cols-5 gap-3">
@@ -334,6 +387,7 @@ export function GroupDetailRedensified() {
             </Card>
 
             {/* Communication — full thread for the invoice */}
+            <div id="invoice-thread" />
             <Card
               title={<>Communication <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>· 5 messages · 1 awaiting reply</span></>}
               icon={<Mail className="w-3.5 h-3.5" />}
