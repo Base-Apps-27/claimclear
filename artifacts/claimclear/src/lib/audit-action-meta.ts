@@ -75,6 +75,7 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   submission_retries_exhausted: { label: "Portal submission retries exhausted", icon: AlertOctagon, iconClass: "text-rose-600", category: "workflow" },
   submission_stuck_reset: { label: "Stuck submission auto-reset", icon: AlarmClockOff, iconClass: "text-amber-600", category: "workflow" },
   submission_manual_requeue: { label: "Portal submission manually re-queued", icon: RotateCcw, iconClass: "text-blue-600", category: "workflow" },
+  leg_sop_hold_cleared: { label: "SOP hold cleared", icon: PlayCircle, iconClass: "text-emerald-600", category: "hold" },
   attestation_self_confirmed: { label: "Re-attested in payor portal", icon: ShieldCheck, iconClass: "text-emerald-600", category: "status" },
   attestation_queued: { label: "Queued for re-attestation", icon: Inbox, iconClass: "text-amber-600", category: "workflow" },
   attestation_queue_confirmed: { label: "Queued attestation confirmed", icon: ShieldCheck, iconClass: "text-emerald-600", category: "status" },

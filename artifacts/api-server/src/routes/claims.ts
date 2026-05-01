@@ -1040,6 +1040,49 @@ router.post("/claims/:id/clear-hold", asyncHandler(async (req, res): Promise<voi
   res.json(updated);
 }));
 
+router.post("/claims/:id/clear-sop-hold", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.sopOutcome !== "hold") {
+    res.status(409).json({
+      error: "Leg is not on a SOP hold",
+      expectedState: "sop_outcome=hold",
+      actualState: leg.sopOutcome ?? "null",
+    });
+    return;
+  }
+
+  const previousSopNodeId = leg.sopNodeId;
+  const previousSopAnswersCount = Array.isArray(leg.sopAnswers) ? leg.sopAnswers.length : 0;
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ sopOutcome: null })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_sop_hold_cleared", "SOP hold cleared", req, {
+    previousSopNodeId,
+    previousSopAnswersCount,
+  });
+  await emitStateEvent({
+    eventKey: "leg.sop_hold_cleared",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { previousSopNodeId },
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "sop_hold_cleared", req);
+
+  res.json(updated);
+}));
+
 router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

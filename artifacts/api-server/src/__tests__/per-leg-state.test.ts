@@ -1043,3 +1043,154 @@ test("Backfill migration 0012 flips matching rows to false and is idempotent", a
     await cleanupClaim(alreadyFalse.id);
   }
 });
+
+// --- /clear-sop-hold (Task #212) -----------------------------------------
+
+test("POST /claims/:id/clear-sop-hold clears a SOP hold and returns to investigating", async () => {
+  const tree = {
+    rootId: "root",
+    nodes: [{
+      id: "root",
+      question: "Should we hold?",
+      options: [
+        { label: "yes", outcomeType: "hold", outcomeLabel: "Place on hold" },
+        { label: "no", outcomeType: "portal_dispute", outcomeLabel: "Dispute" },
+      ],
+    }],
+  };
+  const errType = await createSeedErrorType(tree);
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const advRes = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST", body: { nodeId: "root", answer: "yes" },
+    });
+    assert.equal(advRes.status, 200);
+    assert.equal(advRes.json.sopOutcome, "hold");
+    assert.equal(advRes.json.holdReason, null);
+    assert.ok(advRes.json.sopNodeId, "sopNodeId must be set on hold terminal");
+
+    const deleteHold = await fetchJson(`/api/claims/${claim.id}/hold`, { method: "DELETE" });
+    assert.equal(deleteHold.status, 409, "DELETE /hold must 409 on SOP-held legs (no holdReason)");
+
+    const clearHold = await fetchJson(`/api/claims/${claim.id}/clear-hold`, { method: "POST" });
+    assert.equal(clearHold.status, 409, "POST /clear-hold must 409 on SOP-held legs (no holdReason)");
+
+    const clearSop = await fetchJson(`/api/claims/${claim.id}/clear-sop-hold`, { method: "POST" });
+    assert.equal(clearSop.status, 200, `expected 200, got ${clearSop.status} (${JSON.stringify(clearSop.json)})`);
+    assert.equal(clearSop.json.sopOutcome, null, "sopOutcome must be cleared");
+    assert.equal(clearSop.json.sopNodeId, "root", "sopNodeId must be preserved");
+    assert.ok(Array.isArray(clearSop.json.sopAnswers) && clearSop.json.sopAnswers.length > 0, "sopAnswers must be preserved");
+    assert.equal(clearSop.json.errorTypeId, String(errType.id), "errorTypeId must be preserved");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_sop_hold_cleared"), "expected leg_sop_hold_cleared audit row");
+
+    const events = await db.select().from(stateEventsTable).where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(events.find((e) => e.eventKey === "leg.sop_hold_cleared"), "expected leg.sop_hold_cleared state_events row");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/clear-sop-hold returns 409 on operator-held legs", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    holdReason: "awaiting_member_response",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/clear-sop-hold`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "sop_outcome=hold");
+    assert.equal(res.json.actualState, "null", "operator-held legs have sop_outcome=null");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/clear-sop-hold returns 409 on investigating legs (no hold at all)", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/clear-sop-hold`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.actualState, "null");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Clear SOP hold then re-walk to the same terminal — same behavior as first walk", async () => {
+  const tree = {
+    rootId: "root",
+    nodes: [{
+      id: "root",
+      question: "Should we hold?",
+      options: [
+        { label: "yes", outcomeType: "hold", outcomeLabel: "Place on hold" },
+        { label: "no", outcomeType: "portal_dispute", outcomeLabel: "Dispute" },
+      ],
+    }],
+  };
+  const errType = await createSeedErrorType(tree);
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const adv1 = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST", body: { nodeId: "root", answer: "yes" },
+    });
+    assert.equal(adv1.status, 200);
+    assert.equal(adv1.json.sopOutcome, "hold");
+    const firstAnswersCount = adv1.json.sopAnswers.length;
+
+    const clear = await fetchJson(`/api/claims/${claim.id}/clear-sop-hold`, { method: "POST" });
+    assert.equal(clear.status, 200);
+    assert.equal(clear.json.sopOutcome, null);
+    assert.equal(clear.json.sopAnswers.length, firstAnswersCount, "answers preserved after clear");
+
+    const adv2 = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST", body: { nodeId: "root", answer: "yes" },
+    });
+    assert.equal(adv2.status, 200);
+    assert.equal(adv2.json.sopOutcome, "hold");
+    assert.equal(adv2.json.sopAnswers.length, firstAnswersCount + 1, "answers appended on re-walk");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Operator-hold regression: POST /hold + DELETE /hold path is unchanged by clear-sop-hold", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const placed = await fetchJson(`/api/claims/${claim.id}/hold`, {
+      method: "POST", body: { reason: "evidence_pending", note: "waiting on docs" },
+    });
+    assert.equal(placed.status, 200);
+    assert.equal(placed.json.holdReason, "evidence_pending");
+    assert.ok(placed.json.holdPlacedAt);
+
+    const sopHoldRes = await fetchJson(`/api/claims/${claim.id}/clear-sop-hold`, { method: "POST" });
+    assert.equal(sopHoldRes.status, 409, "clear-sop-hold must refuse operator-held legs");
+
+    const cleared = await fetchJson(`/api/claims/${claim.id}/hold`, { method: "DELETE" });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.json.holdReason, null);
+    assert.equal(cleared.json.holdPlacedAt, null);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_hold_placed"), "expected leg_hold_placed audit row");
+    assert.ok(audits.find((a) => a.action === "leg_hold_cleared"), "expected leg_hold_cleared audit row");
+    assert.ok(!audits.find((a) => a.action === "leg_sop_hold_cleared"), "no sop_hold_cleared for operator-hold path");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
