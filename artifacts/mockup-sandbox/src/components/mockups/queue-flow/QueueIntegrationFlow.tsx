@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   Inbox,
   ChevronRight,
-  ChevronDown,
   Sparkles,
   Send,
   CheckCircle2,
@@ -379,11 +378,34 @@ function QueuePageSplitView() {
           </div>
         </div>
 
-        {/* Aggregate context (collapsed sibling card) */}
-        <CollapsedCard icon={<Layers className="h-3 w-3" />} label="Aggregate context" />
-
-        {/* Rides / inline claim workflow (collapsed sibling card) */}
-        <CollapsedCard icon={<ListChecks className="h-3 w-3" />} label="Rides · 4 legs · all ready" />
+        {/* PRIMARY: Rides & legs — each leg carries its content + the
+            operator's per-leg context. There is no separate "aggregate
+            context" surface above this anymore. */}
+        <div className="rounded border-2 border-blue-400 bg-blue-50/60 p-2">
+          <div className="mb-1.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold">
+              <ListChecks className="h-3 w-3" /> Rides &amp; legs
+              <span className="ml-1 rounded bg-white px-1 py-0 text-[9px] font-normal text-slate-600 border border-slate-200">
+                4 legs · 3 with context · 1 missing
+              </span>
+            </div>
+            <Badge
+              className="text-[9px]"
+              style={{ background: "hsl(217 91% 50%)", color: "white" }}
+            >
+              Primary
+            </Badge>
+          </div>
+          <div className="space-y-1">
+            <LegContextRow id="#88412" hasContext />
+            <LegContextRow id="#88413" hasContext />
+            <LegContextRow id="#88414" hasContext={false} />
+            <LegContextRow id="#88415" hasContext />
+          </div>
+          <div className="mt-1.5 text-[9.5px] italic text-slate-500">
+            Per-leg content + per-leg operator context · feeds the AI write-up below
+          </div>
+        </div>
 
         {/* Submission gauntlet — the focus of stage 3 */}
         <div className="rounded border-2 border-dashed border-amber-400 bg-amber-50/40 p-2">
@@ -410,14 +432,30 @@ function QueuePageSplitView() {
   );
 }
 
-function CollapsedCard({ icon, label }: { icon: React.ReactNode; label: string }) {
+function LegContextRow({ id, hasContext }: { id: string; hasContext: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-1.5 text-[11px]">
-      <div className="flex items-center gap-1.5 font-medium text-slate-600">
-        {icon}
-        {label}
+    <div
+      className={`flex items-center justify-between gap-2 rounded border px-2 py-1 text-[10px] ${
+        hasContext
+          ? "border-slate-200 bg-white"
+          : "border-amber-300 bg-amber-50"
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono font-semibold">{id}</span>
+        <span className="text-slate-500">leg content (data)</span>
       </div>
-      <ChevronDown className="h-3 w-3 text-slate-400" />
+      <div className="flex items-center gap-1">
+        {hasContext ? (
+          <Badge className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-100">
+            ✓ context saved
+          </Badge>
+        ) : (
+          <Badge className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-100">
+            + add context
+          </Badge>
+        )}
+      </div>
     </div>
   );
 }
@@ -518,14 +556,17 @@ function GauntletSlot() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-amber-900">
-                Operator reviews the generated subject + body, edits inline,
-                checks evidence sources, then approves.
+                AI weaves each leg's content + each leg's operator context
+                (from Rides &amp; legs above) into a draft write-up.
+                Operator reviews subject + body, edits inline, checks the
+                per-leg sources panel, then approves.
               </div>
               <div className="mt-1 text-xs text-amber-800/90">
                 Today this step doesn't exist. The operator clicks "Generate
                 preview" and the very next visible action is "Submit to
-                portal" — there's no editable surface in between. Both
-                variants on the canvas insert exactly here:
+                portal" — there's no editable surface in between, and there's
+                no per-leg context input feeding the AI. Both variants on
+                the canvas insert exactly here:
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <VariantPointer
@@ -675,11 +716,11 @@ function IntegrationLegend() {
             <Wand2 className="h-3.5 w-3.5" /> NEW — Preview &amp; edit step (D)
           </div>
           <ul className="ml-4 list-disc space-y-0.5 text-[11px] text-amber-900/90">
+            <li>Per-leg context input on every leg in <strong>Rides &amp; legs</strong> (operator's note for THAT leg — no separate "aggregate context" surface)</li>
             <li>Editable subject + rich-text body draft surface</li>
-            <li>Evidence-sources panel (group + per-leg attachments)</li>
-            <li>Regenerate / save-draft / approve actions</li>
+            <li>AI weaves per-leg content + per-leg context into the write-up; sources panel shows what fed each line</li>
             <li>Two delivery shapes: <strong>E1 inline</strong> (expands the gauntlet card) or <strong>E2 slide-over</strong> (takeover sheet over the workspace)</li>
-            <li>Lands between "Generate preview" and "Submit to portal"</li>
+            <li>Lands between "Generate preview" and "Submit to portal"; new "draft reviewed" gate added to Submit</li>
           </ul>
         </div>
       </div>

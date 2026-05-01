@@ -1,3 +1,12 @@
+// Shared mock data for the gauntlet-preview-edit variants (E1 inline,
+// E2 slide-over) and the queue-flow integration map.
+//
+// Conceptual model — INTENTIONALLY no "aggregate / group context" layer.
+// The operator captures notes PER LEG. The AI then weaves the per-leg
+// content (data the leg already has — error, GPS, dates, amounts) and
+// the per-leg context (operator's explanation of THAT leg) into a single
+// dispute write-up. There is no third "group context" editorial surface.
+
 export const group = {
   id: 4218,
   invoiceNumber: "INV-2026-04812",
@@ -5,10 +14,6 @@ export const group = {
   status: "New" as const,
   totalAmount: "$184.50",
   errorTypeName: "GPS Pickup Too Far from Residence",
-  groupContext:
-    "Client moved to assisted living on Apr 1; old residence GPS is invalid for any trip after that date. Confirmed via member intake form 04/02. The pickup-distance variance on every leg in this group is the SAME ROOT CAUSE — not a driver routing issue.",
-  groupContextSavedAt: "Apr 28, 2026 11:14 AM",
-  groupContextSavedBy: "M. Rivera",
 };
 
 export type Leg = {
@@ -16,10 +21,19 @@ export type Leg = {
   confNumber: string;
   date: string;
   amount: string;
+  // --- Per-leg content (the data the leg itself carries — surfaced as
+  // "what the leg says" in the Rides & legs section). ---
   errorTypeName: string;
-  subStatus: "ready" | "ready" | "ready";
+  gpsVarianceMeters: number;
+  pickupAddressOnFile: string;
+  pickupAddressActual: string;
+  driverNote: string;
+  subStatus: "ready";
+  // --- Per-leg context (operator's notes about THIS leg, used by the
+  // AI when composing the write-up). ---
   perLegContext: string | null;
   perLegContextSavedAt?: string;
+  perLegContextSavedBy?: string;
 };
 
 export const legs: Leg[] = [
@@ -29,10 +43,15 @@ export const legs: Leg[] = [
     date: "Apr 24, 2026",
     amount: "$48.50",
     errorTypeName: "GPS Pickup Too Far from Residence",
+    gpsVarianceMeters: 1840,
+    pickupAddressOnFile: "418 Elm St, Springfield",
+    pickupAddressActual: "Sunrise Assisted Living, 22 Maple Way",
+    driverNote: "Member came out front door of assisted living facility; 5 min wait.",
     subStatus: "ready",
     perLegContext:
       "Member confirmed by phone (call log 04/24 14:02) that this leg's pickup was at the new assisted living facility, not the address on file. Driver notes match.",
     perLegContextSavedAt: "Apr 28, 11:18 AM",
+    perLegContextSavedBy: "M. Rivera",
   },
   {
     id: 88413,
@@ -40,10 +59,15 @@ export const legs: Leg[] = [
     date: "Apr 24, 2026",
     amount: "$56.00",
     errorTypeName: "GPS Pickup Too Far from Residence",
+    gpsVarianceMeters: 1820,
+    pickupAddressOnFile: "418 Elm St, Springfield",
+    pickupAddressActual: "Sunrise Assisted Living (return from dialysis)",
+    driverNote: "Return leg of pair with #88412; same dialysis clinic dropoff origin.",
     subStatus: "ready",
     perLegContext:
       "Same trip pair as #88412 — return leg from dialysis clinic. GPS variance identical because the destination is the new assisted living.",
     perLegContextSavedAt: "Apr 28, 11:19 AM",
+    perLegContextSavedBy: "M. Rivera",
   },
   {
     id: 88414,
@@ -51,8 +75,12 @@ export const legs: Leg[] = [
     date: "Apr 25, 2026",
     amount: "$48.00",
     errorTypeName: "GPS Pickup Too Far from Residence",
+    gpsVarianceMeters: 1855,
+    pickupAddressOnFile: "418 Elm St, Springfield",
+    pickupAddressActual: "Sunrise Assisted Living",
+    driverNote: "No notes recorded.",
     subStatus: "ready",
-    perLegContext: null,
+    perLegContext: null, // Operator hasn't added notes yet for this leg.
   },
   {
     id: 88415,
@@ -60,9 +88,15 @@ export const legs: Leg[] = [
     date: "Apr 25, 2026",
     amount: "$32.00",
     errorTypeName: "GPS Pickup Too Far from Residence",
+    gpsVarianceMeters: 1835,
+    pickupAddressOnFile: "418 Elm St, Springfield",
+    pickupAddressActual: "Sunrise Assisted Living (return from dialysis)",
+    driverNote: "Return pair of #88414.",
     subStatus: "ready",
-    perLegContext: "Dropoff was at the same dialysis clinic. Variance explained by member's relocation.",
+    perLegContext:
+      "Dropoff was at the same dialysis clinic. Variance explained by member's relocation.",
     perLegContextSavedAt: "Apr 28, 11:22 AM",
+    perLegContextSavedBy: "M. Rivera",
   },
 ];
 
@@ -84,11 +118,13 @@ export const draftDescriptionHtml = `<p>This dispute covers 4 legs on invoice <s
 
 <p>Please reconsider all 4 legs together under the relocation context — they are not independent routing errors. We have updated the member's address of record and have attached the intake form and call log as evidence.</p>`;
 
+// Evidence files attach to one or more specific legs — there is no
+// "group" scope. Files that apply to every leg list every leg id.
 export const evidenceFiles = [
-  { name: "member-intake-form-2026-04-02.pdf", size: "212 KB", scope: "group" },
-  { name: "call-log-04-24-1402.pdf", size: "48 KB", scope: "group" },
-  { name: "driver-trip-notes-04-24.pdf", size: "96 KB", scope: "leg #88412" },
-  { name: "driver-trip-notes-04-25.pdf", size: "104 KB", scope: "leg #88414" },
+  { name: "member-intake-form-2026-04-02.pdf", size: "212 KB", attachedTo: "all 4 legs" },
+  { name: "call-log-04-24-1402.pdf", size: "48 KB", attachedTo: "legs #88412 & #88413" },
+  { name: "driver-trip-notes-04-24.pdf", size: "96 KB", attachedTo: "leg #88412" },
+  { name: "driver-trip-notes-04-25.pdf", size: "104 KB", attachedTo: "leg #88414" },
 ];
 
 export const gpsBreadcrumbs = ["pickup_lat_lng", "dropoff_lat_lng", "route_polyline"];

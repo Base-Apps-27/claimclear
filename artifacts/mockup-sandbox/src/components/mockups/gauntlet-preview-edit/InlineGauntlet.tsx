@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Sparkles,
   Send,
-  CheckCircle2,
   RefreshCw,
   ChevronDown,
   ChevronRight,
@@ -10,10 +9,13 @@ import {
   MapPin,
   Wand2,
   Save,
-  Layers,
   ListChecks,
   FileText,
   Lock,
+  MessageSquarePlus,
+  CheckCircle2,
+  AlertTriangle,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../ui/card";
 import { Button } from "../../ui/button";
@@ -35,13 +37,18 @@ import {
  * E1 — "Preview & edit AI write-up" added INLINE inside the existing
  * submission gauntlet on the queue's right-side panel (col-span-2 of 3).
  *
+ * Updated model: Rides & legs is the PRIMARY surface at the top. Each
+ * leg carries its own content (data) AND its own operator-authored
+ * context. The AI weaves those per-leg pieces together into the dispute
+ * write-up shown in the Review & edit step. There is no separate
+ * "aggregate / group context" surface — that concept was removed.
+ *
  * Faithful to the real `InvoiceGroupSubmissionGauntlet` shadcn-Card
  * structure: same CardHeader, same per-section pattern (h3 + button on
  * the right + supporting block below), same Separator between sections,
- * same density, same icon vocabulary. The single enhancement is a NEW
- * "Review & edit draft" section inserted between "Generate preview" and
- * "Submit to portal". Everything above and below it is the gauntlet you
- * already ship — only the missing step is added.
+ * same density, same icon vocabulary. The single new section is
+ * "Review & edit draft" inserted between "Generate preview" and "Submit
+ * to portal".
  */
 
 const draftBody = stripHtmlForTextarea(draftDescriptionHtml);
@@ -50,46 +57,73 @@ export default function InlineGauntlet() {
   const [bodyValue, setBodyValue] = useState(draftBody);
   const [subjectValue, setSubjectValue] = useState(draftSubject);
   const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [legsOpen, setLegsOpen] = useState(true);
+
+  const legsWithContext = legs.filter((l) => l.perLegContext).length;
+  const legsMissingContext = legs.length - legsWithContext;
 
   return (
     <div className="cc-scope min-h-screen bg-slate-50 font-sans text-slate-900 p-4">
       {/* This frame mimics the queue's lg:col-span-2 right-side panel.
-          The two collapsed cards above the gauntlet are the existing
-          sibling cards (Aggregate context + Rides) so the operator can
-          see the gauntlet in its real position. */}
+          PRIMARY card on top is Rides & legs (where per-leg content +
+          per-leg context live). The gauntlet sits below it. There is
+          intentionally no "Aggregate context" sibling card — that
+          concept was removed. */}
 
-      {/* === EXISTING — collapsed sibling: Aggregate context === */}
+      {/* === PRIMARY — Rides & legs (per-leg content + per-leg context) === */}
       <Card className="mb-4">
         <CardHeader className="py-3">
           <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground font-medium">
-              <Layers className="h-4 w-4" /> Aggregate context
-              <Badge variant="secondary" className="text-[10px] font-normal ml-1">
-                Saved {group.groupContextSavedAt}
-              </Badge>
-            </CardTitle>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground">
-              <ChevronDown className="h-3 w-3 mr-1" /> Expand
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ListChecks className="h-4 w-4" /> Rides &amp; legs
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  {legs.length} legs · all ready
+                </Badge>
+                {legsMissingContext > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200"
+                  >
+                    {legsMissingContext} missing context
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription className="mt-0.5 text-xs">
+                Each leg carries its own data and the operator's notes for
+                that leg. The AI weaves these together when it composes the
+                write-up below — no separate group-level context.
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setLegsOpen((s) => !s)}
+            >
+              {legsOpen ? (
+                <>
+                  <ChevronDown className="h-3 w-3 mr-1" /> Collapse
+                </>
+              ) : (
+                <>
+                  <ChevronRight className="h-3 w-3 mr-1" /> Expand
+                </>
+              )}
             </Button>
           </div>
         </CardHeader>
-      </Card>
-
-      {/* === EXISTING — collapsed sibling: Rides & legs === */}
-      <Card className="mb-4">
-        <CardHeader className="py-3">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground font-medium">
-              <ListChecks className="h-4 w-4" /> Rides &amp; legs
-              <span className="text-xs text-muted-foreground font-normal">
-                · 4 rides · all ready
-              </span>
-            </CardTitle>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground">
-              <ChevronDown className="h-3 w-3 mr-1" /> Expand
-            </Button>
-          </div>
-        </CardHeader>
+        {legsOpen && (
+          <CardContent className="pt-0 space-y-2">
+            {legs.map((leg) => (
+              <LegRow key={leg.id} leg={leg} />
+            ))}
+            <p className="text-[11px] text-muted-foreground pt-1 italic">
+              Tip — adding leg context here is what makes the write-up
+              specific. Legs without context get a generic mention only.
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       {/* === GAUNTLET — same shadcn Card, same per-section structure === */}
@@ -99,8 +133,8 @@ export default function InlineGauntlet() {
             <Sparkles className="h-4 w-4" /> Submission preview
           </CardTitle>
           <CardDescription>
-            Confirm the AI's read of the case, then generate the dispute
-            submission preview.
+            Confirm the AI's read of the case, then generate, review, and
+            submit the dispute write-up.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -142,6 +176,14 @@ export default function InlineGauntlet() {
               <li className="text-green-700">
                 ✓ Preview generated {previewMeta.generatedAt}
               </li>
+              {legsMissingContext > 0 && (
+                <li className="text-amber-700 inline-flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {legsMissingContext} leg{legsMissingContext === 1 ? "" : "s"}{" "}
+                  {legsMissingContext === 1 ? "has" : "have"} no operator context —{" "}
+                  {legsMissingContext === 1 ? "it gets" : "they get"} a generic mention only.
+                </li>
+              )}
             </ul>
           </section>
 
@@ -168,9 +210,9 @@ export default function InlineGauntlet() {
             </div>
 
             <p className="text-xs text-muted-foreground -mt-1">
-              This is what the operator will send to{" "}
-              <span className="font-medium">{group.errorTypeName}</span> portal.
-              Edit freely — your edits override the AI draft on submit.
+              The AI composed this from each leg's content + each leg's
+              operator context (above). Edit freely — your edits override
+              the AI draft on submit.
             </p>
 
             {/* Subject */}
@@ -203,7 +245,7 @@ export default function InlineGauntlet() {
               />
             </div>
 
-            {/* Sources used — collapsible */}
+            {/* Sources used — collapsible. Per-leg only; no group context. */}
             <div className="rounded border border-slate-200 bg-white">
               <button
                 type="button"
@@ -218,30 +260,16 @@ export default function InlineGauntlet() {
                   )}
                   Sources used by the AI
                   <Badge variant="secondary" className="text-[10px] font-normal">
-                    {1 + legs.filter((l) => l.perLegContext).length} context · {evidenceFiles.length} files · {gpsBreadcrumbs.length} GPS
+                    {legs.length} legs · {legsWithContext} with operator context · {evidenceFiles.length} files · {gpsBreadcrumbs.length} GPS
                   </Badge>
                 </span>
                 <span className="text-[10px] text-muted-foreground">
-                  Edit a source → click Regenerate to fold it in
+                  Edit a leg's context above → click Regenerate to fold it in
                 </span>
               </button>
               {sourcesOpen && (
                 <div className="border-t border-slate-200 divide-y divide-slate-100 text-xs">
-                  {/* Group context */}
-                  <div className="px-3 py-2">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <Layers className="h-3 w-3 text-violet-600" />
-                      <span className="font-semibold text-[11px]">Group context</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        all 4 legs
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-700 leading-snug pl-4">
-                      {group.groupContext}
-                    </p>
-                  </div>
-
-                  {/* Per-leg context entries */}
+                  {/* Per-leg sources only — content + context, no group layer */}
                   {legs.map((leg) => (
                     <div key={leg.id} className="px-3 py-2">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -250,7 +278,7 @@ export default function InlineGauntlet() {
                           #{leg.id}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          {leg.confNumber} · {leg.amount}
+                          {leg.confNumber} · {leg.date} · {leg.amount} · GPS Δ {leg.gpsVarianceMeters}m
                         </span>
                         {!leg.perLegContext && (
                           <Badge
@@ -261,17 +289,25 @@ export default function InlineGauntlet() {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-700 leading-snug pl-4">
-                        {leg.perLegContext ?? (
-                          <span className="italic text-muted-foreground">
-                            None added — AI fell back to group context for this leg.
-                          </span>
-                        )}
-                      </p>
+                      <div className="pl-4 space-y-0.5">
+                        <p className="text-[10.5px] text-slate-500 leading-snug">
+                          <span className="font-semibold text-slate-600">Content:</span>{" "}
+                          pickup on file <em>{leg.pickupAddressOnFile}</em>; actual{" "}
+                          <em>{leg.pickupAddressActual}</em>. Driver: {leg.driverNote}
+                        </p>
+                        <p className="text-[11px] text-slate-700 leading-snug">
+                          <span className="font-semibold text-slate-700">Context:</span>{" "}
+                          {leg.perLegContext ?? (
+                            <span className="italic text-amber-800">
+                              None added — AI will give this leg a generic mention only. Add notes on the leg above to enrich.
+                            </span>
+                          )}
+                        </p>
+                      </div>
                     </div>
                   ))}
 
-                  {/* Evidence files */}
+                  {/* Evidence files — attached per leg, never to an abstract group */}
                   <div className="px-3 py-2">
                     <div className="flex items-center gap-1.5 mb-1">
                       <Paperclip className="h-3 w-3 text-slate-500" />
@@ -285,7 +321,7 @@ export default function InlineGauntlet() {
                         >
                           <span className="truncate">{f.name}</span>
                           <span className="text-[10px] text-muted-foreground ml-2 flex-shrink-0">
-                            {f.scope} · {f.size}
+                            {f.attachedTo} · {f.size}
                           </span>
                         </li>
                       ))}
@@ -296,7 +332,7 @@ export default function InlineGauntlet() {
                   <div className="px-3 py-2">
                     <div className="flex items-center gap-1.5 mb-1">
                       <MapPin className="h-3 w-3 text-slate-500" />
-                      <span className="font-semibold text-[11px]">GPS data points</span>
+                      <span className="font-semibold text-[11px]">GPS data points (per leg)</span>
                     </div>
                     <div className="pl-4 flex flex-wrap gap-1">
                       {gpsBreadcrumbs.map((g) => (
@@ -358,6 +394,83 @@ export default function InlineGauntlet() {
 
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/* ===================================================================
+   Per-leg row — shows content (left) + context (right). The context
+   field is the input that drives quality of the AI write-up.
+   =================================================================== */
+function LegRow({ leg }: { leg: { id: number; confNumber: string; date: string; amount: string; gpsVarianceMeters: number; pickupAddressOnFile: string; pickupAddressActual: string; driverNote: string; perLegContext: string | null; perLegContextSavedAt?: string; perLegContextSavedBy?: string } }) {
+  const hasContext = !!leg.perLegContext;
+  return (
+    <div
+      className={`rounded-md border ${
+        hasContext ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/40"
+      }`}
+    >
+      <div className="px-3 py-2 grid grid-cols-12 gap-3">
+        {/* Left — leg identity + content */}
+        <div className="col-span-5 min-w-0 space-y-0.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <CheckCircle2 className="h-3 w-3 text-green-600" />
+            <span className="font-mono font-semibold text-[12px]">#{leg.id}</span>
+            <span className="text-[10px] text-muted-foreground">{leg.confNumber}</span>
+            <Badge variant="secondary" className="text-[10px]">
+              ready
+            </Badge>
+          </div>
+          <div className="text-[10.5px] text-slate-600 pl-4">
+            {leg.date} · {leg.amount} · GPS Δ {leg.gpsVarianceMeters}m
+          </div>
+          <div className="text-[10.5px] text-slate-500 pl-4 leading-snug">
+            On file: <em>{leg.pickupAddressOnFile}</em>
+          </div>
+          <div className="text-[10.5px] text-slate-500 pl-4 leading-snug">
+            Actual: <em>{leg.pickupAddressActual}</em>
+          </div>
+          <div className="text-[10.5px] text-slate-500 pl-4 italic leading-snug">
+            Driver: {leg.driverNote}
+          </div>
+        </div>
+
+        {/* Right — per-leg context (the operator's note on THIS leg) */}
+        <div className="col-span-7 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground inline-flex items-center gap-1">
+              <MessageSquarePlus className="h-3 w-3" />
+              Context for this leg
+              {hasContext && leg.perLegContextSavedAt && (
+                <span className="ml-1 normal-case font-normal text-[10px] text-muted-foreground">
+                  · saved {leg.perLegContextSavedAt} by {leg.perLegContextSavedBy}
+                </span>
+              )}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1.5 text-[10px] text-slate-500"
+            >
+              <Pencil className="h-3 w-3 mr-1" />
+              {hasContext ? "Edit" : "Add"}
+            </Button>
+          </div>
+          {hasContext ? (
+            <Textarea
+              rows={3}
+              defaultValue={leg.perLegContext ?? ""}
+              className="text-[11px] leading-snug bg-white"
+            />
+          ) : (
+            <Textarea
+              rows={3}
+              placeholder="Add the specific reason this leg's flagged data is wrong, what the member / driver / call log confirmed, and any leg-specific quirks. The AI uses this verbatim when it composes the dispute write-up."
+              className="text-[11px] leading-snug bg-white border-amber-300 placeholder:text-amber-700/70"
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
