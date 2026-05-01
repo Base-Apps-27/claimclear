@@ -7014,7 +7014,7 @@ components:
 
     EmailThreadMessage:
       type: object
-      required: [id, direction, sender, timestamp]
+      required: [id, direction, sender, timestamp, bodyFormat]
       properties:
         id:
           type: string
@@ -7035,6 +7035,15 @@ components:
         bodyPreview:
           type: string
           nullable: true
+          description: Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.
+        bodyFormat:
+          type: string
+          enum: [html, text]
+          description: Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.
+        bodyHtml:
+          type: string
+          nullable: true
+          description: Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.
         timestamp:
           type: string
         responseId:

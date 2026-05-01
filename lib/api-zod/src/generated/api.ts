@@ -4811,7 +4811,23 @@ export const GetInvoiceGroupEmailThreadResponse = zod.object({
         subject: zod.string().nullish(),
         sender: zod.string(),
         senderEmail: zod.string().nullish(),
-        bodyPreview: zod.string().nullish(),
+        bodyPreview: zod
+          .string()
+          .nullish()
+          .describe(
+            "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+          ),
+        bodyFormat: zod
+          .enum(["html", "text"])
+          .describe(
+            "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+          ),
+        bodyHtml: zod
+          .string()
+          .nullish()
+          .describe(
+            "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+          ),
         timestamp: zod.string(),
         responseId: zod
           .number()
@@ -4913,7 +4929,23 @@ export const GetInvoiceGroupEmailThreadResponse = zod.object({
             subject: zod.string().nullish(),
             sender: zod.string(),
             senderEmail: zod.string().nullish(),
-            bodyPreview: zod.string().nullish(),
+            bodyPreview: zod
+              .string()
+              .nullish()
+              .describe(
+                "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+              ),
+            bodyFormat: zod
+              .enum(["html", "text"])
+              .describe(
+                "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+              ),
+            bodyHtml: zod
+              .string()
+              .nullish()
+              .describe(
+                "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+              ),
             timestamp: zod.string(),
             responseId: zod
               .number()
@@ -5011,7 +5043,23 @@ export const ReplyToInvoiceGroupEmailConversationResponse = zod.object({
   subject: zod.string().nullish(),
   sender: zod.string(),
   senderEmail: zod.string().nullish(),
-  bodyPreview: zod.string().nullish(),
+  bodyPreview: zod
+    .string()
+    .nullish()
+    .describe(
+      "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+    ),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+    ),
+  bodyHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+    ),
   timestamp: zod.string(),
   responseId: zod
     .number()
@@ -14544,7 +14592,23 @@ export const GetClaimEmailThreadResponse = zod.object({
         subject: zod.string().nullish(),
         sender: zod.string(),
         senderEmail: zod.string().nullish(),
-        bodyPreview: zod.string().nullish(),
+        bodyPreview: zod
+          .string()
+          .nullish()
+          .describe(
+            "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+          ),
+        bodyFormat: zod
+          .enum(["html", "text"])
+          .describe(
+            "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+          ),
+        bodyHtml: zod
+          .string()
+          .nullish()
+          .describe(
+            "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+          ),
         timestamp: zod.string(),
         responseId: zod
           .number()
@@ -14646,7 +14710,23 @@ export const GetClaimEmailThreadResponse = zod.object({
             subject: zod.string().nullish(),
             sender: zod.string(),
             senderEmail: zod.string().nullish(),
-            bodyPreview: zod.string().nullish(),
+            bodyPreview: zod
+              .string()
+              .nullish()
+              .describe(
+                "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+              ),
+            bodyFormat: zod
+              .enum(["html", "text"])
+              .describe(
+                "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+              ),
+            bodyHtml: zod
+              .string()
+              .nullish()
+              .describe(
+                "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+              ),
             timestamp: zod.string(),
             responseId: zod
               .number()
@@ -14748,7 +14828,23 @@ export const ReplyToEmailConversationResponse = zod.object({
   subject: zod.string().nullish(),
   sender: zod.string(),
   senderEmail: zod.string().nullish(),
-  bodyPreview: zod.string().nullish(),
+  bodyPreview: zod
+    .string()
+    .nullish()
+    .describe(
+      "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+    ),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+    ),
+  bodyHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+    ),
   timestamp: zod.string(),
   responseId: zod
     .number()

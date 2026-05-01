@@ -600,6 +600,8 @@ function makeMsg(id: string, overrides: Partial<ThreadMessage> = {}): ThreadMess
     sender: "x",
     senderEmail: null,
     bodyPreview: null,
+    bodyFormat: "text",
+    bodyHtml: null,
     timestamp: new Date().toISOString(),
     responseId: null,
     responseType: "other",

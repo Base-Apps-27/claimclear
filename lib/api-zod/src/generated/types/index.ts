@@ -126,6 +126,7 @@ export * from "./emailCheckResultResultsItem";
 export * from "./emailThreadConversation";
 export * from "./emailThreadConversationStatus";
 export * from "./emailThreadMessage";
+export * from "./emailThreadMessageBodyFormat";
 export * from "./emailThreadMessageDirection";
 export * from "./emailThreadMessageResponseType";
 export * from "./emailThreadResponse";

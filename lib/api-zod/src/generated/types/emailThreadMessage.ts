@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { EmailThreadMessageBodyFormat } from "./emailThreadMessageBodyFormat";
 import type { EmailThreadMessageDirection } from "./emailThreadMessageDirection";
 import type { EmailThreadMessageResponseType } from "./emailThreadMessageResponseType";
 
@@ -21,7 +22,12 @@ export interface EmailThreadMessage {
   subject?: string | null;
   sender: string;
   senderEmail?: string | null;
+  /** Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`. */
   bodyPreview?: string | null;
+  /** Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text. */
+  bodyFormat: EmailThreadMessageBodyFormat;
+  /** Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering. */
+  bodyHtml?: string | null;
   timestamp: string;
   /** For inbound messages, the portal_responses row id (used to wire Approve / Deny / Mark Reviewed buttons). */
   responseId?: number | null;

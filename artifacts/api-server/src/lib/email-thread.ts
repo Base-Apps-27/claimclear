@@ -17,6 +17,8 @@ export type ThreadStatus =
 
 export type ThreadDirection = "inbound" | "outbound";
 
+export type ThreadBodyFormat = "html" | "text";
+
 export interface ThreadMessage {
   id: string;
   direction: ThreadDirection;
@@ -25,6 +27,19 @@ export interface ThreadMessage {
   sender: string;
   senderEmail: string | null;
   bodyPreview: string | null;
+  /**
+   * Format of the original message body. Inbound rows reflect what the payor
+   * sent (Microsoft Graph reports `text` or `html`); outbound is always
+   * `text` today because the composer ships plain text via Graph.
+   */
+  bodyFormat: ThreadBodyFormat;
+  /**
+   * Raw HTML body when `bodyFormat === "html"`. Null for text rows and for
+   * outbound rows. The renderer is responsible for sanitization — never
+   * trust this string. `bodyPreview` always carries a safe plain-text
+   * snippet so list views can show a teaser without parsing HTML.
+   */
+  bodyHtml: string | null;
   timestamp: string;
 
   // Inbound-only metadata. Carrying these on every message (with nulls for
@@ -90,6 +105,19 @@ export function inboundToMessage(
 ): ThreadMessage {
   const isSibling = r.claimId !== null && r.claimId !== currentClaimId;
   const siblingRef = isSibling ? lookup.refsById.get(r.claimId!) ?? `#${r.claimId}` : null;
+  // Prefer `rawContent` over `content` so the UI receives the full body
+  // text. Historically `content` was overwritten with Microsoft Graph's
+  // ~255-char `bodyPreview` snippet, while `rawContent` captured the
+  // full message — preferring `rawContent` keeps those rows intact.
+  // New rows write the full body into both columns (see
+  // `response-matcher.processEmailResponse`), so either source is safe.
+  const rawBody = r.rawContent || r.content || "";
+  const isHtml = r.bodyFormat === "html";
+  const bodyHtml = isHtml ? rawBody : null;
+  // Plain text snippet for list views / hover cards: when the row is HTML
+  // we strip the markup down to a short readable preview; when it's text we
+  // pass the body through unchanged so whitespace + newlines are preserved.
+  const bodyPreview = isHtml ? htmlToTextSnippet(rawBody) : rawBody;
   return {
     id: `in-${r.id}`,
     direction: "inbound",
@@ -97,14 +125,9 @@ export function inboundToMessage(
     subject: r.subject,
     sender: r.senderName || r.senderEmail || "Unknown",
     senderEmail: r.senderEmail,
-    // Prefer `rawContent` over `content` so the UI receives the full body
-    // text. Historically `content` was overwritten with Microsoft Graph's
-    // ~255-char `bodyPreview` snippet, while `rawContent` captured the
-    // full message — preferring `rawContent` keeps those rows intact.
-    // New rows write the full body into both columns (see
-    // `response-matcher.processEmailResponse`), so either source is safe.
-    // Mirrors the same pattern used by `conversations-card.tsx`.
-    bodyPreview: r.rawContent || r.content,
+    bodyPreview,
+    bodyFormat: isHtml ? "html" : "text",
+    bodyHtml,
     timestamp: toIso(r.receivedAt),
     responseId: r.id,
     responseType: r.responseType,
@@ -138,6 +161,11 @@ export function outboundToMessage(
     sender: o.sentByUserName || o.sentByUserEmail || "ClaimClear",
     senderEmail: o.sentByUserEmail,
     bodyPreview: o.bodyPreview,
+    // The composer ships plain text via Graph today, so outbound rows have
+    // no separate HTML body. If we ever start sending rich HTML replies,
+    // populate `bodyHtml` here.
+    bodyFormat: "text",
+    bodyHtml: null,
     timestamp: toIso(o.sentAt),
     responseId: null,
     responseType: null,
@@ -162,6 +190,39 @@ function toIso(v: Date | string | null | undefined): string {
   if (v === null || v === undefined) return new Date(0).toISOString();
   if (v instanceof Date) return v.toISOString();
   return new Date(v).toISOString();
+}
+
+/**
+ * Strip HTML markup down to a short plain-text snippet suitable for list
+ * views, hover cards, and the response banner. Drops `<style>`/`<script>`
+ * blocks entirely, treats common block-level closers as line breaks, and
+ * caps the result so a wall of marketing-template HTML doesn't blow out
+ * the renderer. Pure / synchronous so it can run in the API layer without
+ * a DOM.
+ */
+const SNIPPET_MAX_LEN = 280;
+export function htmlToTextSnippet(html: string): string {
+  if (!html) return "";
+  const withoutBlocks = html
+    // Drop scripts/styles entirely so their contents don't leak as text.
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<head[\s\S]*?<\/head>/gi, " ")
+    // Block-level closers and `<br>` become spaces so words don't fuse.
+    .replace(/<\/(p|div|li|tr|td|th|h[1-6]|blockquote|pre|section|article)>/gi, " ")
+    .replace(/<br\s*\/?>(?=\s|$|<)/gi, " ");
+  const stripped = withoutBlocks.replace(/<[^>]*>/g, " ");
+  const decoded = stripped
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'");
+  const collapsed = decoded.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= SNIPPET_MAX_LEN) return collapsed;
+  return `${collapsed.slice(0, SNIPPET_MAX_LEN - 1).trimEnd()}…`;
 }
 
 /**

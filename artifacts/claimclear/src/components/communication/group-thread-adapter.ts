@@ -22,10 +22,10 @@ import type { ResponseBannerData } from "./response-received-banner";
 
 /**
  * Map a single API conversation row to the display shape the thread
- * component expects. The component renders `bodyHtml` when truthy and
- * falls back to `bodyPreview` otherwise — the API only carries
- * `bodyPreview` today, so we leave bodyHtml empty and let the fallback
- * path render. `mentionedLegIds` is sourced from `claimId` so each
+ * component expects. The API carries both `bodyHtml` (raw HTML, when the
+ * payor sent an HTML-formatted message) and `bodyPreview` (a safe plain-
+ * text snippet); the component picks between them and runs DOMPurify on
+ * the HTML branch. `mentionedLegIds` is sourced from `claimId` so each
  * message links back to the originating leg in the group page.
  */
 export function mapToGroupConversations(
@@ -78,9 +78,8 @@ function mapMessage(
     senderName: m.sender,
     senderEmail: m.senderEmail ?? "",
     subject: m.subject ?? "(no subject)",
-    // API-side responses don't currently carry rich HTML — leave bodyHtml
-    // blank and let the component's plain-text fallback render bodyPreview.
-    bodyHtml: "",
+    bodyHtml: m.bodyHtml ?? "",
+    bodyFormat: (m.bodyFormat as "html" | "text" | undefined) ?? "text",
     bodyPreview: m.bodyPreview ?? "",
     timestamp: m.timestamp,
     attachments: m.attachmentNames ?? [],

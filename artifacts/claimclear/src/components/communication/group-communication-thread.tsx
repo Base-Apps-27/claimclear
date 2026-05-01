@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import DOMPurify from "dompurify";
+import { resolveBodyRender } from "@/lib/email-body-render";
 import {
   Mail,
   MailOpen,
@@ -30,6 +30,14 @@ export interface GroupEmailMessage {
   senderEmail: string;
   subject: string;
   bodyHtml: string;
+  /**
+   * Original body format reported by the API. When `"html"` we prefer
+   * rendering `bodyHtml`; when `"text"` we render `bodyPreview` as plain
+   * text. The defensive fallback in `resolveBodyRender` will still
+   * upgrade plain-text rows to HTML if their content clearly looks like
+   * markup, so an ingestion regression doesn't print raw tags.
+   */
+  bodyFormat?: "html" | "text";
   bodyPreview: string;
   timestamp: string;
   attachments: string[];
@@ -89,14 +97,6 @@ const STATUS_META: Record<
   },
   resolved: { label: "Resolved", bg: "hsl(142 70% 95%)", fg: "hsl(142 70% 30%)" },
 };
-
-const ALLOWED_HTML_TAGS = [
-  "p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li",
-  "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4",
-  "h5", "h6", "span", "div", "table", "thead", "tbody", "tr",
-  "th", "td", "img",
-];
-const ALLOWED_HTML_ATTR = ["href", "target", "rel", "src", "alt", "width", "height"];
 
 export function GroupCommunicationThread({
   conversations,
@@ -295,15 +295,19 @@ function ConversationSection({
 function MessageRow({ msg }: { msg: GroupEmailMessage }) {
   const isInbound = msg.direction === "inbound";
 
-  const sanitizedHtml = useMemo(
+  // resolveBodyRender picks between sanitized HTML and plain text. The
+  // defensive fallback inside also catches the case where a plain-text
+  // body somehow contains raw HTML markup, so the renderer never prints
+  // literal `<html>` / `<table>` tags as text. See `lib/email-body-render.ts`.
+  const rendered = useMemo(
     () =>
-      DOMPurify.sanitize(msg.bodyHtml || msg.bodyPreview, {
-        ALLOWED_TAGS: ALLOWED_HTML_TAGS,
-        ALLOWED_ATTR: ALLOWED_HTML_ATTR,
+      resolveBodyRender({
+        bodyHtml: msg.bodyHtml,
+        bodyFormat: msg.bodyFormat,
+        bodyPreview: msg.bodyPreview,
       }),
-    [msg.bodyHtml, msg.bodyPreview],
+    [msg.bodyHtml, msg.bodyFormat, msg.bodyPreview],
   );
-  const hasHtml = !!msg.bodyHtml;
 
   return (
     <div
@@ -352,14 +356,18 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
           review page and the invoice-group detail page) benefit; that's
           intentional per Task #262.
         */}
-        {hasHtml ? (
+        {rendered.kind === "html" ? (
           <div
-            className="text-sm bg-background border rounded-md p-2.5 break-words prose prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            data-testid={`group-thread-msg-${msg.id}-html`}
+            className="email-body text-sm bg-background border rounded-md p-2.5 break-words prose prose-sm max-w-none overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: rendered.html }}
           />
         ) : (
-          <div className="text-sm bg-background border rounded-md p-2.5 whitespace-pre-wrap break-words">
-            {msg.bodyPreview}
+          <div
+            data-testid={`group-thread-msg-${msg.id}-text`}
+            className="text-sm bg-background border rounded-md p-2.5 whitespace-pre-wrap break-words"
+          >
+            {rendered.text}
           </div>
         )}
 

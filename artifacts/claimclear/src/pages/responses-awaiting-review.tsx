@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
-import DOMPurify from "dompurify";
+import { resolveBodyRender } from "@/lib/email-body-render";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   useListInvoiceGroups,
@@ -1382,21 +1382,20 @@ function InlineResponseFallback({
   invoiceNumber,
   groupId,
 }: InlineResponseFallbackProps) {
-  const sanitizedHtml = useMemo(() => {
-    if (response.bodyFormat !== "html") return null;
-    const raw = response.content || response.rawContent || "";
-    if (!raw) return null;
-    return DOMPurify.sanitize(raw, {
-      ALLOWED_TAGS: [
-        "p", "br", "strong", "em", "u", "b", "i", "ul", "ol", "li",
-        "a", "blockquote", "pre", "code", "h1", "h2", "h3", "h4",
-        "h5", "h6", "span", "div",
-      ],
-      ALLOWED_ATTR: ["href", "target", "rel"],
-    });
-  }, [response.bodyFormat, response.content, response.rawContent]);
-
-  const plainText = response.content || response.rawContent || "";
+  // Prefer rawContent (the full body) over content (legacy preview) for both
+  // the HTML and the plain-text branches. resolveBodyRender handles the
+  // sanitizer, the bodyFormat==="html" path, and the defensive fallback for
+  // plain-text rows that contain raw HTML markup.
+  const rawBody = response.rawContent || response.content || "";
+  const rendered = useMemo(
+    () =>
+      resolveBodyRender({
+        bodyHtml: response.bodyFormat === "html" ? rawBody : null,
+        bodyFormat: (response.bodyFormat as "html" | "text" | undefined) ?? "text",
+        bodyPreview: rawBody,
+      }),
+    [rawBody, response.bodyFormat],
+  );
   const senderLabel =
     response.senderName ||
     response.senderEmail ||
@@ -1451,18 +1450,18 @@ function InlineResponseFallback({
           </div>
         </div>
 
-        {sanitizedHtml ? (
+        {rendered.kind === "html" ? (
           <div
-            className="prose prose-sm max-w-none text-sm"
+            className="email-body prose prose-sm max-w-none text-sm overflow-x-auto"
             data-testid="inline-response-fallback-body-html"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            dangerouslySetInnerHTML={{ __html: rendered.html }}
           />
-        ) : plainText ? (
+        ) : rendered.text ? (
           <pre
             className="whitespace-pre-wrap text-sm font-sans"
             data-testid="inline-response-fallback-body-text"
           >
-            {plainText}
+            {rendered.text}
           </pre>
         ) : (
           <p className="text-sm text-muted-foreground italic">

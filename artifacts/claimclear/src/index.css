@@ -289,3 +289,20 @@
   outline: 2px solid var(--cc-blue-border);
   outline-offset: -1px;
 }
+
+.email-body {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.email-body table {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+.email-body img {
+  max-width: 100%;
+  height: auto;
+}
+.email-body a {
+  word-break: break-all;
+}
