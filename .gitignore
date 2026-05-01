@@ -48,3 +48,6 @@ Thumbs.db
 .cache/
 .local/
 state/
+
+# Schema drift check scratch dir
+lib/db/.drift-check/
