@@ -1,9 +1,10 @@
 import { ReactNode } from "react";
 import {
   ChevronLeft, UserPlus, Edit2, Save, Plus, Paperclip, Send,
-  Mail, Gavel, Stamp, FileText, Activity, Pin, Eye, ChevronRight,
+  Mail, MailOpen, Gavel, Stamp, FileText, Activity, Pin, Eye, ChevronRight,
   AlertTriangle, CheckCircle2, XCircle, PauseCircle, Lock, ArrowUpRight,
-  ListChecks, RefreshCw, Sparkles, Layers,
+  ListChecks, RefreshCw, Sparkles, Layers, Reply, Inbox, Clock,
+  CornerDownRight,
 } from "lucide-react";
 import { StatusPill } from "./_shared";
 
@@ -329,6 +330,170 @@ export function GroupDetailRedensified() {
                 <div style={{ color: "var(--cc-fg)" }}>Re: Invoice INV-1855844580 · Member Robinson, T. · DOS 03/30/26</div>
                 <div className="mt-1.5">Disputing 3 of 4 legs against initial denial. PCS on file as of 04/30/26 (attached). Reroute documentation included for legs 2 and 3…</div>
                 <div className="mt-1.5 italic">[preview generates here once readback gates pass]</div>
+              </div>
+            </Card>
+
+            {/* Communication — full thread for the invoice */}
+            <Card
+              title={<>Communication <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>· 5 messages · 1 awaiting reply</span></>}
+              icon={<Mail className="w-3.5 h-3.5" />}
+              action={
+                <div className="flex items-center gap-1.5">
+                  <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
+                          style={{ border: "1px solid var(--cc-border)" }}>
+                    <Inbox className="w-3 h-3" /> Sync inbox
+                  </button>
+                  <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
+                          style={{ background: "var(--cc-purple-fg)", color: "white" }}>
+                    <Reply className="w-3 h-3" /> Reply to thread
+                  </button>
+                </div>
+              }
+              padded={false}
+            >
+              {/* Conversation header / meta */}
+              <div className="px-4 py-2.5 flex items-center gap-2 text-xs flex-wrap"
+                   style={{ background: "var(--cc-muted)", borderBottom: "1px solid var(--cc-border)" }}>
+                <span className="font-semibold" style={{ color: "var(--cc-fg)" }}>
+                  Thread
+                </span>
+                <span style={{ color: "var(--cc-muted-fg)" }}>·</span>
+                <span style={{ color: "var(--cc-muted-fg)" }}>
+                  Subject: <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
+                    Re: Invoice INV-1855844580 — denial appeal
+                  </span>
+                </span>
+                <span className="ml-auto inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded font-semibold"
+                      style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}>
+                  <Clock className="w-3 h-3" /> Awaiting payor reply · 2d
+                </span>
+              </div>
+
+              {/* Messages */}
+              {[
+                {
+                  dir: "in",  who: "Modivcare Portal", whoSub: "claims-noreply@modivcare.com",
+                  when: "Apr 25, 09:14 AM", subject: "Denial — INV-1855844580",
+                  body: "Invoice denied in full. Reason: PCS not on file for any of the four legs covered by this invoice. Appeal must include current PCS and reattestation form within 14 days.",
+                  legs: ["1", "2", "3", "4"], attachments: ["denial_notice_1855844580.pdf"],
+                },
+                {
+                  dir: "out", who: "Danny K.", whoSub: "danny@claimclear.io",
+                  when: "Apr 26, 11:22 AM", subject: "Re: Denial — INV-1855844580",
+                  body: "Acknowledged. PCS is on file through 04/30/26 and will be re-attached. Reattestation form pending — will follow up by EOW. Note legs 2 and 3 had a documented driver reroute, attaching driver note as well.",
+                  legs: ["2", "3"], attachments: ["PCS_Robinson_2026.pdf", "driver_note_reroute.png"],
+                },
+                {
+                  dir: "in",  who: "Modivcare Portal", whoSub: "claims-noreply@modivcare.com",
+                  when: "Apr 28, 11:14 AM", subject: "Request additional documentation",
+                  body: "Thank you. Please confirm PCS is valid for date of service 03/30/26 and provide signed reattestation form. Awaiting reattestation; appeal cannot be processed without it.",
+                  legs: ["1", "2", "3"], attachments: [],
+                },
+                {
+                  dir: "out", who: "Danny K.", whoSub: "danny@claimclear.io",
+                  when: "Apr 28, 12:02 PM", subject: "Re: Request additional documentation",
+                  body: "PCS confirmed active through 04/30/26 — uploading signed copy now. Reattestation in process; ETA Apr 30.",
+                  legs: ["1", "2", "3"], attachments: ["PCS_Robinson_2026_signed.pdf"],
+                },
+                {
+                  dir: "in",  who: "Modivcare Portal", whoSub: "claims-noreply@modivcare.com",
+                  when: "Apr 29, 03:48 PM", subject: "Reattestation reminder",
+                  body: "Reattestation still pending. Reminder: appeal window expires Apr 30 at 23:59.",
+                  legs: [], attachments: [], unread: true,
+                },
+              ].map((m, i, arr) => {
+                const inbound = m.dir === "in";
+                return (
+                  <div key={i} className="px-4 py-3 flex gap-3"
+                       style={{
+                         borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none",
+                         background: m.unread ? "var(--cc-blue-bg)" : "transparent",
+                       }}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                         style={{
+                           background: inbound ? "var(--cc-amber-bg)" : "var(--cc-purple-bg)",
+                           color:      inbound ? "var(--cc-amber-fg)" : "var(--cc-purple-fg)",
+                         }}>
+                      {inbound
+                        ? (m.unread ? <Mail className="w-3.5 h-3.5" /> : <MailOpen className="w-3.5 h-3.5" />)
+                        : <CornerDownRight className="w-3.5 h-3.5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 flex-wrap mb-0.5">
+                        <span className="font-semibold text-sm">{m.who}</span>
+                        <span className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
+                          {m.whoSub}
+                        </span>
+                        <span className="text-xs ml-auto" style={{ color: "var(--cc-muted-fg)" }}>
+                          {m.when}
+                        </span>
+                      </div>
+                      <div className="text-xs font-medium mb-1" style={{ color: "var(--cc-fg)" }}>
+                        {m.subject}
+                      </div>
+                      <div className="text-xs leading-relaxed mb-2" style={{ color: "var(--cc-fg)" }}>
+                        {m.body}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                        {m.attachments.length > 0 && m.attachments.map(a => (
+                          <span key={a}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
+                                style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}>
+                            <Paperclip className="w-2.5 h-2.5" />
+                            <span className="font-mono">{a}</span>
+                          </span>
+                        ))}
+                        {m.legs.length > 0 && (
+                          <span className="inline-flex items-center gap-1"
+                                style={{ color: "var(--cc-muted-fg)" }}>
+                            Mentions:
+                            {m.legs.map(l => (
+                              <a key={l} href="#"
+                                 className="font-mono font-semibold hover:underline"
+                                 style={{ color: "var(--cc-purple-fg)" }}>
+                                CLM-7184-{l}
+                              </a>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Inline reply composer */}
+              <div className="px-4 py-3" style={{ borderTop: "1px solid var(--cc-border)", background: "var(--cc-muted)" }}>
+                <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5"
+                     style={{ color: "var(--cc-muted-fg)" }}>
+                  Compose reply · to claims-noreply@modivcare.com
+                </div>
+                <textarea
+                  rows={2}
+                  placeholder="Reply to the thread… mention legs with CLM-7184-N to link them."
+                  className="w-full text-sm rounded p-2"
+                  style={{
+                    border: "1px solid var(--cc-border)",
+                    background: "var(--cc-card)",
+                    color: "var(--cc-fg)",
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                  }}
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
+                          style={{ border: "1px solid var(--cc-border)" }}>
+                    <Paperclip className="w-3 h-3" /> Attach
+                  </button>
+                  <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
+                          style={{ border: "1px solid var(--cc-border)" }}>
+                    <Sparkles className="w-3 h-3" /> Draft from context
+                  </button>
+                  <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1 ml-auto"
+                          style={{ background: "var(--cc-purple-fg)", color: "white" }}>
+                    <Send className="w-3 h-3" /> Send reply
+                  </button>
+                </div>
               </div>
             </Card>
 

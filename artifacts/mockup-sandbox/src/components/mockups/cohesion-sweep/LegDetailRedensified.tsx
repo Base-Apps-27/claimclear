@@ -309,46 +309,44 @@ export function LegDetailRedensified() {
               </div>
             </Card>
 
-            {/* Communication */}
+            {/* Communication — read-only mentions, defers to group thread */}
             <Card
-              title={<>Communication <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>· 2 messages</span></>}
+              title={<>Communication <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>· 3 mentions of this leg</span></>}
               icon={<Mail className="w-3.5 h-3.5" />}
-              action={
-                <button className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
-                        style={{ border: "1px solid var(--cc-border)" }}>
-                  <Mail className="w-3 h-3" /> Reply
-                </button>
-              }
+              action={<GoToGroupLink>Open invoice thread</GoToGroupLink>}
               padded={false}
             >
-              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--cc-border)" }}>
-                <div className="flex items-start gap-2 text-sm">
-                  <Mail className="w-3.5 h-3.5 mt-0.5" style={{ color: "var(--cc-muted-fg)" }} />
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-0.5">
-                      <span className="font-semibold text-xs">Modivcare Portal</span>
-                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>Apr 28, 11:14 AM</span>
+              <div className="px-4 py-2 text-xs flex items-start gap-1.5"
+                   style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)",
+                            borderBottom: "1px solid var(--cc-border)" }}>
+                <Lock className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>
+                  Conversations happen at the invoice level. This list shows messages
+                  in the invoice thread that mention <span className="font-mono font-semibold">CLM-7184-2</span>.
+                  Reply or compose from the invoice page.
+                </span>
+              </div>
+              {[
+                { dir: "in",  who: "Modivcare Portal", when: "Apr 25, 09:14 AM",
+                  text: "Invoice denial covers this leg (PCS not on file)." },
+                { dir: "out", who: "Danny K.",         when: "Apr 26, 11:22 AM",
+                  text: "Documented driver reroute attached for this leg." },
+                { dir: "in",  who: "Modivcare Portal", when: "Apr 28, 11:14 AM",
+                  text: "Confirm PCS valid for DOS 03/30/26 — appeal blocked until reattestation." },
+              ].map((m, i, arr) => (
+                <div key={i} className="px-4 py-2 text-xs flex items-start gap-2"
+                     style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}>
+                  <Mail className="w-3 h-3 mt-0.5 flex-shrink-0"
+                        style={{ color: m.dir === "in" ? "var(--cc-amber-fg)" : "var(--cc-purple-fg)" }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-semibold">{m.who}</span>
+                      <span style={{ color: "var(--cc-muted-fg)" }}>{m.when}</span>
                     </div>
-                    <div className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      Re: Leg CLM-7184-2 — request additional documentation (PCS valid for DOS).
-                    </div>
+                    <div style={{ color: "var(--cc-fg)" }}>{m.text}</div>
                   </div>
                 </div>
-              </div>
-              <div className="px-4 py-3">
-                <div className="flex items-start gap-2 text-sm">
-                  <Mail className="w-3.5 h-3.5 mt-0.5" style={{ color: "var(--cc-blue-fg)" }} />
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-0.5">
-                      <span className="font-semibold text-xs">Danny K.</span>
-                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>Apr 28, 12:02 PM</span>
-                    </div>
-                    <div className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      Confirmed PCS active through 04/30/26; uploading signed copy to portal.
-                    </div>
-                  </div>
-                </div>
-              </div>
+              ))}
             </Card>
           </div>
 
