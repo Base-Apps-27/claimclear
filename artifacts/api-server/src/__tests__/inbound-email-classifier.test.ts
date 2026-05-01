@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
 import { parseClassifierResponse } from "../lib/inbound-email-classifier";
-import { shouldTransitionToNeedsReview } from "../lib/response-matcher";
+import { shouldTransitionToNeedsReview, shouldAutoMarkProcessed } from "../lib/response-matcher";
 
 // ---------------------------------------------------------------------------
 // shouldTransitionToNeedsReview — the rule that splits "real responses" from
@@ -22,6 +22,56 @@ test("shouldTransitionToNeedsReview: every actionable type DOES transition", () 
       true,
       `expected '${t}' to drive a Needs Review transition`,
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// shouldAutoMarkProcessed — the rule that auto-clears the "Unprocessed"
+// badge for noise-only acknowledgments. Only the deterministic
+// phrase-signature path qualifies: an operator has nothing to do on those
+// rows. Abstain rows still need manual review, and even AI-classified
+// acknowledgments stay unprocessed so a human can confirm the model's call.
+// ---------------------------------------------------------------------------
+
+test("shouldAutoMarkProcessed: phrase-signature acknowledgment is auto-cleared", () => {
+  assert.equal(shouldAutoMarkProcessed("acknowledgment", "phrase_signature"), true);
+});
+
+test("shouldAutoMarkProcessed: AI-classified acknowledgment stays unprocessed", () => {
+  // Even when the AI says "acknowledgment", we want a human to confirm —
+  // the AI path is reserved for novel content where we don't fully trust
+  // the call.
+  assert.equal(shouldAutoMarkProcessed("acknowledgment", "ai"), false);
+});
+
+test("shouldAutoMarkProcessed: abstain acknowledgment stays unprocessed", () => {
+  // 'abstain' implies neither phrase nor AI confidently classified the
+  // email. Abstain rows are the queue's manual-review path by design.
+  assert.equal(shouldAutoMarkProcessed("acknowledgment", "abstain"), false);
+});
+
+test("shouldAutoMarkProcessed: actionable phrase-signature responses stay unprocessed", () => {
+  // Only acknowledgments are auto-cleared. Approvals, denials, info
+  // requests, etc. always need an operator decision regardless of how we
+  // classified them.
+  for (const t of ["approval", "denial", "partial_approval", "info_request", "other"] as const) {
+    assert.equal(
+      shouldAutoMarkProcessed(t, "phrase_signature"),
+      false,
+      `expected '${t}' from phrase signature to remain processed=false`,
+    );
+  }
+});
+
+test("shouldAutoMarkProcessed: actionable AI/abstain responses stay unprocessed", () => {
+  for (const source of ["ai", "abstain"] as const) {
+    for (const t of ["approval", "denial", "partial_approval", "info_request", "other"] as const) {
+      assert.equal(
+        shouldAutoMarkProcessed(t, source),
+        false,
+        `expected '${t}' from '${source}' to remain processed=false`,
+      );
+    }
   }
 });
 

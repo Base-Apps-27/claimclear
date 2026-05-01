@@ -286,6 +286,13 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
   }
 
   // 2. Persist the response row, including AI-extracted fields when present.
+  //    Phrase-signature acknowledgments are auto-cleared (processed=true) —
+  //    there is nothing for an operator to do on those rows, so they should
+  //    not carry the yellow "Unprocessed" badge in the conversation thread.
+  //    Abstain and AI paths still land processed=false so they show up for
+  //    manual review.
+  const autoMarkProcessed = shouldAutoMarkProcessed(responseType, classifierSource);
+
   const [response] = await db.insert(portalResponsesTable).values({
     claimId: match.claimId,
     invoiceGroupId: match.invoiceGroupId,
@@ -309,7 +316,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     externalMessageId: email.id,
     conversationId: email.conversationId || null,
     autoLinked: true,
-    processed: false,
+    processed: autoMarkProcessed,
     aiSummary: aiResult?.summary ?? null,
     extractedAmount: aiResult?.amount ?? null,
     extractedDeadline: aiResult?.deadline ?? null,
@@ -406,6 +413,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       phraseSignature: phraseResult.selectedSignatureId,
       acknowledgmentSkipped: isAcknowledgment,
       transitionSkipped: skipTransition,
+      autoMarkProcessed,
       matchedVia: match.matchedVia,
     }, skipTransition
       ? (isAcknowledgment
@@ -449,6 +457,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       phraseSignature: phraseResult.selectedSignatureId,
       acknowledgmentSkipped: isAcknowledgment,
       transitionSkipped: skipTransition,
+      autoMarkProcessed,
       matchedVia: match.matchedVia,
     }, skipTransition
       ? (isAcknowledgment
@@ -467,6 +476,25 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
  */
 export function shouldTransitionToNeedsReview(responseType: ClassifiedDecision): boolean {
   return responseType !== "acknowledgment";
+}
+
+/**
+ * Decision rule for whether a freshly-stored inbound response should be
+ * pre-marked `processed = true` so it doesn't carry the yellow "Unprocessed"
+ * badge in the conversation thread.
+ *
+ * Only deterministic phrase-signature acknowledgments qualify: the operator
+ * has nothing to do on a "we got your dispute" receipt, and we already
+ * recognised it with high confidence. Abstain rows still need manual review,
+ * and AI-classified rows (even AI-classified acknowledgments) are kept
+ * unprocessed so a human can confirm the model's call. Exported for unit
+ * testing.
+ */
+export function shouldAutoMarkProcessed(
+  responseType: ClassifiedDecision,
+  classifierSource: "phrase_signature" | "ai" | "abstain",
+): boolean {
+  return responseType === "acknowledgment" && classifierSource === "phrase_signature";
 }
 
 export function typeLabelFor(t: ClassifiedDecision): string {
