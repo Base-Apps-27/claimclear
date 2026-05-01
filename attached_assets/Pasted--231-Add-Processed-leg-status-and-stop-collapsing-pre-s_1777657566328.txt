@@ -1,0 +1,162 @@
+#231 - Add "Processed" leg status and stop collapsing pre-submit legs
+
+What & Why
+
+Today, the claim-status projector (macroPhaseToStatus in artifacts/api-server/src/lib/denormalized-cache.ts:35-45) collapses every leg in an invoice down to a single representative status derived from the parent group's macro phase:
+
+Group's macro phase	Group statuses in phase	Projector writes to leg	Verdict
+pre-submit	New, Needs Evidence	Needs Evidence	Wrong — see below
+in-flight	Portal Queued, Generating Email, Awaiting Response	Awaiting Response	OK — confirmed acceptable
+response-pending	Ready to Review, Needs Review	Needs Review	OK
+mas-action-required / awaiting-payout	(group still Resolved)	Resolved	OK
+closed	Resolved, Denied, Withdrawn	Resolved	OK
+on-hold	On Hold	On Hold	OK
+The pre-submit collapse is the real bug. There's no per-leg signal telling an operator "this leg has been worked through — I'm waiting for its siblings before the invoice can be packaged." Every leg in a pre-submit invoice reads Needs Evidence regardless of whether the operator has actually run the SOP/worktree on it. So the operator can't open the Queue and see at a glance which legs in an invoice still need their attention vs. which are done — they all look the same.
+
+The codebase already has the per-leg state needed to compute this correctly. claims.sop_outcome (lib/db/src/schema/claims.ts:91 — portal_dispute | dispute | hold | cannot_dispute | non_issue | NULL) records the outcome of running the SOP worktree on a leg. deriveLegSubStatus (artifacts/api-server/src/routes/claims.ts:204-260) already projects this into a per-leg sub-status (investigating | ready | blocked | excluded | submitted). What's missing is surfacing the "ready" sub-status — the post-worktree, pre-submission state — at the claim.status level so it shows up in tabs, filters, lists, and the claim row itself.
+
+This task does two things:
+
+Add a "Processed" value to the claim_status enum and make the projector write it onto any leg whose SOP worktree has been completed and is now waiting for the invoice as a whole to be packaged. Concretely: when a leg's sub-status is "ready" (sop_outcome ∈ ('portal_dispute','dispute'), no per-leg hold, not yet submitted), claim.status becomes "Processed". Operators get a single per-leg signal: anything still showing New or Needs Evidence in the invoice still owes worktree attention.
+Surface a "Ready to package" CTA on the invoice group when every leg in the group is either "Processed" or excluded (sop_outcome ∈ ('cannot_dispute','non_issue')) or held (sop_outcome = 'hold' or hold_reason set — held legs are tracked separately and don't block packaging). The CTA is operator-driven — clicking it advances the group out of pre-submit into the existing Generating Email flow (no auto-advance). This gives the operator the explicit "pull the trigger" moment the workflow has been missing.
+The downstream effect on the original urgency-mismatch symptom: the in-flight projection (Portal Queued / Generating Email / Awaiting Response → leg Awaiting Response) stays as-is and remains correctly excluded from the leg-level on-clock filter. The pre-submit projection becomes either New, Needs Evidence, or Processed — all of which need to be in the on-clock set so the Queue and Claims-list urgent counts match the dashboard's group-level count for pre-submit groups.
+
+Done looks like
+
+The claim_status enum has a new "Processed" value, added at the database level via migration.
+A leg whose SOP worktree concluded with a dispute outcome and no hold has claim.status = "Processed" everywhere it's surfaced (Queue, Claims list, claim detail, CSV export, audit context).
+A leg in a pre-submit invoice that has NOT yet been worked through still reads New or Needs Evidence, so operators can sort/filter to find unfinished work in an invoice.
+Excluded legs (sop_outcome ∈ ('cannot_dispute','non_issue')) do not get stamped "Processed" — they keep whatever closed/withdrawn status they already carry.
+Held legs continue to read "On Hold" regardless of sop_outcome; per-leg holds are preserved across projector runs.
+Legs in in-flight groups (Portal Queued / Generating Email / Awaiting Response) keep reading Awaiting Response — the in-flight collapse stays.
+The Queue and Claims list show per-leg urgency for pre-submit legs (New, Needs Evidence, Processed, On Hold) that match the dashboard's count for the same invoice groups.
+An invoice group's right-side panel (in the Queue) and its detail page show a "Ready to package" CTA exactly when every leg is Processed-or-excluded (held legs ignored, no leg still New/Needs Evidence/investigating). The CTA is disabled with a clear reason otherwise (e.g. "3 legs still need worktree review").
+Clicking the CTA advances the invoice group from its current pre-submit status (New or Needs Evidence) to Generating Email via a new system-controlled transition, with the existing audit/lock/presence semantics. No auto-advance fires from leg edits — the operator is always the one who clicks.
+A regression test fails today and passes after the fix, proving (a) the per-leg "Processed" projection is correct for every sub-status case and (b) the CTA's enable/disable logic matches the rule above.
+Out of scope
+
+Any new automation that fires the CTA without operator click — explicit operator action only.
+Reworking the in-flight projection (Portal Queued / Generating Email / Awaiting Response → Awaiting Response) — confirmed acceptable.
+Reworking the response-pending or closed-phase projections — out of scope for this task.
+Changes to EXPIRING_ACTIONABLE_STATUSES, the 30-day window, the weekend-shift rule, or SOON_DAYS/URGENT_DAYS.
+Changes to per-leg hold semantics, sop_outcome semantics, or the SOP worktree itself.
+Reworking how the Queue page surfaces unprocessed legs visually — that lives in Task #232 (Classification Inbox restructure). This task gives #232 a richer per-leg signal to key off of, but does not restructure the Queue page.
+Audit of every claim.status consumer (decisions per site)
+
+The grep below was run over artifacts/api-server/src excluding tests. Each call site is annotated with the decision under the new model.
+
+A. The projector (the only writer — must change)
+
+lib/denormalized-cache.ts:35-92 macroPhaseToStatus + the call site in refreshClaimDenormalizedCache. Replace. New rules, applied in this order:
+If leg.holdReason != null OR leg.sopOutcome === 'hold' → On Hold. (Per-leg hold preserved across all projector runs.)
+Else look at the parent group's macro phase:
+pre-submit (group.status ∈ {New, Needs Evidence}) → leg gets a value derived from sop_outcome:
+sop_outcome IN ('portal_dispute','dispute') → Processed (new value).
+sop_outcome IN ('cannot_dispute','non_issue') → leg keeps its closed/withdrawn status (don't overwrite).
+sop_outcome IS NULL → mirror group's status (New or Needs Evidence).
+in-flight (group.status ∈ {Portal Queued, Generating Email, Awaiting Response}) → Awaiting Response (collapse retained — confirmed acceptable).
+response-pending (group.status ∈ {Ready to Review, Needs Review}) → mirror group's status.
+mas-action-required / awaiting-payout / closed → mirror group's status (typically Resolved).
+on-hold (group.status = On Hold) → On Hold.
+Standalone legs (no invoice_group_id) keep their existing status.
+refreshClaimDenormalizedCache must be re-triggered when sop_outcome flips (the existing call sites that mutate sop_outcome are in routes/claims.ts SOP-advance handlers — verify each one already calls the refresh and add the call where it's missing).
+B. SQL filters that read claim.status (one constant change, the rest are no-op)
+
+routes/dashboard.ts:20-27 EXPIRING_ACTIONABLE_STATUSES — must include "Processed" so on-clock filtering at the leg level continues to return pre-submit-but-already-worked legs (they're still on the 30-day filing clock). Add it to the array. The dashboard already filters by invoice_groups.status (which never carries "Processed"), so dashboard counts are unaffected; the leg-level consumers (expiring-filter.ts, routes/claims.ts:291 isUrgent, daily-brief.ts:336) all derive from this constant and inherit the change for free.
+lib/expiring-filter.ts:31-39 — derives from EXPIRING_ACTIONABLE_STATUSES. No change.
+routes/claims.ts:78-99 query-string status filter and :291 isUrgent. No change — both pick up the new enum value automatically.
+routes/daily-brief.ts:329 openStatusFilter and :336 expiringStatusFilter. No change.
+lib/brief-personalization.ts:11-18 OPEN_STATUSES — add "Processed" and "Generating Email" (the latter is a pre-existing omission). Open-list queries in the brief otherwise drop processed legs.
+lib/brief-personalization.ts:225 eq(claimsTable.status, "Needs Review") — leave as-is. This worklist is for response review, not pre-submit triage.
+C. Per-leg "is this leg held?" predicates (no change to the predicate; verify projector preserves per-leg hold)
+
+lib/group-transitions.ts:117-121, 133-139, 170-179, 374-383, 525-536 — all use claim.status = "On Hold" (or != "On Hold") as proxy for "is this leg held?". Under rule A.1 the projector preserves per-leg holds, so these predicates remain correct. No predicate change.
+D. Manual-transition guards
+
+lib/claim-transitions.ts:47-73 VALID_MANUAL_STATUS_TRANSITIONS and VALID_OUTCOME_BY_STATUS. Add "Processed" as a key with the appropriate transition list. Suggested values (executor confirms with the user if uncertain):
+VALID_MANUAL_STATUS_TRANSITIONS["Processed"] = ["Needs Evidence", "On Hold", "Resolved", "Denied"] — operator can drop a leg back to Needs Evidence if they made a mistake, place it on hold, or close it as resolved/denied.
+VALID_OUTCOME_BY_STATUS["Processed"] = ["Pending", "Withdrawn"] — same as New/Needs Review/Needs Evidence. (No portal/email outcome until the dispute is actually filed.)
+routes/claims.ts:564,568,591,607 — read those tables directly. No change once D is updated.
+routes/claims.ts:503 and routes/invoice-groups.ts:453 auto-advance trigger previous.status === "New" || previous.status === "Needs Review" — fired when the operator first sets errorTypeId. Keep this trigger as-is; it advances the group to Needs Evidence. The new "Processed" projection happens later, when the operator actually completes the SOP worktree and sop_outcome becomes non-null. No change.
+E. Response-matcher inbound filters (no change)
+
+lib/response-matcher.ts:111, 135, 159, 182 — filter candidates by ["Awaiting Response", "On Hold"]. The intent is "match incoming responses against legs that have actually been filed and might receive a reply." "Processed" is pre-filing, so it should not be a candidate. No change.
+F. Thread-resolved check (no change)
+
+routes/response-tracker.ts:621-622 claim.status === "Resolved" || claim.status === "Denied". Works correctly. No change.
+G. Frontend rendering (verify)
+
+A scan turned up only group-level branches (group.status === "New", parentGroup.status === "Needs Evidence") — no per-leg claim.status branch hard-codes the collapsed values. The executor must re-run the scan and verify these specifically:
+
+artifacts/claimclear/src/components/urgent-today-badge.tsx
+artifacts/claimclear/src/lib/lifecycle-phase.ts
+artifacts/claimclear/src/components/claim-detail-v2.tsx
+artifacts/claimclear/src/components/cohesion/status-pill.tsx and cohesion/tone.ts:42 toneForStatus
+Any StatusPill consumer that switches on the literal status strings. For each, add a "Processed" branch with the right tone (suggested: same family as Needs Review / Needs Evidence but with a "ready" connotation — e.g. neutral/info pill labelled "Processed").
+H. Backfill
+
+One-time migration that updates every existing claims.status to match the new projection rules. Specifically:
+For legs in a pre-submit group with sop_outcome IN ('portal_dispute','dispute') and no per-leg hold → set claim.status = 'Processed'.
+For legs in a pre-submit group with sop_outcome IS NULL and no hold → ensure claim.status matches the group's status (New or Needs Evidence).
+Leave held legs and excluded legs alone.
+For legs in in-flight / response-pending / closed groups — re-derive via the projector to ensure consistency with the new rules.
+Idempotent and re-runnable. Audit-log the backfill so the per-leg history reads Status changed from X to Y (backfill #231).
+I. CTA endpoint and UI
+
+New backend route, POST /invoice-groups/:id/package (or similar — match the existing route conventions in routes/invoice-groups.ts), guarded by:
+Group is in New or Needs Evidence.
+Every leg in the group has sop_outcome IS NOT NULL OR hold_reason IS NOT NULL (held legs don't block packaging — they're tracked separately).
+At least one leg has sop_outcome IN ('portal_dispute','dispute') (don't package an invoice with zero contestable legs).
+The route runs transitionGroupStatus to move the group to Generating Email with source = 'operator_packaged' and the standard audit/lock/presence semantics.
+New backend helper that returns, for a group, the readiness state: { ready: boolean, reason: string, unprocessedLegCount: number, processedLegCount: number, excludedLegCount: number, heldLegCount: number }. Surface this on the existing GET /invoice-groups/:id response so the frontend can render the CTA's enabled/disabled state and tooltip without a separate fetch.
+Frontend: render the CTA on (a) the invoice-group detail page (InvoiceGroupDetailV2) and (b) the Queue right-side panel (Task #232 will own the panel restructure but should pick up this CTA from the same backend payload). Disabled state shows the readiness reason ("3 legs still need worktree review").
+Steps
+
+Reproduce with a failing test. Add an integration test under artifacts/api-server/src/__tests__/ that seeds an invoice group in Needs Evidence with three legs: one sop_outcome = 'portal_dispute', one sop_outcome IS NULL, one sop_outcome = 'non_issue'. Assert (a) leg 1 reads claim.status = 'Processed', leg 2 reads Needs Evidence, leg 3 keeps its closed status; (b) the readiness helper returns ready: false, reason: "1 leg still needs worktree review"; (c) after operator completes leg 2, readiness flips to true; (d) calling the package endpoint advances the group to Generating Email. Test must fail on main today.
+Add the enum value. Drizzle migration that appends "Processed" to the claim_status enum. Update lib/db/src/schema/claims.ts:7-10 to include it. Run pnpm --filter @workspace/db codegen (or whatever the existing codegen command is) to refresh the inferred types.
+Replace the projector. In lib/denormalized-cache.ts, replace macroPhaseToStatus and the call site with the rules in A. Drop the macroPhaseToStatus function entirely. Audit the existing SOP-advance handlers in routes/claims.ts (search for sopOutcome: writes) and confirm each calls refreshClaimDenormalizedCache after the write — add the call where missing.
+Add the readiness helper. New helper in lib/group-transitions.ts (or a new lib/group-packaging.ts if cleaner — executor's call) that computes the readiness state for a group. Expose it from GET /invoice-groups/:id so the frontend can render the CTA without a second round trip.
+Add the package endpoint. New POST /invoice-groups/:id/package route in routes/invoice-groups.ts that runs the readiness check, then calls transitionGroupStatus with newStatus: 'Generating Email', source: 'operator_packaged', systemOverride: true (since Generating Email is a system-controlled status). Standard audit/lock/presence handling; emit the existing group event so the Queue updates live.
+Apply the targeted constant changes.
+routes/dashboard.ts:20-27 EXPIRING_ACTIONABLE_STATUSES — add "Processed".
+lib/brief-personalization.ts:11-18 OPEN_STATUSES — add "Processed" and "Generating Email".
+lib/claim-transitions.ts:47-73 — add the "Processed" keys per D.
+One-time backfill. Drizzle migration (or follow-up script the migration runner invokes) that runs the new projector over every existing leg per H. Audit-log each row touched.
+Frontend touch-ups. Add the "Processed" branch to the components listed in G. Render the new "Ready to package" CTA on InvoiceGroupDetailV2 keyed off the readiness payload.
+Lock the contract with tests.
+Make the regression test from step 1 pass.
+Parametric unit test for the new projector covering every (group.status, sop_outcome, hold_reason is set?) combination.
+Unit test for the readiness helper covering: all-processed, one-unprocessed, all-excluded (no contestable leg → not ready), mix of processed + held + excluded.
+Endpoint test for POST /invoice-groups/:id/package: happy path, blocked-by-unprocessed-leg, blocked-by-no-contestable-leg, presence-locked, audit row written.
+Update __tests__/dashboard-expiring.test.ts so it still covers the contract once "Processed" is included in EXPIRING_ACTIONABLE_STATUSES.
+Manual smoke pass. Seed an invoice with three legs at different SOP-outcome states, walk the operator flow: complete the worktree on each leg → watch each leg's status flip to "Processed" → CTA enables → click → invoice moves to Generating Email → existing portal/email flow takes over. Cross-check Queue/Claims list/Dashboard counts agree throughout.
+Dependency note
+
+This task and Task #232 (Queue restructure) touch overlapping surfaces. #232 introduces a claim-aware Classification Inbox and an inline workflow panel that benefits from the new "Processed" per-leg signal and the readiness CTA from this task. Recommend running this task first so #232 can key its inbox/CTA off real persisted state instead of deriving it ad-hoc from errorTypeId only. If they ship in the other order, #232 will end up rederiving the same readiness logic that this task formalizes — fine to merge but more rework. Set the dependsOn accordingly when proposing.
+
+Relevant files
+
+lib/db/src/schema/claims.ts:7-10,79-100,150-170
+lib/db/src/schema/invoice-groups.ts:6-82
+artifacts/api-server/src/lib/denormalized-cache.ts:29-103
+artifacts/api-server/src/lib/macro-phase.ts
+artifacts/api-server/src/lib/claim-transitions.ts:47-75
+artifacts/api-server/src/lib/group-transitions.ts:80-260,520-540
+artifacts/api-server/src/lib/expiring-filter.ts
+artifacts/api-server/src/lib/brief-personalization.ts:11-18,100-235
+artifacts/api-server/src/lib/response-matcher.ts:105-200
+artifacts/api-server/src/routes/dashboard.ts:14-27,53-180
+artifacts/api-server/src/routes/claims.ts:170-260,270-295,485-614,890-1080
+artifacts/api-server/src/routes/invoice-groups.ts:23-30,425-475
+artifacts/api-server/src/routes/daily-brief.ts:325-360
+artifacts/api-server/src/routes/response-tracker.ts:610-630
+artifacts/api-server/src/__tests__/dashboard-expiring.test.ts
+artifacts/claimclear/src/components/invoice-group-detail-v2.tsx
+artifacts/claimclear/src/components/claim-detail-v2.tsx
+artifacts/claimclear/src/components/urgent-today-badge.tsx
+artifacts/claimclear/src/components/cohesion/status-pill.tsx
+artifacts/claimclear/src/components/cohesion/tone.ts
+artifacts/claimclear/src/lib/lifecycle-phase.ts
+artifacts/claimclear/src/pages/queue.tsx
+artifacts/claimclear/src/pages/claims.tsx
+artifacts/claimclear/src/pages/invoice-groups.tsx

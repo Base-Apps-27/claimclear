@@ -1,0 +1,187 @@
+#232 - Queue Page Restructure
+
+What & Why
+
+The Queue page has drifted from being a place where an operator can rip through dispute work efficiently. Three things are broken:
+
+Classification Inbox is noisy and inaccurate. It lists every "Needs Review" invoice group with no group-level error_type_id, producing 100+ entries — but the unit of work is wrong. Most invoice groups have one claim with the actual rejection and several clean siblings that don't need any classification at all.
+Responses Awaiting Review is duplicated on the Queue page even though it has its own nav entry and Dashboard surface.
+The right-side workflow panel was gutted in a prior cutover (see the "Task #199 / post-cutover" comment in queue.tsx). It used to host the full dispute workflow inline; now it's a stub card whose only meaningful action kicks the operator out to /invoice-groups/:id. That secondary screen has many paths out and breaks the "stay on the Queue and burn down the list" workflow.
+This task fixes all three on the Queue page in one cohesive pass. The model shift is consistent: invoices are the whole; claims are the parts. Work is tracked at the claim level; an invoice becomes ready to submit only when every one of its claims is in a terminal state.
+
+Soft assumption — processed claim status
+
+This task assumes a claim-level status value of processed exists (being introduced in a separate parallel effort), meaning "this claim's workflow is complete and it is waiting on its sibling claims and the invoice-level submission." The right-side panel uses this status (alongside excluded_at and terminal sop_outcome) as the per-claim "terminal" signal that drives the invoice's readiness to submit. If naming or semantics shift in the parallel effort, the implementer should align — but the architecture here treats processed as a real claim status, not a derived flag.
+
+Done looks like
+
+Classification Inbox
+
+The card on the Queue page is collapsible and defaults to collapsed, with the accurate count visible in the collapsed header.
+Inbox rows are at the claim level, visually grouped under their parent invoice. The badge shows the total number of qualifying claims across visible groups.
+Counts and surfaced rows follow the qualifying-claim rule (defined under Steps).
+After the change, an operator who previously saw 100+ entries sees only the claims that genuinely need classification — typically a sharp drop.
+When the rule produces zero claims, the collapsed header shows a subdued "No claims to classify" line with no chevron.
+Sibling-cleared blank claims are auto-resolved at the data layer
+
+When a "Needs Review" invoice transitions out of Needs Review, the server auto-excludes any blank-description claims on that invoice as non_issue via the existing useExcludeLeg mutation path — but only when at least one sibling on the same invoice has an error description. This produces a real excluded_at + reason=non_issue write and a real leg_excluded audit log entry for each auto-cleared claim. UI and data agree; downstream reports see the same picture.
+The all-blank case (no claim has an error description) is not auto-resolved. Those claims are surfaced in the inbox and the operator decides each one manually as non-issue or non-contestable.
+Responses Awaiting Review
+
+The "Responses Awaiting Review" card is gone from the Queue page entirely. The left-nav entry and any Dashboard surface remain untouched.
+All Queue-page state, handlers, refs, helper text, and imports tied exclusively to that card are removed (selectedResponseReviewId, selectResponseReview, responseReviewGroups, the <QueueResponseReviewPanel> render block, the "Responses Awaiting Review above" copy in tab descriptions, and any now-unused imports such as ResponseReviewRowMeta).
+The QueueResponseReviewPanel component itself is preserved — it's still consumed by responses-awaiting-review.tsx.
+Workflow tabs
+
+The Awaiting tab is removed from the Queue page (it's not actionable from here). Its useListInvoiceGroups({ status: "Awaiting Response" }) query is removed.
+Action Required, Portal Queued, and On Hold remain in that order.
+VALID_TABS is updated; ?tab=awaiting URLs fall back to the default tab silently.
+Right-side workflow panel — the inline workspace
+
+When an operator selects an invoice group from any tab, the right-side panel becomes a real workspace where they can complete the dispute end-to-end without leaving the Queue page:
+
+Header: invoice number, status, LegSubStatusPill counters, a compact "X of Y claims processed" progress indicator (counts every claim in a terminal state — processed, excluded_at set, or terminal sop_outcome — over total claims), and a small "Open full detail page" link to /invoice-groups/:id as an escape hatch.
+Related claims list for the selected invoice group, ordered by leg sequence, showing each claim's status, whether it has an error_details value, its current error_type_id, and per-row controls below.
+Blank-description claims (sibling-cleared) render read-only with an "Auto: non-issue (no rejection on file)" badge. No buttons, no expansion. They were already excluded server-side at Needs Review → Needs Evidence transition; the panel reflects that fact.
+Blank-description claims on an all-blank invoice render with two manual buttons — Mark non-issue and Mark non-contestable — that call useExcludeLeg with the new reason values. Both write a leg_excluded audit entry.
+Claims with an error description that aren't yet processed are the operator's primary work. Each row expands inline to host the full per-claim workflow (assign/refine error_type_id, run the SOP via SopAdvancePlayer, edit per-leg context, place on hold / clear hold, exclude/include) using the same hooks the detail page uses. Completing the per-claim workflow flips that claim to processed.
+Aggregate context editor: the same group-context + per-leg roll-up section currently rendered in invoice-group-detail-v2.tsx lines ~214–292, lifted into a shared subcomponent and rendered inside the panel.
+Submission gauntlet (Understanding Readback → Generate Preview → Submit to Portal): the same workflow gate currently in invoice-group-detail-v2.tsx lines ~369–547, lifted into a shared subcomponent. Locked until every claim on the invoice is terminal (i.e., processed OR excluded_at IS NOT NULL OR terminal sop_outcome). While locked, the gauntlet shows a clear "X claims still need to be processed before this invoice can be submitted" message and a one-click "Jump to next unprocessed claim" affordance. When all claims are terminal, the gauntlet unlocks and the operator can readback → preview → submit without leaving the Queue.
+Lock / presence: the existing HumanPresenceBanner and lockReason (from othersPresent) disable every mutating control inside the panel, not just the workspace link.
+Real-time updates: the panel re-renders on useInvoiceGroupEvents for the selected group, so another user's changes (or the auto-exclusion completing) don't leave the panel stale.
+State preservation: switching tabs no longer clears selectedWorkflowId. Selection survives tab changes and is reflected in the URL (?group=) so refresh and link-sharing both work.
+Layout: at lg and up, when a group is selected the right column gets at least 2/3 of the row width (master/detail proportions); at md and below, the panel stacks under the list as it does today.
+Auto-select: when there's exactly one row across the visible tab and nothing is selected, auto-select it. Otherwise show the existing "Select an invoice group to process" empty state.
+Out of scope
+
+Defining or implementing the new processed claim status itself — that's a parallel effort. This task consumes it.
+Any changes to /invoice-groups/:id (InvoiceGroupDetailV2) other than the targeted refactor that extracts the shared subcomponents listed in Steps. The detail page must continue to render exactly the same UI and behavior after the refactor.
+The Dashboard, the standalone Responses Awaiting Review page, the Attestation Queue, the importer, the SOP authoring tool, and the portal-submission bot.
+New backend endpoints — except (a) extending useExcludeLeg's reason enum, (b) extending GET /invoice-groups with an opt-in needs-classification summary, and (c) the auto-exclusion logic on the Needs Review → Needs Evidence transition. All detailed in Steps.
+Bulk "mark all blank claims as non-issue" actions in the all-blank case — not requested. Mention in code comments as a possible future enhancement.
+Database migrations for the processed status (handled by the parallel effort). No other migrations are needed.
+Behavior for invoices where new claims are imported after the group has already left Needs Review (rare; flag as a known edge case in code comments — out of scope to handle here).
+Steps
+
+A. Classification Inbox — claim-aware rule
+
+Define the qualifying-claim predicate. A claim is "qualifying" (i.e., needs classification) when:
+its parent invoice group is in status Needs Review, and
+the claim is not excluded (excluded_at IS NULL) and has no terminal sop_outcome, and
+either error_details is non-null and non-empty (after trim) AND error_type_id IS NULL,
+or every claim on the parent invoice has empty/null error_details (the all-blank case — surface every blank claim for research). When evaluating "every claim on the invoice has empty error_details," ignore claims that are excluded or have a terminal sop_outcome.
+Add a server-side classification summary. Extend GET /invoice-groups (the endpoint behind useListInvoiceGroups) with an opt-in query parameter include=needs_classification that, when set and status=Needs Review, returns per group: { qualifyingClaimIds: number[], totalQualifyingClaims: number, allBlank: boolean }. The total across all groups becomes the new inbox badge count. Do not change the default response shape.
+Rewrite Classification Inbox state on queue.tsx. Replace unclassifiedGroups = needsReviewGroups.filter(g => !g.errorTypeId) with a derived list driven by the new server field. Render rows at the claim level, grouped under invoice headers, ordered by oldest first-service date. The badge count = sum of totalQualifyingClaims across visible groups.
+Rework the triage panel's contract. Today QueueNeedsReviewPanel calls useTriageInvoiceGroup (POST /api/invoice-groups/:id/triage), which sets invoice_groups.error_type_id and forces status to Needs Evidence. Update the flow:
+Add a per-claim "Assign Error Type" affordance to inbox rows. Each Assign mutation sets the claim's error_type_id via the existing useReclassifyLeg mutation (preserves audit).
+Keep QueueNeedsReviewPanel's "Assign to all qualifying claims on this invoice" as a one-click shortcut that fans out the per-claim mutation across the qualifying set.
+For the all-blank case, the inbox row exposes the manual non-issue / non-contestable buttons (writing excluded_at + reason via useExcludeLeg with the new reason values).
+A claim is "resolved for the purpose of leaving Needs Review" when it has either error_type_id set or excluded_at set. The group's Needs Review → Needs Evidence transition fires when no qualifying claims remain unresolved. Move the status advancement into lib/group-transitions.ts (the existing auto_after_classify path) and remove the UI-side forced status update so the transition happens server-side via transitionGroupStatus (preserving audit).
+For backward compatibility with invoice_groups.error_type_id: when the "Assign to all" shortcut produces a single error type across all qualifying claims, also write that value to invoice_groups.error_type_id. When per-claim assignments diverge, leave the group field null.
+For the all-blank invoice case, after every blank claim is manually excluded, the group's transition target is whatever the existing transition logic resolves to when the included-leg count drops to zero (likely a Resolved/Withdrawn outcome rather than Needs Evidence). Verify and document the chosen behavior; do not invent a new state.
+Server-side auto-exclusion of sibling-cleared blanks. Inside lib/group-transitions.ts, on the Needs Review → Needs Evidence transition, look for blank-description claims whose siblings include at least one claim with non-empty error_details. For each such claim, perform the same excludeLeg operation that the API endpoint performs, with reason = non_issue, attributed to a system actor. This must:
+Fire the leg_excluded audit entry for each auto-excluded claim.
+Be idempotent (re-running the transition logic must not double-exclude).
+Be a single transactional unit with the status transition itself (either both happen or neither).
+Not run on the all-blank case. Add a single integration test that walks an invoice with mixed described/blank claims through Needs Review → Needs Evidence and asserts the correct excluded_at writes and audit entries.
+Make the inbox card collapsible, default collapsed. Wrap the inbox in the existing collapsible primitive (match its aria-expanded / focus pattern). Persist the expand/collapse choice in the URL (?inbox=open) so refresh keeps the operator's preference for the session. When the count is 0, render a one-line subdued header with no chevron / no expand action.
+Empty / loading copy. Inbox loading: keep the existing triageLoading shim. Inbox empty (count 0): "No claims need classification right now." Inbox helper text on expand: a one-sentence plain-language description of the rule ("Showing claims with a rejection reason that aren't yet classified, plus claims on invoices where no rejection was returned at all.").
+B. Responses Awaiting Review removal
+
+Delete the card and all exclusive state. Remove from queue.tsx: the card markup, selectedResponseReviewId, selectResponseReview, responseReviewGroups, the conditional <QueueResponseReviewPanel> render block, and any imports / refs / scroll wiring used only by that card (triagePanelRef becomes inbox-only — rename if helpful for clarity). Keep QueueResponseReviewPanel itself intact for responses-awaiting-review.tsx.
+Sweep helper text so no copy still references "Responses Awaiting Review above" or implies that responses surface here.
+C. Awaiting tab removal
+
+Drop the tab. Remove "awaiting" from VALID_TABS, remove its <TabsTrigger> and <TabsContent>, and remove awaitingQuery / awaitingTotal / awaitingGroups. If ?tab=awaiting is in the URL, silently fall back to the default tab.
+D. Right-side panel — extract shared subcomponents first, then compose
+
+The highest-risk slice. To prevent code duplication and drift, the implementer must extract shared subcomponents from invoice-group-detail-v2.tsx first, then have both the detail page and the new Queue panel consume them. No copy-paste duplication is acceptable.
+
+Extract <GroupAggregateContextPanel> from invoice-group-detail-v2.tsx lines ~214–292. It owns: rendering and editing group_context, the per-leg context roll-up, and any save mutations (useSetGroupContext). Replace the corresponding block in the detail page with the new component. Verify the detail page renders identically.
+Extract <InvoiceGroupSubmissionGauntlet> from invoice-group-detail-v2.tsx lines ~369–547. It owns the Understanding Readback (useConfirmUnderstandingReadback), Generate Preview (useStampPreviewGenerated), and Submit to Portal (useCreatePortalSubmission) flow, including all gates (status pre-submit, all legs resolved, readback confirmed, preview generated). Replace the corresponding block in the detail page with the new component. Verify the detail page renders identically and the submission flow still works end-to-end.
+Add a gate prop computed by the parent: { ready: boolean; reason?: string; unprocessedCount?: number }. When ready === false, the gauntlet renders a locked state with reason copy and (if unprocessedCount > 0) a "Jump to next unprocessed claim" button that emits a callback the parent handles. When ready === true, the gauntlet behaves as it does today.
+Extract <InvoiceGroupLegsList> from invoice-group-detail-v2.tsx lines ~294–348, parameterized by:
+mode: "page" | "panel" — page mode keeps the current per-row link to the claim detail page; panel mode renders an in-row expander instead.
+In panel mode, the row hosts an <InlineClaimWorkflow> (next step) and the per-row controls described in step 15.
+Replace the legs-list block in the detail page with the page-mode usage. Verify the detail page renders identically.
+Build <InlineClaimWorkflow> as a thin composition layer over the existing claim hooks (useGetClaim, useReclassifyLeg, usePlaceLegOnHold, useClearLegHold, useExcludeLeg, useIncludeLeg, useSetLegContext, SopAdvancePlayer). It must reuse the same form controls and validation as claim-detail-v2.tsx — extract a <ClaimWorkflowBody> from the claim detail page if needed so both surfaces share one implementation. The inline version omits only navigation chrome (header / breadcrumb / Hold-Exclude-Reclassify action bar — those actions are surfaced inline on the row instead). Completing the workflow inside this component must drive the claim into processed via whatever mutation the parallel effort wires for that transition (the implementer should align with that effort and not invent a separate path).
+Extend useExcludeLeg's reason enum with non_issue and cannot_dispute on both server (POST /api/claims/:id/exclude validation) and client (TypeScript enum / dropdown). Audit logging continues to use the existing leg_excluded event with the new reason value. Update the existing reason-label map so each value renders a human label (e.g., "Non-issue (no rejection to dispute)" and "Non-contestable").
+Replace the right-side stub in queue.tsx with the new workspace, composed from the components above:
+<Header invoice/status/LegSubStatusPill + “X of Y claims processed” + “Open full detail page” link>
+<HumanPresenceBanner>
+<InvoiceGroupLegsList mode="panel" group={selectedWorkflowGroup}>
+  // Per-row rendering rules:
+  //  - Blank claim, has at least one described sibling on the invoice:
+  //      read-only “Auto: non-issue (no rejection on file)” chip. No expand. No buttons.
+  //  - Blank claim, all-blank invoice:
+  //      [Mark non-issue] [Mark non-contestable] buttons (useExcludeLeg with new reasons).
+  //      Optional expand showing leg context for note-taking.
+  //  - Described claim, not yet `processed`:
+  //      Expand reveals <InlineClaimWorkflow>. Primary action = work this claim.
+  //  - Claim already in a terminal state (processed / excluded / terminal sop_outcome):
+  //      Collapsed by default with a clear terminal badge; expandable read-only.
+<GroupAggregateContextPanel group={selectedWorkflowGroup}>
+<InvoiceGroupSubmissionGauntlet
+   group={selectedWorkflowGroup}
+   gate={computeReadiness(selectedWorkflowGroup)}    // ready iff every claim is terminal
+   onJumpToNextUnprocessed={...}
+>
+The "Process Invoice Group" stub card and its lone "Open invoice-group workspace" CTA are removed. The "post-cutover Task #199" comment block is removed.
+Fix selection lifecycle.
+handleTabChange no longer clears selectedWorkflowId. Selection persists across tab switches.
+Selected workflow id is mirrored to the URL as ?group=<id>. On mount, hydrate selectedWorkflowId from the URL.
+If the operator selects a different group while the panel has unsaved edits in GroupAggregateContextPanel or any open InlineClaimWorkflow, show the existing dirty-state confirmation primitive (or a confirm() if no shared primitive exists) before discarding.
+Lock / presence wiring. Every mutating control inside the panel must be disabled when lockReason is set. Pass lockReason (or a derived disabled boolean) through to all extracted subcomponents — including the gauntlet's submit, the inline workflow's mutations, the per-row exclude buttons, and the context editor's save.
+Layout shift. Update the grid wrapping the tabs + panel so that, when selectedWorkflowGroup is set on lg+, the panel column spans 2 of 3 (or 3 of 5) — keeping the list narrow while giving the workflow room to breathe. Below lg, stack vertically as today.
+Auto-select first row (low-stakes UX win): if no group is selected and the visible tab has exactly one row, auto-select it. Otherwise leave the empty-state card.
+E. Sweep, tests, and verification
+
+Helper-text and empty-state sweep. Update the page-level intro paragraph, every tab description, and the right-panel empty state so the copy reflects the new shape (no references to "Responses Awaiting Review above" or to the old triage stub). Plain-language copy only.
+Telemetry parity. If any analytics events fire on the existing Queue interactions (open workspace, classify, etc.), ensure the equivalent events fire on the new inline equivalents. If no telemetry exists today, no new telemetry is required.
+Tests. Add or update coverage for:
+The qualifying-claim predicate (server-side): mixed described/blank, all-blank, single-claim with and without description, described-and-classified, an excluded claim with error_details (must not influence sibling logic).
+GET /invoice-groups?include=needs_classification returns the right counts and ids.
+Server-side auto-exclusion at Needs Review → Needs Evidence: blank siblings are excluded with reason=non_issue, audit entries are written, the operation is idempotent and transactional, and does not run on all-blank invoices.
+Group transition fires only when every qualifying claim has either error_type_id set or excluded_at set.
+All-blank invoice path: after manually excluding every blank claim, the group transitions to its correct downstream state (verify behavior matches the existing transition logic; do not invent a new state).
+useExcludeLeg accepts the new non_issue and cannot_dispute reasons and writes the correct leg_excluded audit entry with the new reason value.
+Inbox renders at the claim level grouped under invoice; badge count matches sum of qualifying claims; defaults to collapsed; respects ?inbox=open.
+Responses Awaiting Review card is no longer present on /queue. ?tab=awaiting falls back silently.
+Right-side panel:
+Renders the legs list with the four per-row variants from step 16.
+Auto-non-issue blanks render read-only with no buttons (and the data-layer auto-exclusion is reflected).
+All-blank invoice: manual non-issue / non-contestable buttons work and audit-log correctly.
+Inline claim workflow lets the operator complete a claim and drives it to processed.
+Submission gauntlet is locked while any claim is non-terminal, shows the correct unprocessed count, and the "Jump to next unprocessed claim" button focuses/expands the right row.
+Submission gauntlet unlocks as soon as the last non-terminal claim becomes terminal, and the full readback → preview → submit path works end-to-end.
+Selection survives tab switches, hydrates from ?group=, and dirty-state warns before discarding.
+The detail page (/invoice-groups/:id) renders identically to its pre-refactor state and its submission flow still works (snapshot test or end-to-end smoke).
+Manual verification checklist (executor should run before declaring done):
+With a fresh seed where Needs Review previously showed 100+ groups, the new inbox shows the expected sharp drop.
+Collapsing/expanding the inbox persists across refresh via URL.
+Triage a mixed-content invoice from the inbox; on advancement, verify (in the DB and the audit log) that blank siblings were auto-excluded with reason=non_issue.
+In the right-side panel, blank siblings render as auto-non-issue with no buttons. The header progress reads correctly (e.g., "1 of 4 claims processed").
+Process the remaining described claims one by one; the header progress increments; the gauntlet remains locked until the last one flips to processed; then the gauntlet unlocks.
+Run the gauntlet end-to-end (readback → preview → submit) entirely from the Queue page; verify the invoice moves to its post-submission state.
+Two browser sessions on the same group show the lock banner and disabled controls in the second session (parity with current behavior).
+For an all-blank invoice, the inbox surfaces every claim; manually marking each as non-issue/non-contestable transitions the group correctly and writes the correct audit entries.
+Relevant files
+
+artifacts/claimclear/src/pages/queue.tsx
+artifacts/claimclear/src/components/queue-needs-review-panel.tsx
+artifacts/claimclear/src/components/queue-response-review-panel.tsx
+artifacts/claimclear/src/components/invoice-group-detail-v2.tsx:188-547
+artifacts/claimclear/src/components/claim-detail-v2.tsx:182-553
+artifacts/claimclear/src/components/sop-advance-player.tsx
+artifacts/claimclear/src/components/leg-sub-status-pill.tsx
+artifacts/claimclear/src/components/presence-banners.tsx
+artifacts/claimclear/src/components/presence-lock.tsx
+artifacts/claimclear/src/pages/responses-awaiting-review.tsx
+artifacts/claimclear/src/hooks/use-presence.ts
+artifacts/claimclear/src/hooks/use-claim-events.ts
+artifacts/claimclear/src/lib/use-url-params.ts
+artifacts/api-server/src/routes/invoice-groups.ts:284-466
+artifacts/api-server/src/routes/claims.ts
+artifacts/api-server/src/lib/group-transitions.ts:27-466
+lib/db/src/schema/invoice-groups.ts:6-82
+lib/db/src/schema/claims.ts:12-23,44-173
