@@ -212,10 +212,15 @@ async function checkLaterHumanActivity(opts: {
   // Any audit_logs row on the entity, after the candidate's receivedAt,
   // authored by a NON-system user. If any exist, an operator has touched
   // this entity since the bad transition and we must not silently revert.
+  // "System" covers both the literal "system" actor and any `system@*`
+  // pseudo-user used by other one-shot backfills (e.g. #260's
+  // system@retro-auto-non-issue-backfill). Without this broader filter,
+  // running another system backfill in between would falsely block reverts.
   const conditions = [
     gt(auditLogsTable.timestamp, opts.after),
     isNotNull(auditLogsTable.userEmail),
     ne(auditLogsTable.userEmail, "system"),
+    sql`${auditLogsTable.userEmail} NOT LIKE 'system@%'`,
   ];
   if (opts.groupId !== undefined) conditions.push(eq(auditLogsTable.invoiceGroupId, opts.groupId));
   if (opts.claimId !== undefined) conditions.push(eq(auditLogsTable.claimId, opts.claimId));
