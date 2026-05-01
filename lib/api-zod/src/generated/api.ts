@@ -128,6 +128,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
   dir: zod.enum(["asc", "desc"]).optional().describe("Sort direction"),
   limit: zod.coerce.number().default(listInvoiceGroupsQueryLimitDefault),
   offset: zod.coerce.number().default(listInvoiceGroupsQueryOffsetDefault),
+  include: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated additional payloads to embed in the response.\nCurrently supported values: `needs_classification` — embeds the\nClassification Inbox payload (groups containing legs in\nneeds_classification sub-status, scoped to status=Needs Review)\nso the queue page can fetch the list and the inbox in a single\nround trip. Unknown values are silently ignored.\n",
+    ),
 });
 
 export const ListInvoiceGroupsResponse = zod.object({
@@ -316,6 +322,51 @@ export const ListInvoiceGroupsResponse = zod.object({
     }),
   ),
   total: zod.number(),
+  needsClassificationInbox: zod
+    .object({
+      total: zod
+        .number()
+        .describe(
+          "Total needs_classification leg count across all surfaced groups.",
+        ),
+      groups: zod.array(
+        zod.object({
+          id: zod.number(),
+          invoiceNumber: zod.string().nullish(),
+          status: zod.string(),
+          rideCount: zod.number(),
+          totalAmount: zod.string().nullish(),
+          clientNumber: zod.string().nullish(),
+          needsClassificationCount: zod.number(),
+          qualifyingSiblingCount: zod
+            .number()
+            .describe(
+              "Number of sibling legs already carrying an errorTypeId or non-empty errorDetails.",
+            ),
+          allBlank: zod
+            .boolean()
+            .describe(
+              "True when no leg in this group has an errorTypeId or errorDetails — operator must triage by hand.",
+            ),
+          claims: zod.array(
+            zod.object({
+              id: zod.number(),
+              confNumber: zod.string(),
+              date: zod.string().nullish(),
+              claimAmount: zod.string().nullish(),
+              errorDetails: zod.string().nullish(),
+              isBlank: zod
+                .boolean()
+                .describe("True when errorDetails is null\/whitespace."),
+            }),
+          ),
+        }),
+      ),
+    })
+    .optional()
+    .describe(
+      "Present only when the request included `?include=needs_classification`.\nSame payload shape as `GET \/invoice-groups\/needs-classification`.\n",
+    ),
 });
 
 /**
@@ -338,6 +389,57 @@ export const ExportInvoiceGroupsCsvQueryParams = zod.object({
     .string()
     .optional()
     .describe("Comma-separated list of column keys to include in export"),
+});
+
+/**
+ * Feeds the collapsible Classification Inbox on the queue page.
+Returns groups currently in `New` or `Needs Review` that contain
+at least one `needs_classification` leg, with the per-claim payload
+(errorDetails, claimAmount, etc.) and a `qualifyingSiblingCount`
+flag indicating whether at least one sibling already carries an
+errorTypeId or non-empty errorDetails.
+
+ * @summary Classification Inbox summary — groups with at least one needs_classification leg
+ */
+export const GetNeedsClassificationInboxResponse = zod.object({
+  total: zod
+    .number()
+    .describe(
+      "Total needs_classification leg count across all surfaced groups.",
+    ),
+  groups: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceNumber: zod.string().nullish(),
+      status: zod.string(),
+      rideCount: zod.number(),
+      totalAmount: zod.string().nullish(),
+      clientNumber: zod.string().nullish(),
+      needsClassificationCount: zod.number(),
+      qualifyingSiblingCount: zod
+        .number()
+        .describe(
+          "Number of sibling legs already carrying an errorTypeId or non-empty errorDetails.",
+        ),
+      allBlank: zod
+        .boolean()
+        .describe(
+          "True when no leg in this group has an errorTypeId or errorDetails — operator must triage by hand.",
+        ),
+      claims: zod.array(
+        zod.object({
+          id: zod.number(),
+          confNumber: zod.string(),
+          date: zod.string().nullish(),
+          claimAmount: zod.string().nullish(),
+          errorDetails: zod.string().nullish(),
+          isBlank: zod
+            .boolean()
+            .describe("True when errorDetails is null\/whitespace."),
+        }),
+      ),
+    }),
+  ),
 });
 
 /**
@@ -7384,7 +7486,14 @@ export const ExcludeLegParams = zod.object({
 
 export const ExcludeLegBody = zod
   .object({
-    reason: zod.enum(["clean_leg", "out_of_scope", "duplicate", "other"]),
+    reason: zod.enum([
+      "clean_leg",
+      "out_of_scope",
+      "duplicate",
+      "non_issue",
+      "cannot_dispute",
+      "other",
+    ]),
     note: zod.string().nullish(),
   })
   .describe(

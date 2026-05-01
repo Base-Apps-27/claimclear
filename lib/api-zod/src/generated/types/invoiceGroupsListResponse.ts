@@ -12,8 +12,13 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
+import type { NeedsClassificationInboxResponse } from "./needsClassificationInboxResponse";
 
 export interface InvoiceGroupsListResponse {
   groups: InvoiceGroupResponse[];
   total: number;
+  /** Present only when the request included `?include=needs_classification`.
+Same payload shape as `GET /invoice-groups/needs-classification`.
+ */
+  needsClassificationInbox?: NeedsClassificationInboxResponse;
 }

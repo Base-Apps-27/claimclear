@@ -1,35 +1,49 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import {
   useListInvoiceGroups,
+  useGetInvoiceGroup,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
-import type { InvoiceGroupResponse } from "@workspace/api-client-react";
+import type {
+  InvoiceGroupResponse,
+  NeedsClassificationInboxGroup,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StatusBadge } from "@/components/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/format";
-import { CheckCircle2, ChevronRight, Eye, FileText, AlertTriangle, Inbox, Loader2 } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  CheckCircle2,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  AlertTriangle,
+  Inbox,
+  Loader2,
+} from "lucide-react";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
 import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta";
-import {
-  QueueResponseReviewPanel,
-  ResponseReviewRowMeta,
-} from "@/components/queue-response-review-panel";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatViewerNames } from "@/components/presence-lock";
 import { useUrlParams } from "@/lib/use-url-params";
+import { GroupAggregateContextPanel } from "@/components/group-aggregate-context-panel";
+import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
+import { InlineClaimWorkflowList } from "@/components/inline-claim-workflow";
+import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-client-react";
 
 // Workflow tabs only — Needs Review is intentionally NOT a tab here.
-// It's triage (a prerequisite to entering the workflow), so it lives in the
-// Triage Inbox zone above the workflow grid instead of inline as a stage.
-const VALID_TABS = ["actionable", "portal-queued", "awaiting", "on-hold"] as const;
+// Triage lives in the Classification Inbox above the workflow grid.
+// "Awaiting Response" was removed in Task #232: those groups are still
+// visible on /responses-awaiting-review when something needs a verdict.
+const VALID_TABS = ["actionable", "portal-queued", "on-hold"] as const;
 type QueueTab = typeof VALID_TABS[number];
 const DEFAULT_TAB: QueueTab = "actionable";
 
@@ -43,20 +57,30 @@ export default function Queue() {
     ? (tabParam as QueueTab)
     : DEFAULT_TAB;
 
-  // Three independent selection contexts so the workflow panel and the two
-  // triage cards (Classification Inbox and Responses Awaiting Review) can
-  // each manage their own open row without stepping on the others.
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
+  // URL-persisted: which workflow group is open in the inline workspace,
+  // and whether the Classification Inbox is expanded.
+  const groupParam = Number.parseInt(get("group"), 10);
+  const selectedWorkflowId: number | null = Number.isFinite(groupParam) && groupParam > 0 ? groupParam : null;
+  const inboxOpen = get("inbox") === "open";
+
   const [selectedTriageId, setSelectedTriageId] = useState<number | null>(null);
-  const [selectedResponseReviewId, setSelectedResponseReviewId] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
+
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
   const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedWorkflowId ?? undefined);
   const lockReason = othersPresent
     ? `Disabled — ${formatViewerNames(otherViewers)} ${otherViewers.length === 1 ? "is" : "are"} currently working on this group. Wait for them to leave or coordinate directly.`
     : null;
+
   const workflowPanelRef = useRef<HTMLDivElement>(null);
   const triagePanelRef = useRef<HTMLDivElement>(null);
+
+  const setSelectedWorkflowId = (id: number | null) => {
+    set({ group: id == null ? null : String(id) }, false);
+  };
+  const setInboxOpen = (open: boolean) => {
+    set({ inbox: open ? "open" : null }, false);
+  };
 
   const selectWorkflow = (id: number) => {
     setSelectedWorkflowId(id);
@@ -67,23 +91,16 @@ export default function Queue() {
 
   const selectTriage = (id: number) => {
     setSelectedTriageId(id);
-    setSelectedResponseReviewId(null);
-    window.requestAnimationFrame(() => {
-      triagePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  };
-
-  const selectResponseReview = (id: number) => {
-    setSelectedResponseReviewId(id);
-    setSelectedTriageId(null);
     window.requestAnimationFrame(() => {
       triagePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
 
   const handleTabChange = (value: string) => {
-    setSelectedWorkflowId(null);
     setSuccessMessage("");
+    // Selection is intentionally preserved across tab changes — the
+    // operator may want to keep a workspace open while quickly checking
+    // counts in another tab. URL-backed `?group=` is the source of truth.
     if (value === DEFAULT_TAB) {
       set({ tab: null }, false);
     } else {
@@ -95,39 +112,32 @@ export default function Queue() {
   // available — the tab/section badges use server `total`, not array length.
   const newQuery = useListInvoiceGroups({ status: "New", limit: 500 });
   const needsEvidenceQuery = useListInvoiceGroups({ status: "Needs Evidence", limit: 500 });
-  const needsReviewQuery = useListInvoiceGroups({ status: "Needs Review", limit: 500 });
   const portalQueuedQuery = useListInvoiceGroups({ status: "Portal Queued", limit: 500 });
-  const awaitingQuery = useListInvoiceGroups({ status: "Awaiting Response", limit: 500 });
   const onHoldQuery = useListInvoiceGroups({ status: "On Hold", limit: 500 });
 
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
-  const needsReviewGroups = needsReviewQuery.data?.groups || [];
   const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
-  const awaitingGroups = awaitingQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
 
-  // Real totals from the API — not the (possibly capped) array length.
-  // These drive the badge counts so they're always honest.
   const actionableTotal = (newQuery.data?.total ?? 0) + (needsEvidenceQuery.data?.total ?? 0);
   const portalQueuedTotal = portalQueuedQuery.data?.total ?? 0;
-  const awaitingTotal = awaitingQuery.data?.total ?? 0;
   const onHoldTotal = onHoldQuery.data?.total ?? 0;
 
-  // "Needs Review" is overloaded: it covers both untriaged imports (no
-  // errorTypeId yet) AND already-classified groups whose payor sent a
-  // response that needs a human verdict. We split the list down the middle:
-  //  - Classification Inbox  → !errorTypeId (label & auto-advance)
-  //  - Responses Awaiting Review → errorTypeId (review verdict + next step)
-  // Keeping these as two distinct surfaces preserves the muscle memory
-  // operators built on the inbox while giving response triage its own UI.
-  const unclassifiedGroups = needsReviewGroups.filter(g => !g.errorTypeId);
-  const responseReviewGroups = needsReviewGroups.filter(g => !!g.errorTypeId);
-  // Show a loading shim instead of "All caught up / All payor responses
-  // reviewed" while the underlying Needs Review query is still resolving —
-  // otherwise the empty messages flash on first paint and look like false
-  // negatives.
-  const triageLoading = needsReviewQuery.isLoading;
+  // Classification Inbox: piggybacks on `GET /invoice-groups` via
+  // `?include=needs_classification`. We pass a tiny status filter
+  // (`Needs Review`) and `limit=0` because we only care about the
+  // embedded `needsClassificationInbox` payload — not the list itself.
+  // Single round trip, single query key, no fork between counts and
+  // payload.
+  const inboxQuery = useListInvoiceGroups({
+    status: "Needs Review",
+    limit: 0,
+    include: "needs_classification",
+  });
+  const inboxGroups: NeedsClassificationInboxGroup[] =
+    inboxQuery.data?.needsClassificationInbox?.groups ?? [];
+  const inboxTotal = inboxQuery.data?.needsClassificationInbox?.total ?? 0;
 
   // Within each on-clock list, sort urgent rows to the top, then by remaining
   // days asc. The API already returns rows in service-date asc order, which is
@@ -147,9 +157,6 @@ export default function Queue() {
   const portalQueuedSorted = sortByUrgency(portalQueuedGroups);
   const onHoldSorted = sortByUrgency(onHoldGroups);
 
-  // Banner counts urgent rows across every on-clock tab, not just Action
-  // Required. With "On Hold" now in the urgency set, an urgent on-hold group
-  // would otherwise be invisible from the top of the page.
   const urgentCount =
     actionableGroups.filter(g => g.isUrgent).length +
     portalQueuedSorted.filter(g => g.isUrgent).length +
@@ -157,16 +164,29 @@ export default function Queue() {
 
   const allGroups = [
     ...actionableGroups,
-    ...needsReviewGroups,
     ...portalQueuedSorted,
-    ...awaitingGroups,
     ...onHoldSorted,
   ];
-  const selectedWorkflowGroup = selectedWorkflowId ? allGroups.find(g => g.id === selectedWorkflowId) || null : null;
-  const selectedTriageGroup = selectedTriageId ? needsReviewGroups.find(g => g.id === selectedTriageId) || null : null;
-  const selectedResponseReviewGroup = selectedResponseReviewId
-    ? responseReviewGroups.find(g => g.id === selectedResponseReviewId) || null
+  const selectedWorkflowGroupSummary = selectedWorkflowId
+    ? allGroups.find(g => g.id === selectedWorkflowId) || null
     : null;
+
+  // Auto-select when there's exactly one row in the current tab and nothing
+  // explicit in the URL. Tab changes blow the URL group, so this re-runs on
+  // tab change and lands on the only candidate immediately. We deliberately
+  // don't auto-select once the user has cleared a selection within the same
+  // tab — that's tracked by URL state, so any click survives a re-render.
+  useEffect(() => {
+    if (selectedWorkflowId != null) return;
+    const candidates =
+      activeTab === "actionable" ? actionableGroups
+      : activeTab === "portal-queued" ? portalQueuedSorted
+      : onHoldSorted;
+    if (candidates.length === 1) {
+      setSelectedWorkflowId(candidates[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, actionableGroups.length, portalQueuedSorted.length, onHoldSorted.length]);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -174,32 +194,23 @@ export default function Queue() {
     return () => clearTimeout(t);
   }, [successMessage]);
 
-  // If the selected classification group leaves the unclassified list
-  // (auto-advanced, classified by someone else, or its status changed),
-  // clear the dangling selection. Only the unclassified slice is relevant
-  // here — post-response items don't open this panel.
+  // Drop a stale triage selection if the inbox no longer surfaces that group.
   useEffect(() => {
-    if (selectedTriageId && !unclassifiedGroups.some(g => g.id === selectedTriageId)) {
+    if (selectedTriageId && !inboxGroups.some(g => g.id === selectedTriageId)) {
       setSelectedTriageId(null);
     }
-  }, [selectedTriageId, unclassifiedGroups]);
+  }, [selectedTriageId, inboxGroups]);
 
-  // Same self-cleaning behaviour for the Responses Awaiting Review panel:
-  // once a verdict moves the group out of "Needs Review" (or strips its
-  // errorTypeId, hypothetically) we drop the dangling selection so the
-  // empty-state is honest.
-  useEffect(() => {
-    if (selectedResponseReviewId && !responseReviewGroups.some(g => g.id === selectedResponseReviewId)) {
-      setSelectedResponseReviewId(null);
-    }
-  }, [selectedResponseReviewId, responseReviewGroups]);
-
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+  const invalidate = () => {
+    // Single key — both the workflow tabs and the embedded inbox live
+    // under `getListInvoiceGroupsQueryKey()` now that the inbox rides on
+    // the `?include=needs_classification` payload.
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+  };
 
   // Per-row deadline pill that complements UrgentTodayBadge: shows a soft
-  // "Xd left" hint for items inside the warning window so Adam can see what's
-  // about to become urgent — not just what's urgent right now. Stays silent
-  // for items already covered by the red Today badge or far from deadline.
+  // "Xd left" hint for items inside the warning window so the operator can
+  // see what's about to become urgent — not just what's urgent right now.
   const renderDeadlineHint = (group: InvoiceGroupResponse) => {
     if (group.isUrgent) return null;
     const days = group.effectiveDaysLeft;
@@ -239,20 +250,14 @@ export default function Queue() {
       onSelect: (id: number) => void;
       selectedId: number | null;
       showDeadline?: boolean;
-      // When provided, replaces the default right-hand content slot
-      // (currently just errorTypeName). Used by the Responses Awaiting
-      // Review card to surface a response-type pill + AI summary inline.
-      renderMeta?: (group: InvoiceGroupResponse) => React.ReactNode;
     },
   ) => {
     const isSelected = opts.selectedId === group.id;
-    const meta = opts.renderMeta
-      ? opts.renderMeta(group)
-      : group.errorTypeName ? (
-          <span className="text-muted-foreground truncate min-w-0" title={group.errorTypeName}>
-            {group.errorTypeName}
-          </span>
-        ) : null;
+    const meta = group.errorTypeName ? (
+      <span className="text-muted-foreground truncate min-w-0" title={group.errorTypeName}>
+        {group.errorTypeName}
+      </span>
+    ) : null;
     return (
       <button
         key={group.id}
@@ -287,9 +292,9 @@ export default function Queue() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-2xl font-bold tracking-tight">Work Queue</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Invoice queue</h2>
         <p className="text-muted-foreground">
-          Dispute operator workspace. Start with triage above — <span className="font-medium">Classification Inbox</span> labels new imports and <span className="font-medium">Responses Awaiting Review</span> handles payor replies that need a verdict — then work the <span className="font-medium">Action Required</span> tab. Earliest service date first; red badges mark groups that must file today.
+          Operator workspace. Triage new imports in the <span className="font-medium">Classification Inbox</span> when something lands, then work the <span className="font-medium">Action Required</span> tab. Earliest service date first; red badges mark groups that must file today.
         </p>
       </div>
 
@@ -318,152 +323,42 @@ export default function Queue() {
         </div>
       )}
 
-      {/* Triage zone — two cards side-by-side that both feed off the
-          "Needs Review" status:
-            - Classification Inbox: items missing an Error Type (label them)
-            - Responses Awaiting Review: classified items where a payor
-              response landed and a human verdict is required.
-          Selecting a row in either card opens its own panel below the grid;
-          the cards clear each other's selection so only one panel is open
-          at a time. */}
-      <div className="space-y-3" data-testid="triage-inbox">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Inbox className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold">Classification Inbox</h3>
-                  {unclassifiedGroups.length > 0 ? (
-                    <Badge variant="secondary" data-testid="badge-classification-count">
-                      {unclassifiedGroups.length} to classify
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Empty</Badge>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Imported groups with no Error Type yet. Pick a label and they auto-advance to Build Case.
-              </p>
-              {triageLoading ? (
-                <div
-                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
-                  data-testid="classification-inbox-loading"
-                >
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading triage queue…
-                </div>
-              ) : unclassifiedGroups.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">All caught up — nothing to classify.</p>
-              ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1" data-testid="queue-list-needs-review">
-                  {unclassifiedGroups.map(g => renderGroupRow(g, { onSelect: selectTriage, selectedId: selectedTriageId }))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* Classification Inbox — collapsible, claim-aware. Defaults
+          collapsed because most days nothing imports; expanded state is
+          URL-persisted (?inbox=open) so a refresh keeps it open while
+          someone's actively working through it. */}
+      <ClassificationInbox
+        open={inboxOpen}
+        onToggle={() => setInboxOpen(!inboxOpen)}
+        loading={inboxQuery.isLoading}
+        groups={inboxGroups}
+        total={inboxTotal}
+        selectedId={selectedTriageId}
+        onSelect={selectTriage}
+        triagePanelRef={triagePanelRef}
+        triagePanel={
+          selectedTriageId ? (() => {
+            // Re-find the inbox payload row each render so per-claim
+            // mutations show their effect (the row is a derivation of
+            // the embedded inbox payload, which the cache invalidate
+            // refetches under the same query key).
+            const row = inboxGroups.find((g) => g.id === selectedTriageId);
+            if (!row) return null;
+            return (
+              <QueueNeedsReviewPanel
+                inboxGroup={row}
+                onCompleted={(message) => {
+                  setSuccessMessage(message);
+                  invalidate();
+                }}
+              />
+            );
+          })() : null
+        }
+      />
 
-          <Card data-testid="responses-awaiting-review-card">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold">Responses Awaiting Review</h3>
-                  {responseReviewGroups.length > 0 ? (
-                    <Badge variant="secondary" data-testid="badge-response-review-count">
-                      {responseReviewGroups.length} to review
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Empty</Badge>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Payor sent something back — read it and decide the next move (continue the dispute, or close).
-              </p>
-              {triageLoading ? (
-                <div
-                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
-                  data-testid="responses-awaiting-review-loading"
-                >
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading payor responses…
-                </div>
-              ) : responseReviewGroups.length === 0 ? (
-                <p
-                  className="text-sm text-muted-foreground py-4 text-center"
-                  data-testid="responses-awaiting-review-empty"
-                >
-                  All payor responses reviewed — check back later.
-                </p>
-              ) : (
-                <div
-                  className="space-y-2 max-h-72 overflow-y-auto pr-1"
-                  data-testid="queue-list-responses-awaiting-review"
-                >
-                  {responseReviewGroups.map(g =>
-                    renderGroupRow(g, {
-                      onSelect: selectResponseReview,
-                      selectedId: selectedResponseReviewId,
-                      // Show Overdue / N-days-left hints — payor responses
-                      // can land late and the filing clock is still running.
-                      showDeadline: true,
-                      renderMeta: () => <ResponseReviewRowMeta groupId={g.id} />,
-                    }),
-                  )}
-                </div>
-              )}
-              {/* Footer link to the dedicated workspace. The card here is a
-                  peek; the full master/detail surface (with response thread,
-                  follow-up reply composer, and persistent URL per group)
-                  lives on its own top-nav page. */}
-              {responseReviewGroups.length > 0 && (
-                <div className="pt-1 border-t">
-                  <Link href="/responses-awaiting-review">
-                    <a
-                      data-testid="link-view-all-responses-awaiting-review"
-                      className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
-                    >
-                      View all ({responseReviewGroups.length})
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </a>
-                  </Link>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {selectedTriageGroup && (
-          <div ref={triagePanelRef} className="scroll-mt-4">
-            <QueueNeedsReviewPanel
-              group={selectedTriageGroup}
-              onCompleted={(message) => {
-                setSuccessMessage(message);
-                setSelectedTriageId(null);
-                invalidate();
-              }}
-            />
-          </div>
-        )}
-
-        {selectedResponseReviewGroup && (
-          <div ref={triagePanelRef} className="scroll-mt-4">
-            <QueueResponseReviewPanel
-              group={selectedResponseReviewGroup}
-              onCompleted={(message) => {
-                setSuccessMessage(message);
-                setSelectedResponseReviewId(null);
-                invalidate();
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-4">
+      <div className={`grid grid-cols-1 gap-6 ${selectedWorkflowId ? "lg:grid-cols-3" : ""}`}>
+        <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="actionable">
@@ -476,12 +371,6 @@ export default function Queue() {
                 Portal Queued
                 {portalQueuedTotal > 0 && (
                   <Badge variant="secondary" className="ml-2">{portalQueuedTotal}</Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="awaiting">
-                Awaiting
-                {awaitingTotal > 0 && (
-                  <Badge variant="secondary" className="ml-2">{awaitingTotal}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="on-hold">
@@ -518,19 +407,6 @@ export default function Queue() {
               )}
             </TabsContent>
 
-            <TabsContent value="awaiting" className="mt-4 space-y-2">
-              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-awaiting">
-                <span className="font-medium text-foreground">Submitted to the payer portal — waiting on a response.</span> No action needed unless a response arrives (it'll re-appear in <span className="font-medium">Responses Awaiting Review</span> above).
-              </p>
-              {awaitingGroups.length === 0 ? (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">No invoice groups awaiting response.</CardContent></Card>
-              ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-awaiting">
-                  {awaitingGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId }))}
-                </div>
-              )}
-            </TabsContent>
-
             <TabsContent value="on-hold" className="mt-4 space-y-2">
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-on-hold">
                 <span className="font-medium text-foreground">Manually parked or blocked.</span> Still on the deadline clock — urgency badges apply. Resume from the workflow when you're unblocked.
@@ -546,69 +422,333 @@ export default function Queue() {
           </Tabs>
         </div>
 
-        <div ref={workflowPanelRef} className="scroll-mt-4">
-          {selectedWorkflowGroup ? (
+        {selectedWorkflowId && (
+          <div ref={workflowPanelRef} className="scroll-mt-4 lg:col-span-2">
             <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Process Invoice Group</h3>
-                <Link href={`/invoice-groups/${selectedWorkflowGroup.id}`}>
-                  <Button variant="ghost" size="sm">
-                    Full Details <ChevronRight className="h-4 w-4 ml-1" />
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold">
+                  Process Invoice Group
+                  {selectedWorkflowGroupSummary && (
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      {selectedWorkflowGroupSummary.invoiceNumber} · {selectedWorkflowGroupSummary.status}
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center gap-1">
+                  <Link href={`/invoice-groups/${selectedWorkflowId}`}>
+                    <Button variant="ghost" size="sm">
+                      Full Details <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedWorkflowId(null)}
+                    data-testid="close-inline-workspace"
+                  >
+                    Close
                   </Button>
-                </Link>
+                </div>
               </div>
               <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
               {/*
-                Post-cutover: the in-queue WorkflowPlayerGroup was removed
-                (Task #199). The actual group orchestration surface lives at
-                /invoice-groups/:id (InvoiceGroupDetailV2), so the queue now
-                only shows a quick-summary card and a CTA to open the full
-                detail page.
+                Ready to package CTA — surfaces the new pre-submit
+                "package this group" affordance from main alongside our
+                inline workspace. The CTA self-hides once the group is
+                past pre-submit, so it stays out of the way once a
+                group has progressed. The lockReason is forwarded into
+                InlineGroupWorkspace (which renders read-only banners
+                in its subcomponents) instead of being shown as a
+                separate Card to avoid duplication.
               */}
-              <Card>
-                <CardContent className="py-6 space-y-3">
-                  <div className="text-sm">
-                    <div className="font-medium">Invoice {selectedWorkflowGroup.invoiceNumber}</div>
-                    <div className="text-muted-foreground">
-                      {selectedWorkflowGroup.rideCount} ride{selectedWorkflowGroup.rideCount !== 1 ? "s" : ""}
-                      {" · "}
-                      {selectedWorkflowGroup.status}
-                    </div>
-                  </div>
-                  {lockReason && (
-                    <p className="text-xs text-muted-foreground">{lockReason}</p>
-                  )}
-                  {/*
-                    Ready to package CTA — same readiness payload and
-                    endpoint as the version on the invoice-group detail
-                    page, just compact-styled for the queue panel.
-                    Self-hides once the group is past pre-submit.
-                  */}
-                  <QueueReadyToPackageCta
-                    groupId={selectedWorkflowGroup.id}
-                    groupStatusFromList={selectedWorkflowGroup.status}
-                  />
-                  <Button asChild size="sm" data-testid="open-group-from-queue">
-                    <Link href={`/invoice-groups/${selectedWorkflowGroup.id}`}>
-                      Open invoice-group workspace <ChevronRight className="h-4 w-4 ml-1" />
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
+              {selectedWorkflowGroupSummary && (
+                <QueueReadyToPackageCta
+                  groupId={selectedWorkflowGroupSummary.id}
+                  groupStatusFromList={selectedWorkflowGroupSummary.status}
+                />
+              )}
+              <InlineGroupWorkspace groupId={selectedWorkflowId} lockReason={lockReason} />
             </div>
-          ) : (
-            <Card>
-              <CardContent className="py-16 text-center text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="font-medium">Select an invoice group to process</p>
-                <p className="text-sm mt-1">
-                  Click on a group from any workflow tab to start the dispute workflow
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+          </div>
+        )}
+
+        {!selectedWorkflowId && (
+          <Card>
+            <CardContent className="py-16 text-center text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="font-medium">Select an invoice group to process</p>
+              <p className="text-sm mt-1">
+                Click on a group from any workflow tab to start the dispute workflow inline.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
+    </div>
+  );
+}
+
+// Classification Inbox — claim-aware preview of what's sitting in
+// "Needs Review" without an Error Type yet. Each group expands to show
+// the underlying claims with errorDetails so the operator can see, at a
+// glance, whether anything qualifies before opening triage.
+interface ClassificationInboxProps {
+  open: boolean;
+  onToggle: () => void;
+  loading: boolean;
+  groups: NeedsClassificationInboxGroup[];
+  total: number;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+  triagePanelRef: React.RefObject<HTMLDivElement | null>;
+  triagePanel: React.ReactNode;
+}
+
+function ClassificationInbox({
+  open,
+  onToggle,
+  loading,
+  groups,
+  total,
+  selectedId,
+  onSelect,
+  triagePanelRef,
+  triagePanel,
+}: ClassificationInboxProps) {
+  // Empty inbox is the common case — render a subdued, non-expandable
+  // strip so the operator's eye skips it. Anything > 0 makes the card
+  // expandable and the count badge prominent.
+  const hasWork = total > 0;
+  return (
+    <div className="space-y-3" data-testid="triage-inbox">
+      <Card className={hasWork ? "" : "bg-muted/30"}>
+        <CardContent className="p-4 space-y-3">
+          {hasWork ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              className="w-full flex items-center justify-between gap-3 flex-wrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+              data-testid="classification-inbox-toggle"
+            >
+              <div className="flex items-center gap-2">
+                <Inbox className="h-5 w-5 text-muted-foreground" />
+                <h3 className="text-lg font-semibold">Classification Inbox</h3>
+                <Badge variant="secondary" data-testid="badge-classification-count">
+                  {total} to classify
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {open ? (
+                  <>
+                    Hide <ChevronUp className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    Show <ChevronDown className="h-4 w-4" />
+                  </>
+                )}
+              </div>
+            </button>
+          ) : (
+            <div
+              className="flex items-center gap-2 text-muted-foreground"
+              data-testid="classification-inbox-empty"
+            >
+              <Inbox className="h-4 w-4" />
+              <span className="text-sm">Classification Inbox</span>
+              <Badge variant="outline" className="text-[10px]">All caught up</Badge>
+            </div>
+          )}
+          {hasWork && open && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Imported groups with claims that have no Error Type yet. Pick a label and the
+                qualifying claim auto-advances to Build Case; blank-description sibling claims
+                are auto-excluded.
+              </p>
+              {loading ? (
+                <div
+                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
+                  data-testid="classification-inbox-loading"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading triage queue…
+                </div>
+              ) : (
+                <div
+                  className="space-y-2 max-h-96 overflow-y-auto pr-1"
+                  data-testid="queue-list-needs-review"
+                >
+                  {groups.map((g) => (
+                    <ClassificationInboxRow
+                      key={g.id}
+                      group={g}
+                      isSelected={selectedId === g.id}
+                      onSelect={() => onSelect(g.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {hasWork && open && triagePanel && (
+        <div ref={triagePanelRef} className="scroll-mt-4">
+          {triagePanel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClassificationInboxRow({
+  group,
+  isSelected,
+  onSelect,
+}: {
+  group: NeedsClassificationInboxGroup;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const qualifying = group.qualifyingSiblingCount;
+  const blank = group.needsClassificationCount;
+  return (
+    <button
+      type="button"
+      data-testid={`inbox-group-${group.invoiceNumber}`}
+      aria-pressed={isSelected}
+      onClick={onSelect}
+      className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
+      }`}
+    >
+      <div className="py-3 px-4 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+            <Badge variant="outline" className="text-[10px]">{group.status}</Badge>
+            {group.allBlank ? (
+              <Badge
+                variant="outline"
+                className="text-[10px]"
+                style={{ background: "hsl(var(--cc-amber-bg))", color: "hsl(var(--cc-amber-fg))", borderColor: "hsl(var(--cc-amber-border))" }}
+              >
+                All blank — review carefully
+              </Badge>
+            ) : qualifying > 0 ? (
+              <Badge variant="secondary" className="text-[10px]">
+                {qualifying} qualifying
+              </Badge>
+            ) : null}
+            {blank > 0 && !group.allBlank && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {blank} blank
+              </Badge>
+            )}
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+        <ul className="space-y-1 text-xs">
+          {group.claims.slice(0, 4).map((c) => (
+            <li
+              key={c.id}
+              className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5"
+              data-testid={`inbox-claim-${c.id}`}
+            >
+              <span className="font-mono text-muted-foreground shrink-0">
+                {c.confNumber || `#${c.id}`}
+              </span>
+              <span className="text-muted-foreground shrink-0">
+                {c.date ? formatDate(c.date) : "—"}
+              </span>
+              <span className="tabular-nums text-muted-foreground shrink-0">
+                {formatCurrency(c.claimAmount ?? "0")}
+              </span>
+              <span className={`flex-1 truncate ${c.isBlank ? "italic text-muted-foreground" : ""}`}>
+                {c.isBlank ? "(blank — auto-exclude on classify)" : (c.errorDetails ?? "")}
+              </span>
+            </li>
+          ))}
+          {group.claims.length > 4 && (
+            <li className="text-[11px] text-muted-foreground italic px-2">
+              +{group.claims.length - 4} more claim{group.claims.length - 4 === 1 ? "" : "s"} — open to triage.
+            </li>
+          )}
+        </ul>
+      </div>
+    </button>
+  );
+}
+
+// Inline group workspace — composes the group-aggregate context, the
+// per-claim inline workflow list, and the submission gauntlet. The
+// per-leg investigation surface (formerly only on /claims/:id) is now
+// embedded directly via <InlineClaimWorkflow />, giving operators the
+// full classification → SOP → verdict flow without leaving the queue.
+//
+// Gauntlet → leg jump: when a submit fails with `gate: "legs"`, the
+// gauntlet calls `onJumpToLeg(legId)` and we ring + auto-expand the
+// matching row. The highlight clears on any subsequent expand
+// interaction so an operator who scrolls past the jump target doesn't
+// keep seeing the amber ring.
+function InlineGroupWorkspace({
+  groupId,
+  lockReason,
+}: {
+  groupId: number;
+  lockReason?: string | null;
+}) {
+  const { get, set } = useUrlParams();
+  const legParam = Number.parseInt(get("leg"), 10);
+  const expandedLegId: number | null =
+    Number.isFinite(legParam) && legParam > 0 ? legParam : null;
+  const setExpandedLegId = (id: number | null) => {
+    set({ leg: id == null ? null : String(id) }, false);
+  };
+
+  const [highlightLegId, setHighlightLegId] = useState<number | null>(null);
+
+  const { data: group, isLoading } = useGetInvoiceGroup(groupId);
+  if (isLoading || !group) {
+    return (
+      <Card>
+        <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading workspace…
+        </CardContent>
+      </Card>
+    );
+  }
+  const detail = group as InvoiceGroupDetailResponse;
+  const allRides: ClaimResponse[] = detail.rides ?? [];
+  const rides = allRides.filter((r) => r.includedInDispute !== false);
+
+  return (
+    <div className="space-y-4" data-testid="inline-group-workspace">
+      <GroupAggregateContextPanel group={detail} groupId={groupId} lockReason={lockReason} />
+      <InlineClaimWorkflowList
+        claims={rides}
+        expandedClaimId={expandedLegId}
+        onExpandedChange={(id) => {
+          setExpandedLegId(id);
+          // Any explicit user toggle clears the highlight so the amber
+          // ring doesn't linger on a row the operator has already
+          // chosen to engage with (or dismiss).
+          if (highlightLegId != null) setHighlightLegId(null);
+        }}
+        highlightClaimId={highlightLegId}
+      />
+      <InvoiceGroupSubmissionGauntlet
+        group={detail}
+        groupId={groupId}
+        lockReason={lockReason}
+        onJumpToLeg={(claimId) => {
+          setExpandedLegId(claimId);
+          setHighlightLegId(claimId);
+        }}
+      />
     </div>
   );
 }

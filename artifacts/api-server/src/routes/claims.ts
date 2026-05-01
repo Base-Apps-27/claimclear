@@ -12,7 +12,9 @@ import {
   VALID_MANUAL_STATUS_TRANSITIONS,
   VALID_OUTCOME_BY_STATUS,
   SYSTEM_CONTROLLED_STATUSES,
+  excludeLegCore,
 } from "../lib/claim-transitions";
+import { transitionGroupStatus } from "../lib/group-transitions";
 import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
@@ -1503,19 +1505,73 @@ router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void>
     .where(eq(errorTypesTable.id, Number(errorTypeId)));
   if (!errorType) { res.status(400).json({ error: "Unknown errorTypeId" }); return; }
 
-  const [updated] = await db
-    .update(claimsTable)
-    .set({
-      errorTypeId: String(errorType.id),
-      errorTypeName: errorType.name,
-    })
-    .where(eq(claimsTable.id, id))
-    .returning();
+  // Atomic block: row update + audit + (when applicable) parent-group
+  // promote-on-last-classify cascade run inside one transaction so we
+  // never end up with a classified leg whose parent group is left
+  // stranded in Needs Review.
+  const { updated } = await db.transaction(async (tx) => {
+    const [u] = await tx
+      .update(claimsTable)
+      .set({
+        errorTypeId: String(errorType.id),
+        errorTypeName: errorType.name,
+      })
+      .where(eq(claimsTable.id, id))
+      .returning();
 
-  await createAuditLog(id, "leg_classified", `Leg classified as: ${errorType.name}`, req, {
-    errorTypeId: String(errorType.id),
-    errorTypeName: errorType.name,
+    await tx.insert(auditLogsTable).values({
+      claimId: id,
+      action: "leg_classified",
+      details: `Leg classified as: ${errorType.name}`,
+      metadata: {
+        errorTypeId: String(errorType.id),
+        errorTypeName: errorType.name,
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+
+    // Promote-on-last-classify: when the parent group is in Needs Review
+    // and the leg we just classified was the last needs_classification
+    // sibling, transition the group to Needs Evidence with
+    // source=auto_after_classify so the standard auto-exclude-blank-siblings
+    // hook fires from the same code path the group-level triage already
+    // uses. This is the cascade that makes per-claim classification
+    // self-driving from the inbox.
+    if (leg.invoiceGroupId != null) {
+      const [parent] = await tx
+        .select({ status: invoiceGroupsTable.status })
+        .from(invoiceGroupsTable)
+        .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+      if (parent?.status === "Needs Review") {
+        const siblings = await tx
+          .select({
+            id: claimsTable.id,
+            errorTypeId: claimsTable.errorTypeId,
+            includedInDispute: claimsTable.includedInDispute,
+            holdReason: claimsTable.holdReason,
+            sopOutcome: claimsTable.sopOutcome,
+          })
+          .from(claimsTable)
+          .where(eq(claimsTable.invoiceGroupId, leg.invoiceGroupId));
+        const stillUnclassified = siblings.some((s) => deriveLegSubStatus(s) === "needs_classification");
+        if (!stillUnclassified) {
+          await transitionGroupStatus({
+            groupId: leg.invoiceGroupId,
+            newStatus: "Needs Evidence",
+            source: "auto_after_classify",
+            reason: `Auto-advanced after final leg classified (${errorType.name})`,
+            actor: actorFromReq(req),
+            systemOverride: true,
+            executor: tx,
+          });
+        }
+      }
+    }
+
+    return { updated: u };
   });
+
   await emitStateEvent({
     eventKey: "leg.classified",
     claimId: id,
@@ -1524,6 +1580,7 @@ router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void>
     metadata: { errorTypeId: String(errorType.id), errorTypeName: errorType.name },
   });
   await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
   emitClaimEvent(id, "classified", req);
 
   res.json(updated);
@@ -1755,17 +1812,64 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const [updated] = await db
-    .update(claimsTable)
-    .set({ includedInDispute: false })
-    .where(eq(claimsTable.id, id))
-    .returning();
+  // Use the shared excludeLegCore helper so manual + auto exclusions
+  // produce identical writes (row update + audit row with the same
+  // metadata shape). The route is still responsible for the cross-cutting
+  // side effects that don't belong inside a leg-level transition: state
+  // events, the denormalized cache refresh, the SSE broadcast, and the
+  // promote-on-last-resolved cascade.
+  //
+  // The cascade matters for the all-blank Inbox flow: an operator who
+  // marks every blank leg as `non_issue` from the inbox should land the
+  // parent group in Needs Evidence (where there's nothing to do — and
+  // that's correct, the group is now fully resolved without a dispute).
+  // Mirrors the cascade in `/claims/:id/classify`.
+  const updated = await db.transaction(async (tx) => {
+    const { claim } = await excludeLegCore({
+      claimId: id,
+      reason,
+      note,
+      source: "manual",
+      actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+      leg,
+      trustCallerStateGuard: true,
+      ex: tx,
+    });
 
-  await createAuditLog(id, "leg_excluded", `Leg excluded: ${reason}${note ? ` — ${note}` : ""}`, req, {
-    reason,
-    note,
-    previousSubStatus: "needs_classification",
+    if (leg.invoiceGroupId != null) {
+      const [parent] = await tx
+        .select({ status: invoiceGroupsTable.status })
+        .from(invoiceGroupsTable)
+        .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+      if (parent?.status === "Needs Review") {
+        const siblings = await tx
+          .select({
+            id: claimsTable.id,
+            errorTypeId: claimsTable.errorTypeId,
+            includedInDispute: claimsTable.includedInDispute,
+            holdReason: claimsTable.holdReason,
+            sopOutcome: claimsTable.sopOutcome,
+          })
+          .from(claimsTable)
+          .where(eq(claimsTable.invoiceGroupId, leg.invoiceGroupId));
+        const stillUnclassified = siblings.some((s) => deriveLegSubStatus(s) === "needs_classification");
+        if (!stillUnclassified) {
+          await transitionGroupStatus({
+            groupId: leg.invoiceGroupId,
+            newStatus: "Needs Evidence",
+            source: "auto_after_classify",
+            reason: `Auto-advanced after final unclassified leg excluded (${reason})`,
+            actor: actorFromReq(req),
+            systemOverride: true,
+            executor: tx,
+          });
+        }
+      }
+    }
+
+    return claim;
   });
+
   await emitStateEvent({
     eventKey: "leg.excluded",
     claimId: id,

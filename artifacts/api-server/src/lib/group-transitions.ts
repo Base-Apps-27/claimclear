@@ -4,7 +4,7 @@ import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubm
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
-import type { DbExecutor } from "./claim-transitions";
+import { excludeLegCore, type DbExecutor } from "./claim-transitions";
 import { computeAttestationDelta } from "./attestation";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
@@ -165,6 +165,72 @@ async function syncChildRides(
   }
 }
 
+// Auto-exclusion: at the Needs Review → Needs Evidence promotion, blank
+// `errorDetails` legs that are still needs_classification are clearly
+// "no-issue" siblings of the qualifying ones. Auto-exclude them so the
+// operator doesn't have to hand-clear each blank row.
+//
+// Predicate (qualifying group): at least one sibling has non-empty
+// errorDetails. If every leg is blank, do nothing — the operator must
+// triage by hand. Idempotent: only flips legs whose includedInDispute is
+// still true and whose errorDetails is empty.
+async function autoExcludeBlankSiblingsOnPromote(
+  groupId: number,
+  oldStatus: string,
+  newStatus: string,
+  source: string,
+  actor: GroupTransitionActor,
+  ex: DbExecutor,
+): Promise<void> {
+  if (oldStatus !== "Needs Review" || newStatus !== "Needs Evidence") return;
+  if (source !== "auto_after_classify") return;
+
+  // Read full leg rows so we can hand them to excludeLegCore — that
+  // helper uses the row to populate the audit log's invoiceGroupId and
+  // skips the redundant re-read it would otherwise do.
+  const allLegs = await ex
+    .select()
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, groupId));
+
+  // Qualifying-group predicate — must have at least one sibling whose
+  // errorDetails is non-empty (regardless of include status). If nothing
+  // qualifies, skip the auto-exclude entirely (the all-blank case is
+  // handled manually in the inbox).
+  const hasQualifyingSibling = allLegs.some(
+    (l) => typeof l.errorDetails === "string" && l.errorDetails.trim().length > 0,
+  );
+  if (!hasQualifyingSibling) return;
+
+  // Target rows: still in dispute, no errorTypeId yet (so they're still
+  // needs_classification), and blank errorDetails.
+  const blankLegs = allLegs.filter(
+    (l) =>
+      l.includedInDispute === true &&
+      (l.errorTypeId === null || l.errorTypeId === "") &&
+      (l.errorDetails === null || (typeof l.errorDetails === "string" && l.errorDetails.trim() === "")),
+  );
+  if (blankLegs.length === 0) return;
+
+  // Funnel every flip through the shared helper so the manual exclude
+  // path and the auto-exclude path produce identical writes (row update +
+  // audit row with the same metadata shape and reason vocabulary). The
+  // only behavioural difference is the audit `details` text and the
+  // `source` field — both are passed in.
+  for (const l of blankLegs) {
+    await excludeLegCore({
+      claimId: l.id,
+      reason: "non_issue",
+      note: null,
+      source: "auto_after_classify_sibling_clear",
+      actor,
+      leg: l,
+      trustCallerStateGuard: true,
+      ex,
+    });
+  }
+}
+
 async function ensureNoHeldLegsBeforeClosure(groupId: number, newStatus: string, ex: DbExecutor): Promise<void> {
   if (!TERMINAL_STATUSES.includes(newStatus)) return;
   const held = await ex.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
@@ -240,6 +306,11 @@ export async function transitionGroupStatus(opts: {
     });
 
     await syncChildRides(groupId, newStatus, group.outcome, actor, childFields, ex, source);
+
+    // Auto-exclusion of blank no-issue siblings on the qualifying transition.
+    // Runs in the same executor so it shares the caller's transaction (when
+    // present) or commits with the row update otherwise.
+    await autoExcludeBlankSiblingsOnPromote(groupId, old.status, newStatus, source, actor, ex);
 
     broadcastGroupEvent({
       type: "status_changed",

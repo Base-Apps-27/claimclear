@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
@@ -1359,5 +1359,119 @@ test("POST /claims/:id/reclassify preserves claim_verdict rows (append-only inva
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
+  }
+});
+
+// --- Task #232: auto-exclude blank-description siblings on classify-and-promote --------
+
+test("Needs Review → Needs Evidence via group classify auto-excludes blank-description sibling claims", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  // Qualifying claim — has errorDetails. The classify endpoint will set
+  // the group's errorTypeId, which fires auto_after_classify and the
+  // sibling-clear hook.
+  const qualifying = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  await db.update(claimsTable).set({ errorDetails: "real issue" }).where(eq(claimsTable.id, qualifying.id));
+  // Two blank siblings — these should auto-exclude.
+  const blank1 = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  const blank2 = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  await db.update(claimsTable)
+    .set({ errorDetails: null })
+    .where(eq(claimsTable.id, blank1.id));
+  await db.update(claimsTable)
+    .set({ errorDetails: "   " })
+    .where(eq(claimsTable.id, blank2.id));
+
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}`, {
+      method: "PATCH",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.status, "Needs Evidence", "group must auto-advance to Needs Evidence");
+
+    const blanks = await db.select().from(claimsTable).where(inArray(claimsTable.id, [blank1.id, blank2.id]));
+    for (const b of blanks) {
+      assert.equal(b.includedInDispute, false, `blank sibling ${b.id} must be auto-excluded`);
+    }
+
+    const stillIn = await db.select().from(claimsTable).where(eq(claimsTable.id, qualifying.id));
+    assert.equal(stillIn[0].includedInDispute, true, "qualifying claim must remain in dispute");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, group.id));
+    type LegExcludedMeta = { source?: string; reason?: string } | null;
+    const autoAudits = audits.filter(
+      (a) => (a.metadata as LegExcludedMeta)?.source === "auto_after_classify_sibling_clear",
+    );
+    assert.equal(autoAudits.length, 2, `expected two leg_excluded audits with source=auto_after_classify_sibling_clear; got ${autoAudits.length}`);
+    for (const a of autoAudits) {
+      assert.equal(a.action, "leg_excluded");
+      assert.equal((a.metadata as LegExcludedMeta)?.reason, "non_issue");
+    }
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Needs Review → Needs Evidence is a no-op for the sibling-clear hook when every leg is blank", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const a = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
+  const b = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
+  await db.update(claimsTable).set({ errorDetails: null }).where(inArray(claimsTable.id, [a.id, b.id]));
+
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}`, {
+      method: "PATCH",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 200);
+    const rows = await db.select().from(claimsTable).where(inArray(claimsTable.id, [a.id, b.id]));
+    for (const r of rows) {
+      assert.equal(r.includedInDispute, true, `leg ${r.id} must NOT be auto-excluded when every sibling is blank`);
+    }
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- Task #232: extended LEG_EXCLUSION_REASONS accepts non_issue and cannot_dispute ---
+
+test("POST /claims/:id/exclude accepts reason=non_issue", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "non_issue" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/exclude accepts reason=cannot_dispute", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "cannot_dispute" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+  } finally {
+    await cleanupClaim(claim.id);
   }
 });

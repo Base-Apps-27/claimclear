@@ -72,4 +72,14 @@ re-attestation, or both. Drives the new MAS Action surfaces.
   dir?: ListInvoiceGroupsDir;
   limit?: number;
   offset?: number;
+  /**
+ * Comma-separated additional payloads to embed in the response.
+Currently supported values: `needs_classification` — embeds the
+Classification Inbox payload (groups containing legs in
+needs_classification sub-status, scoped to status=Needs Review)
+so the queue page can fetch the list and the inbox in a single
+round trip. Unknown values are silently ignored.
+
+ */
+  include?: string;
 };

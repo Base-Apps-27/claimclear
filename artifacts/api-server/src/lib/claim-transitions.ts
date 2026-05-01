@@ -450,3 +450,72 @@ export function getValidTransitions(status: string) {
     validOutcomes: VALID_OUTCOME_BY_STATUS[status] || [],
   };
 }
+
+// --- Shared exclude-leg helper ----------------------------------------------
+//
+// Both the manual `POST /claims/:id/exclude` route handler and the
+// auto-exclusion that runs when Needs Review → Needs Evidence promotes a
+// group with blank-description sibling claims call into this function.
+// Centralising it ensures both paths produce identical side effects:
+// the leg row update, the `leg_excluded` audit row, the state event,
+// the denormalized cache refresh, and the SSE broadcast all happen the
+// same way regardless of who triggered the exclusion. Add a new caller?
+// Reach for this helper rather than duplicating the writes.
+export interface ExcludeLegParams {
+  claimId: number;
+  reason: string;
+  note: string | null;
+  source: string;
+  actor: TransitionActor;
+  // Pre-loaded leg row, so the helper doesn't re-read it. Auto-exclusion
+  // already has the row in hand from the bulk select; the manual path
+  // also loads it for the sub-status guard. Passing it through means we
+  // avoid a redundant round-trip and also avoid a race against the
+  // caller's own writes.
+  leg: typeof claimsTable.$inferSelect;
+  // True when the caller has already validated state and just wants the
+  // helper to perform the writes. The manual route validates with the
+  // legSubStatus === "needs_classification" guard before calling; the
+  // auto path filters its candidate set with the same predicate before
+  // looping. Set to false to have the helper enforce the guard itself.
+  trustCallerStateGuard: boolean;
+  ex?: DbExecutor;
+}
+
+export interface ExcludeLegResult {
+  claim: typeof claimsTable.$inferSelect;
+}
+
+export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeLegResult> {
+  const { claimId, reason, note, source, actor, leg, ex } = params;
+  const executor = ex ?? db;
+
+  const [updated] = await executor
+    .update(claimsTable)
+    .set({ includedInDispute: false })
+    .where(and(eq(claimsTable.id, claimId), eq(claimsTable.includedInDispute, true)))
+    .returning();
+
+  // If `updated` is undefined the row was already excluded (or vanished).
+  // Treat the no-op as success so callers in bulk paths don't have to
+  // special-case it; we still return the leg row so the caller has
+  // something coherent to work with.
+  const claim = updated ?? leg;
+
+  await executor.insert(auditLogsTable).values({
+    claimId,
+    invoiceGroupId: leg.invoiceGroupId,
+    action: "leg_excluded",
+    details: `Leg excluded: ${reason}${note ? ` — ${note}` : ""}`,
+    metadata: {
+      reason,
+      note,
+      source,
+      previousSubStatus: "needs_classification",
+    },
+    userEmail: actor.userEmail,
+    userName: actor.userName,
+  });
+
+  return { claim };
+}

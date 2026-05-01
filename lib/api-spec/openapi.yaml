@@ -200,6 +200,17 @@ paths:
           schema:
             type: integer
             default: 0
+        - name: include
+          in: query
+          description: |
+            Comma-separated additional payloads to embed in the response.
+            Currently supported values: `needs_classification` — embeds the
+            Classification Inbox payload (groups containing legs in
+            needs_classification sub-status, scoped to status=Needs Review)
+            so the queue page can fetch the list and the inbox in a single
+            round trip. Unknown values are silently ignored.
+          schema:
+            type: string
       responses:
         "200":
           description: Invoice groups list
@@ -275,6 +286,26 @@ paths:
             text/csv:
               schema:
                 type: string
+
+  /invoice-groups/needs-classification:
+    get:
+      operationId: getNeedsClassificationInbox
+      tags: [invoice-groups]
+      summary: Classification Inbox summary — groups with at least one needs_classification leg
+      description: |
+        Feeds the collapsible Classification Inbox on the queue page.
+        Returns groups currently in `New` or `Needs Review` that contain
+        at least one `needs_classification` leg, with the per-claim payload
+        (errorDetails, claimAmount, etc.) and a `qualifyingSiblingCount`
+        flag indicating whether at least one sibling already carries an
+        errorTypeId or non-empty errorDetails.
+      responses:
+        "200":
+          description: Classification inbox payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NeedsClassificationInboxResponse"
 
   /invoice-groups/{id}:
     get:
@@ -4070,6 +4101,72 @@ components:
         - disputeEmailSent
         - reattestRequired
 
+    NeedsClassificationInboxClaim:
+      type: object
+      required: [id, confNumber, isBlank]
+      properties:
+        id:
+          type: integer
+        confNumber:
+          type: string
+        date:
+          type: ["string", "null"]
+        claimAmount:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        isBlank:
+          type: boolean
+          description: True when errorDetails is null/whitespace.
+
+    NeedsClassificationInboxGroup:
+      type: object
+      required:
+        - id
+        - status
+        - rideCount
+        - needsClassificationCount
+        - qualifyingSiblingCount
+        - allBlank
+        - claims
+      properties:
+        id:
+          type: integer
+        invoiceNumber:
+          type: ["string", "null"]
+        status:
+          type: string
+        rideCount:
+          type: integer
+        totalAmount:
+          type: ["string", "null"]
+        clientNumber:
+          type: ["string", "null"]
+        needsClassificationCount:
+          type: integer
+        qualifyingSiblingCount:
+          type: integer
+          description: Number of sibling legs already carrying an errorTypeId or non-empty errorDetails.
+        allBlank:
+          type: boolean
+          description: True when no leg in this group has an errorTypeId or errorDetails — operator must triage by hand.
+        claims:
+          type: array
+          items:
+            $ref: "#/components/schemas/NeedsClassificationInboxClaim"
+
+    NeedsClassificationInboxResponse:
+      type: object
+      required: [total, groups]
+      properties:
+        total:
+          type: integer
+          description: Total needs_classification leg count across all surfaced groups.
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/NeedsClassificationInboxGroup"
+
     InvoiceGroupDetailResponse:
       allOf:
         - $ref: "#/components/schemas/InvoiceGroupResponse"
@@ -4148,6 +4245,11 @@ components:
             $ref: "#/components/schemas/InvoiceGroupResponse"
         total:
           type: integer
+        needsClassificationInbox:
+          description: |
+            Present only when the request included `?include=needs_classification`.
+            Same payload shape as `GET /invoice-groups/needs-classification`.
+          $ref: "#/components/schemas/NeedsClassificationInboxResponse"
       required:
         - groups
         - total
@@ -4721,7 +4823,7 @@ components:
       properties:
         reason:
           type: string
-          enum: [clean_leg, out_of_scope, duplicate, other]
+          enum: [clean_leg, out_of_scope, duplicate, non_issue, cannot_dispute, other]
         note:
           type: ["string", "null"]
 

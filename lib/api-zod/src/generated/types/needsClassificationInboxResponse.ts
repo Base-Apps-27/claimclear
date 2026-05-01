@@ -11,15 +11,10 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { NeedsClassificationInboxGroup } from "./needsClassificationInboxGroup";
 
-export type ExcludeLegBodyReason =
-  (typeof ExcludeLegBodyReason)[keyof typeof ExcludeLegBodyReason];
-
-export const ExcludeLegBodyReason = {
-  clean_leg: "clean_leg",
-  out_of_scope: "out_of_scope",
-  duplicate: "duplicate",
-  non_issue: "non_issue",
-  cannot_dispute: "cannot_dispute",
-  other: "other",
-} as const;
+export interface NeedsClassificationInboxResponse {
+  /** Total needs_classification leg count across all surfaced groups. */
+  total: number;
+  groups: NeedsClassificationInboxGroup[];
+}

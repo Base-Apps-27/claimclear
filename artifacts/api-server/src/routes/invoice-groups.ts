@@ -291,7 +291,24 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
   }));
 
-  res.json({ groups, total: totalResult.count });
+  // `?include=needs_classification` returns the inbox payload alongside
+  // the regular list response so the queue page can fetch list +
+  // inbox in a single round trip. Multiple `include` values can be
+  // comma-separated (extension-friendly even though we only have one
+  // today). Unknown values are silently ignored.
+  const includeRaw = req.query.include;
+  const includeSet = new Set(
+    String(includeRaw ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const responseBody: Record<string, unknown> = { groups, total: totalResult.count };
+  if (includeSet.has("needs_classification")) {
+    responseBody.needsClassificationInbox = await buildNeedsClassificationInbox();
+  }
+
+  res.json(responseBody);
 }));
 
 router.get("/invoice-groups/export-csv", asyncHandler(async (req, res): Promise<void> => {
@@ -336,6 +353,147 @@ router.get("/invoice-groups/export-csv", asyncHandler(async (req, res): Promise<
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="invoice-groups-${today}.csv"`);
   res.send([header, ...rows].join("\r\n"));
+}));
+
+// Classification Inbox summary — feeds the collapsible inbox on the queue
+// page. Returns groups that contain at least one needs_classification leg,
+// with a per-claim row payload (errorDetails, etc.) plus a `qualifying`
+// flag indicating whether at least one sibling already has a classification
+// (errorTypeId or non-empty errorDetails). Groups where every leg is blank
+// are still surfaced — they need manual triage from the inbox.
+// Inbox payload shape — exported so the openapi codegen and the list
+// route's `?include=needs_classification` branch can both reference it.
+export type InboxClaim = {
+  id: number;
+  confNumber: string;
+  date: string | null;
+  claimAmount: string | null;
+  errorDetails: string | null;
+  isBlank: boolean;
+};
+export type InboxGroup = {
+  id: number;
+  invoiceNumber: string | null;
+  status: string;
+  rideCount: number;
+  totalAmount: string | null;
+  clientNumber: string | null;
+  needsClassificationCount: number;
+  qualifyingSiblingCount: number;
+  allBlank: boolean;
+  claims: InboxClaim[];
+};
+export interface NeedsClassificationInbox {
+  total: number;
+  groups: InboxGroup[];
+}
+
+// Shared builder used by both `GET /invoice-groups/needs-classification`
+// (kept for back-compat with already-deployed clients) and the new
+// `GET /invoice-groups?include=needs_classification` branch. Single
+// source of truth for the predicate (Needs Review only) and the sort
+// order (qualifying siblings first, then all-blank).
+async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox> {
+  const candidateLegs = await db
+    .select({
+      id: claimsTable.id,
+      invoiceGroupId: claimsTable.invoiceGroupId,
+      confNumber: claimsTable.confNumber,
+      date: claimsTable.date,
+      claimAmount: claimsTable.claimAmount,
+      errorDetails: claimsTable.errorDetails,
+      errorTypeId: claimsTable.errorTypeId,
+      errorTypeName: claimsTable.errorTypeName,
+      includedInDispute: claimsTable.includedInDispute,
+      holdReason: claimsTable.holdReason,
+      sopOutcome: claimsTable.sopOutcome,
+    })
+    .from(claimsTable)
+    .innerJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    // Predicate scoped to Needs Review only — that's where unclassified
+    // groups live in the dispute lifecycle. New groups are still imports
+    // that may not have been triaged into the dispute pipeline yet, so
+    // they're explicitly excluded from the inbox.
+    .where(eq(invoiceGroupsTable.status, "Needs Review"))
+    .orderBy(asc(invoiceGroupsTable.id), asc(claimsTable.id));
+
+  const groupIds = Array.from(new Set(candidateLegs.map((l) => l.invoiceGroupId).filter((x): x is number => x != null)));
+  if (groupIds.length === 0) {
+    return { total: 0, groups: [] };
+  }
+
+  const groupRows = await db
+    .select({
+      id: invoiceGroupsTable.id,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
+      status: invoiceGroupsTable.status,
+      rideCount: invoiceGroupsTable.rideCount,
+      totalAmount: invoiceGroupsTable.totalAmount,
+      clientNumber: invoiceGroupsTable.clientNumber,
+    })
+    .from(invoiceGroupsTable)
+    .where(inArray(invoiceGroupsTable.id, groupIds));
+  const groupById = new Map(groupRows.map((g) => [g.id, g]));
+
+  const byGroup = new Map<number, { qualifyingLegs: typeof candidateLegs; needsClassLegs: typeof candidateLegs }>();
+  for (const leg of candidateLegs) {
+    if (leg.invoiceGroupId == null) continue;
+    const bucket = byGroup.get(leg.invoiceGroupId) ?? { qualifyingLegs: [], needsClassLegs: [] };
+    const hasErrorDetails = typeof leg.errorDetails === "string" && leg.errorDetails.trim().length > 0;
+    const hasErrorType = typeof leg.errorTypeId === "string" && leg.errorTypeId.length > 0;
+    if (hasErrorDetails || hasErrorType) bucket.qualifyingLegs.push(leg);
+    const sub = deriveLegSubStatus(leg);
+    if (sub === "needs_classification") bucket.needsClassLegs.push(leg);
+    byGroup.set(leg.invoiceGroupId, bucket);
+  }
+
+  const inboxGroups: InboxGroup[] = [];
+  for (const [gid, { qualifyingLegs, needsClassLegs }] of byGroup) {
+    if (needsClassLegs.length === 0) continue;
+    const grp = groupById.get(gid);
+    if (!grp) continue;
+    const claims: InboxClaim[] = needsClassLegs.map((l) => ({
+      id: l.id,
+      confNumber: l.confNumber,
+      date: l.date,
+      claimAmount: l.claimAmount,
+      errorDetails: l.errorDetails,
+      isBlank: !(typeof l.errorDetails === "string" && l.errorDetails.trim().length > 0),
+    }));
+    inboxGroups.push({
+      id: grp.id,
+      invoiceNumber: grp.invoiceNumber,
+      status: grp.status,
+      rideCount: grp.rideCount,
+      totalAmount: grp.totalAmount,
+      clientNumber: grp.clientNumber,
+      needsClassificationCount: needsClassLegs.length,
+      qualifyingSiblingCount: qualifyingLegs.length,
+      allBlank: qualifyingLegs.length === 0,
+      claims,
+    });
+  }
+
+  // Sort: groups with at least one qualifying sibling first (operator can
+  // act immediately on those), then all-blank groups (need manual triage).
+  inboxGroups.sort((a, b) => {
+    if (a.allBlank !== b.allBlank) return a.allBlank ? 1 : -1;
+    return a.id - b.id;
+  });
+
+  return {
+    total: inboxGroups.reduce((acc, g) => acc + g.needsClassificationCount, 0),
+    groups: inboxGroups,
+  };
+}
+
+router.get("/invoice-groups/needs-classification", asyncHandler(async (_req, res): Promise<void> => {
+  // Back-compat route — same payload, kept so existing clients keep
+  // working through the deprecation window. New callers should prefer
+  // `GET /invoice-groups?include=needs_classification` which embeds the
+  // inbox alongside the regular list response.
+  const inbox = await buildNeedsClassificationInbox();
+  res.json(inbox);
 }));
 
 router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {

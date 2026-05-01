@@ -116,6 +116,7 @@ import type {
   ListWithdrawalsParams,
   LookupMappingsBody,
   LookupMappingsResponse,
+  NeedsClassificationInboxResponse,
   NoteResponse,
   NotificationPreferencesResponse,
   PackageInvoiceGroup409,
@@ -600,6 +601,93 @@ export function useExportInvoiceGroupsCsv<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getExportInvoiceGroupsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Feeds the collapsible Classification Inbox on the queue page.
+Returns groups currently in `New` or `Needs Review` that contain
+at least one `needs_classification` leg, with the per-claim payload
+(errorDetails, claimAmount, etc.) and a `qualifyingSiblingCount`
+flag indicating whether at least one sibling already carries an
+errorTypeId or non-empty errorDetails.
+
+ * @summary Classification Inbox summary — groups with at least one needs_classification leg
+ */
+export const getGetNeedsClassificationInboxUrl = () => {
+  return `/api/invoice-groups/needs-classification`;
+};
+
+export const getNeedsClassificationInbox = async (
+  options?: RequestInit,
+): Promise<NeedsClassificationInboxResponse> => {
+  return customFetch<NeedsClassificationInboxResponse>(
+    getGetNeedsClassificationInboxUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetNeedsClassificationInboxQueryKey = () => {
+  return [`/api/invoice-groups/needs-classification`] as const;
+};
+
+export const getGetNeedsClassificationInboxQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNeedsClassificationInbox>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getNeedsClassificationInbox>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNeedsClassificationInboxQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNeedsClassificationInbox>>
+  > = ({ signal }) =>
+    getNeedsClassificationInbox({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNeedsClassificationInbox>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNeedsClassificationInboxQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNeedsClassificationInbox>>
+>;
+export type GetNeedsClassificationInboxQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Classification Inbox summary — groups with at least one needs_classification leg
+ */
+
+export function useGetNeedsClassificationInbox<
+  TData = Awaited<ReturnType<typeof getNeedsClassificationInbox>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getNeedsClassificationInbox>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNeedsClassificationInboxQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

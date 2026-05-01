@@ -587,6 +587,43 @@ export interface InvoiceGroupResponse {
   legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
 }
 
+export interface NeedsClassificationInboxClaim {
+  id: number;
+  confNumber: string;
+  /** @nullable */
+  date?: string | null;
+  /** @nullable */
+  claimAmount?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  /** True when errorDetails is null/whitespace. */
+  isBlank: boolean;
+}
+
+export interface NeedsClassificationInboxGroup {
+  id: number;
+  /** @nullable */
+  invoiceNumber?: string | null;
+  status: string;
+  rideCount: number;
+  /** @nullable */
+  totalAmount?: string | null;
+  /** @nullable */
+  clientNumber?: string | null;
+  needsClassificationCount: number;
+  /** Number of sibling legs already carrying an errorTypeId or non-empty errorDetails. */
+  qualifyingSiblingCount: number;
+  /** True when no leg in this group has an errorTypeId or errorDetails — operator must triage by hand. */
+  allBlank: boolean;
+  claims: NeedsClassificationInboxClaim[];
+}
+
+export interface NeedsClassificationInboxResponse {
+  /** Total needs_classification leg count across all surfaced groups. */
+  total: number;
+  groups: NeedsClassificationInboxGroup[];
+}
+
 export type PortalSubmissionResponseStatus =
   (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
 
@@ -921,6 +958,10 @@ export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
 export interface InvoiceGroupsListResponse {
   groups: InvoiceGroupResponse[];
   total: number;
+  /** Present only when the request included `?include=needs_classification`.
+Same payload shape as `GET /invoice-groups/needs-classification`.
+ */
+  needsClassificationInbox?: NeedsClassificationInboxResponse;
 }
 
 export type UpdateInvoiceGroupBodyEvidenceFiles = { [key: string]: unknown };
@@ -1472,6 +1513,8 @@ export const ExcludeLegBodyReason = {
   clean_leg: "clean_leg",
   out_of_scope: "out_of_scope",
   duplicate: "duplicate",
+  non_issue: "non_issue",
+  cannot_dispute: "cannot_dispute",
   other: "other",
 } as const;
 
@@ -2886,6 +2929,16 @@ re-attestation, or both. Drives the new MAS Action surfaces.
   dir?: ListInvoiceGroupsDir;
   limit?: number;
   offset?: number;
+  /**
+ * Comma-separated additional payloads to embed in the response.
+Currently supported values: `needs_classification` — embeds the
+Classification Inbox payload (groups containing legs in
+needs_classification sub-status, scoped to status=Needs Review)
+so the queue page can fetch the list and the inbox in a single
+round trip. Unknown values are silently ignored.
+
+ */
+  include?: string;
 };
 
 export type ListInvoiceGroupsErrorDetails =
