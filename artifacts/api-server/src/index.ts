@@ -1,3 +1,6 @@
+// Startup-error guard MUST come first so its process-level handlers are
+// registered before any other top-level module code runs. See Task #258.
+import { markServerStarted } from "./lib/startup-guard";
 import app from "./app";
 import { logger } from "./lib/logger";
 import cron from "node-cron";
@@ -67,129 +70,14 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
     logger.warn({ err }, "One-time migration: conversation_id backfill failed");
   }
 
-  // Task #64: re-queue last night's three failed batch portal submissions
-  // (#9, #10, #12) that hit the midnight Freshdesk-portal `networkidle` timeout.
-  // PRODUCTION ONLY — the failed rows live in the deployed database; we
-  // explicitly skip dev/staging boots so this never accidentally touches
-  // unrelated rows that happen to share IDs in another environment.
-  // Idempotent: each submission is only touched if it is still status='failed'
-  // AND no `submission_manual_requeue` audit row already exists for it. Leaves
-  // `attempts` unchanged so they still have 3 of 4 attempts left, and writes
-  // an audit row per submission so the daily brief can surface the action.
+  // Removed (Task #258): Task #64 batch-submission re-queue backfill and the
+  // Apr-27 attempts-reset followup. Both queries selected/returned
+  // `portal_submissions.claim_id`, which migration 0014 dropped during the
+  // per-invoice cutover. Both backfills had already been applied in prior
+  // production builds (audit-log gated, idempotent), so leaving them in place
+  // contributed nothing but a guaranteed boot-time exception against the
+  // post-0014 schema.
   const isProduction = process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1";
-  if (!isProduction) {
-    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Task #64 backfill: skipping (not production)");
-  } else try {
-    const result = await runWithDbWarmupRetry("Task #64 backfill", () => db.execute(sql`
-      WITH targets AS (
-        SELECT id, claim_id
-        FROM portal_submissions
-        WHERE id IN (9, 10, 12)
-          AND status = 'failed'
-          AND NOT EXISTS (
-            SELECT 1 FROM audit_logs al
-            WHERE al.action = 'submission_manual_requeue'
-              AND (al.metadata->>'submissionId')::int = portal_submissions.id
-          )
-      ),
-      updated AS (
-        UPDATE portal_submissions ps
-        SET status = 'pending',
-            next_retry_at = NOW(),
-            error_message = NULL,
-            updated_at = NOW()
-        FROM targets t
-        WHERE ps.id = t.id
-        RETURNING ps.id, ps.claim_id
-      )
-      INSERT INTO audit_logs (claim_id, action, details, metadata, user_email, user_name)
-      SELECT
-        u.claim_id,
-        'submission_manual_requeue',
-        'Auto re-queued after the 2026-04-24 midnight Freshdesk portal slowdown (Task #64). Attempts unchanged; bot will retry on next poll.',
-        jsonb_build_object(
-          'submissionId', u.id,
-          'reason', 'Midnight portal networkidle timeout (~2026-04-24 00:00 ET); portal slowdown not a code bug. See Task #64.',
-          'task', 64
-        ),
-        'system@claimclear',
-        'System (Task #64 backfill)'
-      FROM updated u
-      RETURNING (metadata->>'submissionId')::int AS submission_id
-    `));
-    const requeuedIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
-    if (requeuedIds.length > 0) {
-      logger.info({ requeuedIds }, "Task #64 backfill: manually re-queued failed batch submissions");
-    } else {
-      logger.info("Task #64 backfill: no submissions needed re-queueing (already done or no longer failed)");
-    }
-  } catch (err) {
-    logger.warn({ err }, "Task #64 backfill: re-queue failed batch submissions failed");
-  }
-
-  // Followup to Task #64: submissions #9 and #10 went through all 4 retries
-  // on subsequent nights and exhausted at 4/4 (each retry landed inside the
-  // same recurring midnight Freshdesk slowdown window). With the new wider
-  // retry schedule [5m, 30m, 4h, 8h] and the loosened login-page navigation,
-  // give them a full fresh batch of attempts by resetting attempts → 0.
-  // PRODUCTION ONLY. Idempotent: gated by an audit row whose metadata
-  // contains `phase: 'attempts-reset-apr27'`, distinct from the original
-  // Task #64 backfill marker so it doesn't collide.
-  if (!isProduction) {
-    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Apr-27 attempts reset: skipping (not production)");
-  } else try {
-    const result = await runWithDbWarmupRetry("Apr-27 attempts reset", () => db.execute(sql`
-      WITH targets AS (
-        SELECT id, claim_id
-        FROM portal_submissions
-        WHERE id IN (9, 10)
-          AND status = 'failed'
-          AND attempts >= max_attempts
-          AND NOT EXISTS (
-            SELECT 1 FROM audit_logs al
-            WHERE al.action = 'submission_manual_requeue'
-              AND (al.metadata->>'submissionId')::int = portal_submissions.id
-              AND al.metadata->>'phase' = 'attempts-reset-apr27'
-          )
-      ),
-      updated AS (
-        UPDATE portal_submissions ps
-        SET status = 'pending',
-            attempts = 0,
-            next_retry_at = NULL,
-            error_message = NULL,
-            updated_at = NOW()
-        FROM targets t
-        WHERE ps.id = t.id
-        RETURNING ps.id, ps.claim_id
-      )
-      INSERT INTO audit_logs (claim_id, action, details, metadata, user_email, user_name)
-      SELECT
-        u.claim_id,
-        'submission_manual_requeue',
-        'Reset to 0/4 attempts after retries exhausted across the recurring 2026-04-24..27 midnight Freshdesk slowdown. New retry schedule [5m, 30m, 4h, 8h] now spreads attempts so at least one lands outside the slow window. Login-page navigation also loosened to match the form-page fix.',
-        jsonb_build_object(
-          'submissionId', u.id,
-          'phase', 'attempts-reset-apr27',
-          'previousStatus', 'failed',
-          'previousAttempts', 4,
-          'reason', 'Recurring midnight portal slowdown exhausted retries on 4 consecutive nights.',
-          'newScheduleMinutes', jsonb_build_array(5, 30, 240, 480)
-        ),
-        'system@claimclear',
-        'System (Apr-27 attempts reset)'
-      FROM updated u
-      RETURNING (metadata->>'submissionId')::int AS submission_id
-    `));
-    const resetIds = (result.rows ?? []).map((r) => (r as { submission_id?: number }).submission_id).filter((n): n is number => typeof n === "number");
-    if (resetIds.length > 0) {
-      logger.info({ resetIds }, "Apr-27 attempts reset: manually reset attempts to 0 for exhausted submissions");
-    } else {
-      logger.info("Apr-27 attempts reset: no submissions needed reset (already done or no longer exhausted)");
-    }
-  } catch (err) {
-    logger.warn({ err }, "Apr-27 attempts reset: failed");
-  }
 
   // Task #74 closure_reason backfill (production only, idempotent via
   // audit-log marker). Per-row classification of historical Denied rows
@@ -509,11 +397,22 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   } catch (err) {
     logger.warn({ err }, "Disputed-child sync backfill: failed");
   }
-})();
+})().catch((err) => {
+  // The IIFE above already wraps each backfill in its own try/catch, but a
+  // surprise throw escaping all of them would otherwise become an
+  // unhandled rejection. Surface it as a FATAL line for visibility (the
+  // server itself stays up — none of the backfills are required for the
+  // app to serve traffic).
+  logger.error({ err }, "FATAL: boot-time IIFE threw an unhandled error (server still starting)");
+});
 
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
+  // FATAL log goes through stderr via the unhandledException handler when
+  // we throw — but we also surface a clear pino line first so the failure
+  // mode reads cleanly in deployment runtime logs.
+  logger.fatal("FATAL: server failed to start (PORT environment variable is required but was not provided)");
   throw new Error(
     "PORT environment variable is required but was not provided.",
   );
@@ -522,15 +421,17 @@ if (!rawPort) {
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
+  logger.fatal({ rawPort }, `FATAL: server failed to start (invalid PORT value: "${rawPort}")`);
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
 app.listen(port, (err) => {
   if (err) {
-    logger.error({ err }, "Error listening on port");
+    logger.fatal({ err }, "FATAL: server failed to start (error listening on port)");
     process.exit(1);
   }
 
+  markServerStarted();
   logger.info({ port }, "Server listening");
 
   // Boot cleanup: any rows still flagged as Queued by an in-memory batch from

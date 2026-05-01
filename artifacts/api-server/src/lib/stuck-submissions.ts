@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { computeNextRetryDelayMinutes } from "./submission-retry";
+import { primaryClaimIdForGroup } from "./group-claims";
 
 const STUCK_THRESHOLD_MINUTES = parseInt(process.env.PORTAL_STUCK_THRESHOLD_MINUTES || "120", 10);
 
@@ -15,8 +16,11 @@ export async function resetStuckSubmissions(): Promise<StuckResetResult> {
   const cutoffMs = Date.now() - STUCK_THRESHOLD_MINUTES * 60_000;
   const cutoff = new Date(cutoffMs);
 
+  // `claim_id` was dropped from `portal_submissions` in migration 0014
+  // (per-invoice cutover); audit rows are now attributed to the group's
+  // primary leg via `primaryClaimIdForGroup`. See Task #258.
   const candidates = await db.execute(sql`
-    SELECT ps.id, ps.claim_id, ps.invoice_group_id, ps.attempts, ps.max_attempts, ps.updated_at
+    SELECT ps.id, ps.invoice_group_id, ps.attempts, ps.max_attempts, ps.updated_at
     FROM ${portalSubmissionsTable} ps
     WHERE ps.status = 'in_progress'
       AND ps.updated_at <= ${cutoff}
@@ -29,7 +33,6 @@ export async function resetStuckSubmissions(): Promise<StuckResetResult> {
 
   const rows = (candidates.rows ?? []) as Array<{
     id: number;
-    claim_id: number;
     invoice_group_id: number | null;
     attempts: number;
     max_attempts: number;
@@ -45,6 +48,9 @@ export async function resetStuckSubmissions(): Promise<StuckResetResult> {
     const exhausted = nextAttemptNumber > maxAttempts;
     const delayMin = computeNextRetryDelayMinutes(attemptsSoFar);
     const nextRetryAt = new Date(Date.now() + delayMin * 60_000);
+    const claimIdForAudit = row.invoice_group_id != null
+      ? await primaryClaimIdForGroup(row.invoice_group_id)
+      : null;
 
     if (exhausted) {
       await db.update(portalSubmissionsTable).set({
@@ -54,7 +60,7 @@ export async function resetStuckSubmissions(): Promise<StuckResetResult> {
       }).where(eq(portalSubmissionsTable.id, row.id));
 
       await db.insert(auditLogsTable).values({
-        claimId: row.claim_id,
+        claimId: claimIdForAudit,
         invoiceGroupId: row.invoice_group_id ?? null,
         action: "submission_stuck_reset",
         details: `Portal submission #${row.id} stuck in_progress for >${STUCK_THRESHOLD_MINUTES}m; retry attempts exhausted, marked failed`,
@@ -69,7 +75,7 @@ export async function resetStuckSubmissions(): Promise<StuckResetResult> {
       }).where(and(eq(portalSubmissionsTable.id, row.id), eq(portalSubmissionsTable.status, "in_progress")));
 
       await db.insert(auditLogsTable).values({
-        claimId: row.claim_id,
+        claimId: claimIdForAudit,
         invoiceGroupId: row.invoice_group_id ?? null,
         action: "submission_stuck_reset",
         details: `Portal submission #${row.id} stuck in_progress for >${STUCK_THRESHOLD_MINUTES}m; reset to pending, retry scheduled at ${nextRetryAt.toISOString()}`,

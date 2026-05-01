@@ -141,7 +141,7 @@ The workflow player, the Claims/Invoice Groups tab strips, and the recommendatio
 - Recommendation banners on the claim and invoice-group detail pages branch on phase, with status-level only kept where the copy actually differs ("Gather evidence" vs "Classify this claim" inside the pre-submit phase).
 - The post-response verdict lanes (Resolve—Reattest / Resolve—New Invoice # / Mark as Denied by Payor / Re-dispute) live in one shared component, `src/components/response-actions-card.tsx`, with an "AI hint" badge labeling what the classifier inferred from the latest response. Claim-detail renders the full version; the player's response-pending phase deep-links to it.
 - **Defense in depth on Generate Submission Preview.** Both players accept `historicalSubmissionsCount` and disable the button (with an explanatory tooltip) when it's > 0, so the operator can't spawn a parallel draft when a submission already exists. The server still enforces this; failing in the UI just keeps a wasted round-trip from happening.
-- `SYNCABLE` (`artifacts/api-server/src/index.ts:457`) — the production-only disputed-leg sync backfill — now includes `Needs Review` so a group auto-classified into Needs Review pulls its disputed legs along on the next prod boot.
+- `SYNCABLE` (`artifacts/api-server/src/index.ts:337`) — the production-only disputed-leg sync backfill — now includes `Needs Review` so a group auto-classified into Needs Review pulls its disputed legs along on the next prod boot.
 
 Adding or renaming a status from now on means editing `STATUSES_BY_PHASE` and (if needed) `LIFECYCLE_TABS`. The player branches, the list-page tabs, the banners, and the rollup all flow through.
 
