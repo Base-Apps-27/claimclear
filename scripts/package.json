@@ -6,10 +6,13 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test src/__tests__/*.test.ts",
     "backfill:per-leg-state": "tsx ./src/migrations/2026-05-per-leg-state-backfill.ts",
-    "backfill:portal-submissions-group-link": "tsx ./src/migrations/2026-05-portal-submissions-group-link-backfill.ts"
+    "backfill:portal-submissions-group-link": "tsx ./src/migrations/2026-05-portal-submissions-group-link-backfill.ts",
+    "backfill:auto-non-issue-siblings": "tsx ./src/migrations/2026-05-auto-non-issue-siblings-backfill.ts"
   },
   "dependencies": {
+    "@workspace/api-server": "workspace:*",
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:"
   },

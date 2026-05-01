@@ -940,6 +940,9 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/api-server':
+        specifier: workspace:*
+        version: link:../artifacts/api-server
       '@workspace/db':
         specifier: workspace:*
         version: link:../lib/db
