@@ -102,12 +102,11 @@ Response from <sender>, <when>     [AI hint pill: Denial / 87% conf]
 ─────────────────────────────────────────────
 What's the verdict?
   Continuation:    [Re-dispute]  [Re-attest]  [Submit new invoice]
-  Resolution:      [Mark paid]
   Closure:         [Denied by Payor]
 ```
 
 - **Continuation** reuses the existing `postResponseActions` returned by the API (`re_dispute`, `resolve_reattest`, `resolve_new_invoice`).
-- **Resolution** is a new "Mark paid" path — see open question below.
+- **No "Resolution / Mark paid" lane.** Resolved by user May 1, 2026: this department's job ends at confirming the submission/reattestation was completed; payment outcomes are not tracked here. The `useUpdateInvoiceGroupOutcome → "Approved"` path on this surface and the `MARK_PAID_LANE_ENABLED` feature gate were removed at the same time.
 - **Closure** on this surface offers only `Denied by Payor`, because `Cannot Dispute` and `Non-Issue` are Stage 1 decisions and can't legitimately fire here. This means the shared `<ClosureActions>` component needs to be aware of context (Stage 1 vs Stage 2) when rendering its triggers, or the response-review panel uses a thinner closure trigger that only exposes `Denied by Payor`. Either is fine — implementer's call when scoping the task.
 
 ### Backend changes required
@@ -126,7 +125,6 @@ What's the verdict?
 
 ### Open questions still on the table
 
-- **First-class "Mark paid" action?** Does "Payer agreed and we got paid offline" need a dedicated button on the response-review panel that flips status to `Resolved` with outcome `Approved`? Or is manual status → Resolved good enough? The proposal above includes "Mark paid"; user has not yet confirmed.
 - **Re-bucket confirmation.** Existing `accepted_loss` → `denied_by_payor` is the leaning, but user hasn't confirmed.
 - **Outcome alignment confirmation.** `cannot_dispute` → `Withdrawn`, `denied_by_payor` → `Denied`. User leaning yes; not yet confirmed.
 

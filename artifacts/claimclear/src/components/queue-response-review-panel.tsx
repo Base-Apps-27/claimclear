@@ -3,7 +3,6 @@ import {
   useGetInvoiceGroup,
   useGetInvoiceGroupValidTransitions,
   useUpdateInvoiceGroupStatus,
-  useUpdateInvoiceGroupOutcome,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getListInvoiceGroupsQueryKey,
@@ -26,7 +25,6 @@ import { formatDateTime } from "@/lib/format";
 import {
   ArrowRight,
   ChevronRight,
-  DollarSign,
   ExternalLink,
   Loader2,
   Mail,
@@ -37,17 +35,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { ClosureActions } from "@/components/closure/closure-actions";
-
-/**
- * "Mark Paid" Resolution lane is gated behind an open product question
- * (see replit.md → "Open questions still on the table" → First-class
- * "Mark paid" action?). The lane is fully wired so flipping this constant
- * to `true` ships it without further code changes; until the user signs
- * off, the lane is hidden and operators handle "got paid offline" via the
- * existing manual outcome dropdown on the detail page (per task #162
- * Step 7: "If not approved, omit the Resolution lane entirely").
- */
-const MARK_PAID_LANE_ENABLED = false;
 
 function getErrorMessage(err: unknown): string | undefined {
   if (err instanceof Error) return err.message;
@@ -144,13 +131,13 @@ interface QueueResponseReviewPanelProps {
  *    can route each verdict to its own canonical status/outcome pair
  *    (mirroring the claim-level handler).
  *
- *  - Resolution (Mark Paid): fully wired but hidden behind
- *    `MARK_PAID_LANE_ENABLED` while the open question in replit.md
- *    remains unresolved.
- *
  *  - Closure: Denied by Payor only — `Cannot Dispute` and `Non-Issue` are
  *    stage-1 verdicts and must not appear here (see replit.md "Design
  *    decision in flight").
+ *
+ * Note: there is no "Mark Paid" / Resolution lane. This department's
+ * job ends at confirming the submission/reattestation was completed;
+ * payment outcomes are not tracked here (user direction, May 1 2026).
  */
 interface ContinuationActionDef {
   key: string;
@@ -166,7 +153,6 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const updateStatus = useUpdateInvoiceGroupStatus();
-  const updateOutcome = useUpdateInvoiceGroupOutcome();
 
   const { data: detail, isLoading: detailLoading } = useGetInvoiceGroup(group.id);
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(group.id);
@@ -240,24 +226,7 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
     }
   };
 
-  const handleMarkPaid = async () => {
-    try {
-      await updateOutcome.mutateAsync({
-        id: group.id,
-        data: { outcome: "Approved" },
-      });
-      invalidate();
-      onCompleted(`#${group.invoiceNumber} marked paid`);
-    } catch (err: unknown) {
-      toast({
-        title: "Couldn't mark paid",
-        description: getErrorMessage(err) || "Outcome update failed. Please refresh and try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const isPending = updateStatus.isPending || updateOutcome.isPending;
+  const isPending = updateStatus.isPending;
 
   const senderLabel = latestResponse
     ? latestResponse.senderName || latestResponse.senderEmail || (latestResponse.source === "portal" ? "MAS Portal" : "Payor")
@@ -402,29 +371,6 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
               </div>
             )}
           </div>
-
-          {MARK_PAID_LANE_ENABLED && (
-            <div className="space-y-2" data-testid="verdict-lane-resolution">
-              <div className="text-xs font-semibold text-muted-foreground">
-                Resolution — payor agreed and paid
-              </div>
-              <Button
-                variant="outline"
-                className="h-auto py-2 px-3 flex flex-col items-start gap-0.5 bg-green-50 hover:bg-green-100 border-green-300 text-green-900"
-                disabled={isPending}
-                onClick={handleMarkPaid}
-                data-testid="button-resolution-mark-paid"
-              >
-                <span className="flex items-center gap-2 font-semibold text-sm">
-                  <DollarSign className="h-4 w-4" />
-                  Mark Paid
-                </span>
-                <span className="text-xs font-normal opacity-80 text-left">
-                  Payor confirmed payment — close as Approved
-                </span>
-              </Button>
-            </div>
-          )}
 
           <div className="space-y-2" data-testid="verdict-lane-closure">
             <div className="text-xs font-semibold text-muted-foreground">
