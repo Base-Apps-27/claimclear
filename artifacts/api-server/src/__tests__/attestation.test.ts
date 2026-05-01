@@ -516,8 +516,15 @@ test("all attestation endpoints reject unauthenticated callers with 401", async 
 
 // ---- Group cascade ------------------------------------------------------
 
-test("group outcome → Approved cascades pending attestation to disputed children", async () => {
+test("group outcome → Approved cascades pending attestation to disputed children (post-reattest gate)", async () => {
+  // Per Task #196, the cascade only engages once the group's MAS re-attest
+  // has been stamped complete. We pre-stamp `reattest_completed_at` here so
+  // the gate is open before the outcome flip; without that stamp, the
+  // dedicated gate-closed test below verifies the cascade stays parked.
   const group = await createSeedGroup();
+  await db.update(invoiceGroupsTable)
+    .set({ reattestRequired: true, reattestCompletedAt: new Date() })
+    .where(eq(invoiceGroupsTable.id, group.id));
   const child = await createSeedClaim({ invoiceGroupId: group.id });
   // A non-disputed sibling (no errorTypeId) should NOT pick up an attestation
   // state — only disputed claims need re-attestation.
@@ -532,9 +539,31 @@ test("group outcome → Approved cascades pending attestation to disputed childr
     const [refreshedChild] = await db.select().from(claimsTable).where(eq(claimsTable.id, child.id));
     const [refreshedSibling] = await db.select().from(claimsTable).where(eq(claimsTable.id, sibling.id));
     assert.equal(refreshedChild.attestationState, "pending",
-      "disputed child of an Approved group must inherit attestationState=pending");
+      "disputed child of an Approved group must inherit attestationState=pending once reattest is complete");
     assert.equal(refreshedSibling.attestationState, "not_required",
       "non-disputed siblings (no errorTypeId) must not be rolled into the attestation queue");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("group outcome → Approved with reattest gate CLOSED parks children at not_required", async () => {
+  // Mirror of the test above with the gate intentionally closed: we don't
+  // stamp `reattest_completed_at`, so even though the outcome flips to
+  // Approved the disputed children must NOT engage attestation. This is
+  // the new Task #196 behavior — verdicts capture, but engagement waits.
+  const group = await createSeedGroup();
+  const child = await createSeedClaim({ invoiceGroupId: group.id });
+  try {
+    const res = await fetchJson<typeof invoiceGroupsTable.$inferSelect>(
+      `/api/invoice-groups/${group.id}/outcome`,
+      { method: "PATCH", body: { outcome: "Approved", approvedAmount: "100.00" } },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [refreshedChild] = await db.select().from(claimsTable).where(eq(claimsTable.id, child.id));
+    assert.equal(refreshedChild.attestationState, "not_required",
+      "with reattest_completed_at unset, the gate keeps the disputed child at not_required");
   } finally {
     await cleanupGroup(group.id);
   }

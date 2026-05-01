@@ -1,7 +1,8 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, asc, and, count, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
+import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent } from "../lib/sse";
 import {
@@ -12,6 +13,11 @@ import {
   VALID_OUTCOME_BY_STATUS,
   SYSTEM_CONTROLLED_STATUSES,
 } from "../lib/claim-transitions";
+import { emitStateEvent } from "../lib/state-events";
+import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
+import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
+import { getMacroPhase, getGroupMacroPhase } from "../lib/macro-phase";
+import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
@@ -809,59 +815,150 @@ router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void
   res.json(claim);
 }));
 
+// Per-leg hold (Task #196). Pre: sub-status ∈ {investigating, ready}.
+// Body: { reason: LegHoldReason, note? }. Writes hold_reason +
+// hold_placed_at; emits leg.hold_placed.
 router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { holdReason, holdPendingFrom } = req.body;
-  if (!holdReason) { res.status(400).json({ error: "holdReason is required" }); return; }
-
-  try {
-    const result = await transitionClaimStatus({
-      claimId: id,
-      newStatus: "On Hold",
-      source: "manual",
-      reason: `Hold placed: ${holdReason}`,
-      actor: actorFromReq(req),
-      systemOverride: true,
-      extraFields: {
-        holdReason,
-        holdPendingFrom: holdPendingFrom || null,
-        holdPlacedAt: new Date().toISOString(),
-      },
-    });
-    res.json(result.claim);
-  } catch (err: any) {
-    const msg = err.message || "Failed to place hold";
-    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
-    res.status(400).json({ error: msg });
+  // Backward-compat: accept legacy `holdReason` body alongside new `reason`.
+  const reason = (req.body?.reason ?? req.body?.holdReason) as string | undefined;
+  const note = (req.body?.note ?? null) as string | null;
+  if (!reason) { res.status(400).json({ error: "reason is required" }); return; }
+  if (!(LEG_HOLD_REASONS as readonly string[]).includes(reason)) {
+    res.status(400).json({ error: `reason must be one of: ${LEG_HOLD_REASONS.join(", ")}` });
+    return;
   }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "investigating" && subStatus !== "ready") {
+    res.status(409).json({
+      error: "Cannot place hold from this leg state",
+      expectedState: "investigating|ready",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const placedAtIso = new Date().toISOString();
+  const [updated] = await db
+    .update(claimsTable)
+    .set({
+      holdReason: reason,
+      holdPlacedAt: placedAtIso,
+      // hold_pending_from is a free-text "who are we waiting on" field on
+      // the legacy schema; we leave it nullable here. The new sub-status
+      // model doesn't require it but accepts an optional `note`.
+      holdPendingFrom: note,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_hold_placed", `Leg placed on hold: ${reason}`, req, {
+    reason,
+    note,
+    previousSubStatus: subStatus,
+  });
+  await emitStateEvent({
+    eventKey: "leg.hold_placed",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { reason, note },
+  });
+  await refreshClaimDenormalizedCache(id);
+  emitClaimEvent(id, "hold_placed", req);
+
+  res.json(updated);
 }));
 
+// Legacy hold-removal endpoint — same DELETE verb, new contract.
+// Source-state precondition: leg sub-status is `blocked` AND hold_reason is
+// the cause (sopOutcome=='hold' is a separate path resolved by sop-advance,
+// not by this endpoint).
 router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  try {
-    const result = await transitionClaimStatus({
-      claimId: id,
-      newStatus: "Needs Evidence",
-      source: "manual",
-      reason: "Hold removed from claim",
-      actor: actorFromReq(req),
-      systemOverride: true,
-      extraFields: {
-        holdReason: null,
-        holdPendingFrom: null,
-        holdPlacedAt: null,
-      },
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "blocked" || !leg.holdReason) {
+    res.status(409).json({
+      error: "Leg is not on hold",
+      expectedState: "blocked",
+      actualState: subStatus,
     });
-    res.json(result.claim);
-  } catch (err: any) {
-    const msg = err.message || "Failed to remove hold";
-    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
-    res.status(400).json({ error: msg });
+    return;
   }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({
+      holdReason: null,
+      holdPlacedAt: null,
+      holdPendingFrom: null,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_hold_cleared", "Leg hold cleared", req, {
+    previousReason: leg.holdReason,
+  });
+  await emitStateEvent({
+    eventKey: "leg.hold_cleared",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { previousReason: leg.holdReason },
+  });
+  await refreshClaimDenormalizedCache(id);
+  emitClaimEvent(id, "hold_cleared", req);
+
+  res.json(updated);
+}));
+
+// POST alias for DELETE /claims/:id/hold (same contract).
+router.post("/claims/:id/clear-hold", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "blocked" || !leg.holdReason) {
+    res.status(409).json({
+      error: "Leg is not on hold",
+      expectedState: "blocked",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ holdReason: null, holdPlacedAt: null, holdPendingFrom: null })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_hold_cleared", "Leg hold cleared", req, { previousReason: leg.holdReason });
+  await emitStateEvent({
+    eventKey: "leg.hold_cleared",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { previousReason: leg.holdReason },
+  });
+  await refreshClaimDenormalizedCache(id);
+  emitClaimEvent(id, "hold_cleared", req);
+
+  res.json(updated);
 }));
 
 router.patch("/claims/:id/workflow", asyncHandler(async (req, res): Promise<void> => {
@@ -1217,5 +1314,491 @@ router.get("/attestation/counts", asyncHandler(async (_req, res): Promise<void> 
   res.json(out);
 }));
 
+// Per-leg state-machine endpoints (Task #196 contracts). Each enforces
+// a source-state precondition (409 with expected/actual on violation),
+// writes an audit_logs + state_events row, and refreshes denormalized
+// caches + MAS derivations as needed.
+
+// Local SOP decision-tree shape (mirrors sop-analyzer's exported tree).
+interface SopTreeOption {
+  label: string;
+  childId?: string;
+  outcomeType?: string;
+  outcomeLabel?: string;
+}
+interface SopTreeNode {
+  id: string;
+  question: string;
+  options: SopTreeOption[];
+}
+interface SopTree {
+  rootId: string;
+  nodes: SopTreeNode[];
+}
+
+// Project the tree's outcomeType vocabulary onto the schema's pinned
+// SOP_OUTCOMES vocabulary (`portal_dispute | dispute | hold |
+// cannot_dispute | non_issue`). The tree models "internal" as a generic
+// "deny without disputing" outcome — we land that on `cannot_dispute`,
+// which is the closer of the two non-dispute terminal outcomes. The
+// rarer `non_issue` case (operator decided the claim shouldn't have
+// been opened) is reachable today only via the legacy /triage flow;
+// the contracts task does not introduce a new tree-level outcome for
+// it (operators can still reclassify or use the existing /triage path).
+function mapTreeOutcomeToSopOutcome(o: string | undefined | null): string | null {
+  switch (o) {
+    case "portal_dispute": return "portal_dispute";
+    case "dispute": return "dispute";
+    case "hold": return "hold";
+    case "internal": return "cannot_dispute";
+    case "cannot_dispute": return "cannot_dispute";
+    case "non_issue": return "non_issue";
+    default: return null;
+  }
+}
+
+const SOP_DROP_REASONS = new Set(["cannot_dispute", "non_issue"]);
+const SOP_READY_REASONS = new Set(["portal_dispute", "dispute"]);
+
+// POST /claims/:id/classify — assign an error type to a leg currently in
+// `needs_classification`. This is the moment a leg becomes "real work" in
+// the dispute pipeline.
+router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const errorTypeId = (req.body?.errorTypeId ?? "") as string;
+  if (!errorTypeId) { res.status(400).json({ error: "errorTypeId is required" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "needs_classification") {
+    res.status(409).json({
+      error: "Leg already classified",
+      expectedState: "needs_classification",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const [errorType] = await db
+    .select({ id: errorTypesTable.id, name: errorTypesTable.name })
+    .from(errorTypesTable)
+    .where(eq(errorTypesTable.id, Number(errorTypeId)));
+  if (!errorType) { res.status(400).json({ error: "Unknown errorTypeId" }); return; }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({
+      errorTypeId: String(errorType.id),
+      errorTypeName: errorType.name,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_classified", `Leg classified as: ${errorType.name}`, req, {
+    errorTypeId: String(errorType.id),
+    errorTypeName: errorType.name,
+  });
+  await emitStateEvent({
+    eventKey: "leg.classified",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { errorTypeId: String(errorType.id), errorTypeName: errorType.name },
+  });
+  await refreshClaimDenormalizedCache(id);
+  emitClaimEvent(id, "classified", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/sop-advance — record one step in the SOP walk.
+// Body: { nodeId, answer }. Mid-walk advances follow childId; terminal
+// stamps sop_outcome + ready_at (or drop_reason + dropped_at).
+router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const nodeId = (req.body?.nodeId ?? "") as string;
+  const answer = (req.body?.answer ?? "") as string;
+  if (!nodeId || !answer) { res.status(400).json({ error: "nodeId and answer are required" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus !== "investigating") {
+    res.status(409).json({
+      error: "Leg is not in the SOP walk",
+      expectedState: "investigating",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  if (!leg.errorTypeId) { res.status(409).json({ error: "Leg has no error type" }); return; }
+  const [errorType] = await db
+    .select({ decisionTree: errorTypesTable.decisionTree })
+    .from(errorTypesTable)
+    .where(eq(errorTypesTable.id, Number(leg.errorTypeId)));
+  if (!errorType?.decisionTree) {
+    res.status(400).json({ error: "Error type has no decision tree" });
+    return;
+  }
+
+  const tree = errorType.decisionTree as unknown as SopTree;
+  const node = tree.nodes?.find((n) => n.id === nodeId);
+  if (!node) {
+    res.status(400).json({ error: `Unknown nodeId: ${nodeId}` });
+    return;
+  }
+  const option = node.options?.find((o) => o.label === answer);
+  if (!option) {
+    res.status(400).json({
+      error: `Answer "${answer}" is not a valid option for this node`,
+      validOptions: node.options?.map((o) => o.label) ?? [],
+    });
+    return;
+  }
+
+  // The SOP audit trail is jsonb in the schema (TS type `unknown`);
+  // we narrow to the documented row shape at the boundary. Keeping the
+  // cast tight to the source-of-truth narrowing call avoids needing
+  // an `as any` on the writeback below.
+  type SopAnswerRow = { nodeId: string; answer: string; ts: string };
+  const existingAnswers: SopAnswerRow[] = Array.isArray(leg.sopAnswers)
+    ? (leg.sopAnswers as SopAnswerRow[])
+    : [];
+  const nextAnswers: SopAnswerRow[] = [
+    ...existingAnswers,
+    { nodeId, answer, ts: new Date().toISOString() },
+  ];
+
+  let nextNodeId: string | null = leg.sopNodeId;
+  let nextSopOutcome: string | null = null;
+  const updateData: Partial<typeof claimsTable.$inferInsert> = {
+    sopAnswers: nextAnswers,
+  };
+  let isTerminal = false;
+
+  if (option.childId) {
+    nextNodeId = option.childId;
+    updateData.sopNodeId = nextNodeId;
+  } else {
+    isTerminal = true;
+    nextSopOutcome = mapTreeOutcomeToSopOutcome(option.outcomeType);
+    if (!nextSopOutcome) {
+      res.status(400).json({ error: `Terminal node has unknown outcomeType: ${option.outcomeType}` });
+      return;
+    }
+    // Per contract: terminal sop-advance also persists sop_node_id to
+    // the terminal node identifier so downstream consumers always have
+    // the leg's last-visited node pointer (terminal or mid-walk).
+    nextNodeId = nodeId;
+    updateData.sopNodeId = nextNodeId;
+    updateData.sopOutcome = nextSopOutcome;
+    if (SOP_DROP_REASONS.has(nextSopOutcome)) {
+      updateData.dropReason = nextSopOutcome;
+      updateData.droppedAt = new Date();
+    } else if (SOP_READY_REASONS.has(nextSopOutcome)) {
+      updateData.readyAt = new Date();
+    }
+  }
+
+  let [updated] = await db
+    .update(claimsTable)
+    .set(updateData)
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  // Contract: every sop-advance writes a `leg_sop_advanced` audit row
+  // regardless of whether the step was a terminal or mid-walk one. The
+  // `isTerminal` + `sopOutcome` metadata distinguishes the two kinds.
+  await createAuditLog(
+    id,
+    "leg_sop_advanced",
+    isTerminal ? `SOP terminal reached: ${nextSopOutcome}` : `SOP step: ${nodeId} → ${answer}`,
+    req,
+    { nodeId, answer, isTerminal, sopOutcome: nextSopOutcome },
+  );
+  await emitStateEvent({
+    eventKey: isTerminal ? "leg.sop_terminal" : "leg.sop_advanced",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { nodeId, answer, sopOutcome: nextSopOutcome },
+  });
+
+  // MAS-action-required derivation: terminal `cannot_dispute` implies the
+  // operator must cancel the trip in MAS post-response. Fire even on
+  // mid-walk transitions for consistency (no-op when no new sopOutcome).
+  if (isTerminal) {
+    const masUpdated = await applyMasDerivationsForLeg(id, null);
+    if (masUpdated) updated = masUpdated;
+  }
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, isTerminal ? "sop_terminal" : "sop_advanced", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/reclassify — rewind the leg back to needs_classification.
+// Allowed from {investigating, ready, dropped, blocked}. Refused if the
+// leg has been included in any submitted portal submission (we'd
+// invalidate an outgoing dispute). Clears every error-type / SOP / hold
+// field so the leg is fully re-startable.
+router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const subStatus = deriveLegSubStatus(leg);
+  const allowed: LegSubStatus[] = ["investigating", "ready", "dropped", "blocked"];
+  if (!allowed.includes(subStatus)) {
+    res.status(409).json({
+      error: "Cannot reclassify from this leg state",
+      expectedState: allowed.join("|"),
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const submittedCount = await db
+    .select({ id: portalSubmissionsTable.id })
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.claimId, id),
+      inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
+    ))
+    .limit(1);
+  if (submittedCount.length > 0) {
+    res.status(409).json({
+      error: "Cannot reclassify a leg that has been submitted to the payor",
+      expectedState: "no_submission",
+      actualState: "submission_exists",
+    });
+    return;
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({
+      errorTypeId: null,
+      errorTypeName: null,
+      sopNodeId: null,
+      sopAnswers: [],
+      sopOutcome: null,
+      dropReason: null,
+      dropNote: null,
+      droppedAt: null,
+      readyAt: null,
+      holdReason: null,
+      holdPlacedAt: null,
+      holdPendingFrom: null,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_reclassified", "Leg reclassified — error type and SOP cleared", req, {
+    previousSubStatus: subStatus,
+    previousErrorTypeId: leg.errorTypeId,
+  });
+  await emitStateEvent({
+    eventKey: "leg.reclassified",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { previousErrorTypeId: leg.errorTypeId },
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "reclassified", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/verdict — append-only writer for claim_verdict.
+// Refreshes claims.outcome from the latest verdict; operator
+// confirmations also fire MAS derivation + attestation gate.
+router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const source = (req.body?.source ?? "") as string;
+  const outcome = (req.body?.outcome ?? "") as string;
+  const note = (req.body?.note ?? null) as string | null;
+  const confidence = req.body?.confidence ?? null;
+  const reasoning = (req.body?.reasoning ?? null) as string | null;
+  const inspectionTimeMs = req.body?.inspectionTimeMs ?? null;
+
+  if (source !== "ai_suggested" && source !== "operator_confirmed") {
+    res.status(400).json({ error: "source must be ai_suggested or operator_confirmed" });
+    return;
+  }
+  if (!(VERDICT_OUTCOMES as readonly string[]).includes(outcome)) {
+    res.status(400).json({ error: `outcome must be one of: ${VERDICT_OUTCOMES.join(", ")}` });
+    return;
+  }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null) {
+    res.status(409).json({
+      error: "Leg has no parent invoice group; verdicts are group-scoped",
+      expectedState: "response-pending",
+      actualState: "no_group",
+    });
+    return;
+  }
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (!group) {
+    res.status(409).json({ error: "Parent invoice group missing" });
+    return;
+  }
+
+  // Use the group-aware macro phase so a group already past
+  // response-pending (e.g. reattest in flight) cannot accept new
+  // verdicts via the bare claim_status check.
+  const macroPhase = getGroupMacroPhase(group);
+  if (macroPhase !== "response-pending") {
+    res.status(409).json({
+      error: "Group is not in the response-pending phase",
+      expectedState: "response-pending",
+      actualState: macroPhase,
+    });
+    return;
+  }
+
+  // Verdicts (AI or operator) only apply to legs that were actually
+  // submitted to the payor. Both source-state checks are enforced
+  // uniformly.
+  if (!leg.includedInDispute) {
+    res.status(409).json({
+      error: "Leg was not included in the dispute",
+      expectedState: "included_in_dispute",
+      actualState: "excluded",
+    });
+    return;
+  }
+  const submittedSopOutcomes = new Set(["portal_dispute", "dispute"]);
+  if (!submittedSopOutcomes.has(leg.sopOutcome ?? "")) {
+    res.status(409).json({
+      error: "Cannot record a verdict on a leg that wasn't submitted",
+      expectedState: "sop_outcome ∈ {portal_dispute, dispute}",
+      actualState: leg.sopOutcome ?? "null",
+    });
+    return;
+  }
+
+  const [verdictRow] = await db.insert(claimVerdictTable).values({
+    claimId: id,
+    source,
+    outcome,
+    note,
+    confidence: confidence != null ? String(confidence) : null,
+    reasoning,
+    createdBy: req.user?.email ?? null,
+    inspectionTimeMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
+  }).returning();
+
+  await createAuditLog(
+    id,
+    source === "ai_suggested" ? "leg_verdict_suggested" : "leg_verdict_confirmed",
+    `Verdict ${outcome} (${source})`,
+    req,
+    { source, outcome, confidence, inspectionTimeMs },
+  );
+  await emitStateEvent({
+    eventKey: source === "ai_suggested" ? "leg.verdict_suggested" : "leg.verdict_confirmed",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    durationMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
+    metadata: { source, outcome, confidence },
+  });
+
+  // Cache refresh runs unconditionally — the denormalized
+  // `claims.outcome` tracks the latest claim_verdict row regardless of
+  // source. Operator-only side effects (MAS derivation, attestation
+  // gate, group derivations) follow.
+  await refreshClaimDenormalizedCache(id);
+
+  if (source === "operator_confirmed") {
+    await applyMasDerivationsForLeg(id, outcome);
+
+    // Attestation gate: re-read the leg post-cache-refresh and apply
+    // the gate against the group we already loaded.
+    const [legAfter] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+    if (legAfter) {
+      const attDelta = computeAttestationDelta(leg.outcome, legAfter.outcome, group);
+      if (Object.keys(attDelta).length > 0) {
+        await db.update(claimsTable).set(attDelta).where(eq(claimsTable.id, id));
+      }
+    }
+    await refreshGroupDerivedFields(leg.invoiceGroupId);
+  }
+  emitClaimEvent(id, "verdict_recorded", req);
+
+  res.json(verdictRow);
+}));
+
+// POST /claims/:id/mas-action/complete — operator stamps that they
+// completed the MAS cancel for this leg. Source-state contract:
+// `mas_action_required = 'cancel'` AND `mas_action_completed_at IS NULL`.
+router.post("/claims/:id/mas-action/complete", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const note = (req.body?.note ?? null) as string | null;
+  const masReference = (req.body?.masReference ?? null) as string | null;
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.masActionRequired !== "cancel") {
+    res.status(409).json({
+      error: "Leg does not have an open MAS cancel action",
+      expectedState: "mas_action_required=cancel",
+      actualState: leg.masActionRequired ?? "null",
+    });
+    return;
+  }
+  if (leg.masActionCompletedAt != null) {
+    res.status(409).json({
+      error: "MAS action already completed",
+      expectedState: "mas_action_completed_at=null",
+      actualState: "completed",
+    });
+    return;
+  }
+
+  const fullNote = masReference ? `${note ? note + " " : ""}(MAS ref: ${masReference})` : note;
+  const [updated] = await db
+    .update(claimsTable)
+    .set({
+      masActionCompletedAt: new Date(),
+      masActionCompletedBy: req.user?.email ?? null,
+      masActionNote: fullNote,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "mas_cancel_completed", "MAS cancel completed", req, { note, masReference });
+  await emitStateEvent({
+    eventKey: "leg.mas_action_completed",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { note, masReference },
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "mas_cancel_completed", req);
+
+  res.json(updated);
+}));
 
 export default router;

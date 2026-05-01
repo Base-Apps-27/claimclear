@@ -379,7 +379,7 @@ export async function transitionGroupOutcome(opts: {
   // counter and dashboard math stay in sync. The group itself does not
   // carry attestation state (the claim is the source of truth) but the
   // children inherit the outcome via syncChildRides on the next cascade.
-  const childAttestation = computeAttestationDelta(old.outcome, newOutcome);
+  const childAttestation = computeAttestationDelta(old.outcome, newOutcome, old);
   if (Object.keys(childAttestation).length > 0) {
     await ex
       .update(claimsTable)
@@ -532,7 +532,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
 
   // Cascade attestation flip to disputed children — see note in
   // transitionGroupOutcome.
-  const childAttestation = computeAttestationDelta(old.outcome, newOutcome);
+  const childAttestation = computeAttestationDelta(old.outcome, newOutcome, old);
   if (Object.keys(childAttestation).length > 0) {
     await ex
       .update(claimsTable)

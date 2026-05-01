@@ -1,10 +1,10 @@
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, invoiceGroupsTable } from "@workspace/db";
 import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastClaimEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
-import { computeAttestationDelta } from "./attestation";
+import { computeAttestationDelta, type AttestationGroupContext } from "./attestation";
 
 // A "DB executor" is anything with the same select/update/insert surface as
 // the top-level `db` handle. The drizzle transaction object passed to
@@ -13,6 +13,22 @@ import { computeAttestationDelta } from "./attestation";
 // work to participate in an outer transaction can pass `tx` here and every
 // read/write inside the transition will join that tx.
 export type DbExecutor = Pick<typeof db, "select" | "update" | "insert" | "delete">;
+
+// Load the parent invoice group (just the attestation-relevant flag) for
+// a leg that has one. Returns null when the leg is standalone — in that
+// case computeAttestationDelta falls back to legacy "always pending"
+// semantics so backward-compat tests keep working.
+async function loadParentGroupForAttestation(
+  invoiceGroupId: number | null,
+  ex: DbExecutor,
+): Promise<AttestationGroupContext | null> {
+  if (invoiceGroupId == null) return null;
+  const [g] = await ex
+    .select({ reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, invoiceGroupId));
+  return g ?? null;
+}
 
 export type ClaimStatus = typeof claimsTable.status.enumValues[number];
 
@@ -217,7 +233,12 @@ export async function transitionClaimOutcome(opts: {
     updateData.approvedAmount = cleaned === "" ? null : cleaned ? String(cleaned) : null;
   }
   if (invoiceNumbers !== undefined) updateData.invoiceNumbers = invoiceNumbers;
-  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome));
+  // Per Task #196 we now gate attestation auto-engagement on the parent
+  // group's `reattest_completed_at`. Standalone legs (no parent group)
+  // keep the legacy "outcome→Approved primes pending" behavior so the
+  // existing #165 test fixtures still pass.
+  const parentGroupForAtt = await loadParentGroupForAttestation(old.invoiceGroupId, db);
+  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome, parentGroupForAtt));
   updateData.closureReason = closureReason ?? null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
@@ -342,7 +363,9 @@ export async function transitionClaimStatusAndOutcome(opts: {
     ...extraFields,
   };
   if (closureReason !== undefined) updateData.closureReason = closureReason ?? null;
-  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome));
+  // Same Task #196 gate as transitionClaimOutcome — see note above.
+  const parentGroupForAtt2 = await loadParentGroupForAttestation(old.invoiceGroupId, db);
+  Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome, parentGroupForAtt2));
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;

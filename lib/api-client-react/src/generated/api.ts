@@ -43,10 +43,15 @@ import type {
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
   ClaimResponse,
+  ClaimVerdictResponse,
   ClaimsListResponse,
+  ClassifyLegBody,
   ClosureReviewBody,
+  CompleteMasActionBody,
+  CompleteReattestBody,
   ConfirmPortalSubmission422,
   ConfirmPortalSubmissionBody,
+  ConfirmReadbackBody,
   ConnectorHealthResponse,
   CreateAnthropicConversationBody,
   CreateClaimBody,
@@ -117,6 +122,7 @@ import type {
   ReassignResponseBody,
   RecordPortalResponse200,
   RecordPortalResponseBody,
+  RecordVerdictBody,
   ReplyToEmailConversation400,
   ReplyToEmailConversation404,
   ReplyToEmailConversation502,
@@ -128,6 +134,9 @@ import type {
   SaveMappingsBody,
   SaveMappingsResponse,
   SendAnthropicMessageBody,
+  SetGroupContextBody,
+  SopAdvanceBody,
+  StateConflictResponse,
   SuccessResponse,
   SystemHealthRollupResponse,
   TriageClaimBody,
@@ -1830,6 +1839,371 @@ export const useDeleteInvoiceGroupEvidence = <
 };
 
 /**
+ * Pre-submit only. Replaces any existing `groupContext`.
+ * @summary Record the operator's group-level context narrative
+ */
+export const getSetGroupContextUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/group-context`;
+};
+
+export const setGroupContext = async (
+  id: number,
+  setGroupContextBody: SetGroupContextBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getSetGroupContextUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setGroupContextBody),
+  });
+};
+
+export const getSetGroupContextMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setGroupContext>>,
+    TError,
+    { id: number; data: BodyType<SetGroupContextBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setGroupContext>>,
+  TError,
+  { id: number; data: BodyType<SetGroupContextBody> },
+  TContext
+> => {
+  const mutationKey = ["setGroupContext"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setGroupContext>>,
+    { id: number; data: BodyType<SetGroupContextBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setGroupContext(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetGroupContextMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setGroupContext>>
+>;
+export type SetGroupContextMutationBody = BodyType<SetGroupContextBody>;
+export type SetGroupContextMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Record the operator's group-level context narrative
+ */
+export const useSetGroupContext = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setGroupContext>>,
+    TError,
+    { id: number; data: BodyType<SetGroupContextBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setGroupContext>>,
+  TError,
+  { id: number; data: BodyType<SetGroupContextBody> },
+  TContext
+> => {
+  return useMutation(getSetGroupContextMutationOptions(options));
+};
+
+/**
+ * Source-state: pre-submit AND every disputed leg has a resolved
+sub-status (`ready | dropped | excluded`).
+
+ * @summary Operator confirms the dispute understanding readback sentence
+ */
+export const getConfirmUnderstandingReadbackUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/understanding-readback`;
+};
+
+export const confirmUnderstandingReadback = async (
+  id: number,
+  confirmReadbackBody: ConfirmReadbackBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getConfirmUnderstandingReadbackUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(confirmReadbackBody),
+    },
+  );
+};
+
+export const getConfirmUnderstandingReadbackMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmUnderstandingReadback>>,
+    TError,
+    { id: number; data: BodyType<ConfirmReadbackBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmUnderstandingReadback>>,
+  TError,
+  { id: number; data: BodyType<ConfirmReadbackBody> },
+  TContext
+> => {
+  const mutationKey = ["confirmUnderstandingReadback"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmUnderstandingReadback>>,
+    { id: number; data: BodyType<ConfirmReadbackBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return confirmUnderstandingReadback(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmUnderstandingReadbackMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmUnderstandingReadback>>
+>;
+export type ConfirmUnderstandingReadbackMutationBody =
+  BodyType<ConfirmReadbackBody>;
+export type ConfirmUnderstandingReadbackMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Operator confirms the dispute understanding readback sentence
+ */
+export const useConfirmUnderstandingReadback = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmUnderstandingReadback>>,
+    TError,
+    { id: number; data: BodyType<ConfirmReadbackBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmUnderstandingReadback>>,
+  TError,
+  { id: number; data: BodyType<ConfirmReadbackBody> },
+  TContext
+> => {
+  return useMutation(getConfirmUnderstandingReadbackMutationOptions(options));
+};
+
+/**
+ * Source-state: pre-submit AND `understandingReadbackAt` is set AND
+every disputed leg is resolved.
+
+ * @summary Stamp that the dispute preview was generated
+ */
+export const getStampPreviewGeneratedUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/preview-generated`;
+};
+
+export const stampPreviewGenerated = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getStampPreviewGeneratedUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getStampPreviewGeneratedMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stampPreviewGenerated>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stampPreviewGenerated>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["stampPreviewGenerated"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stampPreviewGenerated>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return stampPreviewGenerated(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StampPreviewGeneratedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof stampPreviewGenerated>>
+>;
+
+export type StampPreviewGeneratedMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Stamp that the dispute preview was generated
+ */
+export const useStampPreviewGenerated = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stampPreviewGenerated>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stampPreviewGenerated>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getStampPreviewGeneratedMutationOptions(options));
+};
+
+/**
+ * This is the trigger gate for attestation. Source-state contract:
+`reattest_required = true`, `reattest_completed_at IS NULL`, and
+every leg owing a MAS cancel must have completed it. On success,
+every disputed child whose latest operator-confirmed verdict is
+Approved/Partial graduates from `not_required` to `pending`.
+
+ * @summary Operator stamps that the group's MAS re-attest is complete
+ */
+export const getCompleteGroupReattestUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/reattest/complete`;
+};
+
+export const completeGroupReattest = async (
+  id: number,
+  completeReattestBody?: CompleteReattestBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getCompleteGroupReattestUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(completeReattestBody),
+  });
+};
+
+export const getCompleteGroupReattestMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeGroupReattest>>,
+    TError,
+    { id: number; data: BodyType<CompleteReattestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeGroupReattest>>,
+  TError,
+  { id: number; data: BodyType<CompleteReattestBody> },
+  TContext
+> => {
+  const mutationKey = ["completeGroupReattest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeGroupReattest>>,
+    { id: number; data: BodyType<CompleteReattestBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return completeGroupReattest(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteGroupReattestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeGroupReattest>>
+>;
+export type CompleteGroupReattestMutationBody = BodyType<CompleteReattestBody>;
+export type CompleteGroupReattestMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Operator stamps that the group's MAS re-attest is complete
+ */
+export const useCompleteGroupReattest = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeGroupReattest>>,
+    TError,
+    { id: number; data: BodyType<CompleteReattestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof completeGroupReattest>>,
+  TError,
+  { id: number; data: BodyType<CompleteReattestBody> },
+  TContext
+> => {
+  return useMutation(getCompleteGroupReattestMutationOptions(options));
+};
+
+/**
  * @summary List claims with filtering
  */
 export const getListClaimsUrl = (params?: ListClaimsParams) => {
@@ -3243,18 +3617,21 @@ export const useUpdateClaimEvidence = <
 };
 
 /**
- * @summary Place claim on hold
+ * Source-state contract: leg sub-status must be `investigating` or `ready`.
+Returns `409 Conflict` with `{ error, expectedState, actualState }` otherwise.
+
+ * @summary Place a leg on hold (per-leg state contract)
  */
-export const getPlaceClaimOnHoldUrl = (id: number) => {
+export const getPlaceLegOnHoldUrl = (id: number) => {
   return `/api/claims/${id}/hold`;
 };
 
-export const placeClaimOnHold = async (
+export const placeLegOnHold = async (
   id: number,
   placeHoldBody: PlaceHoldBody,
   options?: RequestInit,
 ): Promise<ClaimResponse> => {
-  return customFetch<ClaimResponse>(getPlaceClaimOnHoldUrl(id), {
+  return customFetch<ClaimResponse>(getPlaceLegOnHoldUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -3262,24 +3639,24 @@ export const placeClaimOnHold = async (
   });
 };
 
-export const getPlaceClaimOnHoldMutationOptions = <
-  TError = ErrorType<unknown>,
+export const getPlaceLegOnHoldMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof placeClaimOnHold>>,
+    Awaited<ReturnType<typeof placeLegOnHold>>,
     TError,
     { id: number; data: BodyType<PlaceHoldBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof placeClaimOnHold>>,
+  Awaited<ReturnType<typeof placeLegOnHold>>,
   TError,
   { id: number; data: BodyType<PlaceHoldBody> },
   TContext
 > => {
-  const mutationKey = ["placeClaimOnHold"];
+  const mutationKey = ["placeLegOnHold"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -3289,81 +3666,84 @@ export const getPlaceClaimOnHoldMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof placeClaimOnHold>>,
+    Awaited<ReturnType<typeof placeLegOnHold>>,
     { id: number; data: BodyType<PlaceHoldBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return placeClaimOnHold(id, data, requestOptions);
+    return placeLegOnHold(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type PlaceClaimOnHoldMutationResult = NonNullable<
-  Awaited<ReturnType<typeof placeClaimOnHold>>
+export type PlaceLegOnHoldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof placeLegOnHold>>
 >;
-export type PlaceClaimOnHoldMutationBody = BodyType<PlaceHoldBody>;
-export type PlaceClaimOnHoldMutationError = ErrorType<unknown>;
+export type PlaceLegOnHoldMutationBody = BodyType<PlaceHoldBody>;
+export type PlaceLegOnHoldMutationError = ErrorType<StateConflictResponse>;
 
 /**
- * @summary Place claim on hold
+ * @summary Place a leg on hold (per-leg state contract)
  */
-export const usePlaceClaimOnHold = <
-  TError = ErrorType<unknown>,
+export const usePlaceLegOnHold = <
+  TError = ErrorType<StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof placeClaimOnHold>>,
+    Awaited<ReturnType<typeof placeLegOnHold>>,
     TError,
     { id: number; data: BodyType<PlaceHoldBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof placeClaimOnHold>>,
+  Awaited<ReturnType<typeof placeLegOnHold>>,
   TError,
   { id: number; data: BodyType<PlaceHoldBody> },
   TContext
 > => {
-  return useMutation(getPlaceClaimOnHoldMutationOptions(options));
+  return useMutation(getPlaceLegOnHoldMutationOptions(options));
 };
 
 /**
- * @summary Remove claim hold
+ * Source-state contract: leg sub-status must be `blocked` and `holdReason`
+must be set (i.e., the hold was placed via /hold, not via SOP).
+
+ * @summary Remove leg hold (per-leg state contract)
  */
-export const getRemoveClaimHoldUrl = (id: number) => {
+export const getRemoveLegHoldUrl = (id: number) => {
   return `/api/claims/${id}/hold`;
 };
 
-export const removeClaimHold = async (
+export const removeLegHold = async (
   id: number,
   options?: RequestInit,
 ): Promise<ClaimResponse> => {
-  return customFetch<ClaimResponse>(getRemoveClaimHoldUrl(id), {
+  return customFetch<ClaimResponse>(getRemoveLegHoldUrl(id), {
     ...options,
     method: "DELETE",
   });
 };
 
-export const getRemoveClaimHoldMutationOptions = <
-  TError = ErrorType<unknown>,
+export const getRemoveLegHoldMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof removeClaimHold>>,
+    Awaited<ReturnType<typeof removeLegHold>>,
     TError,
     { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof removeClaimHold>>,
+  Awaited<ReturnType<typeof removeLegHold>>,
   TError,
   { id: number },
   TContext
 > => {
-  const mutationKey = ["removeClaimHold"];
+  const mutationKey = ["removeLegHold"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -3373,44 +3753,580 @@ export const getRemoveClaimHoldMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof removeClaimHold>>,
+    Awaited<ReturnType<typeof removeLegHold>>,
     { id: number }
   > = (props) => {
     const { id } = props ?? {};
 
-    return removeClaimHold(id, requestOptions);
+    return removeLegHold(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type RemoveClaimHoldMutationResult = NonNullable<
-  Awaited<ReturnType<typeof removeClaimHold>>
+export type RemoveLegHoldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeLegHold>>
 >;
 
-export type RemoveClaimHoldMutationError = ErrorType<unknown>;
+export type RemoveLegHoldMutationError = ErrorType<StateConflictResponse>;
 
 /**
- * @summary Remove claim hold
+ * @summary Remove leg hold (per-leg state contract)
  */
-export const useRemoveClaimHold = <
-  TError = ErrorType<unknown>,
+export const useRemoveLegHold = <
+  TError = ErrorType<StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof removeClaimHold>>,
+    Awaited<ReturnType<typeof removeLegHold>>,
     TError,
     { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof removeClaimHold>>,
+  Awaited<ReturnType<typeof removeLegHold>>,
   TError,
   { id: number },
   TContext
 > => {
-  return useMutation(getRemoveClaimHoldMutationOptions(options));
+  return useMutation(getRemoveLegHoldMutationOptions(options));
+};
+
+/**
+ * @summary POST alias of `DELETE /claims/{id}/hold`
+ */
+export const getClearLegHoldUrl = (id: number) => {
+  return `/api/claims/${id}/clear-hold`;
+};
+
+export const clearLegHold = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getClearLegHoldUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getClearLegHoldMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearLegHold>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clearLegHold>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["clearLegHold"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearLegHold>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return clearLegHold(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClearLegHoldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clearLegHold>>
+>;
+
+export type ClearLegHoldMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary POST alias of `DELETE /claims/{id}/hold`
+ */
+export const useClearLegHold = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearLegHold>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clearLegHold>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getClearLegHoldMutationOptions(options));
+};
+
+/**
+ * @summary Assign an error type to a leg in `needs_classification`
+ */
+export const getClassifyLegUrl = (id: number) => {
+  return `/api/claims/${id}/classify`;
+};
+
+export const classifyLeg = async (
+  id: number,
+  classifyLegBody: ClassifyLegBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getClassifyLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(classifyLegBody),
+  });
+};
+
+export const getClassifyLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof classifyLeg>>,
+    TError,
+    { id: number; data: BodyType<ClassifyLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof classifyLeg>>,
+  TError,
+  { id: number; data: BodyType<ClassifyLegBody> },
+  TContext
+> => {
+  const mutationKey = ["classifyLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof classifyLeg>>,
+    { id: number; data: BodyType<ClassifyLegBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return classifyLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClassifyLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof classifyLeg>>
+>;
+export type ClassifyLegMutationBody = BodyType<ClassifyLegBody>;
+export type ClassifyLegMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Assign an error type to a leg in `needs_classification`
+ */
+export const useClassifyLeg = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof classifyLeg>>,
+    TError,
+    { id: number; data: BodyType<ClassifyLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof classifyLeg>>,
+  TError,
+  { id: number; data: BodyType<ClassifyLegBody> },
+  TContext
+> => {
+  return useMutation(getClassifyLegMutationOptions(options));
+};
+
+/**
+ * Validates the node and answer against the leg's loaded error-type tree.
+A non-terminal answer follows `childId`; a terminal answer stamps
+`sopOutcome` plus either `readyAt` (portal_dispute, dispute) or
+`dropReason` + `droppedAt` (cannot_dispute, non_issue). The `hold`
+outcome routes to the same `blocked` sub-status as a manual hold.
+
+ * @summary Advance one step of the SOP decision-tree walk
+ */
+export const getSopAdvanceLegUrl = (id: number) => {
+  return `/api/claims/${id}/sop-advance`;
+};
+
+export const sopAdvanceLeg = async (
+  id: number,
+  sopAdvanceBody: SopAdvanceBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getSopAdvanceLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sopAdvanceBody),
+  });
+};
+
+export const getSopAdvanceLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopAdvanceLeg>>,
+    TError,
+    { id: number; data: BodyType<SopAdvanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sopAdvanceLeg>>,
+  TError,
+  { id: number; data: BodyType<SopAdvanceBody> },
+  TContext
+> => {
+  const mutationKey = ["sopAdvanceLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sopAdvanceLeg>>,
+    { id: number; data: BodyType<SopAdvanceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sopAdvanceLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SopAdvanceLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sopAdvanceLeg>>
+>;
+export type SopAdvanceLegMutationBody = BodyType<SopAdvanceBody>;
+export type SopAdvanceLegMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Advance one step of the SOP decision-tree walk
+ */
+export const useSopAdvanceLeg = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopAdvanceLeg>>,
+    TError,
+    { id: number; data: BodyType<SopAdvanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sopAdvanceLeg>>,
+  TError,
+  { id: number; data: BodyType<SopAdvanceBody> },
+  TContext
+> => {
+  return useMutation(getSopAdvanceLegMutationOptions(options));
+};
+
+/**
+ * Allowed from `investigating | ready | dropped | blocked`. Refused
+when the leg has already been included in any in-progress or
+submitted portal submission.
+
+ * @summary Rewind a leg back to `needs_classification`
+ */
+export const getReclassifyLegUrl = (id: number) => {
+  return `/api/claims/${id}/reclassify`;
+};
+
+export const reclassifyLeg = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getReclassifyLegUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReclassifyLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reclassifyLeg>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reclassifyLeg>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["reclassifyLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reclassifyLeg>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reclassifyLeg(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReclassifyLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reclassifyLeg>>
+>;
+
+export type ReclassifyLegMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Rewind a leg back to `needs_classification`
+ */
+export const useReclassifyLeg = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reclassifyLeg>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reclassifyLeg>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getReclassifyLegMutationOptions(options));
+};
+
+/**
+ * The single sanctioned writer to `claim_verdict`. Operator confirmations
+also refresh denormalized `claims.outcome`, fire MAS-cancel
+derivations on `Denied`, and (when the parent group's
+`reattest_completed_at` is set) graduate Approved/Partial legs from
+`not_required` to `pending` for attestation.
+
+ * @summary Record an AI-suggested or operator-confirmed verdict
+ */
+export const getRecordLegVerdictUrl = (id: number) => {
+  return `/api/claims/${id}/verdict`;
+};
+
+export const recordLegVerdict = async (
+  id: number,
+  recordVerdictBody: RecordVerdictBody,
+  options?: RequestInit,
+): Promise<ClaimVerdictResponse> => {
+  return customFetch<ClaimVerdictResponse>(getRecordLegVerdictUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(recordVerdictBody),
+  });
+};
+
+export const getRecordLegVerdictMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordLegVerdict>>,
+    TError,
+    { id: number; data: BodyType<RecordVerdictBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordLegVerdict>>,
+  TError,
+  { id: number; data: BodyType<RecordVerdictBody> },
+  TContext
+> => {
+  const mutationKey = ["recordLegVerdict"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordLegVerdict>>,
+    { id: number; data: BodyType<RecordVerdictBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return recordLegVerdict(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordLegVerdictMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordLegVerdict>>
+>;
+export type RecordLegVerdictMutationBody = BodyType<RecordVerdictBody>;
+export type RecordLegVerdictMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Record an AI-suggested or operator-confirmed verdict
+ */
+export const useRecordLegVerdict = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordLegVerdict>>,
+    TError,
+    { id: number; data: BodyType<RecordVerdictBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordLegVerdict>>,
+  TError,
+  { id: number; data: BodyType<RecordVerdictBody> },
+  TContext
+> => {
+  return useMutation(getRecordLegVerdictMutationOptions(options));
+};
+
+/**
+ * Source-state contract: `mas_action_required = 'cancel'` AND
+`mas_action_completed_at IS NULL`.
+
+ * @summary Operator stamps that the MAS cancel for this leg is complete
+ */
+export const getCompleteLegMasActionUrl = (id: number) => {
+  return `/api/claims/${id}/mas-action/complete`;
+};
+
+export const completeLegMasAction = async (
+  id: number,
+  completeMasActionBody?: CompleteMasActionBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getCompleteLegMasActionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(completeMasActionBody),
+  });
+};
+
+export const getCompleteLegMasActionMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeLegMasAction>>,
+    TError,
+    { id: number; data: BodyType<CompleteMasActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeLegMasAction>>,
+  TError,
+  { id: number; data: BodyType<CompleteMasActionBody> },
+  TContext
+> => {
+  const mutationKey = ["completeLegMasAction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeLegMasAction>>,
+    { id: number; data: BodyType<CompleteMasActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return completeLegMasAction(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteLegMasActionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeLegMasAction>>
+>;
+export type CompleteLegMasActionMutationBody = BodyType<CompleteMasActionBody>;
+export type CompleteLegMasActionMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Operator stamps that the MAS cancel for this leg is complete
+ */
+export const useCompleteLegMasAction = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeLegMasAction>>,
+    TError,
+    { id: number; data: BodyType<CompleteMasActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof completeLegMasAction>>,
+  TError,
+  { id: number; data: BodyType<CompleteMasActionBody> },
+  TContext
+> => {
+  return useMutation(getCompleteLegMasActionMutationOptions(options));
 };
 
 /**

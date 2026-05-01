@@ -41,6 +41,16 @@ const CLAIM_CATEGORY_MAP: Record<string, ActionCategory> = {
   submission_retry_scheduled: "workflow",
   submission_retries_exhausted: "workflow",
   submission_stuck_reset: "workflow",
+  // Per-leg state machine (Task #196 contracts).
+  leg_classified: "edit",
+  leg_sop_advanced: "workflow",
+  leg_sop_terminal: "workflow",
+  leg_hold_placed: "hold",
+  leg_hold_cleared: "hold",
+  leg_reclassified: "edit",
+  leg_verdict_suggested: "status",
+  leg_verdict_confirmed: "status",
+  mas_cancel_completed: "workflow",
 };
 
 const GROUP_CATEGORY_MAP: Record<string, ActionCategory> = {
@@ -62,6 +72,11 @@ const GROUP_CATEGORY_MAP: Record<string, ActionCategory> = {
   portal_draft_edited: "draft",
   portal_draft_regenerated: "draft",
   portal_draft_reverted: "draft",
+  // Per-invoice state machine (Task #196 contracts).
+  group_context_set: "edit",
+  group_readback_confirmed: "draft",
+  group_preview_generated: "draft",
+  mas_reattest_completed: "workflow",
 };
 
 const CLAIM_LABELS: Record<string, string> = {
@@ -86,6 +101,15 @@ const CLAIM_LABELS: Record<string, string> = {
   submission_retry_scheduled: "Portal submission retry scheduled",
   submission_retries_exhausted: "Portal submission retries exhausted",
   submission_stuck_reset: "Stuck submission auto-reset",
+  leg_classified: "Leg classified",
+  leg_sop_advanced: "SOP step recorded",
+  leg_sop_terminal: "SOP terminal reached",
+  leg_hold_placed: "Leg placed on hold",
+  leg_hold_cleared: "Leg hold cleared",
+  leg_reclassified: "Leg reclassified",
+  leg_verdict_suggested: "AI verdict suggested",
+  leg_verdict_confirmed: "Operator verdict recorded",
+  mas_cancel_completed: "MAS cancel completed",
 };
 
 const GROUP_LABELS: Record<string, string> = {
@@ -107,6 +131,10 @@ const GROUP_LABELS: Record<string, string> = {
   portal_draft_edited: "Dispute write-up edited",
   portal_draft_regenerated: "Dispute write-up regenerated",
   portal_draft_reverted: "Dispute write-up reverted",
+  group_context_set: "Group context recorded",
+  group_readback_confirmed: "Understanding readback confirmed",
+  group_preview_generated: "Dispute preview generated",
+  mas_reattest_completed: "MAS re-attest completed",
 };
 
 function humanizeFallback(action: string): string {

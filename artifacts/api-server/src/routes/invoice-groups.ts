@@ -1,7 +1,12 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable } from "@workspace/db";
+import { deriveLegSubStatus } from "@workspace/leg-state";
+import { emitStateEvent } from "../lib/state-events";
+import { refreshGroupDerivedFields, getGroupMacroPhase } from "../lib/denormalized-cache";
+import { getMacroPhase } from "../lib/macro-phase";
+import { computeAttestationDelta } from "../lib/attestation";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastGroupEvent } from "../lib/sse";
 import {
@@ -904,6 +909,307 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
       ne(invoiceGroupsTable.errorTypeId, ""),
     ));
   res.json({ count: row?.value ?? 0 });
+}));
+
+// Per-invoice (group-level) state-machine endpoints (Task #196). Same
+// shape as the per-leg endpoints: source-state contract → 409, discrete
+// writes, audit_logs + state_events, refresh derived fields.
+
+async function loadGroupOr404(id: number, res: any): Promise<typeof invoiceGroupsTable.$inferSelect | null> {
+  const [g] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!g) { res.status(404).json({ error: "Invoice group not found" }); return null; }
+  return g;
+}
+
+async function createGroupAuditLog(
+  invoiceGroupId: number,
+  action: string,
+  details: string,
+  req: Request,
+  metadata?: Record<string, unknown>,
+) {
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId,
+    action,
+    details,
+    metadata: metadata ?? null,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+}
+
+// All disputed legs of a group must have a "resolved" sub-status before we
+// can let the operator confirm the readback or generate a preview. The
+// excluded path also counts as resolved (those legs were intentionally
+// left out).
+const RESOLVED_LEG_SUB_STATUSES = new Set(["ready", "dropped", "excluded"]);
+
+async function allDisputedLegsResolved(invoiceGroupId: number): Promise<{ ok: boolean; unresolved: number }> {
+  const legs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, invoiceGroupId));
+  const disputed = legs.filter((l) => l.includedInDispute);
+  let unresolved = 0;
+  for (const l of disputed) {
+    const sub = deriveLegSubStatus(l);
+    if (!RESOLVED_LEG_SUB_STATUSES.has(sub)) unresolved++;
+  }
+  return { ok: unresolved === 0 && disputed.length > 0, unresolved };
+}
+
+// POST /invoice-groups/:id/group-context — operator records the group-level
+// "what's going on with this invoice" narrative used by the dispute write-
+// up. Pre-submit only.
+router.post("/invoice-groups/:id/group-context", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const context = (req.body?.context ?? "") as string;
+  if (typeof context !== "string") { res.status(400).json({ error: "context must be a string" }); return; }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Group context can only be set in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({ groupContext: context })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_context_set", "Group context recorded", req, {
+    contextLength: context.length,
+  });
+  await emitStateEvent({
+    eventKey: "group.context_set",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: { contextLength: context.length },
+  });
+  emitGroupEvent(id, "group_context_set", req);
+  res.json(updated);
+}));
+
+// POST /invoice-groups/:id/understanding-readback — operator confirms the
+// "this is what I'm asking for" sentence before generating the preview.
+// Source-state: pre-submit AND every disputed leg is resolved.
+router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const readback = (req.body?.readback ?? "") as string;
+  if (!readback || typeof readback !== "string") {
+    res.status(400).json({ error: "readback is required" });
+    return;
+  }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Readback can only be confirmed in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const { ok, unresolved } = await allDisputedLegsResolved(id);
+  if (!ok) {
+    res.status(409).json({
+      error: "Not all disputed legs are resolved",
+      expectedState: "all-legs-resolved",
+      actualState: `${unresolved}-unresolved`,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      understandingReadback: readback,
+      understandingReadbackAt: now,
+      understandingReadbackBy: req.user?.email ?? null,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_readback_confirmed", "Understanding readback confirmed", req, {
+    readbackLength: readback.length,
+  });
+  await emitStateEvent({
+    eventKey: "group.readback_confirmed",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: { readbackLength: readback.length },
+  });
+  emitGroupEvent(id, "readback_confirmed", req);
+  res.json(updated);
+}));
+
+// POST /invoice-groups/:id/preview-generated — stamp that a dispute
+// preview was generated. Source-state: pre-submit AND readback confirmed
+// AND all legs resolved. Body is empty; the timestamp/identity come from
+// the request.
+router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Preview can only be generated in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+  if (group.understandingReadbackAt == null) {
+    res.status(409).json({
+      error: "Readback must be confirmed before preview generation",
+      expectedState: "readback-confirmed",
+      actualState: "no-readback",
+    });
+    return;
+  }
+  const { ok, unresolved } = await allDisputedLegsResolved(id);
+  if (!ok) {
+    res.status(409).json({
+      error: "Not all disputed legs are resolved",
+      expectedState: "all-legs-resolved",
+      actualState: `${unresolved}-unresolved`,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      previewGeneratedAt: now,
+      previewGeneratedBy: req.user?.email ?? null,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_preview_generated", "Dispute preview generated", req);
+  await emitStateEvent({
+    eventKey: "group.preview_generated",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: {},
+  });
+  emitGroupEvent(id, "preview_generated", req);
+  res.json(updated);
+}));
+
+// POST /invoice-groups/:id/reattest/complete — stamps the group's MAS
+// re-attest as complete and engages the attestation gate. Pre: phase
+// is mas-action-required AND every leg with mas_action_required='cancel'
+// has been completed.
+router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const note = (req.body?.note ?? null) as string | null;
+  const masReference = (req.body?.masReference ?? null) as string | null;
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  // Source-state contract: the group must be in the
+  // `mas-action-required` derived macro phase. The phase is computed
+  // from {status, reattestRequired, reattestCompletedAt} — see
+  // getGroupMacroPhase. Enforcing the phase (rather than the raw
+  // `reattest_required` bit) keeps the contract honest if we later add
+  // intermediate phases between response-pending and reattest.
+  const phase = getGroupMacroPhase(group);
+  if (phase !== "mas-action-required") {
+    res.status(409).json({
+      error: "Group is not in the mas-action-required phase",
+      expectedState: "mas-action-required",
+      actualState: phase,
+    });
+    return;
+  }
+
+  // Every leg owing a MAS cancel must have completed it first.
+  const incompleteCancels = await db
+    .select({ id: claimsTable.id })
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, id),
+      eq(claimsTable.masActionRequired, "cancel"),
+      isNull(claimsTable.masActionCompletedAt),
+    ));
+  if (incompleteCancels.length > 0) {
+    res.status(409).json({
+      error: "Not all MAS cancel actions are complete",
+      expectedState: "all-cancels-complete",
+      actualState: `${incompleteCancels.length}-incomplete`,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const fullNote = masReference ? `${note ? note + " " : ""}(MAS ref: ${masReference})` : note;
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      reattestCompletedAt: now,
+      reattestCompletedBy: req.user?.email ?? null,
+      reattestNote: fullNote,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "mas_reattest_completed", "MAS re-attest completed", req, { note, masReference });
+  await emitStateEvent({
+    eventKey: "group.reattest_completed",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: { note, masReference },
+  });
+
+  // Trigger gate: graduate any leg with an operator-confirmed
+  // Approved/Partial verdict from not_required → pending.
+  const legs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
+  for (const leg of legs) {
+    const [latestVerdict] = await db
+      .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
+      .from(claimVerdictTable)
+      .where(eq(claimVerdictTable.claimId, leg.id))
+      .orderBy(desc(claimVerdictTable.createdAt))
+      .limit(1);
+    if (
+      latestVerdict &&
+      latestVerdict.source === "operator_confirmed" &&
+      (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
+    ) {
+      const delta = computeAttestationDelta(
+        "Pending",
+        leg.outcome === "Approved" || leg.outcome === "Partially Approved" ? leg.outcome : "Approved",
+        { reattestCompletedAt: now },
+      );
+      if (Object.keys(delta).length > 0 && leg.attestationState === "not_required") {
+        await db.update(claimsTable).set(delta).where(eq(claimsTable.id, leg.id));
+      }
+    }
+  }
+
+  await refreshGroupDerivedFields(id);
+  emitGroupEvent(id, "reattest_completed", req);
+  res.json(updated);
 }));
 
 export default router;

@@ -14,18 +14,29 @@
 //   • Returns void, never a promise the caller is expected to await for
 //     correctness. Callers may `void emitStateEvent(...)` — the only
 //     reason to await is to keep test ordering deterministic.
+//   • Accepts an optional `executor` parameter so the insert can join an
+//     outer drizzle transaction. We chose **same-transaction** (rather
+//     than a post-commit callback) because the observability stream must
+//     match real state — if the outer write rolls back, the event row
+//     should roll back with it. Pass `tx` from inside `db.transaction`,
+//     omit it for fire-and-forget background writes.
 
 import { db, stateEventsTable, type InsertStateEvent } from "@workspace/db";
 import { logger } from "./logger";
+import type { DbExecutor } from "./claim-transitions";
 
 export type EmitStateEventInput = Pick<
   InsertStateEvent,
   "eventKey" | "claimId" | "invoiceGroupId" | "actorUserId" | "durationMs" | "metadata"
 >;
 
-export async function emitStateEvent(input: EmitStateEventInput): Promise<void> {
+export async function emitStateEvent(
+  input: EmitStateEventInput,
+  executor?: DbExecutor,
+): Promise<void> {
+  const ex: DbExecutor = executor ?? db;
   try {
-    await db.insert(stateEventsTable).values({
+    await ex.insert(stateEventsTable).values({
       eventKey: input.eventKey,
       claimId: input.claimId ?? null,
       invoiceGroupId: input.invoiceGroupId ?? null,
@@ -35,8 +46,10 @@ export async function emitStateEvent(input: EmitStateEventInput): Promise<void> 
     });
   } catch (err) {
     // Observability never throws upward — if logging fails we log the
-    // failure (best-effort) and move on. The user write that triggered
-    // this event is already committed by the time we get here.
+    // failure (best-effort) and move on. When called outside a transaction
+    // the user-facing write that triggered this event is already committed
+    // by the time we get here; when called inside a transaction the
+    // surrounding caller is responsible for surfacing the error.
     logger.warn(
       { err, eventKey: input.eventKey, claimId: input.claimId, invoiceGroupId: input.invoiceGroupId },
       "emitStateEvent failed (swallowed)",

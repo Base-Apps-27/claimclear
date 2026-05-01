@@ -1839,6 +1839,540 @@ export const DeleteInvoiceGroupEvidenceParams = zod.object({
 });
 
 /**
+ * Pre-submit only. Replaces any existing `groupContext`.
+ * @summary Record the operator's group-level context narrative
+ */
+export const SetGroupContextParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SetGroupContextBody = zod.object({
+  context: zod.string(),
+});
+
+export const SetGroupContextResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Source-state: pre-submit AND every disputed leg has a resolved
+sub-status (`ready | dropped | excluded`).
+
+ * @summary Operator confirms the dispute understanding readback sentence
+ */
+export const ConfirmUnderstandingReadbackParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ConfirmUnderstandingReadbackBody = zod.object({
+  readback: zod.string(),
+});
+
+export const ConfirmUnderstandingReadbackResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Source-state: pre-submit AND `understandingReadbackAt` is set AND
+every disputed leg is resolved.
+
+ * @summary Stamp that the dispute preview was generated
+ */
+export const StampPreviewGeneratedParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const StampPreviewGeneratedResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * This is the trigger gate for attestation. Source-state contract:
+`reattest_required = true`, `reattest_completed_at IS NULL`, and
+every leg owing a MAS cancel must have completed it. On success,
+every disputed child whose latest operator-confirmed verdict is
+Approved/Partial graduates from `not_required` to `pending`.
+
+ * @summary Operator stamps that the group's MAS re-attest is complete
+ */
+export const CompleteGroupReattestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CompleteGroupReattestBody = zod.object({
+  note: zod.string().nullish(),
+  masReference: zod.string().nullish(),
+});
+
+export const CompleteGroupReattestResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
  * @summary List claims with filtering
  */
 export const listClaimsQueryLimitDefault = 50;
@@ -3543,18 +4077,33 @@ export const UpdateClaimEvidenceResponse = zod.object({
 });
 
 /**
- * @summary Place claim on hold
+ * Source-state contract: leg sub-status must be `investigating` or `ready`.
+Returns `409 Conflict` with `{ error, expectedState, actualState }` otherwise.
+
+ * @summary Place a leg on hold (per-leg state contract)
  */
-export const PlaceClaimOnHoldParams = zod.object({
+export const PlaceLegOnHoldParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const PlaceClaimOnHoldBody = zod.object({
-  holdReason: zod.string(),
-  holdPendingFrom: zod.string().optional(),
-});
+export const PlaceLegOnHoldBody = zod
+  .object({
+    reason: zod
+      .string()
+      .optional()
+      .describe("One of the pinned LEG_HOLD_REASONS values."),
+    note: zod.string().nullish(),
+    holdReason: zod.string().optional().describe("Legacy alias for `reason`."),
+    holdPendingFrom: zod
+      .string()
+      .nullish()
+      .describe("Legacy free-text field; superseded by `note`."),
+  })
+  .describe(
+    "Body for `POST \/claims\/{id}\/hold`. The legacy `holdReason` \/\n`holdPendingFrom` fields remain accepted for backward compatibility,\nbut new clients should use `reason` (one of the pinned\n`LEG_HOLD_REASONS` vocabulary in the schema) and the optional `note`.\n",
+  );
 
-export const PlaceClaimOnHoldResponse = zod.object({
+export const PlaceLegOnHoldResponse = zod.object({
   id: zod.number(),
   invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),
@@ -3683,13 +4232,769 @@ export const PlaceClaimOnHoldResponse = zod.object({
 });
 
 /**
- * @summary Remove claim hold
+ * Source-state contract: leg sub-status must be `blocked` and `holdReason`
+must be set (i.e., the hold was placed via /hold, not via SOP).
+
+ * @summary Remove leg hold (per-leg state contract)
  */
-export const RemoveClaimHoldParams = zod.object({
+export const RemoveLegHoldParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const RemoveClaimHoldResponse = zod.object({
+export const RemoveLegHoldResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary POST alias of `DELETE /claims/{id}/hold`
+ */
+export const ClearLegHoldParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ClearLegHoldResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * @summary Assign an error type to a leg in `needs_classification`
+ */
+export const ClassifyLegParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ClassifyLegBody = zod.object({
+  errorTypeId: zod
+    .string()
+    .describe(
+      "The numeric error-type id (sent as a string for transport stability).",
+    ),
+});
+
+export const ClassifyLegResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Validates the node and answer against the leg's loaded error-type tree.
+A non-terminal answer follows `childId`; a terminal answer stamps
+`sopOutcome` plus either `readyAt` (portal_dispute, dispute) or
+`dropReason` + `droppedAt` (cannot_dispute, non_issue). The `hold`
+outcome routes to the same `blocked` sub-status as a manual hold.
+
+ * @summary Advance one step of the SOP decision-tree walk
+ */
+export const SopAdvanceLegParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SopAdvanceLegBody = zod.object({
+  nodeId: zod.string(),
+  answer: zod.string(),
+});
+
+export const SopAdvanceLegResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Allowed from `investigating | ready | dropped | blocked`. Refused
+when the leg has already been included in any in-progress or
+submitted portal submission.
+
+ * @summary Rewind a leg back to `needs_classification`
+ */
+export const ReclassifyLegParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReclassifyLegResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * The single sanctioned writer to `claim_verdict`. Operator confirmations
+also refresh denormalized `claims.outcome`, fire MAS-cancel
+derivations on `Denied`, and (when the parent group's
+`reattest_completed_at` is set) graduate Approved/Partial legs from
+`not_required` to `pending` for attestation.
+
+ * @summary Record an AI-suggested or operator-confirmed verdict
+ */
+export const RecordLegVerdictParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RecordLegVerdictBody = zod.object({
+  source: zod.enum(["ai_suggested", "operator_confirmed"]),
+  outcome: zod.enum(["Approved", "Denied", "Partial"]),
+  note: zod.string().nullish(),
+  confidence: zod
+    .number()
+    .nullish()
+    .describe("Optional 0..1 confidence score (AI suggestions only)."),
+  reasoning: zod
+    .string()
+    .nullish()
+    .describe("Optional rationale text (AI suggestions only)."),
+  inspectionTimeMs: zod
+    .number()
+    .nullish()
+    .describe("Optional duration the operator spent reviewing."),
+});
+
+export const RecordLegVerdictResponse = zod.object({
+  id: zod.number(),
+  claimId: zod.number(),
+  source: zod.string(),
+  outcome: zod.string(),
+  note: zod.string().nullish(),
+  confidence: zod.string().nullish(),
+  reasoning: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  createdBy: zod.string().nullish(),
+  inspectionTimeMs: zod.number().nullish(),
+});
+
+/**
+ * Source-state contract: `mas_action_required = 'cancel'` AND
+`mas_action_completed_at IS NULL`.
+
+ * @summary Operator stamps that the MAS cancel for this leg is complete
+ */
+export const CompleteLegMasActionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CompleteLegMasActionBody = zod.object({
+  note: zod.string().nullish(),
+  masReference: zod
+    .string()
+    .nullish()
+    .describe("Optional MAS reference number recorded in the audit trail."),
+});
+
+export const CompleteLegMasActionResponse = zod.object({
   id: zod.number(),
   invoiceGroupId: zod.number().nullish(),
   confNumber: zod.string(),

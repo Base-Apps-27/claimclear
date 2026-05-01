@@ -6,7 +6,27 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Body for `POST /claims/{id}/hold`. The legacy `holdReason` /
+`holdPendingFrom` fields remain accepted for backward compatibility,
+but new clients should use `reason` (one of the pinned
+`LEG_HOLD_REASONS` vocabulary in the schema) and the optional `note`.
+
+ */
 export interface PlaceHoldBody {
-  holdReason: string;
-  holdPendingFrom?: string;
+  /** One of the pinned LEG_HOLD_REASONS values. */
+  reason?: string;
+  /** @nullable */
+  note?: string | null;
+  /**
+   * Legacy alias for `reason`.
+   * @deprecated
+   */
+  holdReason?: string;
+  /**
+   * Legacy free-text field; superseded by `note`.
+   * @deprecated
+   * @nullable
+   */
+  holdPendingFrom?: string | null;
 }

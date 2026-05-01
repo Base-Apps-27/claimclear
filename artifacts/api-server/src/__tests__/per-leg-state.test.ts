@@ -1,0 +1,839 @@
+// Per-leg state-machine endpoint tests for Task #196.
+//
+// Each test exercises one of the 11 contract endpoints end-to-end through
+// a real Express server bound to the live database. The tests focus on:
+//
+//   • Source-state contract enforcement (409 + { error, expectedState,
+//     actualState } body shape).
+//   • Discrete-column writes landing in the right places.
+//   • audit_logs and state_events rows being inserted with the agreed
+//     action / event_key vocabulary.
+//   • Cross-resource side effects: classify → renormalized fields,
+//     verdict → MAS-derivation, group reattest/complete → attestation
+//     gate engagement.
+//
+// Harness mirrors `attestation.test.ts` so the cleanup pattern stays
+// consistent across the task suite.
+
+import { test, before, after } from "node:test";
+import { strict as assert } from "node:assert";
+import http from "node:http";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import { eq, and, desc } from "drizzle-orm";
+
+import claimsRouter from "../routes/claims";
+import invoiceGroupsRouter from "../routes/invoice-groups";
+import {
+  db,
+  pool,
+  claimsTable,
+  invoiceGroupsTable,
+  auditLogsTable,
+  notesTable,
+  portalResponsesTable,
+  portalSubmissionsTable,
+  claimEvidenceTable,
+  claimVerdictTable,
+  errorTypesTable,
+  stateEventsTable,
+} from "@workspace/db";
+
+let server: http.Server;
+let baseUrl: string;
+
+const TEST_USER = { email: "per-leg-tester@example.com", displayName: "Per-Leg Tester" };
+
+before(async () => {
+  const app: Express = express();
+  app.use(express.json());
+
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    (req as any).user = { ...TEST_USER, status: "approved" };
+    (req as any).isAuthenticated = () => true;
+    (req as any).log = { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} };
+    next();
+  });
+
+  app.use("/api", claimsRouter);
+  app.use("/api", invoiceGroupsRouter);
+
+  await new Promise<void>((resolveListen, rejectListen) => {
+    server = app.listen(0, () => {
+      const addr = server.address();
+      if (typeof addr === "object" && addr) {
+        baseUrl = `http://127.0.0.1:${addr.port}`;
+        resolveListen();
+      } else {
+        rejectListen(new Error("Failed to obtain test server port"));
+      }
+    });
+  });
+});
+
+after(async () => {
+  server.closeAllConnections?.();
+  await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+  await pool.end().catch(() => undefined);
+});
+
+async function fetchJson<T = any>(
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<{ status: number; json: T }> {
+  const url = new URL(`${baseUrl}${path}`);
+  return new Promise((resolveReq, rejectReq) => {
+    const body = init?.body !== undefined ? JSON.stringify(init.body) : undefined;
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: init?.method ?? "GET",
+        headers: body
+          ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body).toString() }
+          : {},
+      },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { raw += c; });
+        res.on("end", () => {
+          try {
+            resolveReq({ status: res.statusCode ?? 0, json: raw ? JSON.parse(raw) : ({} as T) });
+          } catch (e) { rejectReq(e); }
+        });
+      },
+    );
+    req.on("error", rejectReq);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// --- Seeding ------------------------------------------------------------
+
+async function createSeedGroup(opts: { status?: any } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
+  const invoiceNumber = `T196G-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const [row] = await db.insert(invoiceGroupsTable).values({
+    invoiceNumber,
+    status: opts.status ?? "Needs Evidence",
+    outcome: "Pending",
+  }).returning();
+  return row;
+}
+
+async function createSeedClaim(opts: {
+  invoiceGroupId?: number | null;
+  errorTypeId?: string | null;
+  errorTypeName?: string | null;
+  sopOutcome?: string | null;
+  holdReason?: string | null;
+  status?: any;
+  outcome?: any;
+  includedInDispute?: boolean;
+} = {}): Promise<typeof claimsTable.$inferSelect> {
+  const confNumber = `T196-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const [row] = await db.insert(claimsTable).values({
+    confNumber,
+    status: opts.status ?? "Needs Evidence",
+    outcome: opts.outcome ?? "Pending",
+    invoiceGroupId: opts.invoiceGroupId ?? null,
+    errorTypeId: Object.prototype.hasOwnProperty.call(opts, "errorTypeId") ? opts.errorTypeId : null,
+    errorTypeName: opts.errorTypeName ?? null,
+    sopOutcome: opts.sopOutcome ?? null,
+    holdReason: opts.holdReason ?? null,
+    includedInDispute: opts.includedInDispute ?? true,
+    claimAmount: "100.00",
+  }).returning();
+  return row;
+}
+
+async function createSeedErrorType(tree?: any): Promise<typeof errorTypesTable.$inferSelect> {
+  const name = `T196-ErrType-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const [row] = await db.insert(errorTypesTable).values({
+    name,
+    description: "test",
+    decisionTree: tree ?? null,
+  }).returning();
+  return row;
+}
+
+async function cleanupClaim(id: number) {
+  await db.delete(claimVerdictTable).where(eq(claimVerdictTable.claimId, id)).catch(() => undefined);
+  await db.delete(stateEventsTable).where(eq(stateEventsTable.claimId, id)).catch(() => undefined);
+  await db.delete(portalResponsesTable).where(eq(portalResponsesTable.claimId, id)).catch(() => undefined);
+  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.claimId, id)).catch(() => undefined);
+  await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, id)).catch(() => undefined);
+  await db.delete(notesTable).where(eq(notesTable.claimId, id)).catch(() => undefined);
+  await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, id)).catch(() => undefined);
+  await db.delete(claimsTable).where(eq(claimsTable.id, id)).catch(() => undefined);
+}
+
+async function cleanupGroup(id: number) {
+  const children = await db.select({ id: claimsTable.id }).from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
+  for (const c of children) await cleanupClaim(c.id);
+  await db.delete(stateEventsTable).where(eq(stateEventsTable.invoiceGroupId, id)).catch(() => undefined);
+  await db.delete(portalSubmissionsTable).where(eq(portalSubmissionsTable.invoiceGroupId, id)).catch(() => undefined);
+  await db.delete(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, id)).catch(() => undefined);
+  await db.delete(claimEvidenceTable).where(eq(claimEvidenceTable.invoiceGroupId, id)).catch(() => undefined);
+  await db.delete(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id)).catch(() => undefined);
+}
+
+async function cleanupErrorType(id: number) {
+  await db.delete(errorTypesTable).where(eq(errorTypesTable.id, id)).catch(() => undefined);
+}
+
+// --- /classify ----------------------------------------------------------
+
+test("POST /claims/:id/classify writes errorTypeId+name and emits leg.classified", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/classify`, {
+      method: "POST",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.errorTypeId, String(errType.id));
+    assert.equal(res.json.errorTypeName, errType.name);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_classified"), "expected leg_classified audit row");
+
+    const events = await db.select().from(stateEventsTable).where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(events.find((e) => e.eventKey === "leg.classified"), "expected leg.classified state_events row");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/classify on already-classified leg returns 409 with expected/actual states", async () => {
+  const errType = await createSeedErrorType();
+  // Pre-classified: errorTypeId is set, so sub-status should be `investigating`.
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/classify`, {
+      method: "POST",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "needs_classification");
+    assert.equal(res.json.actualState, "investigating");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /sop-advance -------------------------------------------------------
+
+test("POST /claims/:id/sop-advance walks one step and reaches a ready terminal", async () => {
+  // Tiny tree: root has one option that leads straight to a portal_dispute
+  // terminal so the leg lands in `ready`.
+  const tree = {
+    rootId: "root",
+    nodes: [
+      {
+        id: "root",
+        question: "Is this a dispute?",
+        options: [
+          { label: "yes", outcomeType: "portal_dispute", outcomeLabel: "Dispute via portal" },
+          { label: "no", outcomeType: "internal", outcomeLabel: "Cannot dispute" },
+        ],
+      },
+    ],
+  };
+  const errType = await createSeedErrorType(tree);
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST",
+      body: { nodeId: "root", answer: "yes" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.sopOutcome, "portal_dispute");
+    assert.ok(res.json.readyAt, "ready terminal must stamp readyAt");
+    // Per contract, terminal sop-advance also persists sopNodeId to
+    // the terminal node identifier (here, "root" — the question that
+    // reached the terminal).
+    assert.equal(res.json.sopNodeId, "root", "terminal sop-advance must persist sopNodeId");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    // Per contract, every sop-advance (terminal or mid-walk) writes
+    // a single `leg_sop_advanced` audit row; the `isTerminal` field in
+    // the metadata distinguishes the two.
+    const terminalAudit = audits.find((a) => a.action === "leg_sop_advanced" && (a.metadata as any)?.isTerminal === true);
+    assert.ok(terminalAudit, "expected leg_sop_advanced audit row with isTerminal=true");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/sop-advance terminal `internal` lands at sopOutcome=cannot_dispute and stamps droppedAt", async () => {
+  const tree = {
+    rootId: "root",
+    nodes: [{
+      id: "root",
+      question: "?",
+      options: [{ label: "no", outcomeType: "internal", outcomeLabel: "Internal" }],
+    }],
+  };
+  const errType = await createSeedErrorType(tree);
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST", body: { nodeId: "root", answer: "no" },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.sopOutcome, "cannot_dispute");
+    assert.equal(res.json.dropReason, "cannot_dispute");
+    assert.ok(res.json.droppedAt);
+    // cannot_dispute terminal triggers MAS-cancel derivation.
+    assert.equal(res.json.masActionRequired, "cancel",
+      "cannot_dispute terminal must derive mas_action_required=cancel");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/sop-advance with an unknown answer returns 400 and does not mutate the leg", async () => {
+  const tree = {
+    rootId: "root",
+    nodes: [{ id: "root", question: "?", options: [{ label: "yes", outcomeType: "portal_dispute" }] }],
+  };
+  const errType = await createSeedErrorType(tree);
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/sop-advance`, {
+      method: "POST", body: { nodeId: "root", answer: "maybe" },
+    });
+    assert.equal(res.status, 400);
+    assert.ok(Array.isArray(res.json.validOptions));
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.sopOutcome, null, "leg must remain untouched on validation failure");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /hold + /clear-hold + /clear-hold (POST alias) --------------------
+
+test("POST /claims/:id/hold places hold from `investigating` and DELETE clears it", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const placed = await fetchJson(`/api/claims/${claim.id}/hold`, {
+      method: "POST", body: { reason: "awaiting_member_response", note: "called twice" },
+    });
+    assert.equal(placed.status, 200, `expected 200, got ${placed.status} (${JSON.stringify(placed.json)})`);
+    assert.equal(placed.json.holdReason, "awaiting_member_response");
+    assert.ok(placed.json.holdPlacedAt);
+
+    const cleared = await fetchJson(`/api/claims/${claim.id}/hold`, { method: "DELETE" });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.json.holdReason, null);
+    assert.equal(cleared.json.holdPlacedAt, null);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/hold with bogus reason returns 400 and does not mutate", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/hold`, {
+      method: "POST", body: { reason: "not_a_real_reason" },
+    });
+    assert.equal(res.status, 400);
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.holdReason, null);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/hold from `needs_classification` returns 409", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/hold`, {
+      method: "POST", body: { reason: "awaiting_member_response" },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.actualState, "needs_classification");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/clear-hold mirrors DELETE", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    holdReason: "awaiting_member_response",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/clear-hold`, { method: "POST" });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.holdReason, null);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /reclassify --------------------------------------------------------
+
+test("POST /claims/:id/reclassify wipes errorType + SOP + hold and bounces back to needs_classification", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.errorTypeId, null);
+    assert.equal(res.json.errorTypeName, null);
+    assert.equal(res.json.sopOutcome, null);
+    assert.equal(res.json.holdReason, null);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/reclassify is refused once a portal submission is in flight", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+    invoiceGroupId: group.id,
+  });
+  // Insert a submitted portal submission to lock the leg.
+  await db.insert(portalSubmissionsTable).values({
+    claimId: claim.id,
+    invoiceGroupId: group.id,
+    status: "submitted",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "no_submission");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /verdict -----------------------------------------------------------
+
+test("POST /claims/:id/verdict (operator_confirmed Denied) writes claim_verdict and derives mas_action_required=cancel", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST", body: { source: "operator_confirmed", outcome: "Denied" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.outcome, "Denied");
+
+    const verdicts = await db.select().from(claimVerdictTable).where(eq(claimVerdictTable.claimId, claim.id));
+    assert.equal(verdicts.length, 1);
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.outcome, "Denied", "operator-confirmed verdict must refresh denormalized claims.outcome");
+    assert.equal(post.masActionRequired, "cancel", "Denied must derive mas_action_required=cancel");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/verdict refuses operator confirmation on a non-submitted leg", async () => {
+  // Leg is included in dispute but its sopOutcome is `cannot_dispute`
+  // (was never submitted) — the operator-confirmed verdict path must
+  // refuse it.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "cannot_dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST", body: { source: "operator_confirmed", outcome: "Approved" },
+    });
+    assert.equal(res.status, 409);
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /mas-action/complete ----------------------------------------------
+
+test("POST /claims/:id/mas-action/complete stamps completion when mas_action_required=cancel", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  // Force the precondition state directly.
+  await db.update(claimsTable).set({ masActionRequired: "cancel" }).where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/mas-action/complete`, {
+      method: "POST", body: { masReference: "MAS-12345" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.ok(res.json.masActionCompletedAt);
+    assert.equal(res.json.masActionCompletedBy, TEST_USER.email);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/mas-action/complete on a leg without an open cancel returns 409", async () => {
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({ errorTypeId: String(errType.id), errorTypeName: errType.name });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/mas-action/complete`, { method: "POST", body: {} });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "mas_action_required=cancel");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /invoice-groups/:id/group-context ---------------------------------
+
+test("POST /invoice-groups/:id/group-context records context in pre-submit", async () => {
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/group-context`, {
+      method: "POST", body: { context: "Driver said the unit was rejected at the gate." },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.groupContext, "Driver said the unit was rejected at the gate.");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /invoice-groups/:id/group-context outside pre-submit returns 409", async () => {
+  const group = await createSeedGroup({ status: "Needs Review" });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/group-context`, {
+      method: "POST", body: { context: "anything" },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "pre-submit");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+// --- /invoice-groups/:id/understanding-readback ------------------------
+
+test("POST /invoice-groups/:id/understanding-readback requires every disputed leg to be resolved", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  // Disputed but unresolved leg (sopOutcome=null → investigating).
+  await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/understanding-readback`, {
+      method: "POST", body: { readback: "We're disputing the gate-rejection unit." },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "all-legs-resolved");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /invoice-groups/:id/understanding-readback succeeds once disputed legs are resolved", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  // Resolved disputed leg (sopOutcome=portal_dispute → ready).
+  await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/understanding-readback`, {
+      method: "POST", body: { readback: "We're disputing the gate-rejection unit." },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.ok(res.json.understandingReadbackAt);
+    assert.equal(res.json.understandingReadbackBy, TEST_USER.email);
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /invoice-groups/:id/preview-generated -----------------------------
+
+test("POST /invoice-groups/:id/preview-generated requires readback first", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/preview-generated`, { method: "POST" });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "readback-confirmed");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /invoice-groups/:id/preview-generated succeeds after readback + resolution", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  try {
+    const r1 = await fetchJson(`/api/invoice-groups/${group.id}/understanding-readback`, {
+      method: "POST", body: { readback: "ok" },
+    });
+    assert.equal(r1.status, 200);
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/preview-generated`, { method: "POST" });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.ok(res.json.previewGeneratedAt);
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- /invoice-groups/:id/reattest/complete (the trigger gate) ----------
+
+test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs to attestation pending", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  // Mark the group as needing reattest (would normally be set by the
+  // refreshGroupDerivedFields helper after a payor response landed).
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  // Disputed, submitted leg with an Approved operator verdict.
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  await db.insert(claimVerdictTable).values({
+    claimId: claim.id,
+    source: "operator_confirmed",
+    outcome: "Approved",
+    createdBy: TEST_USER.email,
+  });
+  try {
+    // Sanity: pre-call, attestation_state should still be not_required.
+    const [pre] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(pre.attestationState, "not_required",
+      "leg must start at not_required before the gate engages");
+
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST", body: { masReference: "MAS-99" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.ok(res.json.reattestCompletedAt);
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.attestationState, "pending",
+      "after reattest/complete, Approved verdict legs must graduate to attestation=pending");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /invoice-groups/:id/reattest/complete is refused while MAS cancel actions are still open", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+  });
+  await db.update(claimsTable).set({ masActionRequired: "cancel" })
+    .where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST", body: {},
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "all-cancels-complete");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- MAS derivation preservation ---------------------------------------
+
+import { applyMasDerivationsForLeg, deriveMasActionRequired } from "../lib/mas-derivations";
+
+test("deriveMasActionRequired returns null for Approved/Partial (preserves caller's existing value)", () => {
+  assert.equal(deriveMasActionRequired({ latestOperatorVerdictOutcome: "Approved" }), null);
+  assert.equal(deriveMasActionRequired({ latestOperatorVerdictOutcome: "Partial" }), null);
+});
+
+test("deriveMasActionRequired still maps Denied → cancel and SOP cannot_dispute → cancel", () => {
+  assert.equal(deriveMasActionRequired({ latestOperatorVerdictOutcome: "Denied" }), "cancel");
+  assert.equal(deriveMasActionRequired({ sopOutcome: "cannot_dispute" }), "cancel");
+  assert.equal(deriveMasActionRequired({ sopOutcome: "non_issue" }), "none");
+});
+
+test("applyMasDerivationsForLeg preserves an existing 'cancel' when an Approved verdict lands later", async () => {
+  const claim = await createSeedClaim({});
+  try {
+    // Seed a 'cancel' requirement on the leg (simulating a prior
+    // SOP terminal cannot_dispute that was later reclassified).
+    await db.update(claimsTable).set({ masActionRequired: "cancel" }).where(eq(claimsTable.id, claim.id));
+    const result = await applyMasDerivationsForLeg(claim.id, "Approved");
+    assert.ok(result, "expected the leg row back");
+    assert.equal(result!.masActionRequired, "cancel", "Approved must NOT clear an existing cancel");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("applyMasDerivationsForLeg sets 'none' on Approved when masActionRequired was null", async () => {
+  const claim = await createSeedClaim({});
+  try {
+    // Default seeded leg has masActionRequired = null.
+    const result = await applyMasDerivationsForLeg(claim.id, "Approved");
+    assert.ok(result, "expected the leg row back");
+    assert.equal(result!.masActionRequired, "none", "Approved on null should render the checklist row");
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+// --- getAiCalibration helper -------------------------------------------
+
+import { getAiCalibration } from "../lib/ai-calibration";
+
+test("getAiCalibration returns the contracted shape with zeroed fields when no verdicts exist", async () => {
+  const stats = await getAiCalibration({ errorTypeId: "no-such-error-type", windowDays: 30 });
+  assert.equal(stats.errorTypeId, "no-such-error-type");
+  assert.equal(stats.totalConfirmations, 0);
+  assert.equal(stats.agreementCount, 0);
+  assert.deepEqual(stats.perOutcomeAgreement, { Approved: 0, Denied: 0, Partial: 0 });
+  assert.equal(stats.windowDays, 30);
+});
+
+test("getAiCalibration counts agreement when AI suggestion matches operator confirmation", async () => {
+  const errType = await createSeedErrorType();
+  const errorTypeId = String(errType.id);
+  const claim = await createSeedClaim({ errorTypeId });
+  try {
+    // AI suggested Approved → operator confirmed Approved (match).
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id, source: "ai_suggested", outcome: "Approved",
+      createdBy: TEST_USER.email,
+    });
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id, source: "operator_confirmed", outcome: "Approved",
+      createdBy: TEST_USER.email,
+    });
+
+    const stats = await getAiCalibration({ errorTypeId, windowDays: 90 });
+    assert.equal(stats.errorTypeId, errorTypeId);
+    assert.equal(stats.totalConfirmations, 1);
+    assert.equal(stats.agreementCount, 1);
+    assert.equal(stats.perOutcomeAgreement.Approved, 1);
+    assert.equal(stats.perOutcomeAgreement.Denied, 0);
+    assert.equal(stats.perOutcomeAgreement.Partial, 0);
+    assert.equal(stats.windowDays, 90);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("getAiCalibration does not count AI/operator mismatches as agreement", async () => {
+  const errType = await createSeedErrorType();
+  const errorTypeId = String(errType.id);
+  const claim = await createSeedClaim({ errorTypeId });
+  try {
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id, source: "ai_suggested", outcome: "Approved",
+      createdBy: TEST_USER.email,
+    });
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id, source: "operator_confirmed", outcome: "Denied",
+      createdBy: TEST_USER.email,
+    });
+
+    const stats = await getAiCalibration({ errorTypeId });
+    assert.equal(stats.totalConfirmations, 1);
+    assert.equal(stats.agreementCount, 0);
+    assert.deepEqual(stats.perOutcomeAgreement, { Approved: 0, Denied: 0, Partial: 0 });
+    // Default window of 90 days when not provided.
+    assert.equal(stats.windowDays, 90);
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /invoice-groups/:id/reattest/complete on a group that doesn't need reattest returns 409", async () => {
+  const group = await createSeedGroup();
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST", body: {},
+    });
+    assert.equal(res.status, 409);
+    // The endpoint now enforces the derived macro phase rather than the
+    // raw flag — see invoice-groups.ts:/reattest/complete.
+    assert.equal(res.json.expectedState, "mas-action-required");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});

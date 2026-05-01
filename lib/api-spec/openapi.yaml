@@ -606,6 +606,137 @@ paths:
         "200":
           description: Deleted
 
+  /invoice-groups/{id}/group-context:
+    post:
+      operationId: setGroupContext
+      tags: [invoice-groups]
+      summary: Record the operator's group-level context narrative
+      description: Pre-submit only. Replaces any existing `groupContext`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetGroupContextBody"
+      responses:
+        "200":
+          description: Group context updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/understanding-readback:
+    post:
+      operationId: confirmUnderstandingReadback
+      tags: [invoice-groups]
+      summary: Operator confirms the dispute understanding readback sentence
+      description: |
+        Source-state: pre-submit AND every disputed leg has a resolved
+        sub-status (`ready | dropped | excluded`).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmReadbackBody"
+      responses:
+        "200":
+          description: Readback confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/preview-generated:
+    post:
+      operationId: stampPreviewGenerated
+      tags: [invoice-groups]
+      summary: Stamp that the dispute preview was generated
+      description: |
+        Source-state: pre-submit AND `understandingReadbackAt` is set AND
+        every disputed leg is resolved.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Preview generation stamped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/reattest/complete:
+    post:
+      operationId: completeGroupReattest
+      tags: [invoice-groups]
+      summary: Operator stamps that the group's MAS re-attest is complete
+      description: |
+        This is the trigger gate for attestation. Source-state contract:
+        `reattest_required = true`, `reattest_completed_at IS NULL`, and
+        every leg owing a MAS cancel must have completed it. On success,
+        every disputed child whose latest operator-confirmed verdict is
+        Approved/Partial graduates from `not_required` to `pending`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteReattestBody"
+      responses:
+        "200":
+          description: Re-attest completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /claims:
     get:
       operationId: listClaims
@@ -1136,9 +1267,12 @@ paths:
 
   /claims/{id}/hold:
     post:
-      operationId: placeClaimOnHold
+      operationId: placeLegOnHold
       tags: [claims]
-      summary: Place claim on hold
+      summary: Place a leg on hold (per-leg state contract)
+      description: |
+        Source-state contract: leg sub-status must be `investigating` or `ready`.
+        Returns `409 Conflict` with `{ error, expectedState, actualState }` otherwise.
       parameters:
         - name: id
           in: path
@@ -1158,10 +1292,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
     delete:
-      operationId: removeClaimHold
+      operationId: removeLegHold
       tags: [claims]
-      summary: Remove claim hold
+      summary: Remove leg hold (per-leg state contract)
+      description: |
+        Source-state contract: leg sub-status must be `blocked` and `holdReason`
+        must be set (i.e., the hold was placed via /hold, not via SOP).
       parameters:
         - name: id
           in: path
@@ -1175,6 +1318,205 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/clear-hold:
+    post:
+      operationId: clearLegHold
+      tags: [claims]
+      summary: POST alias of `DELETE /claims/{id}/hold`
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hold cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/classify:
+    post:
+      operationId: classifyLeg
+      tags: [claims]
+      summary: Assign an error type to a leg in `needs_classification`
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassifyLegBody"
+      responses:
+        "200":
+          description: Leg classified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/sop-advance:
+    post:
+      operationId: sopAdvanceLeg
+      tags: [claims]
+      summary: Advance one step of the SOP decision-tree walk
+      description: |
+        Validates the node and answer against the leg's loaded error-type tree.
+        A non-terminal answer follows `childId`; a terminal answer stamps
+        `sopOutcome` plus either `readyAt` (portal_dispute, dispute) or
+        `dropReason` + `droppedAt` (cannot_dispute, non_issue). The `hold`
+        outcome routes to the same `blocked` sub-status as a manual hold.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SopAdvanceBody"
+      responses:
+        "200":
+          description: SOP step recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/reclassify:
+    post:
+      operationId: reclassifyLeg
+      tags: [claims]
+      summary: Rewind a leg back to `needs_classification`
+      description: |
+        Allowed from `investigating | ready | dropped | blocked`. Refused
+        when the leg has already been included in any in-progress or
+        submitted portal submission.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Leg reclassified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/verdict:
+    post:
+      operationId: recordLegVerdict
+      tags: [claims]
+      summary: Record an AI-suggested or operator-confirmed verdict
+      description: |
+        The single sanctioned writer to `claim_verdict`. Operator confirmations
+        also refresh denormalized `claims.outcome`, fire MAS-cancel
+        derivations on `Denied`, and (when the parent group's
+        `reattest_completed_at` is set) graduate Approved/Partial legs from
+        `not_required` to `pending` for attestation.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordVerdictBody"
+      responses:
+        "200":
+          description: Verdict recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimVerdictResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/mas-action/complete:
+    post:
+      operationId: completeLegMasAction
+      tags: [claims]
+      summary: Operator stamps that the MAS cancel for this leg is complete
+      description: |
+        Source-state contract: `mas_action_required = 'cancel'` AND
+        `mas_action_completed_at IS NULL`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteMasActionBody"
+      responses:
+        "200":
+          description: MAS action completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
 
   /claims/{id}/workflow:
     patch:
@@ -3968,13 +4310,142 @@ components:
 
     PlaceHoldBody:
       type: object
+      description: |
+        Body for `POST /claims/{id}/hold`. The legacy `holdReason` /
+        `holdPendingFrom` fields remain accepted for backward compatibility,
+        but new clients should use `reason` (one of the pinned
+        `LEG_HOLD_REASONS` vocabulary in the schema) and the optional `note`.
       properties:
+        reason:
+          type: string
+          description: One of the pinned LEG_HOLD_REASONS values.
+        note:
+          type: ["string", "null"]
         holdReason:
           type: string
+          deprecated: true
+          description: Legacy alias for `reason`.
         holdPendingFrom:
+          type: ["string", "null"]
+          deprecated: true
+          description: Legacy free-text field; superseded by `note`.
+
+    StateConflictResponse:
+      type: object
+      description: |
+        Returned with status 409 when an endpoint's source-state contract is
+        violated. `expectedState` is a human-readable description of the
+        states from which the action is allowed; `actualState` is the leg or
+        group's current derived state.
+      required: [error, expectedState, actualState]
+      properties:
+        error:
           type: string
-      required:
-        - holdReason
+        expectedState:
+          type: string
+        actualState:
+          type: string
+        validOptions:
+          type: array
+          items:
+            type: string
+          description: Optional list of valid SOP answers when the conflict was about an unknown answer.
+
+    ClassifyLegBody:
+      type: object
+      required: [errorTypeId]
+      properties:
+        errorTypeId:
+          type: string
+          description: The numeric error-type id (sent as a string for transport stability).
+
+    SopAdvanceBody:
+      type: object
+      required: [nodeId, answer]
+      properties:
+        nodeId:
+          type: string
+        answer:
+          type: string
+
+    RecordVerdictBody:
+      type: object
+      required: [source, outcome]
+      properties:
+        source:
+          type: string
+          enum: [ai_suggested, operator_confirmed]
+        outcome:
+          type: string
+          enum: [Approved, Denied, Partial]
+        note:
+          type: ["string", "null"]
+        confidence:
+          type: ["number", "null"]
+          description: Optional 0..1 confidence score (AI suggestions only).
+        reasoning:
+          type: ["string", "null"]
+          description: Optional rationale text (AI suggestions only).
+        inspectionTimeMs:
+          type: ["integer", "null"]
+          description: Optional duration the operator spent reviewing.
+
+    ClaimVerdictResponse:
+      type: object
+      required: [id, claimId, source, outcome, createdAt]
+      properties:
+        id:
+          type: integer
+        claimId:
+          type: integer
+        source:
+          type: string
+        outcome:
+          type: string
+        note:
+          type: ["string", "null"]
+        confidence:
+          type: ["string", "null"]
+        reasoning:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: ["string", "null"]
+        inspectionTimeMs:
+          type: ["integer", "null"]
+
+    CompleteMasActionBody:
+      type: object
+      properties:
+        note:
+          type: ["string", "null"]
+        masReference:
+          type: ["string", "null"]
+          description: Optional MAS reference number recorded in the audit trail.
+
+    SetGroupContextBody:
+      type: object
+      required: [context]
+      properties:
+        context:
+          type: string
+
+    ConfirmReadbackBody:
+      type: object
+      required: [readback]
+      properties:
+        readback:
+          type: string
+
+    CompleteReattestBody:
+      type: object
+      properties:
+        note:
+          type: ["string", "null"]
+        masReference:
+          type: ["string", "null"]
 
     AttestationActionBody:
       type: object

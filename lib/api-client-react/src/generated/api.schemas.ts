@@ -1167,9 +1167,136 @@ export interface UpdateClaimEvidenceBody {
   evidenceChecklist?: UpdateClaimEvidenceBodyEvidenceChecklist;
 }
 
+/**
+ * Body for `POST /claims/{id}/hold`. The legacy `holdReason` /
+`holdPendingFrom` fields remain accepted for backward compatibility,
+but new clients should use `reason` (one of the pinned
+`LEG_HOLD_REASONS` vocabulary in the schema) and the optional `note`.
+
+ */
 export interface PlaceHoldBody {
-  holdReason: string;
-  holdPendingFrom?: string;
+  /** One of the pinned LEG_HOLD_REASONS values. */
+  reason?: string;
+  /** @nullable */
+  note?: string | null;
+  /**
+   * Legacy alias for `reason`.
+   * @deprecated
+   */
+  holdReason?: string;
+  /**
+   * Legacy free-text field; superseded by `note`.
+   * @deprecated
+   * @nullable
+   */
+  holdPendingFrom?: string | null;
+}
+
+/**
+ * Returned with status 409 when an endpoint's source-state contract is
+violated. `expectedState` is a human-readable description of the
+states from which the action is allowed; `actualState` is the leg or
+group's current derived state.
+
+ */
+export interface StateConflictResponse {
+  error: string;
+  expectedState: string;
+  actualState: string;
+  /** Optional list of valid SOP answers when the conflict was about an unknown answer. */
+  validOptions?: string[];
+}
+
+export interface ClassifyLegBody {
+  /** The numeric error-type id (sent as a string for transport stability). */
+  errorTypeId: string;
+}
+
+export interface SopAdvanceBody {
+  nodeId: string;
+  answer: string;
+}
+
+export type RecordVerdictBodySource =
+  (typeof RecordVerdictBodySource)[keyof typeof RecordVerdictBodySource];
+
+export const RecordVerdictBodySource = {
+  ai_suggested: "ai_suggested",
+  operator_confirmed: "operator_confirmed",
+} as const;
+
+export type RecordVerdictBodyOutcome =
+  (typeof RecordVerdictBodyOutcome)[keyof typeof RecordVerdictBodyOutcome];
+
+export const RecordVerdictBodyOutcome = {
+  Approved: "Approved",
+  Denied: "Denied",
+  Partial: "Partial",
+} as const;
+
+export interface RecordVerdictBody {
+  source: RecordVerdictBodySource;
+  outcome: RecordVerdictBodyOutcome;
+  /** @nullable */
+  note?: string | null;
+  /**
+   * Optional 0..1 confidence score (AI suggestions only).
+   * @nullable
+   */
+  confidence?: number | null;
+  /**
+   * Optional rationale text (AI suggestions only).
+   * @nullable
+   */
+  reasoning?: string | null;
+  /**
+   * Optional duration the operator spent reviewing.
+   * @nullable
+   */
+  inspectionTimeMs?: number | null;
+}
+
+export interface ClaimVerdictResponse {
+  id: number;
+  claimId: number;
+  source: string;
+  outcome: string;
+  /** @nullable */
+  note?: string | null;
+  /** @nullable */
+  confidence?: string | null;
+  /** @nullable */
+  reasoning?: string | null;
+  createdAt: string;
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  inspectionTimeMs?: number | null;
+}
+
+export interface CompleteMasActionBody {
+  /** @nullable */
+  note?: string | null;
+  /**
+   * Optional MAS reference number recorded in the audit trail.
+   * @nullable
+   */
+  masReference?: string | null;
+}
+
+export interface SetGroupContextBody {
+  context: string;
+}
+
+export interface ConfirmReadbackBody {
+  readback: string;
+}
+
+export interface CompleteReattestBody {
+  /** @nullable */
+  note?: string | null;
+  /** @nullable */
+  masReference?: string | null;
 }
 
 /**
