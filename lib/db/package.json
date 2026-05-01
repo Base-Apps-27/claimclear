@@ -10,6 +10,7 @@
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "migrate": "node ./scripts/apply-migrations.mjs",
     "check-drift": "bash ./scripts/check-schema-drift.sh"
   },
   "dependencies": {

@@ -164,6 +164,23 @@ This was a single root cause masquerading as "we have two parallel solution path
 
 Production runs `drizzle-kit push` rather than replaying migrations, so the SQL files in `lib/db/drizzle/` and the Drizzle schema TS files in `lib/db/src/schema/` can silently diverge (e.g. Tasks #205 and #216 were caught only by manual eyeball). To prevent this, `lib/db/scripts/check-schema-drift.sh` copies the current `lib/db/drizzle/` folder into a scratch dir (`lib/db/.drift-check/`, gitignored), runs `drizzle-kit generate` against the live schema TS files but writing into the scratch dir, and diffs the two. Any difference (a new SQL file, a new snapshot, or a journal entry) means the migrations are out of sync and the script exits 1 with a remediation hint pointing at `pnpm --filter @workspace/db exec drizzle-kit generate`. The script never modifies the real `lib/db/drizzle/` tree. It is exposed as `pnpm --filter @workspace/db run check-drift` and registered as the `schema-drift` validation step.
 
+## Deploy-time DB migrations (May-2026 production incident)
+
+The production build no longer runs `drizzle-kit push --force`. The `--force` flag only auto-confirms data-loss prompts; it does **not** auto-resolve rename-disambiguation prompts (e.g. *"Is column X created or renamed from Y?"*). In a non-TTY production build the prompt was never answered, so push exited without applying schema, the build "succeeded", and every page in production showed `Loading…` because the new code was hitting an old DB. The May-1-2026 deploy of cc.agapeny.app silently no-op'd 32 column adds and 2 new tables this way.
+
+The replacement is an explicit, idempotent SQL migration runner:
+
+- **Migrations live in `lib/db/migrations/*.sql`** (numbered, lex-ordered). Each file is responsible for its own `BEGIN; ... COMMIT;` and must use `IF NOT EXISTS` / `IF EXISTS` guards so re-running is a no-op. Don't confuse this with `lib/db/drizzle/` — that directory is owned by drizzle-kit and is only used by the schema-drift guard.
+- **Runner: `lib/db/scripts/apply-migrations.mjs`** — connects via `DATABASE_URL`, creates `__schema_migrations(id, applied_at)` if missing, applies any `*.sql` not already recorded, then inserts the marker row. Exposed as `pnpm --filter @workspace/db run migrate`.
+- **Production build** (`artifacts/api-server/.replit-artifact/artifact.toml`) runs `pnpm --filter @workspace/db run migrate` **before** the JS build.
+- **Post-merge** (`scripts/post-merge.sh`) runs the exact same `migrate` command, so any new migration applies the moment a task merges and dev/prod can never diverge in the way they did in the May-1 incident.
+
+Workflow when adding a schema change:
+1. Edit `lib/db/src/schema/*.ts` as usual.
+2. Hand-write a new `lib/db/migrations/NNNN_<short_name>.sql` describing exactly what to do in prod (idempotent, transactional). Keep it small and explicit — no auto-generation.
+3. Run `pnpm --filter @workspace/db run migrate` locally to apply against dev. Verify with the `schema-drift` validation step before merging.
+4. On deploy, the same file runs against the production DB before any new code starts serving traffic.
+
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.
 - **Anthropic Claude:** AI for SOP analysis, dispute note generation, and email generation, accessed via Replit AI Integrations proxy.

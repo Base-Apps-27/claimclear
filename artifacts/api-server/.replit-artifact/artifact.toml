@@ -15,12 +15,15 @@ run = "pnpm --filter @workspace/api-server run dev"
 [services.production]
 
 [services.production.build]
-# Schema push runs FIRST against the production DB so the new code never
-# starts serving requests against an out-of-date schema. Without this step
-# the post-burst columns (reattest_*, included_in_dispute, sub_status,
-# attestation_*, mas_action_*, etc.) silently miss in production and every
-# read returns 500. See May-1-2026 production incident.
-args = ["sh", "-c", "pnpm --filter @workspace/db run push-force && PORT=5173 BASE_PATH='/' pnpm --filter @workspace/claimclear run build && pnpm --filter @workspace/api-server run build && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers node artifacts/api-server/node_modules/playwright/cli.js install chromium"]
+# Schema migration runs FIRST against the production DB so the new code
+# never starts serving requests against an out-of-date schema. We use a
+# custom non-interactive runner (lib/db/scripts/apply-migrations.mjs)
+# instead of `drizzle-kit push --force` because `push --force` only skips
+# data-loss prompts, NOT rename-disambiguation prompts. In a non-TTY
+# build the rename prompt hangs/exits without applying anything, so the
+# build "succeeds" but ships code against an unmigrated DB. See the
+# May-1-2026 production incident.
+args = ["sh", "-c", "pnpm --filter @workspace/db run migrate && PORT=5173 BASE_PATH='/' pnpm --filter @workspace/claimclear run build && pnpm --filter @workspace/api-server run build && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers node artifacts/api-server/node_modules/playwright/cli.js install chromium"]
 
 [services.production.build.env]
 NODE_ENV = "production"
