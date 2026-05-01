@@ -17,6 +17,8 @@ export type DashboardSummaryAmounts = {
   totalApproved: string;
   /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment) */
   totalExposure: string;
+  /** Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. */
+  totalLost: string;
   /** Vendor prepayment rate (0.70 = 70%) */
   vendorPrepayRate: number;
 };

@@ -5586,6 +5586,9 @@ components:
             totalExposure:
               type: string
               description: "Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment)"
+            totalLost:
+              type: string
+              description: "Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover."
             vendorPrepayRate:
               type: number
               description: "Vendor prepayment rate (0.70 = 70%)"
@@ -5593,6 +5596,7 @@ components:
             - totalClaimed
             - totalApproved
             - totalExposure
+            - totalLost
             - vendorPrepayRate
         expiringGroups:
           type: array

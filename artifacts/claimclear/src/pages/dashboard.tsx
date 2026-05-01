@@ -1,34 +1,36 @@
 import { Link } from "wouter";
 import {
   AlertTriangle,
-  Bot,
   ChevronRight,
   TrendingUp,
-  Send,
   Activity,
   Sparkles,
-  Upload,
-  FilePlus,
-  FileText,
+  Mail,
+  Stamp,
+  Server,
   Inbox,
-  XCircle,
-  MinusCircle,
 } from "lucide-react";
 import {
   useGetDashboardSummary,
   getGetDashboardSummaryQueryKey,
   useGetDashboardActivity,
   getGetDashboardActivityQueryKey,
+  useGetResponsesAwaitingReviewCount,
+  getGetResponsesAwaitingReviewCountQueryKey,
+  useGetAttestationCounts,
+  getGetAttestationCountsQueryKey,
+  useListInvoiceGroups,
+  getListInvoiceGroupsQueryKey,
   type DashboardActivityEvent,
+  type InvoiceGroupResponse,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
-import { PageHeader, Section } from "@/components/cohesion";
+import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/status-badge";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { formatCurrency, formatDate } from "@/lib/format";
 
@@ -71,9 +73,9 @@ function firstNameFromUser(user: { displayName?: string | null; firstName?: stri
   return "there";
 }
 
-type HeroTone = "neutral" | "danger" | "good";
+type KpiTone = "neutral" | "danger" | "good";
 
-function HeroTile({
+function KpiTile({
   label,
   value,
   sub,
@@ -84,7 +86,7 @@ function HeroTile({
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
-  tone?: HeroTone;
+  tone?: KpiTone;
   tooltip?: string;
   testid?: string;
 }) {
@@ -108,28 +110,223 @@ function HeroTile({
   );
 }
 
-function QuickActionLink({ href, icon: Icon, children }: { href: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
+type HeroTone = "red" | "blue" | "amber";
+
+interface HeroCardProps {
+  tone: HeroTone;
+  eyebrow: string;
+  count: number;
+  title: string;
+  icon: React.ReactNode;
+  seeAllHref: string;
+  items: React.ReactNode;
+  itemsEmpty?: React.ReactNode;
+  isLoading?: boolean;
+  footer?: React.ReactNode;
+  testid?: string;
+}
+
+function heroToneVars(tone: HeroTone): {
+  bg: string;
+  border: string;
+  fg: string;
+  accent: string;
+} {
+  if (tone === "red") {
+    return {
+      bg: "hsl(var(--cc-red-bg))",
+      border: "hsl(var(--cc-red-border))",
+      fg: "hsl(var(--cc-red-fg))",
+      accent: "hsl(var(--destructive))",
+    };
+  }
+  if (tone === "blue") {
+    return {
+      bg: "hsl(var(--cc-blue-bg))",
+      border: "hsl(var(--cc-blue-border))",
+      fg: "hsl(var(--cc-blue-fg))",
+      accent: "hsl(var(--primary))",
+    };
+  }
+  return {
+    bg: "hsl(var(--cc-amber-bg))",
+    border: "hsl(var(--cc-amber-border))",
+    fg: "hsl(var(--cc-amber-fg))",
+    accent: "hsl(var(--cc-amber-fg))",
+  };
+}
+
+function HeroCard({
+  tone,
+  eyebrow,
+  count,
+  title,
+  icon,
+  seeAllHref,
+  items,
+  itemsEmpty,
+  isLoading,
+  footer,
+  testid,
+}: HeroCardProps) {
+  const t = heroToneVars(tone);
+  return (
+    <div
+      className="rounded-md overflow-hidden flex flex-col bg-card"
+      style={{ borderColor: t.border, borderWidth: 2, borderStyle: "solid" }}
+      data-testid={testid}
+    >
+      <div
+        className="px-4 py-2.5 flex items-center justify-between"
+        style={{ background: t.bg, borderBottom: `1px solid ${t.border}` }}
+      >
+        <div className="flex items-center gap-2">
+          <span style={{ color: t.accent }}>{icon}</span>
+          <span
+            className="text-[11px] uppercase tracking-wide font-bold"
+            style={{ color: t.fg }}
+          >
+            {eyebrow}
+          </span>
+        </div>
+        <Link
+          href={seeAllHref}
+          className="text-xs font-medium hover:underline"
+          style={{ color: t.fg }}
+        >
+          See all →
+        </Link>
+      </div>
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-3xl font-bold tabular-nums"
+            style={{ color: t.accent }}
+            data-testid={testid ? `${testid}-count` : undefined}
+          >
+            {count}
+          </span>
+          <span className="text-sm text-muted-foreground">{title}</span>
+        </div>
+      </div>
+      <div className="flex-1">
+        {isLoading ? (
+          <div className="px-4 py-3 space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        ) : count === 0 ? (
+          <div
+            className="px-4 py-6 text-xs text-center text-muted-foreground"
+            style={{ borderTop: "1px solid hsl(var(--border))" }}
+          >
+            {itemsEmpty ?? "Nothing here right now."}
+          </div>
+        ) : (
+          items
+        )}
+      </div>
+      {footer && (
+        <div
+          className="px-4 py-2 text-xs text-muted-foreground"
+          style={{
+            borderTop: "1px solid hsl(var(--border))",
+            background: "hsl(var(--muted))",
+          }}
+        >
+          {footer}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeroRow({
+  to,
+  primary,
+  sub,
+  right,
+  testid,
+}: {
+  to: string;
+  primary: React.ReactNode;
+  sub?: React.ReactNode;
+  right?: React.ReactNode;
+  testid?: string;
+}) {
   return (
     <Link
-      href={href}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-card border border-border hover:bg-muted transition-colors"
+      href={to}
+      className="px-4 py-2 flex items-center justify-between hover:bg-muted/40 transition-colors"
+      style={{ borderTop: "1px solid hsl(var(--border))" }}
+      data-testid={testid}
     >
-      <Icon className="h-3 w-3" />
-      {children}
+      <div className="min-w-0">
+        <div className="text-sm font-mono font-medium truncate">{primary}</div>
+        {sub && <div className="text-xs mt-0.5 text-muted-foreground">{sub}</div>}
+      </div>
+      {right && (
+        <div className="text-sm tabular-nums ml-3 shrink-0">{right}</div>
+      )}
     </Link>
   );
+}
+
+function buildStartHint(args: {
+  fileTodayCount: number;
+  topFileTodayInvoice: string | null;
+  responsesCount: number;
+  reattestCount: number;
+}): React.ReactNode {
+  const { fileTodayCount, topFileTodayInvoice, responsesCount, reattestCount } = args;
+  if (fileTodayCount > 0 && topFileTodayInvoice) {
+    return (
+      <>
+        Start with filing — <span className="font-mono">{topFileTodayInvoice}</span> expires today.
+      </>
+    );
+  }
+  if (responsesCount > 0) {
+    return <>Start with reviewing payor responses.</>;
+  }
+  if (reattestCount > 0) {
+    return <>Start with the MAS reattest queue.</>;
+  }
+  return <>You're caught up — nothing on the clock today.</>;
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
   const firstName = firstNameFromUser(user);
   useDashboardLiveUpdates();
+
   const { data: summary, isLoading } = useGetDashboardSummary({
     query: { queryKey: getGetDashboardSummaryQueryKey() },
   });
   const { data: activity } = useGetDashboardActivity(
     { limit: 15 },
     { query: { queryKey: getGetDashboardActivityQueryKey({ limit: 15 }) } },
+  );
+  const { data: reviewCount } = useGetResponsesAwaitingReviewCount({
+    query: { queryKey: getGetResponsesAwaitingReviewCountQueryKey() },
+  });
+  const { data: attestationCounts } = useGetAttestationCounts({
+    query: { queryKey: getGetAttestationCountsQueryKey() },
+  });
+
+  // Top items for the "Responses to review" hero card.
+  const responsesQueryArgs = { macroPhase: "response-pending", limit: 3 } as const;
+  const { data: responsesData, isLoading: responsesLoading } = useListInvoiceGroups(
+    responsesQueryArgs,
+    { query: { queryKey: getListInvoiceGroupsQueryKey(responsesQueryArgs) } },
+  );
+
+  // Top items for the "MAS reattest pending" hero card.
+  const reattestQueryArgs = { macroPhase: "mas-action-required", limit: 3 } as const;
+  const { data: reattestData, isLoading: reattestLoading } = useListInvoiceGroups(
+    reattestQueryArgs,
+    { query: { queryKey: getListInvoiceGroupsQueryKey(reattestQueryArgs) } },
   );
 
   if (isLoading) {
@@ -140,8 +337,12 @@ export default function Dashboard() {
           sub={`Welcome back, ${firstName} — loading what's moving today…`}
           accent="blue"
         />
+        <Skeleton className="h-20 w-full" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 w-full" />)}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-64 w-full" />)}
         </div>
       </div>
     );
@@ -152,60 +353,46 @@ export default function Dashboard() {
   const pipeline = summary.pipeline;
   const amounts = summary.amounts;
   const stats = summary.stats;
-  const portalWorker = summary.portalWorker;
-  const portalStats = summary.portalStats;
-  const expiringTop = summary.expiringGroups.slice(0, 3);
+  const totalGroups = stats.total ?? 0;
 
-  return (
-    <div className="space-y-5 pb-8">
-      <PageHeader
-        title="Command Center"
-        sub={`Welcome back, ${firstName} — here's what's moving today.`}
-        accent="blue"
-      />
+  // "File today" — only items with effectiveDaysLeft === 0 (past-due is hidden).
+  const fileTodayItems = summary.expiringGroups
+    .filter(g => g.effectiveDaysLeft === 0)
+    .slice(0, 3);
+  const fileTodayCount = summary.expiringGroups.filter(
+    g => g.effectiveDaysLeft === 0,
+  ).length;
+  const fileSoonItems = summary.expiringGroups.filter(
+    g => g.effectiveDaysLeft >= 1 && g.effectiveDaysLeft <= 3,
+  );
+  const fileSoonTotal = fileSoonItems.reduce(
+    (s, g) => s + (parseFloat(g.totalAmount ?? "0") || 0),
+    0,
+  );
 
-      {/* System health banner — only renders when degraded/failed */}
-      <WorkerHealthBanner />
+  const responsesCount = reviewCount?.count ?? 0;
+  const responsesItems: InvoiceGroupResponse[] = (responsesData?.groups ?? []).slice(0, 3);
 
-      {/* Worker-health one-liner — slim neutral card */}
-      <div
-        className="rounded-md border border-border bg-card flex items-center gap-2 px-4 py-2 text-sm flex-wrap"
-        data-testid="worker-health-oneliner"
-      >
-        <span
-          aria-hidden="true"
-          className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0"
-          style={{
-            background: portalWorker.isRunning
-              ? "hsl(var(--primary))"
-              : portalWorker.lastRun?.status === "failed"
-                ? "hsl(var(--destructive))"
-                : "hsl(var(--cc-success))",
-          }}
+  const reattestCount =
+    (attestationCounts?.pending ?? 0) + (attestationCounts?.queued ?? 0);
+  const reattestItems: InvoiceGroupResponse[] = (reattestData?.groups ?? []).slice(0, 3);
+
+  // Personalized opening line for the readout card.
+  const startHint = buildStartHint({
+    fileTodayCount,
+    topFileTodayInvoice: fileTodayItems[0]?.invoiceNumber ?? null,
+    responsesCount,
+    reattestCount,
+  });
+
+  if (totalGroups === 0) {
+    return (
+      <div className="space-y-5 pb-8">
+        <PageHeader
+          title="Command Center"
+          sub={`Welcome back, ${firstName} — here's what's moving today.`}
+          accent="blue"
         />
-        <span className="font-medium">
-          Portal worker · {
-            portalWorker.isRunning
-              ? "Running"
-              : portalWorker.lastRun?.status === "failed"
-                ? "Last run failed"
-                : portalWorker.lastRun
-                  ? "Idle"
-                  : "Never run"
-          }
-        </span>
-        <span className="text-muted-foreground">
-          · {portalWorker.pendingDueCount} due · {portalWorker.overdueCount} past cycle
-          {portalWorker.lastRun?.triggeredBy && (
-            <> · last triggered by {portalWorker.lastRun.triggeredBy}</>
-          )}
-        </span>
-        <Link href="/system-health" className="ml-auto text-xs text-primary font-medium">
-          System health →
-        </Link>
-      </div>
-
-      {(stats.total ?? 0) === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState
@@ -217,355 +404,302 @@ export default function Dashboard() {
             />
           </CardContent>
         </Card>
-      ) : (
-        <>
-          {/* Hero tiles — neutral by default; only Total Exposure (red) and Recovered (green) are colored */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <HeroTile
-              label="Needs evidence"
-              value={pipeline.needsEvidence ?? 0}
-              sub="invoice groups requiring manual review"
-              tooltip="Number of invoice groups that require evidence gathering before a dispute can be filed."
-              testid="hero-needs-evidence"
-            />
-            <HeroTile
-              label="Awaiting response"
-              value={pipeline.awaitingResponse ?? 0}
-              sub="submitted to payor portals"
-              tooltip="Invoice groups submitted to the payor portal and waiting for the payor to respond."
-              testid="hero-awaiting-response"
-            />
-            <HeroTile
-              label="Total exposure"
-              value={formatCurrency(amounts.totalExposure)}
-              sub="claim + ~70% vendor prepay (approx.)"
-              tone="danger"
-              tooltip="Estimated total financial exposure including the claim amounts plus approximately 70% for vendor prepayment costs."
-              testid="hero-total-exposure"
-            />
-            <HeroTile
-              label="Recovered"
-              value={formatCurrency(amounts.totalApproved)}
-              sub={`${formatCurrency(amounts.totalClaimed)} claimed across ${stats.total ?? 0} groups`}
-              tone="good"
-              tooltip="Total dollar amount successfully recovered through approved disputes."
-              testid="hero-recovered"
-            />
-          </div>
+      </div>
+    );
+  }
 
-          {/* Awaiting attestation — Approved verdicts that still need to be
-              re-attested in the payor portal off-system. Surfaces as a small
-              banner so it never gets lost behind the bigger pipeline tiles. */}
-          {(stats.awaitingAttestation ?? 0) > 0 && (
-            <Link
-              href="/attestation-queue"
-              className="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
-              data-testid="tile-awaiting-attestation"
+  return (
+    <div className="space-y-5 pb-8">
+      <PageHeader
+        title="Command Center"
+        sub={`Welcome back, ${firstName} — here's what's moving today.`}
+        accent="blue"
+      />
+
+      {/* PERSONALIZED READOUT — the one-line summary of what's on Danny's plate */}
+      <div
+        className="rounded-md border border-border bg-card px-5 py-4"
+        data-testid="readout-card"
+      >
+        <div className="text-base flex items-center gap-2 flex-wrap">
+          <Sparkles className="w-4 h-4 text-muted-foreground" />
+          <span>
+            You have{" "}
+            <span
+              className="font-bold tabular-nums"
+              style={{ color: "hsl(var(--destructive))" }}
+              data-testid="readout-file-count"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="text-2xl font-bold tabular-nums text-amber-900" data-testid="stat-awaiting-attestation">
-                    {stats.awaitingAttestation}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-amber-900">Awaiting attestation</div>
-                    <div className="text-xs text-amber-800/80">
-                      Approved invoice groups still owed a re-attestation in the payor portal
-                    </div>
-                  </div>
-                </div>
-                <span className="text-xs font-medium text-amber-900 hover:underline">Open queue →</span>
-              </div>
-            </Link>
-          )}
-
-          {/* Expiring Soon — the loud block */}
-          <div
-            className="rounded-md overflow-hidden bg-card"
-            style={{
-              borderColor: "hsl(var(--cc-red-border))",
-              borderWidth: 2,
-              borderStyle: "solid",
-            }}
-            data-testid="card-expiring-soon"
-          >
-            <div
-              className="px-5 py-3 flex items-center justify-between flex-wrap gap-2"
-              style={{
-                background: "hsl(var(--cc-red-bg))",
-                borderBottom: "1px solid hsl(var(--cc-red-border))",
-              }}
+              {fileTodayCount}
+            </span>{" "}
+            to file,{" "}
+            <span
+              className="font-bold tabular-nums"
+              style={{ color: "hsl(var(--primary))" }}
+              data-testid="readout-responses-count"
             >
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" style={{ color: "hsl(var(--destructive))" }} />
-                <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "hsl(var(--cc-red-fg))" }}>
-                  Needs filing now
-                </span>
-                <span className="text-xs" style={{ color: "hsl(var(--cc-red-fg))", opacity: 0.85 }}>
-                  · {summary.urgentCount} must file today · {Math.max(summary.expiringGroups.length - summary.urgentCount, 0)} more in next 10 days
-                </span>
-              </div>
-              <Link
-                href={summary.urgentCount > 0 ? "/invoice-groups?expiring=urgent" : "/invoice-groups?expiring=soon"}
-                className="text-xs font-medium"
-                style={{ color: "hsl(var(--cc-red-fg))" }}
-              >
-                {summary.urgentCount > 0
-                  ? `See ${summary.urgentCount} urgent →`
-                  : `See all ${summary.expiringGroups.length} →`}
-              </Link>
-            </div>
-            {expiringTop.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">
-                No invoice groups expiring soon.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3" data-testid="expiring-list">
-                {expiringTop.map((group, i) => {
-                  const isUrgent = group.isUrgent || group.effectiveDaysLeft <= 1;
-                  return (
-                    <div
-                      key={group.id}
-                      className="p-4 flex flex-col gap-2"
-                      style={{
-                        borderRight: i < expiringTop.length - 1 ? "1px solid hsl(var(--border))" : "none",
-                        borderBottom: "none",
-                      }}
-                      data-testid={`expiring-row-${group.id}`}
-                      data-urgent={isUrgent ? "true" : "false"}
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className="font-mono text-xs font-bold px-2 py-0.5 rounded"
-                          style={{
-                            background: isUrgent ? "hsl(var(--destructive))" : "hsl(var(--muted))",
-                            color: isUrgent ? "white" : "hsl(var(--foreground))",
-                          }}
-                        >
-                          {group.effectiveDaysLeft}d left
-                        </span>
-                        <Link
-                          href={`/invoice-groups/${group.id}`}
-                          className="font-mono text-sm font-semibold hover:underline"
-                          style={{ color: "hsl(var(--cc-purple-fg))" }}
-                        >
-                          {group.invoiceNumber}
-                        </Link>
-                        <StatusBadge status={group.status} className="text-[10px] px-1.5 py-0" />
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDate(group.earliestDate)} · {group.rideCount} ride{group.rideCount === 1 ? "" : "s"}
-                      </div>
-                      <div className="flex items-center justify-between mt-auto pt-1">
-                        <span className="text-lg font-bold tabular-nums">{formatCurrency(group.totalAmount)}</span>
-                        <Link
-                          href={`/invoice-groups/${group.id}`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                        >
-                          Open <ChevronRight className="w-3 h-3" />
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Bot / portal row — fully neutral 3-up */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="bot-portal-row">
-            <div className="rounded-md border border-border bg-card p-3.5">
-              <div className="flex items-center gap-2 text-xs uppercase font-semibold mb-2 text-muted-foreground">
-                <Bot className="w-3.5 h-3.5" />Portal worker
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    background: portalWorker.isRunning
-                      ? "hsl(var(--primary))"
-                      : portalWorker.lastRun?.status === "failed"
-                        ? "hsl(var(--destructive))"
-                        : "hsl(var(--cc-success))",
-                  }}
-                />
-                <span className="text-sm font-medium">
-                  {portalWorker.isRunning
-                    ? "Running"
-                    : portalWorker.lastRun?.status === "failed"
-                      ? "Last run failed"
-                      : portalWorker.lastRun
-                        ? "Idle · ready"
-                        : "Never run"}
-                </span>
-              </div>
-              <div className="text-xs mt-1 text-muted-foreground">
-                {portalWorker.pendingDueCount} pending due · {portalWorker.overdueCount} past cycle
-              </div>
-            </div>
-            <div className="rounded-md border border-border bg-card p-3.5">
-              <div className="flex items-center gap-2 text-xs uppercase font-semibold mb-2 text-muted-foreground">
-                <Send className="w-3.5 h-3.5" />Portal queue
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold tabular-nums">{portalStats.pending}</span>
-                <span className="text-xs text-muted-foreground">pending submissions</span>
-              </div>
-              <Link href="/portal-submissions" className="text-xs mt-1 inline-block text-primary hover:underline">
-                Open queue →
-              </Link>
-            </div>
-            <div className="rounded-md border border-border bg-card p-3.5">
-              <div className="flex items-center gap-2 text-xs uppercase font-semibold mb-2 text-muted-foreground">
-                <TrendingUp className="w-3.5 h-3.5" />Bot success rate
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold tabular-nums">{portalStats.successRate}%</span>
-                <span className="text-xs text-muted-foreground">
-                  {portalStats.submitted} ok · {portalStats.failed} failed
-                </span>
-              </div>
-              <div className="text-xs mt-1 text-muted-foreground">last 50 submissions</div>
-            </div>
-          </div>
-
-          {/* 1+2 lower deck — Closed claims (1) + Recent activity (2) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <Section title="Closed claims" className="lg:col-span-1" icon={<XCircle className="w-4 h-4" />}>
-              <div className="space-y-3">
-                <div data-testid="closure-denied-by-payor">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xs uppercase font-semibold text-muted-foreground flex items-center gap-1">
-                      Denied by payor
-                      <InfoTooltip content="Invoice groups the payor formally denied through a recorded portal or email response — including those we chose to accept after a denial." />
-                    </span>
-                    <span className="text-xs text-muted-foreground">final</span>
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums" data-testid="stat-denied-total">
-                    {stats.denied}
-                    <span className="text-sm font-normal text-muted-foreground ml-2">
-                      ({stats.deniedByReason.denied_by_payor} denied by payor
-                      {stats.deniedByReason.other > 0 ? ` · ${stats.deniedByReason.other} other` : ""})
-                    </span>
-                  </div>
-                </div>
-                <div className="border-t border-border" />
-                <div data-testid="closure-withdrawn">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xs uppercase font-semibold text-muted-foreground flex items-center gap-1">
-                      <MinusCircle className="w-3 h-3" />
-                      Withdrawn (closed by us)
-                      <InfoTooltip content="Invoice groups we chose to close internally — Cannot Dispute. Used before any payor submission." />
-                    </span>
-                    <span className="text-xs text-muted-foreground">not pursued</span>
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums text-muted-foreground" data-testid="stat-withdrawn-total">
-                    {stats.withdrawn}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {stats.withdrawnByReason.cannot_dispute} cannot dispute
-                    {stats.withdrawnByReason.other > 0 && ` · ${stats.withdrawnByReason.other} other`}
-                  </div>
-                </div>
-              </div>
-            </Section>
-
-            <Section
-              title="Recent activity"
-              icon={<Activity className="w-4 h-4" />}
-              action={
-                <Link href="/admin/users/activity" className="text-xs text-primary hover:underline">
-                  See all →
-                </Link>
-              }
-              padded={false}
-              className="lg:col-span-2"
+              {responsesCount}
+            </span>{" "}
+            response{responsesCount === 1 ? "" : "s"} to review, and{" "}
+            <span
+              className="font-bold tabular-nums"
+              style={{ color: "hsl(var(--cc-amber-fg))" }}
+              data-testid="readout-reattest-count"
             >
-              <div data-testid="recent-activity-list">
-                {!activity ? (
-                  <div className="p-4 space-y-2">
-                    {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-6 w-full" />)}
-                  </div>
-                ) : activity.events.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    No recent activity yet. Classify a claim or import a job-status report to get started.
-                  </div>
-                ) : (
-                  activity.events.slice(0, 8).map((event, i, arr) => {
-                    const summaryNode = (
-                      <span className="text-sm flex-1 truncate text-foreground">
-                        {event.summary}
-                      </span>
-                    );
-                    return (
-                      <div
-                        key={event.id}
-                        className="flex items-center gap-3 px-4 py-2.5"
-                        style={{
-                          borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))",
-                        }}
-                        data-testid={`recent-row-${event.id}`}
-                        data-tone={event.tone}
-                      >
-                        <span
-                          aria-hidden="true"
-                          title={dotLabelForTone(event.tone)}
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: dotColorForTone(event.tone) }}
-                        />
-                        {event.href ? (
-                          <Link
-                            href={event.href}
-                            className="flex-1 truncate hover:underline"
-                            data-testid={`recent-row-link-${event.id}`}
-                          >
-                            {summaryNode}
-                          </Link>
-                        ) : (
-                          <div className="flex-1 truncate">{summaryNode}</div>
-                        )}
-                        <span
-                          className="text-xs text-muted-foreground flex-shrink-0 tabular-nums"
-                          title={new Date(event.timestamp).toLocaleString()}
-                        >
-                          {formatRelativeTime(event.timestamp)}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </Section>
-          </div>
+              {reattestCount}
+            </span>{" "}
+            reattest{reattestCount === 1 ? "" : "s"} pending.
+          </span>
+        </div>
+        <div className="text-sm mt-1 text-muted-foreground" data-testid="readout-hint">
+          {startHint}
+        </div>
+      </div>
 
-          {/* Quick actions — flat strip */}
-          <div
-            className="rounded-md p-1 flex items-center gap-1 flex-wrap"
-            style={{ background: "hsl(var(--muted))" }}
-            data-testid="quick-actions-strip"
-          >
-            <span className="text-[10px] uppercase font-semibold px-3 text-muted-foreground">
-              Quick actions
+      {/* SYSTEM HEALTH BANNER — only renders when degraded/failed */}
+      <WorkerHealthBanner />
+
+      {/* UNIVERSAL KPIs — always-on numbers across all roles */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiTile
+          label="Invoices pending"
+          value={(pipeline.needsEvidence ?? 0) + (pipeline.awaitingResponse ?? 0)}
+          sub={`${pipeline.needsEvidence ?? 0} need evidence · ${pipeline.awaitingResponse ?? 0} awaiting response`}
+          tooltip="Open invoice groups still in flight: those needing evidence and those waiting on a payor response."
+          testid="kpi-invoices-pending"
+        />
+        <KpiTile
+          label="Total exposure"
+          value={formatCurrency(amounts.totalExposure)}
+          sub="claim + ~70% vendor prepay"
+          tone="danger"
+          tooltip="Estimated total financial exposure including claim amounts plus ~70% vendor prepayment."
+          testid="kpi-total-exposure"
+        />
+        <KpiTile
+          label="Recovered"
+          value={formatCurrency(amounts.totalApproved)}
+          sub={
+            <span className="inline-flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" />
+              {formatCurrency(amounts.totalClaimed)} claimed across {totalGroups} groups
             </span>
-            <QuickActionLink href="/queue?tab=needs-review" icon={Sparkles}>
-              Classification queue
-            </QuickActionLink>
-            <QuickActionLink href="/import" icon={Upload}>
-              Import job-status report
-            </QuickActionLink>
-            <QuickActionLink href="/claims/new" icon={FilePlus}>
-              New claim
-            </QuickActionLink>
-            <QuickActionLink href="/portal-submissions" icon={Send}>
-              Portal queue ({portalStats.pending})
-            </QuickActionLink>
-            <QuickActionLink href="/insights" icon={FileText}>
-              Open insights
-            </QuickActionLink>
+          }
+          tone="good"
+          tooltip="Total dollar amount approved/recovered from disputes."
+          testid="kpi-recovered"
+        />
+        <KpiTile
+          label="Lost"
+          value={formatCurrency(amounts.totalLost)}
+          sub={`${stats.denied} denied · ${stats.withdrawn} withdrawn`}
+          tooltip="Claimed dollars on invoice groups that were denied by the payor."
+          testid="kpi-lost"
+        />
+      </div>
+
+      {/* TODAY'S WORK — three hero columns: file today / respond / reattest */}
+      <div>
+        <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
+          Today's work
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <HeroCard
+            tone="red"
+            icon={<AlertTriangle className="w-4 h-4" />}
+            eyebrow="File today"
+            count={fileTodayCount}
+            title={
+              fileTodayCount === 1
+                ? "must be submitted before EOD"
+                : "must be submitted before EOD"
+            }
+            seeAllHref="/queue?expiring=urgent"
+            isLoading={false}
+            itemsEmpty="No filings due today. Nice."
+            items={fileTodayItems.map(g => (
+              <HeroRow
+                key={g.id}
+                to={`/invoice-groups/${g.id}`}
+                testid={`file-today-row-${g.id}`}
+                primary={g.invoiceNumber}
+                sub={
+                  <>
+                    {formatDate(g.earliestDate)} · {g.status}
+                  </>
+                }
+                right={formatCurrency(g.totalAmount)}
+              />
+            ))}
+            footer={
+              fileSoonItems.length > 0 ? (
+                <Link
+                  href="/queue?expiring=soon"
+                  className="hover:underline"
+                  data-testid="file-soon-footer"
+                >
+                  + <span className="font-mono font-semibold">{fileSoonItems.length}</span> more in next 3 days · {formatCurrency(fileSoonTotal)}
+                </Link>
+              ) : null
+            }
+            testid="hero-file-today"
+          />
+
+          <HeroCard
+            tone="blue"
+            icon={<Mail className="w-4 h-4" />}
+            eyebrow="Responses to review"
+            count={responsesCount}
+            title="payor responses awaiting outcome"
+            seeAllHref="/responses-awaiting-review"
+            isLoading={responsesLoading}
+            itemsEmpty="No responses waiting on a verdict."
+            items={responsesItems.map(g => (
+              <HeroRow
+                key={g.id}
+                to={`/responses-awaiting-review/${g.id}`}
+                testid={`response-row-${g.id}`}
+                primary={g.invoiceNumber}
+                sub={
+                  <>
+                    {formatDate(g.earliestDate)} · {g.status}
+                  </>
+                }
+                right={formatCurrency(g.totalAmount)}
+              />
+            ))}
+            footer={
+              responsesCount > responsesItems.length ? (
+                <Link
+                  href="/responses-awaiting-review"
+                  className="hover:underline"
+                >
+                  + {responsesCount - responsesItems.length} more in queue
+                </Link>
+              ) : null
+            }
+            testid="hero-responses"
+          />
+
+          <HeroCard
+            tone="amber"
+            icon={<Stamp className="w-4 h-4" />}
+            eyebrow="MAS reattest pending"
+            count={reattestCount}
+            title="awaiting billing admin in MAS portal"
+            seeAllHref="/attestation-queue"
+            isLoading={reattestLoading}
+            itemsEmpty="No reattests in the queue."
+            items={reattestItems.map(g => (
+              <HeroRow
+                key={g.id}
+                to={`/invoice-groups/${g.id}`}
+                testid={`reattest-row-${g.id}`}
+                primary={g.invoiceNumber}
+                sub={
+                  <>
+                    {formatDate(g.earliestDate)} · {g.status}
+                  </>
+                }
+                right={formatCurrency(g.totalAmount)}
+              />
+            ))}
+            footer={
+              <Link
+                href="/attestation-queue"
+                className="hover:underline"
+                data-testid="reattest-footer"
+              >
+                Open Attestation Queue →
+              </Link>
+            }
+            testid="hero-reattest"
+          />
+        </div>
+      </div>
+
+      {/* RECENT ACTIVITY */}
+      <div className="rounded-md border border-border bg-card overflow-hidden">
+        <div
+          className="px-4 py-3 flex items-center justify-between"
+          style={{ borderBottom: "1px solid hsl(var(--border))" }}
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Activity className="w-4 h-4" /> Recent activity
           </div>
-        </>
-      )}
+          <Link
+            href="/admin/users/activity"
+            className="text-xs text-primary hover:underline"
+          >
+            See all →
+          </Link>
+        </div>
+        <div data-testid="recent-activity-list">
+          {!activity ? (
+            <div className="p-4 space-y-2">
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-6 w-full" />)}
+            </div>
+          ) : activity.events.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              No recent activity yet. Classify a claim or import a job-status report to get started.
+            </div>
+          ) : (
+            activity.events.slice(0, 8).map((event, i, arr) => {
+              const summaryNode = (
+                <span className="text-sm flex-1 truncate text-foreground">
+                  {event.summary}
+                </span>
+              );
+              return (
+                <div
+                  key={event.id}
+                  className="flex items-center gap-3 px-4 py-2.5"
+                  style={{
+                    borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))",
+                  }}
+                  data-testid={`recent-row-${event.id}`}
+                  data-tone={event.tone}
+                >
+                  <span
+                    aria-hidden="true"
+                    title={dotLabelForTone(event.tone)}
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: dotColorForTone(event.tone) }}
+                  />
+                  {event.href ? (
+                    <Link
+                      href={event.href}
+                      className="flex-1 truncate hover:underline"
+                      data-testid={`recent-row-link-${event.id}`}
+                    >
+                      {summaryNode}
+                    </Link>
+                  ) : (
+                    <div className="flex-1 truncate">{summaryNode}</div>
+                  )}
+                  <span
+                    className="text-xs text-muted-foreground flex-shrink-0 tabular-nums"
+                    title={new Date(event.timestamp).toLocaleString()}
+                  >
+                    {formatRelativeTime(event.timestamp)}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Footer hint — past-due moved to the Queue page */}
+      <Link
+        href="/queue?expiring=overdue"
+        className="flex items-center gap-2 text-xs px-1 text-muted-foreground hover:text-foreground transition-colors"
+        data-testid="past-due-hint"
+      >
+        <Server className="w-3 h-3" />
+        Past-due items are no longer shown here. View them on the Queue page.
+        <ChevronRight className="w-3 h-3" />
+      </Link>
     </div>
   );
 }

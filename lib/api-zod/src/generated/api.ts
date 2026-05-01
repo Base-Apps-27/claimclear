@@ -10724,6 +10724,11 @@ export const GetDashboardSummaryResponse = zod.object({
       .describe(
         "Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment)",
       ),
+    totalLost: zod
+      .string()
+      .describe(
+        "Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover.",
+      ),
     vendorPrepayRate: zod
       .number()
       .describe("Vendor prepayment rate (0.70 = 70%)"),

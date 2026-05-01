@@ -133,6 +133,12 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const totalApproved = parseFloat(amountsResult.totalApproved || "0");
   const totalExposure = totalClaimed * (1 + VENDOR_PREPAY_RATE);
 
+  const [lostResult] = await db
+    .select({ totalLost: sum(invoiceGroupsTable.totalAmount) })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.outcome, "Denied"));
+  const totalLost = parseFloat(lostResult?.totalLost || "0");
+
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
   const expiringStatusFilter = or(
@@ -213,7 +219,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
     stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, withdrawnByReason, deniedByReason },
-    amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
+    amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), totalLost: totalLost.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
     urgentCount,
     recentGroups,

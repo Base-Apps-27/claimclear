@@ -127,7 +127,7 @@ function HeroCard({
 export function DashboardTodayFocused() {
   return (
     <div className="cc-scope p-6 space-y-5" style={{ width: "100%" }}>
-      <PageHeader title="Command center" search={false} accent="blue" />
+      <PageHeader title="Command center" sub="Welcome back, Danny — here's what's moving today" search={false} accent="blue" />
 
       {/* PERSONALIZED READOUT */}
       <div className="cc-card px-5 py-4">
