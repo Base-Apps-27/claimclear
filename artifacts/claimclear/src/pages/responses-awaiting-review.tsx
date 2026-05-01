@@ -26,7 +26,6 @@ import type {
   InvoiceGroupDetailResponse,
   InvoiceGroupResponse,
   PortalResponseItem,
-  PortalSubmissionResponse,
 } from "@workspace/api-client-react";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
@@ -47,13 +46,10 @@ import {
 } from "@/components/queue-response-review-panel";
 import { ClosureActions } from "@/components/closure/closure-actions";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
-import { ResponseReceivedBanner } from "@/components/communication/response-received-banner";
 import {
   mapToGroupConversations,
-  pickGroupBannerData,
   htmlBodyToPlainText,
 } from "@/components/communication/group-thread-adapter";
-import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
 import { useToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -65,8 +61,6 @@ import {
   Eye,
   ExternalLink,
   Inbox,
-  ChevronDown,
-  ChevronUp,
   ArrowDownWideNarrow,
   ArrowRight,
   ListChecks,
@@ -74,7 +68,6 @@ import {
   Send,
   RefreshCw,
   Loader2,
-  FileText,
 } from "lucide-react";
 import {
   Select,
@@ -542,20 +535,28 @@ function Workspace({
       className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4 items-start"
       data-testid="awaiting-review-workspace"
     >
-      <Card className="lg:sticky lg:top-4">
-        <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
-          <ul className="divide-y" data-testid="awaiting-review-list">
-            {groups.map((group) => (
-              <ListRow
-                key={group.id}
-                group={group}
-                isSelected={selectedGroup?.id === group.id}
-                onSelect={() => onSelect(group.id)}
-              />
-            ))}
-          </ul>
-        </ScrollArea>
-      </Card>
+      {/*
+        Column 1 — master list. Wrapped in a sticky container so the
+        step-1 pill stays glued to the list card. Sticky moved off the
+        Card itself onto the wrapper so the pill scrolls with it.
+      */}
+      <div className="lg:sticky lg:top-4 space-y-2">
+        <StepPill number={1} label="Pick a response" testId="step-pill-1" />
+        <Card>
+          <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
+            <ul className="divide-y" data-testid="awaiting-review-list">
+              {groups.map((group) => (
+                <ListRow
+                  key={group.id}
+                  group={group}
+                  isSelected={selectedGroup?.id === group.id}
+                  onSelect={() => onSelect(group.id)}
+                />
+              ))}
+            </ul>
+          </ScrollArea>
+        </Card>
+      </div>
 
       {selectedGroup && (
         <DetailPane
@@ -799,9 +800,8 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: detail, isLoading: detailLoading } = useGetInvoiceGroup(group.id);
+  const { data: detail } = useGetInvoiceGroup(group.id);
 
-  const submissions: PortalSubmissionResponse[] = detail?.submissions ?? [];
   const responses: PortalResponseItem[] = detail?.responses ?? [];
   const allRides: ClaimResponse[] = detail?.rides ?? [];
 
@@ -820,28 +820,15 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
     () => mapToGroupConversations(emailThread, legIdToLabel),
     [emailThread, legIdToLabel],
   );
-  // Banner is computed from the latest unread inbound. Keep a per-group
-  // dismissal flag so closing the banner doesn't re-pop on every refetch
-  // until a *newer* unread message arrives.
-  const computedBanner = useMemo(
-    () => pickGroupBannerData(emailThread),
-    [emailThread],
-  );
-  const [bannerDismissedAt, setBannerDismissedAt] = useState<string | null>(null);
-  const bannerData =
-    computedBanner &&
-    (!bannerDismissedAt || computedBanner.timestamp > bannerDismissedAt)
-      ? computedBanner
-      : null;
 
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
 
   // The thread component's own `id="invoice-thread"` anchor is what the
-  // banner scrolls to — the same anchor used on the invoice-group detail
-  // page, so one implementation serves both callers. On first visit we
-  // jump to the thread anchor; on a return visit we restore the
-  // operator's previous scroll position so re-reading mid-thread doesn't
-  // bounce them back to the top.
+  // page scrolls to on first visit — the same anchor used on the
+  // invoice-group detail page, so one implementation serves both
+  // callers. On first visit we jump to the thread anchor; on a return
+  // visit we restore the operator's previous scroll position so
+  // re-reading mid-thread doesn't bounce them back to the top.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const id = window.requestAnimationFrame(() => {
@@ -877,15 +864,18 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   return (
     <>
       <div
-        className="space-y-4 min-w-0"
+        className="space-y-2 min-w-0"
         data-testid={`detail-pane-${group.id}`}
       >
-        <ResponseReceivedBanner
-          response={bannerData}
-          onDismiss={() =>
-            setBannerDismissedAt(computedBanner?.timestamp ?? null)
-          }
-        />
+        {/*
+          Step 2 pill — sits flush above the email thread so the 1-2-3
+          reading order is obvious to a new operator at a glance. On
+          stacked (mobile) layouts the columns reflow vertically and the
+          pill keeps its position above its own column, preserving the
+          1-2-3 order. Per Task #262 the previous "Jump to thread"
+          banner is intentionally gone — the email is already on screen.
+        */}
+        <StepPill number={2} label="Read the reply" testId="step-pill-2" />
 
         {hasReviewableResponse && hasConversations ? (
           <GroupCommunicationThread
@@ -955,39 +945,75 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
       </div>
 
       {hasReviewableResponse && (
-        <ActionRail
-          group={group}
-          detail={detail as InvoiceGroupDetailResponse | undefined}
-          detailLoading={detailLoading}
-          submissions={submissions}
-          allRides={allRides}
-          onAfterVerdict={onAfterVerdict}
-        />
+        // Wrapper carries both the step-3 pill *and* the sticky behaviour
+        // so the rail still pins to the viewport on lg+ while keeping the
+        // pill flush above its first card.
+        <div className="lg:sticky lg:top-4 space-y-2">
+          <StepPill number={3} label="Record the verdict" testId="step-pill-3" />
+          <ActionRail
+            group={group}
+            detail={detail as InvoiceGroupDetailResponse | undefined}
+            allRides={allRides}
+            onAfterVerdict={onAfterVerdict}
+          />
+        </div>
       )}
     </>
+  );
+}
+
+interface StepPillProps {
+  number: 1 | 2 | 3;
+  label: string;
+  testId: string;
+}
+
+/**
+ * Small numbered guidance label rendered flush above the first card in
+ * each of the three workflow columns ("1. Pick a response",
+ * "2. Read the reply", "3. Record the verdict"). Style is intentionally
+ * subtle — uppercase tracking, muted accent, no boxed background — so it
+ * reads as guidance, not chrome. Mirrors the visual weight of the
+ * existing in-rail section labels (e.g. "Continuation").
+ */
+function StepPill({ number, label, testId }: StepPillProps) {
+  return (
+    <div
+      className="text-[11px] uppercase font-semibold tracking-wide text-muted-foreground flex items-center gap-1.5"
+      data-testid={testId}
+    >
+      <span className="text-primary">{number}.</span>
+      <span>{label}</span>
+    </div>
   );
 }
 
 interface ActionRailProps {
   group: InvoiceGroupResponse;
   detail: InvoiceGroupDetailResponse | undefined;
-  detailLoading: boolean;
-  submissions: PortalSubmissionResponse[];
   allRides: ClaimResponse[];
   onAfterVerdict: (message: string) => void;
 }
 
 /**
- * Sticky right-side action rail. Mirrors the Group Rail pattern: rounded
- * card container, sticky on lg+, single-column field stack. Hosts the
- * group header, the submissions strip, the per-leg verdict picker, and
- * the continuation/closure actions.
+ * Right-side action rail. Hosts only the per-leg verdict picker and the
+ * continuation/closure actions — the workflow-relevant controls.
+ *
+ * Per Task #262 the rail no longer renders a top summary card (#invoice
+ * + status badge + error type / total / rides field stack +
+ * "Open full details" link + Submissions strip). Every datum that card
+ * carried is already visible on the master list row to the left, so it
+ * was duplicate chrome competing with the verdict pickers for vertical
+ * space. A single small "Open full details" link is preserved at the
+ * bottom of the rail as an escape hatch for operators who do need the
+ * full invoice page (filings audit, attachments, etc.).
+ *
+ * Sticky positioning is applied by the parent wrapper so the step-3
+ * pill stays glued to the rail.
  */
 function ActionRail({
   group,
   detail,
-  detailLoading,
-  submissions,
   allRides,
   onAfterVerdict,
 }: ActionRailProps) {
@@ -1009,47 +1035,7 @@ function ActionRail({
   );
 
   return (
-    <div className="lg:sticky lg:top-4 space-y-3" data-testid="action-rail">
-      <div className="rounded-md border bg-card overflow-hidden">
-        <div className="px-4 py-3 border-b bg-muted/30">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm font-semibold">
-              #{group.invoiceNumber}
-            </span>
-            <StatusBadge status={group.status} />
-            <UrgentTodayBadge isUrgent={group.isUrgent} />
-          </div>
-          <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs">
-            <RailField label="Error type">
-              {group.errorTypeName || "—"}
-            </RailField>
-            <RailField label="Total">
-              {formatCurrency(group.totalAmount)}
-            </RailField>
-            <RailField label="Rides">
-              {actionableRides.length === allRides.length
-                ? `${allRides.length}`
-                : `${actionableRides.length} of ${allRides.length}`}
-            </RailField>
-          </div>
-          <div className="mt-2">
-            <Link
-              href={`/invoice-groups/${group.id}`}
-              className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1"
-              data-testid="open-full-invoice"
-            >
-              Open full details
-              <ExternalLink className="h-3 w-3" />
-            </Link>
-          </div>
-        </div>
-
-        <SubmissionsStrip
-          submissions={submissions}
-          loading={detailLoading && !detail}
-        />
-      </div>
-
+    <div className="space-y-3" data-testid="action-rail">
       {detail && (
         <PerLegVerdictRailSection
           actionableRides={actionableRides}
@@ -1065,25 +1051,23 @@ function ActionRail({
           onAfterVerdict={onAfterVerdict}
         />
       )}
-    </div>
-  );
-}
 
-function RailField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2 border-b border-dashed border-border/60 last:border-b-0 pb-1 last:pb-0">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-        {label}
-      </span>
-      <span className="text-xs text-foreground font-medium text-right truncate">
-        {children}
-      </span>
+      {/*
+        Bottom escape hatch — single small link out for operators who
+        need the full invoice page (filings audit, attachments,
+        per-leg drilldown). Replaces the deleted top-of-rail link so the
+        path out is still one click away without dominating the rail.
+      */}
+      <div className="flex justify-end">
+        <Link
+          href={`/invoice-groups/${group.id}`}
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline inline-flex items-center gap-1"
+          data-testid="open-full-invoice"
+        >
+          Open full details
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      </div>
     </div>
   );
 }
@@ -1372,111 +1356,6 @@ function ContinuationAndClosureSection({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-interface SubmissionsStripProps {
-  submissions: PortalSubmissionResponse[];
-  loading: boolean;
-}
-
-/**
- * Compact, collapsible "Submissions ({n}, latest: {status})" strip in the
- * action rail. Replaces the old top-of-pane SubmissionDetailsBlock card
- * which competed with the thread for vertical space and excerpted the
- * dispute body. Expanding a row opens the canonical PortalSubmissionDrawer
- * — same drawer used elsewhere — so there's no inline excerpt.
- */
-function SubmissionsStrip({ submissions, loading }: SubmissionsStripProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [drawerSubmissionId, setDrawerSubmissionId] = useState<number | null>(null);
-
-  // Newest first — operators care most about the most recent filing.
-  const sorted = useMemo(
-    () =>
-      [...submissions].sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return bTime - aTime;
-      }),
-    [submissions],
-  );
-  const latest = sorted[0];
-
-  if (loading) {
-    return (
-      <div className="px-4 py-2.5 border-t">
-        <Skeleton className="h-4 w-32" />
-      </div>
-    );
-  }
-
-  if (sorted.length === 0) {
-    return (
-      <div
-        className="px-4 py-2.5 border-t text-xs text-muted-foreground italic"
-        data-testid="submissions-strip-empty"
-      >
-        <FileText className="h-3.5 w-3.5 inline mr-1" />
-        No submissions on file yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="border-t" data-testid="submissions-strip">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-muted/40 text-xs"
-        data-testid="submissions-strip-toggle"
-        aria-expanded={expanded}
-      >
-        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span className="font-medium">
-          Submissions ({sorted.length}
-          {latest?.status ? `, latest: ${latest.status}` : ""})
-        </span>
-        {expanded ? (
-          <ChevronUp className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-        )}
-      </button>
-      {expanded && (
-        <ul
-          className="border-t divide-y"
-          data-testid="submissions-strip-list"
-        >
-          {sorted.map((sub) => (
-            <li key={sub.id}>
-              <button
-                type="button"
-                onClick={() => setDrawerSubmissionId(sub.id)}
-                className="w-full px-4 py-2 flex items-center gap-2 text-left text-xs hover:bg-muted/40"
-                data-testid={`submissions-strip-row-${sub.id}`}
-              >
-                <Badge variant="outline" className="text-[10px]">
-                  {sub.status}
-                </Badge>
-                <span className="text-muted-foreground truncate">
-                  {sub.createdAt ? formatDateTime(sub.createdAt) : "—"}
-                </span>
-                <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground shrink-0" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <PortalSubmissionDrawer
-        submissionId={drawerSubmissionId}
-        open={drawerSubmissionId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDrawerSubmissionId(null);
-        }}
-      />
     </div>
   );
 }

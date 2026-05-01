@@ -274,7 +274,6 @@ function ConversationSection({
 
 function MessageRow({ msg }: { msg: GroupEmailMessage }) {
   const isInbound = msg.direction === "inbound";
-  const [bodyExpanded, setBodyExpanded] = useState(false);
 
   const sanitizedHtml = useMemo(
     () =>
@@ -285,9 +284,6 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
     [msg.bodyHtml, msg.bodyPreview],
   );
   const hasHtml = !!msg.bodyHtml;
-  const isLong =
-    (msg.bodyHtml || msg.bodyPreview).length > 400 ||
-    (msg.bodyHtml || msg.bodyPreview).split("\n").length > 6;
 
   return (
     <div
@@ -328,31 +324,23 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
         </div>
         <div className="text-xs font-medium mb-1">{msg.subject}</div>
 
+        {/*
+          The message body grows to fit its content — no inner scroll cap
+          and no "Show full message" toggle. The page itself does the
+          scrolling so operators can read the entire payor reply without
+          chasing a hidden viewport. Both consumers (the responses-awaiting-
+          review page and the invoice-group detail page) benefit; that's
+          intentional per Task #262.
+        */}
         {hasHtml ? (
           <div
-            className={`text-sm bg-background border rounded-md p-2.5 break-words prose prose-sm max-w-none overflow-y-auto ${
-              bodyExpanded ? "max-h-[32rem]" : "max-h-32"
-            }`}
+            className="text-sm bg-background border rounded-md p-2.5 break-words prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         ) : (
-          <div
-            className={`text-sm bg-background border rounded-md p-2.5 whitespace-pre-wrap break-words overflow-y-auto ${
-              bodyExpanded ? "max-h-[32rem]" : "max-h-32"
-            }`}
-          >
+          <div className="text-sm bg-background border rounded-md p-2.5 whitespace-pre-wrap break-words">
             {msg.bodyPreview}
           </div>
-        )}
-        {isLong && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs mt-1"
-            onClick={() => setBodyExpanded((v) => !v)}
-          >
-            {bodyExpanded ? "Show less" : "Show full message"}
-          </Button>
         )}
 
         <div className="flex items-center gap-2 flex-wrap text-[11px] mt-2">

@@ -97,7 +97,14 @@ export function inboundToMessage(
     subject: r.subject,
     sender: r.senderName || r.senderEmail || "Unknown",
     senderEmail: r.senderEmail,
-    bodyPreview: r.content,
+    // Prefer `rawContent` over `content` so the UI receives the full body
+    // text. Historically `content` was overwritten with Microsoft Graph's
+    // ~255-char `bodyPreview` snippet, while `rawContent` captured the
+    // full message — preferring `rawContent` keeps those rows intact.
+    // New rows write the full body into both columns (see
+    // `response-matcher.processEmailResponse`), so either source is safe.
+    // Mirrors the same pattern used by `conversations-card.tsx`.
+    bodyPreview: r.rawContent || r.content,
     timestamp: toIso(r.receivedAt),
     responseId: r.id,
     responseType: r.responseType,

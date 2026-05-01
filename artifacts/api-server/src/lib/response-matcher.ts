@@ -276,7 +276,13 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     source: "email",
     responseType,
     subject: email.subject,
-    content: email.bodyPreview,
+    // Persist the full body in `content` (Microsoft Graph's `bodyPreview` is
+    // a ~255-char snippet, which forces every downstream surface to truncate
+    // the message). `bodyText` was already computed above for the AI
+    // classifier and falls back to `bodyPreview` when the full body is
+    // missing. `rawContent` continues to hold the raw HTML/text from Graph
+    // for the conversations card to render with formatting.
+    content: bodyText,
     rawContent: email.body?.content || null,
     bodyFormat,
     senderEmail: email.from?.emailAddress?.address || null,
