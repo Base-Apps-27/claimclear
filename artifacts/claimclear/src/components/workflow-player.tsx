@@ -4,8 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useUpdateClaimStatus,
   useUpdateClaimWorkflow,
-  usePlaceClaimOnHold,
-  useRemoveClaimHold,
+  usePlaceLegOnHold,
+  useRemoveLegHold,
   useGeneratePortalSubmissionPreview,
   usePortalUnderstandingPreflight,
   useUpdatePortalSubmissionDraft,
@@ -77,8 +77,8 @@ export function WorkflowPlayer({
   const queryClient = useQueryClient();
   const updateStatus = useUpdateClaimStatus();
   const updateWorkflow = useUpdateClaimWorkflow();
-  const placeHold = usePlaceClaimOnHold();
-  const removeHold = useRemoveClaimHold();
+  const placeHold = usePlaceLegOnHold();
+  const removeHold = useRemoveLegHold();
   const generatePreview = useGeneratePortalSubmissionPreview();
   const preflightUnderstanding = usePortalUnderstandingPreflight();
   const updateDraft = useUpdatePortalSubmissionDraft();

@@ -230,6 +230,48 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
         ),
+      groupContext: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+        ),
+      understandingReadback: zod
+        .string()
+        .nullish()
+        .describe(
+          "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+        ),
+      understandingReadbackAt: zod.coerce.date().nullish(),
+      understandingReadbackBy: zod.string().nullish(),
+      previewGeneratedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+        ),
+      previewGeneratedBy: zod.string().nullish(),
+      reattestRequired: zod
+        .boolean()
+        .describe(
+          "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+        ),
+      reattestCompletedAt: zod.coerce.date().nullish(),
+      reattestCompletedBy: zod.string().nullish(),
+      reattestNote: zod.string().nullish(),
+      legSubStatusCounts: zod
+        .object({
+          excluded: zod.number().optional(),
+          needs_classification: zod.number().optional(),
+          investigating: zod.number().optional(),
+          blocked: zod.number().optional(),
+          ready: zod.number().optional(),
+          dropped: zod.number().optional(),
+        })
+        .nullish()
+        .describe(
+          "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+        ),
     }),
   ),
   total: zod.number(),
@@ -383,6 +425,48 @@ export const GetInvoiceGroupResponse = zod
       .describe(
         "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
       ),
+    groupContext: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      ),
+    understandingReadback: zod
+      .string()
+      .nullish()
+      .describe(
+        "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      ),
+    understandingReadbackAt: zod.coerce.date().nullish(),
+    understandingReadbackBy: zod.string().nullish(),
+    previewGeneratedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+      ),
+    previewGeneratedBy: zod.string().nullish(),
+    reattestRequired: zod
+      .boolean()
+      .describe(
+        "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+      ),
+    reattestCompletedAt: zod.coerce.date().nullish(),
+    reattestCompletedBy: zod.string().nullish(),
+    reattestNote: zod.string().nullish(),
+    legSubStatusCounts: zod
+      .object({
+        excluded: zod.number().optional(),
+        needs_classification: zod.number().optional(),
+        investigating: zod.number().optional(),
+        blocked: zod.number().optional(),
+        ready: zod.number().optional(),
+        dropped: zod.number().optional(),
+      })
+      .nullish()
+      .describe(
+        "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+      ),
   })
   .and(
     zod.object({
@@ -506,6 +590,76 @@ export const GetInvoiceGroupResponse = zod
             attestationNote: zod.string().nullish(),
             attestationQueuedAt: zod.string().nullish(),
             attestationQueuedBy: zod.string().nullish(),
+            includedInDispute: zod
+              .boolean()
+              .describe(
+                "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+              ),
+            sopNodeId: zod
+              .string()
+              .nullish()
+              .describe(
+                "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+              ),
+            sopOutcome: zod
+              .union([
+                zod.literal("portal_dispute"),
+                zod.literal("dispute"),
+                zod.literal("hold"),
+                zod.literal("cannot_dispute"),
+                zod.literal("non_issue"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+              ),
+            dropReason: zod
+              .union([
+                zod.literal("cannot_dispute"),
+                zod.literal("non_issue"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+              ),
+            readyAt: zod.coerce
+              .date()
+              .nullish()
+              .describe(
+                "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+              ),
+            droppedAt: zod.coerce
+              .date()
+              .nullish()
+              .describe(
+                "Stamp of when the leg flipped to `dropped` sub-status.",
+              ),
+            perLegContext: zod
+              .string()
+              .nullish()
+              .describe(
+                "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+              ),
+            masActionRequired: zod
+              .union([
+                zod.literal("cancel"),
+                zod.literal("none"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+              ),
+            masActionCompletedAt: zod.coerce
+              .date()
+              .nullish()
+              .describe(
+                "Operator-confirmed completion stamp for the MAS action.",
+              ),
+            masActionCompletedBy: zod.string().nullish(),
+            masActionNote: zod.string().nullish(),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
             effectiveDaysLeft: zod
@@ -886,6 +1040,48 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -1024,6 +1220,48 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
 
@@ -1212,6 +1450,48 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -1346,6 +1626,48 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -1477,6 +1799,48 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -1603,6 +1967,48 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
 
@@ -1777,6 +2183,48 @@ export const UpdateInvoiceGroupWorkflowResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
 
@@ -1968,6 +2416,48 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -2102,6 +2592,48 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -2231,6 +2763,48 @@ export const StampPreviewGeneratedResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
 
@@ -2370,6 +2944,48 @@ export const CompleteGroupReattestResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -2437,6 +3053,12 @@ export const ListClaimsQueryParams = zod.object({
     .optional()
     .describe(
       'Restrict to actionable claims whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
+    ),
+  legSubStatus: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).",
     ),
   sort: zod
     .enum([
@@ -2569,6 +3191,68 @@ export const ListClaimsResponse = zod.object({
       attestationNote: zod.string().nullish(),
       attestationQueuedAt: zod.string().nullish(),
       attestationQueuedBy: zod.string().nullish(),
+      includedInDispute: zod
+        .boolean()
+        .describe(
+          "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+        ),
+      sopNodeId: zod
+        .string()
+        .nullish()
+        .describe(
+          "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+        ),
+      sopOutcome: zod
+        .union([
+          zod.literal("portal_dispute"),
+          zod.literal("dispute"),
+          zod.literal("hold"),
+          zod.literal("cannot_dispute"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+        ),
+      dropReason: zod
+        .union([
+          zod.literal("cannot_dispute"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+        ),
+      readyAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+        ),
+      droppedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+      perLegContext: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+        ),
+      masActionRequired: zod
+        .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+        .nullish()
+        .describe(
+          "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+        ),
+      masActionCompletedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe("Operator-confirmed completion stamp for the MAS action."),
+      masActionCompletedBy: zod.string().nullish(),
+      masActionNote: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -2748,6 +3432,68 @@ export const GetClaimResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -2900,6 +3646,68 @@ export const UpdateClaimResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3074,6 +3882,68 @@ export const UpdateClaimStatusResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3270,6 +4140,68 @@ export const UpdateClaimOutcomeResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3417,6 +4349,68 @@ export const ListAttestationPendingResponse = zod.object({
       attestationNote: zod.string().nullish(),
       attestationQueuedAt: zod.string().nullish(),
       attestationQueuedBy: zod.string().nullish(),
+      includedInDispute: zod
+        .boolean()
+        .describe(
+          "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+        ),
+      sopNodeId: zod
+        .string()
+        .nullish()
+        .describe(
+          "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+        ),
+      sopOutcome: zod
+        .union([
+          zod.literal("portal_dispute"),
+          zod.literal("dispute"),
+          zod.literal("hold"),
+          zod.literal("cannot_dispute"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+        ),
+      dropReason: zod
+        .union([
+          zod.literal("cannot_dispute"),
+          zod.literal("non_issue"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+        ),
+      readyAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+        ),
+      droppedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+      perLegContext: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+        ),
+      masActionRequired: zod
+        .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+        .nullish()
+        .describe(
+          "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+        ),
+      masActionCompletedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe("Operator-confirmed completion stamp for the MAS action."),
+      masActionCompletedBy: zod.string().nullish(),
+      masActionNote: zod.string().nullish(),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -3600,6 +4594,68 @@ export const AttestClaimResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3743,6 +4799,68 @@ export const QueueAttestationForClaimResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -3886,6 +5004,68 @@ export const ConfirmQueuedAttestationResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4060,6 +5240,68 @@ export const UpdateClaimEvidenceResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4215,6 +5457,68 @@ export const PlaceLegOnHoldResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4353,6 +5657,68 @@ export const RemoveLegHoldResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4488,6 +5854,68 @@ export const ClearLegHoldResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4631,6 +6059,68 @@ export const ClassifyLegResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4777,6 +6267,68 @@ export const SopAdvanceLegResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4916,6 +6468,68 @@ export const ReclassifyLegResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -4974,6 +6588,214 @@ export const RecordLegVerdictResponse = zod.object({
   createdAt: zod.coerce.date(),
   createdBy: zod.string().nullish(),
   inspectionTimeMs: zod.number().nullish(),
+});
+
+/**
+ * UI-supporting endpoint. Source-state contract: the leg's parent invoice
+group must be in `pre-submit` (the per-leg context only matters before
+the submission preview is generated). Stores `claims.per_leg_context`
+and emits `leg.per_leg_context_set`.
+
+ * @summary Save the operator's per-leg narrative used by the dispute write-up
+ */
+export const SetLegContextParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SetLegContextBody = zod.object({
+  context: zod
+    .string()
+    .describe("Free-form per-leg narrative. Empty string clears the field."),
+});
+
+export const SetLegContextResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
 });
 
 /**
@@ -5106,6 +6928,68 @@ export const CompleteLegMasActionResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5243,6 +7127,68 @@ export const UpdateClaimWorkflowResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5385,6 +7331,68 @@ export const TriageClaimResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5530,6 +7538,68 @@ export const PostResponseActionResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -5688,6 +7758,68 @@ export const GenerateClaimEmailResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7433,6 +9565,48 @@ export const GetDashboardSummaryResponse = zod.object({
         .optional()
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
+      groupContext: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+        ),
+      understandingReadback: zod
+        .string()
+        .nullish()
+        .describe(
+          "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+        ),
+      understandingReadbackAt: zod.coerce.date().nullish(),
+      understandingReadbackBy: zod.string().nullish(),
+      previewGeneratedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+        ),
+      previewGeneratedBy: zod.string().nullish(),
+      reattestRequired: zod
+        .boolean()
+        .describe(
+          "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+        ),
+      reattestCompletedAt: zod.coerce.date().nullish(),
+      reattestCompletedBy: zod.string().nullish(),
+      reattestNote: zod.string().nullish(),
+      legSubStatusCounts: zod
+        .object({
+          excluded: zod.number().optional(),
+          needs_classification: zod.number().optional(),
+          investigating: zod.number().optional(),
+          blocked: zod.number().optional(),
+          ready: zod.number().optional(),
+          dropped: zod.number().optional(),
+        })
+        .nullish()
+        .describe(
+          "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
         ),
     }),
   ),
@@ -9264,6 +11438,68 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   attestationNote: zod.string().nullish(),
   attestationQueuedAt: zod.string().nullish(),
   attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -9426,6 +11662,48 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+    ),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when at least one Approved leg requires a re-attestation step in the payor portal.",
+    ),
+  reattestCompletedAt: zod.coerce.date().nullish(),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
 

@@ -16,6 +16,9 @@ import { EmptyState } from "@/components/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
+import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
+import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
@@ -93,6 +96,11 @@ export default function InvoiceGroupsList() {
   const queryClient = useQueryClient();
   const { get, getAll, set } = useUrlParams();
   const [, navigate] = useLocation();
+
+  // PER_INVOICE_TRANSITION_ENABLED gates the per-row leg sub-status
+  // breakdown rendered next to the ride count. Aliased to keep the
+  // expression in the row JSX readable.
+  const perInvoiceOnRow = isPerInvoiceTransitionEnabled();
 
   const search = get("q");
   const sortCol = get("sort");
@@ -631,7 +639,26 @@ export default function InvoiceGroupsList() {
                             )}
                             {visibleCols.has("rideCount") && (
                               <td className={`px-4 ${tdPy}`}>
-                                <Badge variant="secondary" className="text-xs">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</Badge>
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="secondary" className="text-xs">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</Badge>
+                                  {perInvoiceOnRow &&
+                                    group.legSubStatusCounts &&
+                                    (group.status === "New" || group.status === "Needs Evidence") && (
+                                    <div className="flex flex-wrap gap-0.5" data-testid={`leg-breakdown-${group.id}`}>
+                                      {LEG_SUB_STATUSES.map((s) => {
+                                        const counts = group.legSubStatusCounts as Record<string, number> | undefined;
+                                        const n = counts?.[s] ?? 0;
+                                        if (n === 0) return null;
+                                        return (
+                                          <span key={s} className="inline-flex items-center gap-0.5">
+                                            <LegSubStatusPill subStatus={s as LegSubStatus} className="text-[10px] px-1.5 py-0" />
+                                            <span className="text-[10px] tabular-nums text-muted-foreground">{n}</span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                             )}
                             {visibleCols.has("clientNumber") && (

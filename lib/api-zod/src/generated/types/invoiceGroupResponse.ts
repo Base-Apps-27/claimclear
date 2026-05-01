@@ -10,6 +10,7 @@ import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseCl
 import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupResponseClosureReviewState";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
 import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
+import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
 
@@ -106,4 +107,38 @@ export interface InvoiceGroupResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /**
+   * Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.
+   * @nullable
+   */
+  groupContext?: string | null;
+  /**
+   * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
+   * @nullable
+   */
+  understandingReadback?: string | null;
+  /** @nullable */
+  understandingReadbackAt?: Date | null;
+  /** @nullable */
+  understandingReadbackBy?: string | null;
+  /**
+   * Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.
+   * @nullable
+   */
+  previewGeneratedAt?: Date | null;
+  /** @nullable */
+  previewGeneratedBy?: string | null;
+  /** True when at least one Approved leg requires a re-attestation step in the payor portal. */
+  reattestRequired: boolean;
+  /** @nullable */
+  reattestCompletedAt?: Date | null;
+  /** @nullable */
+  reattestCompletedBy?: string | null;
+  /** @nullable */
+  reattestNote?: string | null;
+  /**
+   * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
+   * @nullable
+   */
+  legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
 }

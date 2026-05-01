@@ -135,6 +135,7 @@ import type {
   SaveMappingsResponse,
   SendAnthropicMessageBody,
   SetGroupContextBody,
+  SetLegContextBody,
   SopAdvanceBody,
   StateConflictResponse,
   SuccessResponse,
@@ -4236,6 +4237,98 @@ export const useRecordLegVerdict = <
   TContext
 > => {
   return useMutation(getRecordLegVerdictMutationOptions(options));
+};
+
+/**
+ * UI-supporting endpoint. Source-state contract: the leg's parent invoice
+group must be in `pre-submit` (the per-leg context only matters before
+the submission preview is generated). Stores `claims.per_leg_context`
+and emits `leg.per_leg_context_set`.
+
+ * @summary Save the operator's per-leg narrative used by the dispute write-up
+ */
+export const getSetLegContextUrl = (id: number) => {
+  return `/api/claims/${id}/per-leg-context`;
+};
+
+export const setLegContext = async (
+  id: number,
+  setLegContextBody: SetLegContextBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getSetLegContextUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setLegContextBody),
+  });
+};
+
+export const getSetLegContextMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setLegContext>>,
+    TError,
+    { id: number; data: BodyType<SetLegContextBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setLegContext>>,
+  TError,
+  { id: number; data: BodyType<SetLegContextBody> },
+  TContext
+> => {
+  const mutationKey = ["setLegContext"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setLegContext>>,
+    { id: number; data: BodyType<SetLegContextBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setLegContext(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetLegContextMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setLegContext>>
+>;
+export type SetLegContextMutationBody = BodyType<SetLegContextBody>;
+export type SetLegContextMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Save the operator's per-leg narrative used by the dispute write-up
+ */
+export const useSetLegContext = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setLegContext>>,
+    TError,
+    { id: number; data: BodyType<SetLegContextBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setLegContext>>,
+  TError,
+  { id: number; data: BodyType<SetLegContextBody> },
+  TContext
+> => {
+  return useMutation(getSetLegContextMutationOptions(options));
 };
 
 /**

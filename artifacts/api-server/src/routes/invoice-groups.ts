@@ -198,12 +198,39 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     .offset(offsetVal);
 
   const today = new Date();
+  const groupIds = groupsRaw.map(({ row }) => row.id);
+
+  // Per-row leg-sub-status breakdown so the listing page can render the
+  // tiny inline counters without a follow-up round trip per row. We fetch
+  // only the four columns deriveLegSubStatus reads, then tally in JS.
+  const legSubStatusByGroup = new Map<number, Record<string, number>>();
+  if (groupIds.length > 0) {
+    const legs = await db
+      .select({
+        invoiceGroupId: claimsTable.invoiceGroupId,
+        includedInDispute: claimsTable.includedInDispute,
+        errorTypeId: claimsTable.errorTypeId,
+        holdReason: claimsTable.holdReason,
+        sopOutcome: claimsTable.sopOutcome,
+      })
+      .from(claimsTable)
+      .where(inArray(claimsTable.invoiceGroupId, groupIds));
+    for (const leg of legs) {
+      if (leg.invoiceGroupId == null) continue;
+      const sub = deriveLegSubStatus(leg);
+      const bucket = legSubStatusByGroup.get(leg.invoiceGroupId) ?? {};
+      bucket[sub] = (bucket[sub] ?? 0) + 1;
+      legSubStatusByGroup.set(leg.invoiceGroupId, bucket);
+    }
+  }
+
   const groups = groupsRaw.map(({ row, earliestDate }) => ({
     ...row,
     earliestDate,
     effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
     // Status-aware: only flag as urgent if we still owe action.
     isUrgent: GROUP_ON_CLOCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
+    legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
   }));
 
   res.json({ groups, total: totalResult.count });

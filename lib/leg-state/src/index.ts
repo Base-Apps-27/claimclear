@@ -11,8 +11,21 @@ export const LEG_SUB_STATUSES = [
   "blocked",
   "ready",
   "dropped",
+  "frozen",
 ] as const;
 export type LegSubStatus = typeof LEG_SUB_STATUSES[number];
+
+// Hold-reason vocabulary, mirrored from `@workspace/db`'s `LEG_HOLD_REASONS`.
+// Re-exported here so the React client can pick from the same list without
+// pulling drizzle/pg into the browser bundle.
+export const LEG_HOLD_REASONS = [
+  "evidence_pending",
+  "awaiting_external_party",
+  "awaiting_member_response",
+  "awaiting_internal_review",
+  "other",
+] as const;
+export type LegHoldReason = typeof LEG_HOLD_REASONS[number];
 
 // Input shape for deriveLegSubStatus. Field names match the discrete
 // columns introduced on `claims` in the Task #195 schema reshape so that

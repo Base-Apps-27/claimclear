@@ -5,7 +5,7 @@ import DOMPurify from "dompurify";
 import {
   useGetClaim, getGetClaimQueryKey,
   useUpdateClaim, useUpdateClaimStatus, useUpdateClaimOutcome,
-  useUpdateClaimEvidence, usePlaceClaimOnHold, useRemoveClaimHold,
+  useUpdateClaimEvidence, usePlaceLegOnHold, useRemoveLegHold,
   useUpdateClaimWorkflow, useGenerateClaimEmail,
   useListClaimNotes, getListClaimNotesQueryKey, useCreateClaimNote,
   useListClaimAuditLogs, getListClaimAuditLogsQueryKey,
@@ -25,6 +25,8 @@ import {
   useGetInvoiceGroup, getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse, BotActivityLogResponse, ErrorTypeResponse, PortalResponseItem, EmailThreadConversation, PostResponseActionBodyAction } from "@workspace/api-client-react";
+import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
+import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { ConversationsCard } from "@/components/conversations-card";
 import { AttestationPrompt } from "@/components/attestation-prompt";
 import { StatusBadge } from "@/components/status-badge";
@@ -233,6 +235,18 @@ function SubmissionCard({ submission: sub }: { submission: PortalSubmissionRespo
 export default function ClaimDetail() {
   const params = useParams<{ id: string }>();
   const claimId = parseInt(params.id || "0", 10);
+
+  // PER_INVOICE_TRANSITION_ENABLED: when on, the per-leg investigation v2
+  // surface replaces the legacy claim detail page entirely. The legacy
+  // component below is kept intact so flipping the flag off restores the
+  // exact prior UI.
+  if (isPerInvoiceTransitionEnabled()) {
+    return <ClaimDetailV2 claimId={claimId} />;
+  }
+  return <ClaimDetailLegacy claimId={claimId} />;
+}
+
+function ClaimDetailLegacy({ claimId }: { claimId: number }) {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
 
@@ -264,8 +278,8 @@ export default function ClaimDetail() {
   const updateOutcome = useUpdateClaimOutcome();
   const { toast } = useToast();
   const updateEvidence = useUpdateClaimEvidence();
-  const placeHold = usePlaceClaimOnHold();
-  const removeHold = useRemoveClaimHold();
+  const placeHold = usePlaceLegOnHold();
+  const removeHold = useRemoveLegHold();
   const createNote = useCreateClaimNote();
   const generateEmail = useGenerateClaimEmail();
   const createSubmission = useCreatePortalSubmission();

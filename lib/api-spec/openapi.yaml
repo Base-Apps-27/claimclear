@@ -808,6 +808,11 @@ paths:
           schema:
             type: string
             enum: [soon, urgent]
+        - name: legSubStatus
+          in: query
+          description: Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+          schema:
+            type: string
         - name: sort
           in: query
           description: Column to sort by
@@ -1477,6 +1482,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimVerdictResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/per-leg-context:
+    post:
+      operationId: setLegContext
+      tags: [claims]
+      summary: Save the operator's per-leg narrative used by the dispute write-up
+      description: |
+        UI-supporting endpoint. Source-state contract: the leg's parent invoice
+        group must be in `pre-submit` (the per-leg context only matters before
+        the submission preview is generated). Stores `claims.per_leg_context`
+        and emits `leg.per_leg_context_set`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLegContextBody"
+      responses:
+        "200":
+          description: Per-leg context recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
         "409":
           description: Source-state contract violation
           content:
@@ -3640,6 +3681,48 @@ components:
           type: ["string", "null"]
         attestationQueuedBy:
           type: ["string", "null"]
+        # Per-leg state-machine columns introduced by Task #195 (per-claim →
+        # per-invoice transition). Source of truth for the inner-tier
+        # leg sub-status (`excluded | needs_classification | investigating |
+        # blocked | ready | dropped`) which is *derived* from these via
+        # `deriveLegSubStatus` in `@workspace/leg-state`.
+        includedInDispute:
+          type: boolean
+          description: "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings)."
+        sopNodeId:
+          type: ["string", "null"]
+          description: "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk."
+        sopOutcome:
+          type: ["string", "null"]
+          enum: ["portal_dispute", "dispute", "hold", "cannot_dispute", "non_issue", null]
+          description: "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree."
+        dropReason:
+          type: ["string", "null"]
+          enum: ["cannot_dispute", "non_issue", null]
+          description: "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`."
+        readyAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`)."
+        droppedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Stamp of when the leg flipped to `dropped` sub-status."
+        perLegContext:
+          type: ["string", "null"]
+          description: "Operator-authored narrative specific to this leg, used by the dispute write-up assembly."
+        masActionRequired:
+          type: ["string", "null"]
+          enum: ["cancel", "none", null]
+          description: "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention."
+        masActionCompletedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Operator-confirmed completion stamp for the MAS action."
+        masActionCompletedBy:
+          type: ["string", "null"]
+        masActionNote:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -3657,6 +3740,7 @@ components:
         - outcome
         - disputeEmailSent
         - attestationState
+        - includedInDispute
 
     ValidTransitionsResponse:
       type: object
@@ -3806,6 +3890,52 @@ components:
         isUrgent:
           type: boolean
           description: "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints."
+        # Group-level orchestration columns introduced by Task #195. Drive
+        # the Aggregate Context, Understanding Readback, Generate Submission
+        # Preview, and Re-attest steps in the per-invoice macro flow.
+        groupContext:
+          type: ["string", "null"]
+          description: "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up."
+        understandingReadback:
+          type: ["string", "null"]
+          description: "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview."
+        understandingReadbackAt:
+          type: ["string", "null"]
+          format: date-time
+        understandingReadbackBy:
+          type: ["string", "null"]
+        previewGeneratedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight."
+        previewGeneratedBy:
+          type: ["string", "null"]
+        reattestRequired:
+          type: boolean
+          description: "True when at least one Approved leg requires a re-attestation step in the payor portal."
+        reattestCompletedAt:
+          type: ["string", "null"]
+          format: date-time
+        reattestCompletedBy:
+          type: ["string", "null"]
+        reattestNote:
+          type: ["string", "null"]
+        legSubStatusCounts:
+          type: ["object", "null"]
+          description: "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`."
+          properties:
+            excluded:
+              type: integer
+            needs_classification:
+              type: integer
+            investigating:
+              type: integer
+            blocked:
+              type: integer
+            ready:
+              type: integer
+            dropped:
+              type: integer
       required:
         - id
         - invoiceNumber
@@ -3813,6 +3943,7 @@ components:
         - outcome
         - rideCount
         - disputeEmailSent
+        - reattestRequired
 
     InvoiceGroupDetailResponse:
       allOf:
@@ -4415,6 +4546,14 @@ components:
           type: ["string", "null"]
         inspectionTimeMs:
           type: ["integer", "null"]
+
+    SetLegContextBody:
+      type: object
+      required: [context]
+      properties:
+        context:
+          type: string
+          description: Free-form per-leg narrative. Empty string clears the field.
 
     CompleteMasActionBody:
       type: object

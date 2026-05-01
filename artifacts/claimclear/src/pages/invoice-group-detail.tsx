@@ -17,13 +17,15 @@ import {
   getListResponsesQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   useGetInvoiceGroupValidTransitions,
-  usePlaceClaimOnHold,
-  useRemoveClaimHold,
+  usePlaceLegOnHold,
+  useRemoveLegHold,
   useListErrorTypes,
   useCreateErrorType,
   getListErrorTypesQueryKey,
 } from "@workspace/api-client-react";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
+import { InvoiceGroupDetailV2 } from "@/components/invoice-group-detail-v2";
 import { getGroupLifecyclePhase } from "@/lib/lifecycle-phase";
 import { ClosureActions } from "@/components/closure/closure-actions";
 import { usePresence } from "@/hooks/use-presence";
@@ -163,6 +165,17 @@ function getGroupCurrentStageKey(groupStatus: string, rides: RideForRollup[]): G
 export default function InvoiceGroupDetail() {
   const params = useParams<{ id: string }>();
   const id = parseInt(params.id || "0", 10);
+
+  // PER_INVOICE_TRANSITION_ENABLED: when on, render the v2 group
+  // orchestration surface (Aggregate Context · Legs Queue · Generate
+  // Submission Preview). Otherwise fall through to the legacy page below.
+  if (isPerInvoiceTransitionEnabled()) {
+    return <InvoiceGroupDetailV2 groupId={id} />;
+  }
+  return <InvoiceGroupDetailLegacy groupId={id} />;
+}
+
+function InvoiceGroupDetailLegacy({ groupId: id }: { groupId: number }) {
   const queryClient = useQueryClient();
 
   const { data: group, isLoading, error } = useGetInvoiceGroup(id, {
@@ -185,8 +198,8 @@ export default function InvoiceGroupDetail() {
   const { toast } = useToast();
   const holdGroup = useHoldInvoiceGroup();
   const removeHold = useRemoveInvoiceGroupHold();
-  const placeLegHold = usePlaceClaimOnHold();
-  const removeLegHold = useRemoveClaimHold();
+  const placeLegHold = usePlaceLegOnHold();
+  const removeLegHold = useRemoveLegHold();
   const deleteEvidence = useDeleteInvoiceGroupEvidence();
   const processResponseMutation = useProcessResponse();
   const reassignResponseMutation = useReassignResponse();

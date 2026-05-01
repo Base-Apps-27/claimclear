@@ -22,14 +22,7 @@ export type SopOutcome = typeof SOP_OUTCOMES[number];
 export const LEG_DROP_REASONS = ["cannot_dispute", "non_issue"] as const;
 export type LegDropReason = typeof LEG_DROP_REASONS[number];
 
-export const LEG_HOLD_REASONS = [
-  "evidence_pending",
-  "awaiting_external_party",
-  "awaiting_member_response",
-  "awaiting_internal_review",
-  "other",
-] as const;
-export type LegHoldReason = typeof LEG_HOLD_REASONS[number];
+// Re-exported from @workspace/leg-state — see file footer for the full set.
 
 export const MAS_ACTION_REQUIRED = ["cancel", "none"] as const;
 export type MasActionRequired = typeof MAS_ACTION_REQUIRED[number];
@@ -50,4 +43,6 @@ export {
   type LegSubStatus,
   type LegForSubStatus,
   deriveLegSubStatus,
+  LEG_HOLD_REASONS,
+  type LegHoldReason,
 } from "@workspace/leg-state";

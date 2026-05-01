@@ -99,6 +99,48 @@ export const ClaimResponseAttestationState = {
 } as const;
 
 /**
+ * Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.
+ * @nullable
+ */
+export type ClaimResponseSopOutcome =
+  | (typeof ClaimResponseSopOutcome)[keyof typeof ClaimResponseSopOutcome]
+  | null;
+
+export const ClaimResponseSopOutcome = {
+  portal_dispute: "portal_dispute",
+  dispute: "dispute",
+  hold: "hold",
+  cannot_dispute: "cannot_dispute",
+  non_issue: "non_issue",
+} as const;
+
+/**
+ * Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.
+ * @nullable
+ */
+export type ClaimResponseDropReason =
+  | (typeof ClaimResponseDropReason)[keyof typeof ClaimResponseDropReason]
+  | null;
+
+export const ClaimResponseDropReason = {
+  cannot_dispute: "cannot_dispute",
+  non_issue: "non_issue",
+} as const;
+
+/**
+ * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
+ * @nullable
+ */
+export type ClaimResponseMasActionRequired =
+  | (typeof ClaimResponseMasActionRequired)[keyof typeof ClaimResponseMasActionRequired]
+  | null;
+
+export const ClaimResponseMasActionRequired = {
+  cancel: "cancel",
+  none: "none",
+} as const;
+
+/**
  * A person referenced from a structured closure (driver/dispatcher).
  */
 export interface ClosurePersonRef {
@@ -207,6 +249,52 @@ export interface ClaimResponse {
   attestationQueuedAt?: string | null;
   /** @nullable */
   attestationQueuedBy?: string | null;
+  /** False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings). */
+  includedInDispute: boolean;
+  /**
+   * ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.
+   * @nullable
+   */
+  sopNodeId?: string | null;
+  /**
+   * Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.
+   * @nullable
+   */
+  sopOutcome?: ClaimResponseSopOutcome;
+  /**
+   * Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.
+   * @nullable
+   */
+  dropReason?: ClaimResponseDropReason;
+  /**
+   * Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).
+   * @nullable
+   */
+  readyAt?: string | null;
+  /**
+   * Stamp of when the leg flipped to `dropped` sub-status.
+   * @nullable
+   */
+  droppedAt?: string | null;
+  /**
+   * Operator-authored narrative specific to this leg, used by the dispute write-up assembly.
+   * @nullable
+   */
+  perLegContext?: string | null;
+  /**
+   * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
+   * @nullable
+   */
+  masActionRequired?: ClaimResponseMasActionRequired;
+  /**
+   * Operator-confirmed completion stamp for the MAS action.
+   * @nullable
+   */
+  masActionCompletedAt?: string | null;
+  /** @nullable */
+  masActionCompletedBy?: string | null;
+  /** @nullable */
+  masActionNote?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -299,6 +387,19 @@ export type InvoiceGroupResponseEvidenceFiles = {
  */
 export type InvoiceGroupResponseEvidenceChecklist = {
   [key: string]: unknown;
+} | null;
+
+/**
+ * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
+ * @nullable
+ */
+export type InvoiceGroupResponseLegSubStatusCounts = {
+  excluded?: number;
+  needs_classification?: number;
+  investigating?: number;
+  blocked?: number;
+  ready?: number;
+  dropped?: number;
 } | null;
 
 export interface InvoiceGroupResponse {
@@ -394,6 +495,40 @@ export interface InvoiceGroupResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /**
+   * Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.
+   * @nullable
+   */
+  groupContext?: string | null;
+  /**
+   * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
+   * @nullable
+   */
+  understandingReadback?: string | null;
+  /** @nullable */
+  understandingReadbackAt?: string | null;
+  /** @nullable */
+  understandingReadbackBy?: string | null;
+  /**
+   * Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.
+   * @nullable
+   */
+  previewGeneratedAt?: string | null;
+  /** @nullable */
+  previewGeneratedBy?: string | null;
+  /** True when at least one Approved leg requires a re-attestation step in the payor portal. */
+  reattestRequired: boolean;
+  /** @nullable */
+  reattestCompletedAt?: string | null;
+  /** @nullable */
+  reattestCompletedBy?: string | null;
+  /** @nullable */
+  reattestNote?: string | null;
+  /**
+   * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
+   * @nullable
+   */
+  legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
 }
 
 export type PortalSubmissionResponseStatus =
@@ -1272,6 +1407,11 @@ export interface ClaimVerdictResponse {
   createdBy?: string | null;
   /** @nullable */
   inspectionTimeMs?: number | null;
+}
+
+export interface SetLegContextBody {
+  /** Free-form per-leg narrative. Empty string clears the field. */
+  context: string;
 }
 
 export interface CompleteMasActionBody {
@@ -2778,6 +2918,10 @@ export type ListClaimsParams = {
    * Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
    */
   expiring?: ListClaimsExpiring;
+  /**
+   * Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+   */
+  legSubStatus?: string;
   /**
    * Column to sort by
    */

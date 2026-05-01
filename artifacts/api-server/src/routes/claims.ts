@@ -171,7 +171,86 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
     conditions.push(buildClaimExpiringCondition(expiringMode));
   }
 
+  const legSubStatus = query.legSubStatus;
+  if (legSubStatus && typeof legSubStatus === "string") {
+    const subStatuses = legSubStatus.split(",").map(s => s.trim()).filter(Boolean);
+    const subStatusOrs: SQL[] = [];
+    for (const sub of subStatuses) {
+      const cond = buildLegSubStatusCondition(sub);
+      if (cond) subStatusOrs.push(cond);
+    }
+    if (subStatusOrs.length === 1) {
+      conditions.push(subStatusOrs[0]);
+    } else if (subStatusOrs.length > 1) {
+      const combined = or(...subStatusOrs);
+      if (combined) conditions.push(combined);
+    }
+  }
+
   return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+// Mirror of `deriveLegSubStatus`, expressed as drizzle conditions so we
+// can filter the claims list server-side. `frozen` is the one filter that
+// bypasses the leg's own state — it asks "does this leg's parent group
+// live past pre-submit?" — and is therefore expressed as an EXISTS subquery
+// against `invoice_groups`.
+function buildLegSubStatusCondition(sub: string): SQL | null {
+  const notExcluded = or(
+    isNull(claimsTable.includedInDispute),
+    eq(claimsTable.includedInDispute, true),
+  )!;
+  const hasErrorType = and(
+    isNotNull(claimsTable.errorTypeId),
+    sql`${claimsTable.errorTypeId} <> ''`,
+  )!;
+  const noHold = and(
+    isNull(claimsTable.holdReason),
+    or(isNull(claimsTable.sopOutcome), sql`${claimsTable.sopOutcome} <> 'hold'`)!,
+  )!;
+  switch (sub) {
+    case "excluded":
+      return eq(claimsTable.includedInDispute, false);
+    case "needs_classification":
+      return and(
+        notExcluded,
+        or(isNull(claimsTable.errorTypeId), eq(claimsTable.errorTypeId, ""))!,
+      )!;
+    case "blocked":
+      return and(
+        notExcluded,
+        hasErrorType,
+        or(isNotNull(claimsTable.holdReason), eq(claimsTable.sopOutcome, "hold"))!,
+      )!;
+    case "investigating":
+      return and(
+        notExcluded,
+        hasErrorType,
+        noHold,
+        isNull(claimsTable.sopOutcome),
+      )!;
+    case "ready":
+      return and(
+        notExcluded,
+        hasErrorType,
+        noHold,
+        inArray(claimsTable.sopOutcome, ["portal_dispute", "dispute"]),
+      )!;
+    case "dropped":
+      return and(
+        notExcluded,
+        hasErrorType,
+        noHold,
+        inArray(claimsTable.sopOutcome, ["cannot_dispute", "non_issue"]),
+      )!;
+    case "frozen":
+      // Past-pre-submit parent: anything other than the two pre-submit
+      // statuses qualifies, including On Hold, Portal Queued, Awaiting
+      // Response, Resolved, etc.
+      return sql`EXISTS (SELECT 1 FROM ${invoiceGroupsTable} ig WHERE ig.id = ${claimsTable.invoiceGroupId} AND ig.status NOT IN ('New', 'Needs Evidence'))`;
+    default:
+      return null;
+  }
 }
 
 // Default sort = service date ascending (oldest first), so the rows closest to
@@ -1540,6 +1619,70 @@ router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<vo
   await refreshClaimDenormalizedCache(id);
   if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
   emitClaimEvent(id, isTerminal ? "sop_terminal" : "sop_advanced", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/per-leg-context — operator records the leg-specific
+// narrative used by the dispute write-up assembly. Source-state contract:
+// the leg's parent invoice group must be in `pre-submit` (per-leg context
+// only matters before the submission preview is generated).
+router.post("/claims/:id/per-leg-context", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const context = (req.body?.context ?? "") as string;
+  if (typeof context !== "string") { res.status(400).json({ error: "context must be a string" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null) {
+    res.status(409).json({
+      error: "Per-leg context requires the leg to belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "no-group",
+    });
+    return;
+  }
+  const [parentGroup] = await db
+    .select()
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (!parentGroup) {
+    res.status(409).json({
+      error: "Per-leg context requires the leg to belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "missing-group",
+    });
+    return;
+  }
+  const phase = getGroupMacroPhase(parentGroup);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Per-leg context can only be set in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ perLegContext: context.length === 0 ? null : context })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(id, "leg_per_leg_context_set", "Per-leg context recorded", req, {
+    contextLength: context.length,
+  });
+  await emitStateEvent({
+    eventKey: "leg.per_leg_context_set",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { contextLength: context.length },
+  });
+  emitClaimEvent(id, "per_leg_context_set", req);
 
   res.json(updated);
 }));

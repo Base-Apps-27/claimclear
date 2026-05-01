@@ -8,9 +8,12 @@
 import type { ClaimResponseAttestationState } from "./claimResponseAttestationState";
 import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
 import type { ClaimResponseClosureReviewState } from "./claimResponseClosureReviewState";
+import type { ClaimResponseDropReason } from "./claimResponseDropReason";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
 import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
+import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionRequired";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
+import type { ClaimResponseSopOutcome } from "./claimResponseSopOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
 import type { ClosurePersonRef } from "./closurePersonRef";
 
@@ -114,6 +117,52 @@ export interface ClaimResponse {
   attestationQueuedAt?: string | null;
   /** @nullable */
   attestationQueuedBy?: string | null;
+  /** False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings). */
+  includedInDispute: boolean;
+  /**
+   * ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.
+   * @nullable
+   */
+  sopNodeId?: string | null;
+  /**
+   * Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.
+   * @nullable
+   */
+  sopOutcome?: ClaimResponseSopOutcome;
+  /**
+   * Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.
+   * @nullable
+   */
+  dropReason?: ClaimResponseDropReason;
+  /**
+   * Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).
+   * @nullable
+   */
+  readyAt?: Date | null;
+  /**
+   * Stamp of when the leg flipped to `dropped` sub-status.
+   * @nullable
+   */
+  droppedAt?: Date | null;
+  /**
+   * Operator-authored narrative specific to this leg, used by the dispute write-up assembly.
+   * @nullable
+   */
+  perLegContext?: string | null;
+  /**
+   * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
+   * @nullable
+   */
+  masActionRequired?: ClaimResponseMasActionRequired;
+  /**
+   * Operator-confirmed completion stamp for the MAS action.
+   * @nullable
+   */
+  masActionCompletedAt?: Date | null;
+  /** @nullable */
+  masActionCompletedBy?: string | null;
+  /** @nullable */
+  masActionNote?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /**

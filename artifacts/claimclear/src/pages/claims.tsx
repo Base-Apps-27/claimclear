@@ -34,6 +34,19 @@ import {
   deriveLifecycleTab,
   type LifecycleTabKey,
 } from "@/lib/lifecycle-phase";
+import { isPerInvoiceTransitionEnabled } from "@/lib/feature-flags";
+import { type LegSubStatus } from "@workspace/leg-state";
+import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
+
+// v2 claims-list tab strip: spec'd six filters in this order.
+const CLAIM_LEG_TABS: readonly LegSubStatus[] = [
+  "needs_classification",
+  "investigating",
+  "blocked",
+  "ready",
+  "dropped",
+  "frozen",
+];
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -106,6 +119,16 @@ export default function ClaimsList() {
   const filterExpiring: "" | "soon" | "urgent" =
     filterExpiringRaw === "soon" || filterExpiringRaw === "urgent" ? filterExpiringRaw : "";
 
+  // PER_INVOICE_TRANSITION_ENABLED: secondary tab strip that filters the
+  // list by per-leg sub-status. When the flag is off this URL param is
+  // simply ignored (it isn't read from this page) and the strip isn't
+  // rendered, so the legacy claims list behaviour is preserved.
+  const perInvoiceOn = isPerInvoiceTransitionEnabled();
+  const filterLegSubStatusRaw = get("legSubStatus");
+  const filterLegSubStatus = perInvoiceOn && (CLAIM_LEG_TABS as readonly string[]).includes(filterLegSubStatusRaw)
+    ? (filterLegSubStatusRaw as LegSubStatus)
+    : "";
+
   const activeTab: ClaimsTabKey = deriveActiveTab(filterStatuses);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -138,6 +161,7 @@ export default function ClaimsList() {
     carNumber: filterCarNumber || undefined,
     clientNumber: filterClientNumber || undefined,
     expiring: (filterExpiring || undefined) as ListClaimsParams["expiring"],
+    legSubStatus: filterLegSubStatus || undefined,
     sort: (sortCol || undefined) as typeof ListClaimsSort[keyof typeof ListClaimsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListClaimsDir[keyof typeof ListClaimsDir] | undefined,
     limit: pageSize,
@@ -295,13 +319,40 @@ export default function ClaimsList() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <FilterStrip<ClaimsTabKey>
-          tabs={tabs}
-          active={activeTab}
-          onChange={handleTabChange}
-          accent="blue"
-          ariaLabel="Filter claims by status"
-        />
+        {perInvoiceOn ? (
+          <div
+            className="flex flex-wrap items-center gap-1"
+            role="tablist"
+            aria-label="Filter claims by leg sub-status"
+            data-testid="leg-sub-status-tabs"
+          >
+            {CLAIM_LEG_TABS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={filterLegSubStatus === s}
+                onClick={() => set({ legSubStatus: s })}
+                className={`px-3 py-1.5 rounded-full border text-sm ${
+                  filterLegSubStatus === s
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-background text-foreground border-border hover:bg-muted"
+                }`}
+                data-testid={`leg-sub-status-tab-${s}`}
+              >
+                {legSubStatusLabel(s)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <FilterStrip<ClaimsTabKey>
+            tabs={tabs}
+            active={activeTab}
+            onChange={handleTabChange}
+            accent="blue"
+            ariaLabel="Filter claims by status"
+          />
+        )}
       </div>
 
       <StatusStrip>

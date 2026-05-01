@@ -60,6 +60,10 @@ export type ListClaimsParams = {
    */
   expiring?: ListClaimsExpiring;
   /**
+   * Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+   */
+  legSubStatus?: string;
+  /**
    * Column to sort by
    */
   sort?: ListClaimsSort;
