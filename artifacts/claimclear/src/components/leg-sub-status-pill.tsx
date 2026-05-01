@@ -19,14 +19,17 @@ const LABELS: Record<LegSubStatus, string> = {
   frozen: "Frozen",
 };
 
-// Colors picked to match the existing status-badge palette so the two
-// tiers don't visually fight each other when stacked on the same row.
+// Colors deliberately mirror the status-badge.tsx palette
+// (`bg-X-100 text-X-800 border-X-200`) so the inner-tier sub-status pill and
+// the outer status pill read at the same visual weight when stacked on the
+// same row. `green` and `orange` are used (not `emerald`/`amber-50`) to match
+// the production status-badge vocabulary exactly.
 const CLASSES: Record<LegSubStatus, string> = {
   excluded: "bg-muted text-muted-foreground border-border",
-  needs_classification: "bg-amber-50 text-amber-800 border-amber-200",
-  investigating: "bg-blue-50 text-blue-800 border-blue-200",
-  blocked: "bg-orange-50 text-orange-800 border-orange-200",
-  ready: "bg-emerald-50 text-emerald-800 border-emerald-200",
+  needs_classification: "bg-amber-100 text-amber-800 border-amber-200",
+  investigating: "bg-blue-100 text-blue-800 border-blue-200",
+  blocked: "bg-orange-100 text-orange-800 border-orange-200",
+  ready: "bg-green-100 text-green-800 border-green-200",
   dropped: "bg-zinc-100 text-zinc-700 border-zinc-200",
   frozen: "bg-slate-100 text-slate-700 border-slate-300",
 };

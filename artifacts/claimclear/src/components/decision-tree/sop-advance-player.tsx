@@ -274,12 +274,12 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
 
       {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
 
-      <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+      <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
         <CardContent className="p-4 space-y-3">
           <p className="text-sm font-semibold">{currentNode.question}</p>
           {currentNode.helpText && (
             <div className="flex items-start gap-2 bg-white dark:bg-background rounded-md p-2 border">
-              <HelpCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+              <HelpCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">{currentNode.helpText}</p>
             </div>
           )}
@@ -337,7 +337,7 @@ function SopBreadcrumb({ tree, answers }: { tree: DecisionTree; answers: SopAnsw
           </span>
         );
       })}
-      {answers.length > 0 && <CheckCircle2 className="h-3 w-3 text-emerald-600 ml-1" />}
+      {answers.length > 0 && <CheckCircle2 className="h-3 w-3 text-green-600 ml-1" />}
     </div>
   );
 }

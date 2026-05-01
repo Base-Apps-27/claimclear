@@ -475,14 +475,14 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               })()}
             </div>
             <ul className="space-y-1 text-xs">
-              <li className={allResolved ? "text-emerald-700" : "text-muted-foreground"}>
+              <li className={allResolved ? "text-green-700" : "text-muted-foreground"}>
                 {allResolved ? "✓" : "○"} Every leg resolved (ready, dropped, or excluded)
               </li>
-              <li className={readbackConfirmed ? "text-emerald-700" : "text-muted-foreground"}>
+              <li className={readbackConfirmed ? "text-green-700" : "text-muted-foreground"}>
                 {readbackConfirmed ? "✓" : "○"} Understanding readback confirmed
               </li>
               {previewGenerated && (
-                <li className="text-emerald-700">
+                <li className="text-green-700">
                   ✓ Preview generated {group.previewGeneratedAt ? formatDateTime(group.previewGeneratedAt) : ""}
                 </li>
               )}

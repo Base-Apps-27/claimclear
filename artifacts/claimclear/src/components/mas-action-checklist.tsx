@@ -50,7 +50,7 @@ export function MasActionChecklist({
     return (
       <Card data-testid="mas-action-empty">
         <CardContent className="pt-6 text-sm text-muted-foreground flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
           No MAS cancellations or re-attestations owed for this group.
         </CardContent>
       </Card>
@@ -147,13 +147,13 @@ function MasCancelChecklistRow({
   if (isDone) {
     return (
       <div
-        className="flex items-center gap-2 text-sm rounded border border-emerald-200 bg-emerald-50 px-3 py-2"
+        className="flex items-center gap-3 text-sm rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900"
         data-testid={`mas-cancel-row-done-${claim.id}`}
       >
         <Checkbox checked disabled aria-label="MAS cancelled" />
-        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+        <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
         <span className="font-mono">#{claim.confNumber}</span>
-        <span className="text-muted-foreground text-xs ml-auto">
+        <span className="text-emerald-800/80 text-xs ml-auto">
           {claim.masActionCompletedBy ? `${claim.masActionCompletedBy} · ` : ""}
           {claim.masActionCompletedAt
             ? formatDateTime(claim.masActionCompletedAt)
@@ -165,7 +165,7 @@ function MasCancelChecklistRow({
 
   return (
     <div
-      className="rounded border border-amber-200 bg-amber-50/50 px-3 py-2 space-y-2"
+      className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 space-y-2 text-amber-900"
       data-testid={`mas-cancel-row-pending-${claim.id}`}
     >
       <div className="flex items-center gap-2 text-sm flex-wrap">
@@ -282,7 +282,7 @@ function ReattestChecklistRow({
       ) : (
         <Alert
           variant="default"
-          className="border-emerald-200 bg-emerald-50"
+          className="border-emerald-200 bg-emerald-50 text-emerald-900 [&>svg]:text-emerald-700"
           data-testid="reattest-ready"
         >
           <ExternalLink className="h-4 w-4" />

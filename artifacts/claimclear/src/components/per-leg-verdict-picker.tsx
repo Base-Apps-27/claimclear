@@ -17,13 +17,17 @@ export type VerdictOutcome = RecordVerdictBodyOutcome;
 
 const OUTCOMES: VerdictOutcome[] = ["Approved", "Denied", "Partial"];
 
+// Matches the soft-fill verdict-button voice established by
+// response-actions-card.tsx (bg-X-50 hover:bg-X-100 border-X-300 text-X-900).
+// Selected state deepens the same family without flipping to a loud strong-fill,
+// so picker buttons read consistently with post-response action buttons.
 const OUTCOME_TONE: Record<VerdictOutcome, string> = {
   Approved:
-    "data-[selected=true]:bg-emerald-600 data-[selected=true]:text-white data-[selected=true]:border-emerald-600 hover:bg-emerald-50 hover:border-emerald-300",
+    "hover:bg-green-50 hover:border-green-300 hover:text-green-900 data-[selected=true]:bg-green-100 data-[selected=true]:border-green-400 data-[selected=true]:text-green-900",
   Denied:
-    "data-[selected=true]:bg-rose-600 data-[selected=true]:text-white data-[selected=true]:border-rose-600 hover:bg-rose-50 hover:border-rose-300",
+    "hover:bg-red-50 hover:border-red-300 hover:text-red-900 data-[selected=true]:bg-red-100 data-[selected=true]:border-red-400 data-[selected=true]:text-red-900",
   Partial:
-    "data-[selected=true]:bg-amber-600 data-[selected=true]:text-white data-[selected=true]:border-amber-600 hover:bg-amber-50 hover:border-amber-300",
+    "hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 data-[selected=true]:bg-amber-100 data-[selected=true]:border-amber-400 data-[selected=true]:text-amber-900",
 };
 
 const CALIBRATION_MIN_CONFIRMATIONS = 5;
@@ -86,7 +90,7 @@ export function PerLegVerdictPicker({
       <Card data-testid={`per-leg-verdict-confirmed-${claim.id}`}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
             Verdict recorded — {latestVerdict.outcome}
             <Badge variant="outline" className="ml-auto font-mono text-xs">
               #{claim.confNumber}
@@ -129,11 +133,11 @@ export function PerLegVerdictPicker({
       <CardContent className="space-y-3">
         {latestSuggestion && (
           <div
-            className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-1.5"
+            className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-1.5 dark:bg-blue-950/30 dark:border-blue-900 dark:text-blue-100"
             data-testid={`ai-suggestion-${claim.id}`}
           >
             <div className="flex items-center gap-2 text-sm">
-              <Sparkles className="h-4 w-4 text-blue-600" />
+              <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               <span className="font-medium">
                 AI suggests {latestSuggestion.outcome}
                 {formatConfidence(latestSuggestion.confidence)}

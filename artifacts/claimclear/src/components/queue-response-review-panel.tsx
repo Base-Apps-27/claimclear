@@ -410,7 +410,7 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
               </div>
               <Button
                 variant="outline"
-                className="h-auto py-2 px-3 flex flex-col items-start gap-0.5 bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900"
+                className="h-auto py-2 px-3 flex flex-col items-start gap-0.5 bg-green-50 hover:bg-green-100 border-green-300 text-green-900"
                 disabled={isPending}
                 onClick={handleMarkPaid}
                 data-testid="button-resolution-mark-paid"

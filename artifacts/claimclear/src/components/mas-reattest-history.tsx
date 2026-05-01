@@ -76,19 +76,19 @@ function LegMasCancelRow({
   if (done) {
     return (
       <div
-        className="flex items-start gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2"
+        className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
         data-testid="mas-history-leg-done"
       >
-        <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+        <CheckCircle2 className="h-4 w-4 text-emerald-700 mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">MAS cancel recorded</span>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[10px] border-emerald-300 bg-white/60 text-emerald-800">
               this leg
             </Badge>
           </div>
           <p
-            className="text-xs text-muted-foreground mt-0.5"
+            className="text-xs text-emerald-800/80 mt-0.5"
             data-testid="mas-history-leg-attribution"
           >
             {completedBy ? <>by <span className="font-medium">{completedBy}</span></> : "by unknown user"}
@@ -96,7 +96,7 @@ function LegMasCancelRow({
           </p>
           {note && (
             <p
-              className="text-xs mt-1 rounded bg-white/60 px-2 py-1 border border-emerald-100 whitespace-pre-wrap break-words"
+              className="text-xs mt-1 rounded bg-white/60 px-2 py-1 border border-emerald-200 whitespace-pre-wrap break-words"
               data-testid="mas-history-leg-note"
             >
               {note}
@@ -109,18 +109,18 @@ function LegMasCancelRow({
 
   return (
     <div
-      className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2"
+      className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
       data-testid="mas-history-leg-pending"
     >
       <Clock className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium">MAS cancel not yet recorded</span>
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[10px] border-amber-300 bg-white/60 text-amber-800">
             this leg
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <p className="text-xs text-amber-800/80 mt-0.5">
           Use the MAS Action Checklist on the invoice group to mark this leg
           cancelled.
         </p>
@@ -143,19 +143,19 @@ function GroupReattestRow({
   if (done) {
     return (
       <div
-        className="flex items-start gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2"
+        className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
         data-testid="mas-history-reattest-done"
       >
-        <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+        <CheckCircle2 className="h-4 w-4 text-emerald-700 mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">Group re-attest confirmed</span>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[10px] border-emerald-300 bg-white/60 text-emerald-800">
               parent group
             </Badge>
           </div>
           <p
-            className="text-xs text-muted-foreground mt-0.5"
+            className="text-xs text-emerald-800/80 mt-0.5"
             data-testid="mas-history-reattest-attribution"
           >
             {completedBy ? <>by <span className="font-medium">{completedBy}</span></> : "by unknown user"}
@@ -163,7 +163,7 @@ function GroupReattestRow({
           </p>
           {note && (
             <p
-              className="text-xs mt-1 rounded bg-white/60 px-2 py-1 border border-emerald-100 whitespace-pre-wrap break-words"
+              className="text-xs mt-1 rounded bg-white/60 px-2 py-1 border border-emerald-200 whitespace-pre-wrap break-words"
               data-testid="mas-history-reattest-note"
             >
               {note}
@@ -176,18 +176,18 @@ function GroupReattestRow({
 
   return (
     <div
-      className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2"
+      className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
       data-testid="mas-history-reattest-pending"
     >
       <Clock className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium">Group re-attest not yet confirmed</span>
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[10px] border-amber-300 bg-white/60 text-amber-800">
             parent group
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <p className="text-xs text-amber-800/80 mt-0.5">
           The parent group still owes a re-attest in MAS — confirm it from the
           invoice group's MAS Action Checklist.
         </p>
