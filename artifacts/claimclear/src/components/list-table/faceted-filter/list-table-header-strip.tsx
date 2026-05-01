@@ -12,6 +12,11 @@ import { DimWhileOpen } from "./dim-while-open";
 // Filter trigger so the filter button stays at the strip's far edge, matching
 // the mockup. Children are wrapped in DimWhileOpen so the table behind the
 // popover automatically de-emphasizes while filtering is active.
+//
+// Pages with no advanced filters (only a primary tab strip + search) can omit
+// `filterCategories` entirely; the Filter trigger is then not rendered. This
+// lets simple list pages (Portal Submissions today) adopt the same header
+// shell without inventing categories just to satisfy the API.
 export type ListTableHeaderStripProps = {
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -24,15 +29,22 @@ export type ListTableHeaderStripProps = {
   // "found" or a domain-specific verb.
   matchingVerb?: string;
 
-  filterOpen: boolean;
-  onFilterOpenChange: (open: boolean) => void;
-  filterCategories: FacetedFilterCategory[];
-  totalApplied: number;
-  onClearAllFilters: () => void;
+  // Faceted filter is optional. When `filterCategories` is omitted (or
+  // empty), the Filter trigger is not rendered and the related open-state
+  // props are unused.
+  filterOpen?: boolean;
+  onFilterOpenChange?: (open: boolean) => void;
+  filterCategories?: FacetedFilterCategory[];
+  totalApplied?: number;
+  onClearAllFilters?: () => void;
   initialCategoryId?: string;
 
   extras?: ReactNode;
-  children: ReactNode;
+  // Children are wrapped in DimWhileOpen so the table behind the popover
+  // dims while the operator is filtering. Optional because pages that have
+  // no advanced filter rail (and therefore no popover) don't need to dim
+  // anything — they can use the strip purely for search + matching count.
+  children?: ReactNode;
 };
 
 export function ListTableHeaderStrip({
@@ -43,16 +55,21 @@ export function ListTableHeaderStrip({
   matchingCount,
   matchingNoun,
   matchingVerb = "matching",
-  filterOpen,
+  filterOpen = false,
   onFilterOpenChange,
   filterCategories,
-  totalApplied,
+  totalApplied = 0,
   onClearAllFilters,
   initialCategoryId,
   extras,
   children,
 }: ListTableHeaderStripProps) {
   const noun = matchingCount === 1 ? matchingNoun.one : matchingNoun.other;
+  const showFilter =
+    filterCategories !== undefined &&
+    filterCategories.length > 0 &&
+    onFilterOpenChange !== undefined &&
+    onClearAllFilters !== undefined;
 
   return (
     <div className="space-y-3">
@@ -88,14 +105,16 @@ export function ListTableHeaderStrip({
         </span>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {extras}
-          <FacetedFilter
-            open={filterOpen}
-            onOpenChange={onFilterOpenChange}
-            categories={filterCategories}
-            totalApplied={totalApplied}
-            onClearAll={onClearAllFilters}
-            initialCategoryId={initialCategoryId}
-          />
+          {showFilter && (
+            <FacetedFilter
+              open={filterOpen}
+              onOpenChange={onFilterOpenChange}
+              categories={filterCategories}
+              totalApplied={totalApplied}
+              onClearAll={onClearAllFilters}
+              initialCategoryId={initialCategoryId}
+            />
+          )}
         </div>
       </div>
 

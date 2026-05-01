@@ -13,17 +13,22 @@ import type {
   WithdrawalRow,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Search, X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Loader2 } from "lucide-react";
+import { X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Loader2, Calendar as CalendarIcon, Eye } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useUrlParams } from "@/lib/use-url-params";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
+import {
+  ListTableHeaderStrip,
+  FacetCheckboxList,
+  FacetDateRange,
+  type FacetedFilterCategory,
+} from "@/components/list-table/faceted-filter";
 import {
   PageHeader,
   FilterStrip,
@@ -89,6 +94,7 @@ export default function WithdrawalsPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drawerRow, setDrawerRow] = useState<WithdrawalRow | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const listParams: ListWithdrawalsParams = {
     search: search || undefined,
@@ -214,6 +220,13 @@ export default function WithdrawalsPage() {
     }
   };
 
+  const clearFilters = () => {
+    set(
+      { q: null, reason: null, closedFrom: null, closedTo: null, hideAddressed: null, page: null },
+      false,
+    );
+  };
+
   const chips = useMemo((): FilterChip[] => {
     const out: FilterChip[] = [];
     if (search) out.push({ key: "q", label: `Search: "${search}"`, onRemove: () => set({ q: null, page: null }, false) });
@@ -248,6 +261,59 @@ export default function WithdrawalsPage() {
       : t.key === "denied_by_payor" ? counts.denied_by_payor
       : counts.cannot_dispute + counts.non_issue + counts.denied_by_payor,
   }));
+
+  // Per-category applied counts drive both the rail badges and the trigger
+  // total. A date range with at least one bound counts as 1 (per the
+  // pattern's applied-count rule of thumb). The "Including addressed"
+  // toggle counts as 1 only when it diverges from the default (hide).
+  const closedDateCount = closedFrom || closedTo ? 1 : 0;
+  const visibilityCount = !hideAddressed ? 1 : 0;
+  const totalAppliedFilters = closedDateCount + visibilityCount;
+
+  const filterCategories: FacetedFilterCategory[] = useMemo(() => [
+    {
+      id: "closedDate",
+      label: "Closed Date",
+      icon: CalendarIcon,
+      appliedCount: closedDateCount,
+      render: () => (
+        <FacetDateRange
+          value={{ from: closedFrom, to: closedTo }}
+          onChange={(v) =>
+            set(
+              {
+                closedFrom: v.from || null,
+                closedTo: v.to || null,
+                page: null,
+              },
+              false,
+            )
+          }
+          testIdPrefix="facet-closedDate"
+        />
+      ),
+    },
+    {
+      id: "visibility",
+      label: "Visibility",
+      icon: Eye,
+      appliedCount: visibilityCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Addressed items"
+          options={[
+            { id: "include", label: "Include addressed items" },
+          ]}
+          selected={!hideAddressed ? ["include"] : []}
+          onToggle={(_id, next) =>
+            set({ hideAddressed: next ? "false" : null, page: null }, false)
+          }
+          hint="By default addressed items are hidden so the queue shows only outstanding follow-ups."
+          testIdPrefix="facet-visibility"
+        />
+      ),
+    },
+  ], [closedDateCount, visibilityCount, closedFrom, closedTo, hideAddressed, set]);
 
   const colCount = 8;
 
@@ -287,236 +353,209 @@ export default function WithdrawalsPage() {
         <span className="tabular-nums text-muted-foreground">{counts.addressed}</span>
       </StatusStrip>
 
-      <Card>
-        <CardHeader className="p-4 border-b flex flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
-          <div className="relative w-72 flex-shrink-0">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by ID, member, error, narrative…"
-              className="pl-9 pr-8"
-              value={search}
-              onChange={(e) => set({ q: e.target.value || null, page: null }, false)}
-              data-testid="input-search-withdrawals"
-            />
-            {search && (
-              <button
-                onClick={() => set({ q: null, page: null }, false)}
-                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-              <Checkbox
-                checked={hideAddressed}
-                onCheckedChange={(v) =>
-                  set({ hideAddressed: v ? null : "false", page: null }, false)
-                }
-                data-testid="checkbox-hide-addressed"
-              />
-              Hide addressed
-            </label>
-            <a href={csvUrl} download>
-              <Button variant="outline" size="sm" data-testid="withdrawals-export-csv">
-                <Download className="mr-2 h-4 w-4" /> Export CSV
-              </Button>
-            </a>
-          </div>
-        </CardHeader>
-
-        <FilterChipStrip
-          chips={chips}
-          onClearAll={() =>
-            set(
-              { q: null, reason: null, closedFrom: null, closedTo: null, hideAddressed: null, page: null },
-              false
-            )
-          }
-        />
-
-        {anySelected && (
-          <div
-            className="flex items-center justify-between gap-3 px-4 py-2 bg-amber-50 border-b border-amber-200"
-            data-testid="withdrawals-bulk-bar"
-          >
-            <div className="text-sm font-medium text-amber-900">
-              {selected.size} selected
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                size="sm"
-                onClick={() => handleBulkAddress(true)}
-                disabled={bulk.isPending}
-                className="bg-green-600 hover:bg-green-700"
-                data-testid="withdrawals-mark-addressed"
-              >
-                {bulk.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />}
-                Mark addressed
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleBulkAddress(false)}
-                disabled={bulk.isPending}
-                data-testid="button-bulk-reopen"
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reopen
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleCopySummary} data-testid="button-copy-summary">
-                <ClipboardCopy className="h-3.5 w-3.5 mr-1.5" /> Copy summary
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                <X className="h-3.5 w-3.5 mr-1.5" /> Clear
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <CardContent className="p-0">
-          <div className="overflow-auto max-h-[calc(100vh-22rem)]">
-            <table className="w-full text-sm text-left" data-testid="withdrawals-table">
-              <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
-                <tr>
-                  <th className="px-4 py-3 w-10">
-                    <Checkbox
-                      checked={allOnPageSelected}
-                      onCheckedChange={toggleAllPage}
-                      aria-label="Select all"
-                      data-testid="checkbox-select-all"
-                    />
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <SortableHeader label="Reason" sortKey="reason" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <SortableHeader label="Type" sortKey="kind" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <SortableHeader label="Identifier" sortKey="identifier" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-4 py-3 font-medium">Error / category</th>
-                  <th className="px-4 py-3 font-medium">
-                    <SortableHeader label="Amount" sortKey="amount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    <SortableHeader label="Closed" sortKey="closedAt" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-4 py-3 font-medium text-right">
-                    <SortableHeader label="Status" sortKey="addressed" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={colCount} className="px-4 py-8 text-center text-muted-foreground">Loading withdrawals…</td></tr>
-                ) : isError ? (
-                  <tr><td colSpan={colCount} className="px-4 py-8 text-center text-destructive">Failed to load withdrawals.</td></tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="px-4 py-0">
-                      {(search || chips.length > 0) ? (
-                        <EmptyState
-                          icon={Filter}
-                          title="No withdrawals match your filters"
-                          description="Try removing a filter, adjusting your search, or showing addressed items."
-                          primaryAction={{
-                            label: "Clear filters",
-                            onClick: () =>
-                              set(
-                                { q: null, reason: null, closedFrom: null, closedTo: null, hideAddressed: null, page: null },
-                                false
-                              ),
-                          }}
-                        />
-                      ) : (
-                        <EmptyState
-                          icon={Inbox}
-                          title="Nothing to review"
-                          description="When claims or groups are closed as Cannot Dispute, Non-Issue, or Denied by Payor, they will appear here for follow-up."
-                        />
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((r) => {
-                    const tone = REASON_TONE[r.closureReason] ?? "muted";
-                    const accentColor = TONE_STYLE[tone].fg;
-                    const accentBg = TONE_STYLE[tone].bg;
-                    const k = rowKey(r);
-                    const isSel = selected.has(k);
-                    return (
-                      <tr
-                        key={k}
-                        className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
-                        style={isSel ? { background: accentBg } : undefined}
-                        data-testid={`withdrawals-row-${r.kind}-${r.id}`}
-                        onClick={() => setDrawerRow(r)}
-                      >
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={isSel}
-                            onCheckedChange={() => toggleRow(r)}
-                            aria-label={`Select ${r.identifier}`}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge
-                            style={{ background: accentBg, color: accentColor, borderColor: accentColor }}
-                            className="border text-[10px] uppercase tracking-wide font-bold"
-                          >
-                            {REASON_LABEL[r.closureReason]}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
-                          {r.kind === "invoice_group" ? "Group" : "Claim"}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: accentColor }}>
-                          {r.identifier}
-                        </td>
-                        <td className="px-4 py-3 max-w-[280px]">
-                          <div className="text-xs truncate" title={r.errorTypeName ?? ""}>
-                            {r.errorTypeName ?? <span className="text-muted-foreground italic">Unassigned</span>}
-                          </div>
-                          {r.closureCategory && (
-                            <div className="text-[10px] text-muted-foreground truncate" title={r.closureCategory}>
-                              {r.closureCategory}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-medium tabular-nums whitespace-nowrap">
-                          {r.amount ? formatCurrency(r.amount) : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                          {r.closedAt ? formatDate(r.closedAt) : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {r.addressed ? (
-                            <Badge className="bg-green-100 text-green-800 border border-green-300 text-[10px] uppercase font-bold">
-                              Addressed
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Pending</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-          <PaginationFooter
-            total={total}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={(p) => set({ page: String(p) }, false)}
-            onPageSizeChange={(s) => set({ ps: String(s), page: null }, false)}
+      <ListTableHeaderStrip
+        searchValue={search}
+        onSearchChange={(v) => set({ q: v || null, page: null }, false)}
+        searchPlaceholder="Search by ID, member, error, narrative…"
+        searchTestId="input-search-withdrawals"
+        matchingCount={total}
+        matchingNoun={{ one: "closure", other: "closures" }}
+        filterOpen={filterOpen}
+        onFilterOpenChange={setFilterOpen}
+        filterCategories={filterCategories}
+        totalApplied={totalAppliedFilters}
+        onClearAllFilters={clearFilters}
+        extras={
+          <a href={csvUrl} download>
+            <Button variant="outline" size="sm" data-testid="withdrawals-export-csv">
+              <Download className="mr-2 h-4 w-4" /> Export CSV
+            </Button>
+          </a>
+        }
+      >
+        <Card>
+          <FilterChipStrip
+            chips={chips}
+            onClearAll={clearFilters}
           />
-        </CardContent>
-      </Card>
+
+          {anySelected && (
+            <div
+              className="flex items-center justify-between gap-3 px-4 py-2 bg-amber-50 border-b border-amber-200"
+              data-testid="withdrawals-bulk-bar"
+            >
+              <div className="text-sm font-medium text-amber-900">
+                {selected.size} selected
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => handleBulkAddress(true)}
+                  disabled={bulk.isPending}
+                  className="bg-green-600 hover:bg-green-700"
+                  data-testid="withdrawals-mark-addressed"
+                >
+                  {bulk.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />}
+                  Mark addressed
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBulkAddress(false)}
+                  disabled={bulk.isPending}
+                  data-testid="button-bulk-reopen"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reopen
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleCopySummary} data-testid="button-copy-summary">
+                  <ClipboardCopy className="h-3.5 w-3.5 mr-1.5" /> Copy summary
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                  <X className="h-3.5 w-3.5 mr-1.5" /> Clear
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <CardContent className="p-0">
+            <div className="overflow-auto max-h-[calc(100vh-22rem)]">
+              <table className="w-full text-sm text-left" data-testid="withdrawals-table">
+                <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 w-10">
+                      <Checkbox
+                        checked={allOnPageSelected}
+                        onCheckedChange={toggleAllPage}
+                        aria-label="Select all"
+                        data-testid="checkbox-select-all"
+                      />
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Reason" sortKey="reason" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Type" sortKey="kind" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Identifier" sortKey="identifier" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                    <th className="px-4 py-3 font-medium">Error / category</th>
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Amount" sortKey="amount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      <SortableHeader label="Closed" sortKey="closedAt" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      <SortableHeader label="Status" sortKey="addressed" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr><td colSpan={colCount} className="px-4 py-8 text-center text-muted-foreground">Loading withdrawals…</td></tr>
+                  ) : isError ? (
+                    <tr><td colSpan={colCount} className="px-4 py-8 text-center text-destructive">Failed to load withdrawals.</td></tr>
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={colCount} className="px-4 py-0">
+                        {(search || chips.length > 0) ? (
+                          <EmptyState
+                            icon={Filter}
+                            title="No withdrawals match your filters"
+                            description="Try removing a filter, adjusting your search, or showing addressed items."
+                            primaryAction={{
+                              label: "Clear filters",
+                              onClick: clearFilters,
+                            }}
+                          />
+                        ) : (
+                          <EmptyState
+                            icon={Inbox}
+                            title="Nothing to review"
+                            description="When claims or groups are closed as Cannot Dispute, Non-Issue, or Denied by Payor, they will appear here for follow-up."
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((r) => {
+                      const tone = REASON_TONE[r.closureReason] ?? "muted";
+                      const accentColor = TONE_STYLE[tone].fg;
+                      const accentBg = TONE_STYLE[tone].bg;
+                      const k = rowKey(r);
+                      const isSel = selected.has(k);
+                      return (
+                        <tr
+                          key={k}
+                          className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+                          style={isSel ? { background: accentBg } : undefined}
+                          data-testid={`withdrawals-row-${r.kind}-${r.id}`}
+                          onClick={() => setDrawerRow(r)}
+                        >
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={isSel}
+                              onCheckedChange={() => toggleRow(r)}
+                              aria-label={`Select ${r.identifier}`}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge
+                              style={{ background: accentBg, color: accentColor, borderColor: accentColor }}
+                              className="border text-[10px] uppercase tracking-wide font-bold"
+                            >
+                              {REASON_LABEL[r.closureReason]}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
+                            {r.kind === "invoice_group" ? "Group" : "Claim"}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: accentColor }}>
+                            {r.identifier}
+                          </td>
+                          <td className="px-4 py-3 max-w-[280px]">
+                            <div className="text-xs truncate" title={r.errorTypeName ?? ""}>
+                              {r.errorTypeName ?? <span className="text-muted-foreground italic">Unassigned</span>}
+                            </div>
+                            {r.closureCategory && (
+                              <div className="text-[10px] text-muted-foreground truncate" title={r.closureCategory}>
+                                {r.closureCategory}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-medium tabular-nums whitespace-nowrap">
+                            {r.amount ? formatCurrency(r.amount) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                            {r.closedAt ? formatDate(r.closedAt) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {r.addressed ? (
+                              <Badge className="bg-green-100 text-green-800 border border-green-300 text-[10px] uppercase font-bold">
+                                Addressed
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Pending</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <PaginationFooter
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={(p) => set({ page: String(p) }, false)}
+              onPageSizeChange={(s) => set({ ps: String(s), page: null }, false)}
+            />
+          </CardContent>
+        </Card>
+      </ListTableHeaderStrip>
 
       <WithdrawalReviewDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />
     </div>

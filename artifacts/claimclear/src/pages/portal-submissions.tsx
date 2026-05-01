@@ -9,11 +9,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { ListTableHeaderStrip } from "@/components/list-table/faceted-filter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import {
   Play, Loader2, Clock, AlertTriangle, CheckCircle, FlaskConical, Send, Lock, StopCircle, Ban,
@@ -403,21 +403,9 @@ export default function PortalSubmissions() {
     <div className="space-y-4">
       {/* Page header + segmented filter strip */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Portal Submissions</h2>
-            <p className="text-sm text-muted-foreground">The MAS portal queue. {totalCount} active item{totalCount === 1 ? "" : "s"}.</p>
-          </div>
-          <div className="relative">
-            <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search conf #, subject, ticket…"
-              className="pl-8 w-[260px]"
-              data-testid="input-search-submissions"
-            />
-          </div>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Portal Submissions</h2>
+          <p className="text-sm text-muted-foreground">The MAS portal queue. {totalCount} active item{totalCount === 1 ? "" : "s"}.</p>
         </div>
         <div className="inline-flex items-center p-1 gap-1 rounded-md bg-muted border w-fit">
           {FILTER_TABS.map(tab => {
@@ -454,7 +442,20 @@ export default function PortalSubmissions() {
 
       {/* Two-column layout: list left, sticky rail right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-8 space-y-3">
+        <div className="lg:col-span-8 space-y-3 min-w-0">
+          {/* Standard list-page header strip — search + matching count.
+              No advanced filter categories yet (the status pill strip above
+              is the primary segmentation); the Faceted Rail shell will pick
+              up new categories cheaply when they're introduced. */}
+          <ListTableHeaderStrip
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search conf #, subject, ticket…"
+            searchTestId="input-search-submissions"
+            matchingCount={filtered.length}
+            matchingNoun={{ one: "submission", other: "submissions" }}
+          />
+
           {/* Recommendation banner */}
           {draftsReadyToQueue.length > 0 && !batchInFlight && (
             <Card className="border-blue-200 bg-blue-50/60 dark:bg-blue-950/20">

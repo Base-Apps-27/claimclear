@@ -1,6 +1,6 @@
 # ClaimClear Filter Pattern: The Faceted Rail
 
-**Status:** Adopted as the standard advanced-filter pattern (Task #245 landed 2026-05-01)
+**Status:** Adopted as the standard advanced-filter pattern (Task #245 landed 2026-05-01; extended to Withdrawals + Portal Submissions in Task #247, 2026-05-01)
 **Last updated:** 2026-05-01
 **Owners:** Adam (product), agent team (engineering)
 
@@ -180,8 +180,12 @@ The migration was designed so that **any link generated before the migration sti
   - `index.ts` — barrel
 - Reference mockup (kept for design changes): `artifacts/mockup-sandbox/src/components/mockups/filter-redesign/FacetedRail.tsx`
 - Pages on the pattern:
-  - `artifacts/claimclear/src/pages/claims.tsx`
-  - `artifacts/claimclear/src/pages/invoice-groups.tsx`
+  - `artifacts/claimclear/src/pages/claims.tsx` — full pattern: 7 categories.
+  - `artifacts/claimclear/src/pages/invoice-groups.tsx` — full pattern: 7 categories.
+  - `artifacts/claimclear/src/pages/withdrawals.tsx` — full pattern: 2 categories (Closed Date, Visibility).
+  - `artifacts/claimclear/src/pages/portal-submissions.tsx` — uses the strip for search + matching count only; no advanced filter categories yet (the status pill strip above the list is the primary segmentation, which is a tab strip and intentionally stays separate per rule #10). When a real long-tail filter for this page appears, drop a `filterCategories` memo onto the existing `<ListTableHeaderStrip>` and the popover trigger will appear automatically.
+- Pages reviewed and intentionally not migrated:
+  - `artifacts/claimclear/src/pages/responses-awaiting-review.tsx` — has a primary tab strip (verdict-pending / mas-action / attestation) and a sort dropdown, but no per-list filters. A sort control is not a filter (it changes order, not membership), so there is nothing to put in a Faceted Rail. Re-evaluate if a real filter (e.g. "assigned to me", reviewer, date range) is added here.
 - Adjacent components (unchanged, but part of the list-page surface):
   - `artifacts/claimclear/src/components/list-table/filter-chip-strip.tsx`
   - `artifacts/claimclear/src/components/cohesion/filter-strip.tsx` (primary tab strip)
