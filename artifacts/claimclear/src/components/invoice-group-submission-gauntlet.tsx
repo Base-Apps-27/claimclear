@@ -4,6 +4,9 @@ import {
   useConfirmUnderstandingReadback,
   useStampPreviewGenerated,
   useCreatePortalSubmission,
+  useSaveInvoiceGroupDraft,
+  useRegenerateInvoiceGroupDraft,
+  useMarkInvoiceGroupDraftReviewed,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
 } from "@workspace/api-client-react";
@@ -13,11 +16,21 @@ import type {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, Sparkles, AlertTriangle, Send } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  AlertTriangle,
+  Send,
+  Mail,
+  CheckCircle2,
+  RefreshCw,
+  Save,
+} from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
@@ -60,12 +73,34 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
   const confirmReadbackMutation = useConfirmUnderstandingReadback();
   const stampPreviewMutation = useStampPreviewGenerated();
   const submitMutation = useCreatePortalSubmission();
+  const saveDraftMutation = useSaveInvoiceGroupDraft();
+  const regenDraftMutation = useRegenerateInvoiceGroupDraft();
+  const markReviewedMutation = useMarkInvoiceGroupDraftReviewed();
   const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
 
   const [readback, setReadback] = useState("");
   useEffect(() => {
     setReadback(group?.understandingReadback ?? "");
   }, [group?.understandingReadback]);
+
+  // Editable draft state for the new Review & edit step. We hydrate from
+  // the saved draft if present, falling back to the AI baseline so the
+  // operator always sees the latest text. Resetting on upstream change
+  // ensures cross-tab edits replace the local buffer (matching the
+  // per-leg context Textarea pattern).
+  const [draftSubject, setDraftSubject] = useState<string>("");
+  const [draftBody, setDraftBody] = useState<string>("");
+  useEffect(() => {
+    setDraftSubject(group?.draftSubject ?? group?.aiBaselineSubject ?? "");
+    setDraftBody(
+      group?.draftDescriptionHtml ?? group?.aiBaselineDescriptionHtml ?? "",
+    );
+  }, [
+    group?.draftSubject,
+    group?.draftDescriptionHtml,
+    group?.aiBaselineSubject,
+    group?.aiBaselineDescriptionHtml,
+  ]);
 
   const allRides: ClaimResponse[] = group?.rides ?? [];
   const rides = useMemo(
@@ -84,9 +119,37 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
   }, [rides]);
 
   const allResolved = legSubStatuses.length > 0 && legSubStatuses.every((s) => RESOLVED_SUB_STATUSES.has(s));
+  // Buckets used by the Task #265 conclusion-summary checklist row.
+  // SOP-resolved = legs that walked the SOP tree (ready) plus those
+  // dropped via Non-issue / Non-contestable. Excluded = legs the
+  // operator removed from the dispute entirely.
+  const conclusionCounts = useMemo(() => {
+    let sop = 0;
+    let excluded = 0;
+    for (const subStatus of legSubStatuses) {
+      if (subStatus === "excluded") excluded += 1;
+      else if (subStatus === "ready" || subStatus === "dropped") sop += 1;
+    }
+    return { sop, excluded };
+  }, [legSubStatuses]);
   const readbackConfirmed = !!group?.understandingReadbackAt;
   const previewGenerated = !!group?.previewGeneratedAt;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
+
+  // Channel-aware Submit. The errorTypesTable.useDirectEmail flag,
+  // joined into the GET handler in Task #265, decides whether the
+  // shared /portal-submissions endpoint dispatches into the MAS
+  // portal flow or the direct-email flow. Same backend mutation;
+  // the UI just relabels the affordance for operator clarity.
+  const isDirectEmail = group?.useDirectEmail === true;
+  const submitVerb = isDirectEmail ? "Send email" : "Submit to portal";
+  const SubmitIcon = isDirectEmail ? Mail : Send;
+
+  const draftReviewed = !!group?.draftReviewedAt;
+  const draftDirty =
+    (draftSubject || "") !== (group?.draftSubject ?? group?.aiBaselineSubject ?? "") ||
+    (draftBody || "") !== (group?.draftDescriptionHtml ?? group?.aiBaselineDescriptionHtml ?? "");
+  const draftBodyEmpty = (draftBody || "").trim().length === 0;
 
   function invalidateGroup() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
@@ -121,6 +184,78 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
     );
   }
 
+  function onSaveDraft() {
+    if (!draftDirty) return;
+    saveDraftMutation.mutate(
+      {
+        id: groupId,
+        data: { subject: draftSubject, descriptionHtml: draftBody },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Draft saved" });
+          invalidateGroup();
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Save failed",
+            description: String((e as Error).message),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
+  function onRegenerateDraft() {
+    regenDraftMutation.mutate(
+      { id: groupId },
+      {
+        onSuccess: () => {
+          toast({ title: "Draft regenerated from preview" });
+          invalidateGroup();
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Regenerate failed",
+            description: String((e as Error).message),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
+  function onMarkReviewed() {
+    // The backend marks-reviewed endpoint requires a non-empty draft body
+    // and no unsaved local edits, so flush any pending edits first.
+    const finalize = () =>
+      markReviewedMutation.mutate(
+        { id: groupId },
+        {
+          onSuccess: () => {
+            toast({ title: "Draft marked as reviewed" });
+            invalidateGroup();
+          },
+          onError: (e: unknown) =>
+            toast({
+              title: "Mark reviewed failed",
+              description: String((e as Error).message),
+              variant: "destructive",
+            }),
+        },
+      );
+    if (draftDirty) {
+      saveDraftMutation.mutate(
+        {
+          id: groupId,
+          data: { subject: draftSubject, descriptionHtml: draftBody },
+        },
+        { onSuccess: finalize, onError: finalize },
+      );
+    } else {
+      finalize();
+    }
+  }
+
   function onSubmitToPortal() {
     setSubmitError(null);
     submitMutation.mutate(
@@ -129,11 +264,22 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
           invoiceGroupId: groupId,
           actorType: "operator",
           understandingReadback: group?.understandingReadback ?? readback,
+          // Pass the operator-reviewed text so /portal-submissions uses
+          // it as the dispute body. Falls back to the AI baseline so the
+          // backend still has something if the draft path was skipped.
+          subject:
+            group?.draftSubject ?? group?.aiBaselineSubject ?? draftSubject,
+          descriptionHtml:
+            group?.draftDescriptionHtml ??
+            group?.aiBaselineDescriptionHtml ??
+            draftBody,
         },
       },
       {
         onSuccess: () => {
-          toast({ title: "Submitted to portal" });
+          toast({
+            title: isDirectEmail ? "Email sent" : "Submitted to portal",
+          });
           invalidateGroup();
         },
         onError: (e: unknown) => {
@@ -288,8 +434,14 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
             })()}
           </div>
           <ul className="space-y-1 text-xs">
-            <li className={allResolved ? "text-green-700" : "text-muted-foreground"}>
-              {allResolved ? "✓" : "○"} Every leg resolved (ready, dropped, or excluded)
+            <li
+              className={allResolved ? "text-green-700" : "text-muted-foreground"}
+              data-testid="gate-row-legs"
+            >
+              {allResolved ? "✓" : "○"}{" "}
+              {allResolved
+                ? `All legs reached a conclusion — ${conclusionCounts.sop} SOP, ${conclusionCounts.excluded} excluded`
+                : "All legs reached a conclusion"}
             </li>
             <li className={readbackConfirmed ? "text-green-700" : "text-muted-foreground"}>
               {readbackConfirmed ? "✓" : "○"} Understanding readback confirmed
@@ -299,23 +451,158 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 ✓ Preview generated {group.previewGeneratedAt ? formatDateTime(group.previewGeneratedAt) : ""}
               </li>
             )}
+            {previewGenerated && (
+              <li className={draftReviewed ? "text-green-700" : "text-muted-foreground"}>
+                {draftReviewed ? "✓" : "○"} Draft reviewed by operator
+              </li>
+            )}
           </ul>
         </div>
 
         {isPreSubmit && previewGenerated && (
           <>
             <Separator />
-            <div className="space-y-2">
+            {/* Review & edit — Task #265 Panel B. The operator edits the
+                AI write-up directly (subject + body), saves, then marks
+                reviewed. Submit is gated on the reviewed timestamp so an
+                edited but unreviewed draft cannot accidentally ship. */}
+            <div className="space-y-3" data-testid="draft-review-step">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Submit to portal</h3>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  Review &amp; edit dispute write-up
+                  {draftReviewed && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      Reviewed{" "}
+                      {group.draftReviewedAt
+                        ? formatDateTime(group.draftReviewedAt)
+                        : ""}
+                    </Badge>
+                  )}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onRegenerateDraft}
+                    disabled={!!lockReason || regenDraftMutation.isPending}
+                    title={lockReason ?? undefined}
+                    data-testid="draft-regenerate"
+                  >
+                    {regenDraftMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Regenerate from preview
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onSaveDraft}
+                    disabled={
+                      !!lockReason || !draftDirty || saveDraftMutation.isPending
+                    }
+                    title={lockReason ?? undefined}
+                    data-testid="draft-save"
+                  >
+                    {saveDraftMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Save draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={onMarkReviewed}
+                    disabled={
+                      !!lockReason ||
+                      draftBodyEmpty ||
+                      markReviewedMutation.isPending ||
+                      saveDraftMutation.isPending ||
+                      draftReviewed
+                    }
+                    title={lockReason ?? undefined}
+                    data-testid="draft-mark-reviewed"
+                  >
+                    {markReviewedMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    {draftReviewed ? "Reviewed" : "Mark reviewed"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="draft-subject"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Subject
+                </label>
+                <Input
+                  id="draft-subject"
+                  value={draftSubject}
+                  onChange={(e) => setDraftSubject(e.target.value)}
+                  disabled={!!lockReason}
+                  placeholder="Dispute subject line"
+                  data-testid="draft-subject-input"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="draft-body"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Description
+                </label>
+                <Textarea
+                  id="draft-body"
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  rows={10}
+                  disabled={!!lockReason}
+                  placeholder="HTML/plain-text body the dispute will send. Edit freely; Save then Mark reviewed to unlock Submit."
+                  data-testid="draft-body-input"
+                />
+                {draftDirty && (
+                  <p
+                    className="text-xs text-amber-700"
+                    data-testid="draft-dirty-hint"
+                  >
+                    Unsaved edits — Save draft to persist (Mark reviewed
+                    saves automatically).
+                  </p>
+                )}
+                {draftBodyEmpty && (
+                  <p
+                    className="text-xs text-muted-foreground italic"
+                    data-testid="draft-empty-hint"
+                  >
+                    Generate or regenerate the draft from the preview to
+                    populate this field.
+                  </p>
+                )}
+              </div>
+
+              <Separator />
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <SubmitIcon className="h-4 w-4" />
+                  {submitVerb}
+                </h3>
                 {(() => {
                   const missingGates: string[] = [];
                   if (!allResolved) missingGates.push("legs");
                   if (!readbackConfirmed) missingGates.push("readback");
+                  if (!draftReviewed) missingGates.push("review");
                   const submitDisabledReason: string | null = lockReason
                     ? lockReason
                     : missingGates.length > 0
-                      ? `Cannot submit — missing gate${missingGates.length > 1 ? "s" : ""}: ${missingGates.join(", ")}.`
+                      ? `Cannot ${isDirectEmail ? "send" : "submit"} — missing gate${missingGates.length > 1 ? "s" : ""}: ${missingGates.join(", ")}.`
                       : null;
                   const button = (
                     <Button
@@ -327,9 +614,9 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                       {submitMutation.isPending ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                       ) : (
-                        <Send className="h-3.5 w-3.5 mr-1" />
+                        <SubmitIcon className="h-3.5 w-3.5 mr-1" />
                       )}
-                      Submit to Portal
+                      {submitVerb}
                     </Button>
                   );
                   if (submitDisabledReason) {
@@ -355,9 +642,9 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 })()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Generate Preview calls <code>/portal-submissions/generate-preview</code> (renders preview),
-                then <code>/api/invoice-groups/:id/preview-generated</code> (stamps acceptance).
-                Submit is the separate step that triggers the portal transition.
+                {isDirectEmail
+                  ? "Sends the reviewed write-up as a direct email to the configured recipient."
+                  : "Routes the reviewed write-up to the MAS portal as a dispute submission."}
               </p>
               {submitError && (
                 <div

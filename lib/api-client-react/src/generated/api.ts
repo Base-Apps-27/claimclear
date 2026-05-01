@@ -56,6 +56,7 @@ import type {
   ClosureReviewBody,
   CompleteMasActionBody,
   CompleteReattestBody,
+  ConcludeLegBody,
   ConfirmPortalSubmission422,
   ConfirmPortalSubmissionBody,
   ConfirmReadbackBody,
@@ -148,6 +149,7 @@ import type {
   ResponsesAwaitingReviewCountResponse,
   RevertPortalSubmissionDescriptionBody,
   SOPAnalysisResult,
+  SaveInvoiceGroupDraftBody,
   SaveMappingsBody,
   SaveMappingsResponse,
   SendAnthropicMessageBody,
@@ -2119,6 +2121,284 @@ export const useConfirmUnderstandingReadback = <
   TContext
 > => {
   return useMutation(getConfirmUnderstandingReadbackMutationOptions(options));
+};
+
+/**
+ * Pre-submit only. Persists the operator-edited `draftSubject` and
+`draftDescriptionHtml`. Stamps `draftEditedAt`/`draftEditedBy` and
+clears `draftReviewedAt` (any edit invalidates the prior review).
+
+ * @summary Save operator edits to the dispute draft (subject + body HTML)
+ */
+export const getSaveInvoiceGroupDraftUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/draft`;
+};
+
+export const saveInvoiceGroupDraft = async (
+  id: number,
+  saveInvoiceGroupDraftBody: SaveInvoiceGroupDraftBody,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getSaveInvoiceGroupDraftUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveInvoiceGroupDraftBody),
+  });
+};
+
+export const getSaveInvoiceGroupDraftMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveInvoiceGroupDraft>>,
+    TError,
+    { id: number; data: BodyType<SaveInvoiceGroupDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveInvoiceGroupDraft>>,
+  TError,
+  { id: number; data: BodyType<SaveInvoiceGroupDraftBody> },
+  TContext
+> => {
+  const mutationKey = ["saveInvoiceGroupDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveInvoiceGroupDraft>>,
+    { id: number; data: BodyType<SaveInvoiceGroupDraftBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveInvoiceGroupDraft(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveInvoiceGroupDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveInvoiceGroupDraft>>
+>;
+export type SaveInvoiceGroupDraftMutationBody =
+  BodyType<SaveInvoiceGroupDraftBody>;
+export type SaveInvoiceGroupDraftMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Save operator edits to the dispute draft (subject + body HTML)
+ */
+export const useSaveInvoiceGroupDraft = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveInvoiceGroupDraft>>,
+    TError,
+    { id: number; data: BodyType<SaveInvoiceGroupDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveInvoiceGroupDraft>>,
+  TError,
+  { id: number; data: BodyType<SaveInvoiceGroupDraftBody> },
+  TContext
+> => {
+  return useMutation(getSaveInvoiceGroupDraftMutationOptions(options));
+};
+
+/**
+ * Pre-submit only. Regenerates the AI-authored subject + HTML body
+from the current per-leg context, error type, and group metadata.
+Captures the result on both the `draft*` pair (operator-visible)
+and the `aiBaseline*` pair (snapshot for diff/restore), and clears
+`draftReviewedAt`.
+
+ * @summary Regenerate the AI dispute draft from per-leg context
+ */
+export const getRegenerateInvoiceGroupDraftUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/draft/regenerate`;
+};
+
+export const regenerateInvoiceGroupDraft = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getRegenerateInvoiceGroupDraftUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRegenerateInvoiceGroupDraftMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["regenerateInvoiceGroupDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return regenerateInvoiceGroupDraft(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegenerateInvoiceGroupDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>
+>;
+
+export type RegenerateInvoiceGroupDraftMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Regenerate the AI dispute draft from per-leg context
+ */
+export const useRegenerateInvoiceGroupDraft = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regenerateInvoiceGroupDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRegenerateInvoiceGroupDraftMutationOptions(options));
+};
+
+/**
+ * Pre-submit only. Stamps `draftReviewedAt`/`draftReviewedBy`. Required
+before Submit is enabled. Re-saving the draft clears this flag.
+
+ * @summary Operator marks the dispute draft as reviewed
+ */
+export const getMarkInvoiceGroupDraftReviewedUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/draft/mark-reviewed`;
+};
+
+export const markInvoiceGroupDraftReviewed = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(
+    getMarkInvoiceGroupDraftReviewedUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMarkInvoiceGroupDraftReviewedMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["markInvoiceGroupDraftReviewed"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return markInvoiceGroupDraftReviewed(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkInvoiceGroupDraftReviewedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>
+>;
+
+export type MarkInvoiceGroupDraftReviewedMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Operator marks the dispute draft as reviewed
+ */
+export const useMarkInvoiceGroupDraftReviewed = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markInvoiceGroupDraftReviewed>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getMarkInvoiceGroupDraftReviewedMutationOptions(options));
 };
 
 /**
@@ -4960,6 +5240,100 @@ export const useSetLegContext = <
   TContext
 > => {
   return useMutation(getSetLegContextMutationOptions(options));
+};
+
+/**
+ * Pre-submit shortcut introduced in Task #265 for the Queue Panel A
+per-leg conclusion control. `reason="non_issue"` drops the leg as a
+non-issue; `reason="cannot_dispute"` drops it as non-contestable.
+Mirrors the terminal-step branch of `/sop-advance`: stamps
+`sop_outcome` + `drop_reason` + `dropped_at`, applies MAS
+derivations, and refreshes the leg + group caches.
+
+ * @summary Resolve a leg to a terminal SOP outcome without walking the tree
+ */
+export const getConcludeLegUrl = (id: number) => {
+  return `/api/claims/${id}/conclude-leg`;
+};
+
+export const concludeLeg = async (
+  id: number,
+  concludeLegBody: ConcludeLegBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getConcludeLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(concludeLegBody),
+  });
+};
+
+export const getConcludeLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof concludeLeg>>,
+    TError,
+    { id: number; data: BodyType<ConcludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof concludeLeg>>,
+  TError,
+  { id: number; data: BodyType<ConcludeLegBody> },
+  TContext
+> => {
+  const mutationKey = ["concludeLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof concludeLeg>>,
+    { id: number; data: BodyType<ConcludeLegBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return concludeLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConcludeLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof concludeLeg>>
+>;
+export type ConcludeLegMutationBody = BodyType<ConcludeLegBody>;
+export type ConcludeLegMutationError = ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Resolve a leg to a terminal SOP outcome without walking the tree
+ */
+export const useConcludeLeg = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof concludeLeg>>,
+    TError,
+    { id: number; data: BodyType<ConcludeLegBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof concludeLeg>>,
+  TError,
+  { id: number; data: BodyType<ConcludeLegBody> },
+  TContext
+> => {
+  return useMutation(getConcludeLegMutationOptions(options));
 };
 
 /**

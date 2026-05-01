@@ -34,9 +34,9 @@ import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatViewerNames } from "@/components/presence-lock";
 import { useUrlParams } from "@/lib/use-url-params";
-import { GroupAggregateContextPanel } from "@/components/group-aggregate-context-panel";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
-import { InlineClaimWorkflowList } from "@/components/inline-claim-workflow";
+import { LegConclusionList } from "@/components/leg-conclusion-row";
+import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-client-react";
 
 // Workflow tabs only — Needs Review is intentionally NOT a tab here.
@@ -683,11 +683,13 @@ function ClassificationInboxRow({
   );
 }
 
-// Inline group workspace — composes the group-aggregate context, the
-// per-claim inline workflow list, and the submission gauntlet. The
-// per-leg investigation surface (formerly only on /claims/:id) is now
-// embedded directly via <InlineClaimWorkflow />, giving operators the
-// full classification → SOP → verdict flow without leaving the queue.
+// Inline group workspace — Task #265 two-panel layout. Panel A (Legs)
+// hosts the per-leg context Textarea + Open SOP / Non-issue /
+// Non-contestable conclusion control via <LegConclusionRow />. Panel B
+// is the submission gauntlet — readback → preview → editable AI
+// write-up → channel-aware Submit. The aggregate-context surface from
+// the prior layout was retired since the editable draft replaces its
+// only remaining job.
 //
 // Gauntlet → leg jump: when a submit fails with `gate: "legs"`, the
 // gauntlet calls `onJumpToLeg(legId)` and we ring + auto-expand the
@@ -726,20 +728,40 @@ function InlineGroupWorkspace({
   const rides = allRides.filter((r) => r.includedInDispute !== false);
 
   return (
-    <div className="space-y-4" data-testid="inline-group-workspace">
-      <GroupAggregateContextPanel group={detail} groupId={groupId} lockReason={lockReason} />
-      <InlineClaimWorkflowList
-        claims={rides}
-        expandedClaimId={expandedLegId}
-        onExpandedChange={(id) => {
-          setExpandedLegId(id);
-          // Any explicit user toggle clears the highlight so the amber
-          // ring doesn't linger on a row the operator has already
-          // chosen to engage with (or dismiss).
-          if (highlightLegId != null) setHighlightLegId(null);
-        }}
-        highlightClaimId={highlightLegId}
-      />
+    <div
+      className="grid gap-4 lg:grid-cols-2"
+      data-testid="inline-group-workspace"
+    >
+      {/* Panel A — Legs (per-leg context + conclusion control). The
+          group-aggregate-context surface was removed in Task #265: legs
+          carry their own narrative, and the AI write-up is editable in
+          Panel B, so the duplicated group-level form had no remaining
+          job. */}
+      <Card data-testid="legs-panel">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-4 w-4" /> Legs
+          </CardTitle>
+          <CardDescription>
+            Capture per-leg context, then conclude each leg via SOP,
+            Non-issue, or Non-contestable.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LegConclusionList
+            claims={rides}
+            groupId={groupId}
+            expandedClaimId={expandedLegId}
+            onExpandedChange={(id) => {
+              setExpandedLegId(id);
+              if (highlightLegId != null) setHighlightLegId(null);
+            }}
+            highlightClaimId={highlightLegId}
+            lockReason={lockReason}
+          />
+        </CardContent>
+      </Card>
+      {/* Panel B — Submission preview + editable AI write-up. */}
       <InvoiceGroupSubmissionGauntlet
         group={detail}
         groupId={groupId}

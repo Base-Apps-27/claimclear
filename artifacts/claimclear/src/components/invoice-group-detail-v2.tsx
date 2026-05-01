@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,7 +10,6 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
-  useSetGroupContext,
   useCheckEmailResponses,
   useCreateInvoiceGroupNote,
   useHoldInvoiceGroup,
@@ -27,7 +26,7 @@ import type {
 import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
-  XCircle, PauseCircle, Lock, ListChecks, Sparkles, Layers, Inbox, Clock, ClipboardCheck,
+  XCircle, PauseCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -48,7 +47,12 @@ import {
 // .cc-scope wrapper; behavior continues to use the same hooks the prior
 // shadcn-card layout did, plus shared subcomponents that the queue
 // inline workspace also mounts (InvoiceGroupSubmissionGauntlet,
-// GroupCommunicationThread).
+// GroupCommunicationThread). The detail page keeps its own densified
+// inlined legs table; the queue's Panel A uses InvoiceGroupLegsList.
+//
+// Task #265 removed the group-aggregate-context surface — per-leg
+// context now lives directly on each leg row in the queue and the
+// editable AI write-up replaces the group-level narrative form.
 
 interface Props {
   groupId: number;
@@ -216,7 +220,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   });
 
   const packageMutation = usePackageInvoiceGroup();
-  const setContextMutation = useSetGroupContext();
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
@@ -247,11 +250,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
   const packagingReadiness: GroupPackagingReadiness | undefined = detail?.packagingReadiness;
 
-  /* ---- Aggregate context (inlined from GroupAggregateContextPanel) ---- */
-  const [groupContext, setGroupContext] = useState<string>("");
-  useEffect(() => {
-    setGroupContext(detail?.groupContext ?? "");
-  }, [detail?.groupContext]);
+  /* Aggregate-context state removed in Task #265 — per-leg context lives
+     on each leg row in the queue and the editable AI write-up replaces
+     the group-level narrative form. */
 
   /* ---- KPI strip values ---- */
   const totalExposure = useMemo(() => {
@@ -367,23 +368,14 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
-  function onSaveGroupContext() {
-    setContextMutation.mutate(
-      { id: groupId, data: { context: groupContext } },
-      {
-        onSuccess: () => {
-          toast({ title: "Group context saved" });
-          invalidateGroup();
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Save failed",
-            description: String((e as Error).message),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
+  // Task #265 removed onSaveGroupContext — the group-aggregate-context
+  // surface no longer exists; per-leg context lives directly on each
+  // leg row in the queue.
+  //
+  // The communications/email-thread wiring (Task #240) and the extracted
+  // submission gauntlet (Task #232) are configured higher up in this
+  // component (see toast/emailThread/conversations/replyMutation setup
+  // around the data-loading section).
 
   function onSyncInbox() {
     checkEmailMutation.mutate(
@@ -476,7 +468,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   }
 
   const isAlreadyClosed = group.status === "Resolved" || group.status === "Denied";
-  const groupContextDirty = groupContext !== (detail.groupContext ?? "");
 
   return (
     <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }} data-testid="invoice-group-detail-v2">
@@ -686,72 +677,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           {/* LEFT — orchestration body (8 cols) */}
           <div className="col-span-8 space-y-4">
 
-            {/* Aggregate context */}
-            <CcCard
-              title="Aggregate context"
-              icon={<Layers className="w-3.5 h-3.5" />}
-              testId="aggregate-context-card"
-              action={
-                <button
-                  className="cc-btn text-xs gap-1 inline-flex items-center px-2 py-1"
-                  style={{ background: "var(--cc-purple-fg)", color: "white" }}
-                  onClick={onSaveGroupContext}
-                  disabled={!isPreSubmit || setContextMutation.isPending || !groupContextDirty}
-                  data-testid="group-context-save"
-                >
-                  {setContextMutation.isPending ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Save className="w-3 h-3" />
-                  )}
-                  Save
-                </button>
-              }
-            >
-              <div className="text-xs mb-2 font-medium" style={{ color: "var(--cc-muted-fg)" }}>
-                Group context — shared across all legs in this invoice
-              </div>
-              <textarea
-                rows={3}
-                value={groupContext}
-                onChange={(e) => setGroupContext(e.target.value)}
-                disabled={!isPreSubmit}
-                placeholder="Group-level narrative the dispute write-up will pick up. Pre-submit only — saving clears any prior understanding readback."
-                className="cc-textarea mb-3"
-                style={{ resize: "vertical" }}
-                data-testid="group-context-input"
-              />
-              <div className="text-xs mb-2 font-medium" style={{ color: "var(--cc-muted-fg)" }}>
-                Per-leg context roll-up
-              </div>
-              {allRides.filter((r) => r.perLegContext).length === 0 ? (
-                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No per-leg context recorded yet. Open each leg's investigation surface to record one.
-                </div>
-              ) : (
-                <div className="space-y-1.5 text-xs">
-                  {allRides
-                    .filter((r) => r.perLegContext)
-                    .map((r) => (
-                      <div
-                        key={r.id}
-                        className="flex items-start gap-2 px-2 py-1.5 rounded"
-                        style={{ background: "var(--cc-muted)" }}
-                        data-testid={`leg-context-roll-${r.id}`}
-                      >
-                        <Link
-                          href={`/claims/${r.id}`}
-                          className="font-mono font-semibold flex-shrink-0 hover:underline"
-                          style={{ color: "var(--cc-purple-fg)" }}
-                        >
-                          {r.confNumber || `Leg #${r.id}`}
-                        </Link>
-                        <span style={{ color: "var(--cc-fg)" }}>{r.perLegContext}</span>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </CcCard>
+            {/* Group-aggregate-context card removed in Task #265 — per-leg
+                context lives on each leg row in the queue and the editable
+                AI write-up replaces the group-level narrative form. */}
 
             {/* Group details + Evidence */}
             <div className="grid grid-cols-2 gap-4">

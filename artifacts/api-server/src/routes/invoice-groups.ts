@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
@@ -561,6 +561,21 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
   // CTA in enabled or disabled state from this payload.
   const packagingReadiness = computeGroupReadiness(group, rides);
 
+  // Channel hint for the Submit button (Task #265): if the assigned
+  // errorType has useDirectEmail=true the submission goes via direct
+  // email; otherwise via the portal. Joined here so the UI doesn't have
+  // to make a second roundtrip per group view.
+  let useDirectEmail: boolean | null = null;
+  if (group.errorTypeId) {
+    const errorTypeIdNum = Number(group.errorTypeId);
+    if (Number.isFinite(errorTypeIdNum)) {
+      const [et] = await db.select({ useDirectEmail: errorTypesTable.useDirectEmail })
+        .from(errorTypesTable)
+        .where(eq(errorTypesTable.id, errorTypeIdNum));
+      if (et) useDirectEmail = !!et.useDirectEmail;
+    }
+  }
+
   res.json({
     ...group,
     rides: ridesWithVerdicts,
@@ -571,6 +586,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     isPartial,
     macroPhase,
     packagingReadiness,
+    useDirectEmail,
   });
 }));
 
@@ -1452,6 +1468,195 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
     metadata: {},
   });
   emitGroupEvent(id, "preview_generated", req);
+  res.json(updated);
+}));
+
+// ─────────────────────────────────────────────────────────────────────────
+// Editable AI dispute draft (Task #265)
+//
+// The group carries the operator-edited write-up that gets submitted (via
+// portal or email). `regenerate` seeds the draft from the latest portal-
+// submissions draft (which is what /portal-submissions/generate-preview
+// produces). `save-draft` persists operator edits and clears the reviewed
+// flag. `mark-reviewed` is the gate Submit checks.
+// ─────────────────────────────────────────────────────────────────────────
+
+router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const subject = req.body?.subject;
+  const descriptionHtml = req.body?.descriptionHtml;
+  if (subject !== undefined && subject !== null && typeof subject !== "string") {
+    res.status(400).json({ error: "subject must be a string or null" });
+    return;
+  }
+  if (descriptionHtml !== undefined && descriptionHtml !== null && typeof descriptionHtml !== "string") {
+    res.status(400).json({ error: "descriptionHtml must be a string or null" });
+    return;
+  }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Draft can only be edited in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const updateSet: Partial<typeof invoiceGroupsTable.$inferInsert> = {
+    draftEditedAt: now,
+    draftEditedBy: req.user?.email ?? null,
+    // Any edit invalidates the prior review acknowledgement.
+    draftReviewedAt: null,
+    draftReviewedBy: null,
+  };
+  if (subject !== undefined) updateSet.draftSubject = subject;
+  if (descriptionHtml !== undefined) updateSet.draftDescriptionHtml = descriptionHtml;
+
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set(updateSet)
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_draft_edited", "Dispute draft edited", req, {
+    subjectLength: typeof subject === "string" ? subject.length : null,
+    descriptionLength: typeof descriptionHtml === "string" ? descriptionHtml.length : null,
+  });
+  await emitStateEvent({
+    eventKey: "group.draft_edited",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: {
+      subjectLength: typeof subject === "string" ? subject.length : null,
+      descriptionLength: typeof descriptionHtml === "string" ? descriptionHtml.length : null,
+    },
+  });
+  emitGroupEvent(id, "draft_edited", req);
+  res.json(updated);
+}));
+
+router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Draft can only be regenerated in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  // Source the AI-authored subject + body from the most recent
+  // portal-submissions draft (produced by /portal-submissions/generate-
+  // preview). That endpoint already knows how to talk to the LLM, build
+  // the snapshot subject, and assemble the HTML body — we reuse that
+  // pipeline rather than re-implementing it here.
+  const [latestDraft] = await db.select()
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.invoiceGroupId, id),
+      eq(portalSubmissionsTable.status, "draft"),
+    ))
+    .orderBy(desc(portalSubmissionsTable.createdAt))
+    .limit(1);
+
+  if (!latestDraft) {
+    res.status(409).json({
+      error: "No portal submission draft to regenerate from. Click \"Generate preview\" first.",
+      expectedState: "preview-generated",
+      actualState: "no-preview",
+    });
+    return;
+  }
+
+  const subject = latestDraft.subject ?? null;
+  const description = latestDraft.descriptionHtml ?? null;
+  const now = new Date();
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      draftSubject: subject,
+      draftDescriptionHtml: description,
+      aiBaselineSubject: subject,
+      aiBaselineDescriptionHtml: description,
+      draftEditedAt: now,
+      draftEditedBy: req.user?.email ?? null,
+      draftReviewedAt: null,
+      draftReviewedBy: null,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_draft_regenerated", "Dispute draft regenerated from AI baseline", req, {
+    sourceSubmissionId: latestDraft.id,
+  });
+  await emitStateEvent({
+    eventKey: "group.draft_regenerated",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: { sourceSubmissionId: latestDraft.id },
+  });
+  emitGroupEvent(id, "draft_regenerated", req);
+  res.json(updated);
+}));
+
+router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getMacroPhase(group.status);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Draft can only be marked reviewed in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+  if (!group.draftDescriptionHtml || group.draftDescriptionHtml.trim().length === 0) {
+    res.status(409).json({
+      error: "Draft is empty — generate a preview before marking it reviewed",
+      expectedState: "draft-present",
+      actualState: "draft-empty",
+    });
+    return;
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      draftReviewedAt: now,
+      draftReviewedBy: req.user?.email ?? null,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_draft_reviewed", "Dispute draft marked reviewed", req);
+  await emitStateEvent({
+    eventKey: "group.draft_reviewed",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: {},
+  });
+  emitGroupEvent(id, "draft_reviewed", req);
   res.json(updated);
 }));
 

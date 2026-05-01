@@ -734,6 +734,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /invoice-groups/{id}/draft:
+    post:
+      operationId: saveInvoiceGroupDraft
+      tags: [invoice-groups]
+      summary: Save operator edits to the dispute draft (subject + body HTML)
+      description: |
+        Pre-submit only. Persists the operator-edited `draftSubject` and
+        `draftDescriptionHtml`. Stamps `draftEditedAt`/`draftEditedBy` and
+        clears `draftReviewedAt` (any edit invalidates the prior review).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveInvoiceGroupDraftBody"
+      responses:
+        "200":
+          description: Draft saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/draft/regenerate:
+    post:
+      operationId: regenerateInvoiceGroupDraft
+      tags: [invoice-groups]
+      summary: Regenerate the AI dispute draft from per-leg context
+      description: |
+        Pre-submit only. Regenerates the AI-authored subject + HTML body
+        from the current per-leg context, error type, and group metadata.
+        Captures the result on both the `draft*` pair (operator-visible)
+        and the `aiBaseline*` pair (snapshot for diff/restore), and clears
+        `draftReviewedAt`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Draft regenerated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/draft/mark-reviewed:
+    post:
+      operationId: markInvoiceGroupDraftReviewed
+      tags: [invoice-groups]
+      summary: Operator marks the dispute draft as reviewed
+      description: |
+        Pre-submit only. Stamps `draftReviewedAt`/`draftReviewedBy`. Required
+        before Submit is enabled. Re-saving the draft clears this flag.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Draft marked reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /invoice-groups/{id}/preview-generated:
     post:
       operationId: stampPreviewGenerated
@@ -1802,6 +1896,44 @@ paths:
       responses:
         "200":
           description: Per-leg context recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/conclude-leg:
+    post:
+      operationId: concludeLeg
+      tags: [claims]
+      summary: Resolve a leg to a terminal SOP outcome without walking the tree
+      description: |
+        Pre-submit shortcut introduced in Task #265 for the Queue Panel A
+        per-leg conclusion control. `reason="non_issue"` drops the leg as a
+        non-issue; `reason="cannot_dispute"` drops it as non-contestable.
+        Mirrors the terminal-step branch of `/sop-advance`: stamps
+        `sop_outcome` + `drop_reason` + `dropped_at`, applies MAS
+        derivations, and refreshes the leg + group caches.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConcludeLegBody"
+      responses:
+        "200":
+          description: Leg concluded
           content:
             application/json:
               schema:
@@ -4212,7 +4344,34 @@ components:
         # Preview, and Re-attest steps in the per-invoice macro flow.
         groupContext:
           type: ["string", "null"]
-          description: "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up."
+          description: "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility."
+        useDirectEmail:
+          type: ["boolean", "null"]
+          description: "Channel hint joined from the assigned errorType. True → submit via direct email; false/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview."
+        draftSubject:
+          type: ["string", "null"]
+          description: "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal/email subject on submit."
+        draftDescriptionHtml:
+          type: ["string", "null"]
+          description: "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description / email body on submit."
+        aiBaselineSubject:
+          type: ["string", "null"]
+          description: "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits."
+        aiBaselineDescriptionHtml:
+          type: ["string", "null"]
+          description: "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits."
+        draftEditedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Stamped each time the operator saves an edit to the dispute draft."
+        draftEditedBy:
+          type: ["string", "null"]
+        draftReviewedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled."
+        draftReviewedBy:
+          type: ["string", "null"]
         understandingReadback:
           type: ["string", "null"]
           description: "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview."
@@ -5019,6 +5178,18 @@ components:
           type: string
           description: Free-form per-leg narrative. Empty string clears the field.
 
+    ConcludeLegBody:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: ["non_issue", "cannot_dispute"]
+          description: Terminal SOP outcome to stamp on the leg.
+        note:
+          type: ["string", "null"]
+          description: Optional free-form note appended to the audit row.
+
     CompleteMasActionBody:
       type: object
       properties:
@@ -5034,6 +5205,18 @@ components:
       properties:
         context:
           type: string
+
+    SaveInvoiceGroupDraftBody:
+      type: object
+      description: |
+        Operator edits to the dispute write-up shown in the Submission
+        preview pane. Both fields are saved atomically; subject is plain
+        text, body is sanitised HTML.
+      properties:
+        subject:
+          type: ["string", "null"]
+        descriptionHtml:
+          type: ["string", "null"]
 
     ConfirmReadbackBody:
       type: object

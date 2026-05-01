@@ -25,7 +25,23 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   // Group-scoped narrative for the writeup ("here's what's going on with
   // this invoice as a whole"). Per-leg context lives on
   // `claims.per_leg_context`.
+  // DEPRECATED (Task #265): replaced by per-leg context + AI-generated draft.
+  // Field is kept readable for one release; new writes are no longer made.
   groupContext: text("group_context"),
+  // ────────────────────────────────────────────────────────────────────────
+  // Editable AI-generated dispute draft (Task #265). The "draft*" pair is
+  // what the operator sees in the Submission preview pane and what gets
+  // submitted (via portal or email). The "aiBaseline*" pair is the raw AI
+  // output captured at last regeneration so we can diff/restore.
+  // ────────────────────────────────────────────────────────────────────────
+  draftSubject: text("draft_subject"),
+  draftDescriptionHtml: text("draft_description_html"),
+  aiBaselineSubject: text("ai_baseline_subject"),
+  aiBaselineDescriptionHtml: text("ai_baseline_description_html"),
+  draftEditedAt: timestamp("draft_edited_at", { withTimezone: true }),
+  draftEditedBy: text("draft_edited_by"),
+  draftReviewedAt: timestamp("draft_reviewed_at", { withTimezone: true }),
+  draftReviewedBy: text("draft_reviewed_by"),
   // Operator-authored "this is what I'm asking for" sentence shown back to
   // the operator before generating the dispute preview.
   understandingReadback: text("understanding_readback"),

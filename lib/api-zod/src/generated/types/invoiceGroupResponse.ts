@@ -131,10 +131,49 @@ export interface InvoiceGroupResponse {
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
   /**
-   * Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.
+   * DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.
    * @nullable
    */
   groupContext?: string | null;
+  /**
+   * Channel hint joined from the assigned errorType. True → submit via direct email; false/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.
+   * @nullable
+   */
+  useDirectEmail?: boolean | null;
+  /**
+   * Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal/email subject on submit.
+   * @nullable
+   */
+  draftSubject?: string | null;
+  /**
+   * Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description / email body on submit.
+   * @nullable
+   */
+  draftDescriptionHtml?: string | null;
+  /**
+   * Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.
+   * @nullable
+   */
+  aiBaselineSubject?: string | null;
+  /**
+   * Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.
+   * @nullable
+   */
+  aiBaselineDescriptionHtml?: string | null;
+  /**
+   * Stamped each time the operator saves an edit to the dispute draft.
+   * @nullable
+   */
+  draftEditedAt?: Date | null;
+  /** @nullable */
+  draftEditedBy?: string | null;
+  /**
+   * Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.
+   * @nullable
+   */
+  draftReviewedAt?: Date | null;
+  /** @nullable */
+  draftReviewedBy?: string | null;
   /**
    * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
    * @nullable

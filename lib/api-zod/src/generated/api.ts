@@ -289,8 +289,52 @@ export const ListInvoiceGroupsResponse = zod.object({
         .string()
         .nullish()
         .describe(
-          "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+          "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
         ),
+      useDirectEmail: zod
+        .boolean()
+        .nullish()
+        .describe(
+          "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+        ),
+      draftSubject: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+        ),
+      draftDescriptionHtml: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+        ),
+      aiBaselineSubject: zod
+        .string()
+        .nullish()
+        .describe(
+          "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+        ),
+      aiBaselineDescriptionHtml: zod
+        .string()
+        .nullish()
+        .describe(
+          "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+        ),
+      draftEditedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamped each time the operator saves an edit to the dispute draft.",
+        ),
+      draftEditedBy: zod.string().nullish(),
+      draftReviewedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+        ),
+      draftReviewedBy: zod.string().nullish(),
       understandingReadback: zod
         .string()
         .nullish()
@@ -601,8 +645,52 @@ export const GetInvoiceGroupResponse = zod
       .string()
       .nullish()
       .describe(
-        "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+        "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
       ),
+    useDirectEmail: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+      ),
+    draftSubject: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+      ),
+    draftDescriptionHtml: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+      ),
+    aiBaselineSubject: zod
+      .string()
+      .nullish()
+      .describe(
+        "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+      ),
+    aiBaselineDescriptionHtml: zod
+      .string()
+      .nullish()
+      .describe(
+        "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+      ),
+    draftEditedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamped each time the operator saves an edit to the dispute draft.",
+      ),
+    draftEditedBy: zod.string().nullish(),
+    draftReviewedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+      ),
+    draftReviewedBy: zod.string().nullish(),
     understandingReadback: zod
       .string()
       .nullish()
@@ -1340,8 +1428,52 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -1539,8 +1671,52 @@ export const PackageInvoiceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -1734,8 +1910,52 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -1984,8 +2204,52 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -2181,8 +2445,52 @@ export const TriageInvoiceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -2375,8 +2683,52 @@ export const HoldInvoiceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -2565,8 +2917,52 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -2860,8 +3256,52 @@ export const SetGroupContextResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -3057,8 +3497,776 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+});
+
+/**
+ * Pre-submit only. Persists the operator-edited `draftSubject` and
+`draftDescriptionHtml`. Stamps `draftEditedAt`/`draftEditedBy` and
+clears `draftReviewedAt` (any edit invalidates the prior review).
+
+ * @summary Save operator edits to the dispute draft (subject + body HTML)
+ */
+export const SaveInvoiceGroupDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SaveInvoiceGroupDraftBody = zod
+  .object({
+    subject: zod.string().nullish(),
+    descriptionHtml: zod.string().nullish(),
+  })
+  .describe(
+    "Operator edits to the dispute write-up shown in the Submission\npreview pane. Both fields are saved atomically; subject is plain\ntext, body is sanitised HTML.\n",
+  );
+
+export const SaveInvoiceGroupDraftResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+});
+
+/**
+ * Pre-submit only. Regenerates the AI-authored subject + HTML body
+from the current per-leg context, error type, and group metadata.
+Captures the result on both the `draft*` pair (operator-visible)
+and the `aiBaseline*` pair (snapshot for diff/restore), and clears
+`draftReviewedAt`.
+
+ * @summary Regenerate the AI dispute draft from per-leg context
+ */
+export const RegenerateInvoiceGroupDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RegenerateInvoiceGroupDraftResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+});
+
+/**
+ * Pre-submit only. Stamps `draftReviewedAt`/`draftReviewedBy`. Required
+before Submit is enabled. Re-saving the draft clears this flag.
+
+ * @summary Operator marks the dispute draft as reviewed
+ */
+export const MarkInvoiceGroupDraftReviewedParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -3250,8 +4458,52 @@ export const StampPreviewGeneratedResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -3451,8 +4703,52 @@ export const CompleteGroupReattestResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()
@@ -8824,6 +10120,261 @@ export const SetLegContextResponse = zod.object({
 });
 
 /**
+ * Pre-submit shortcut introduced in Task #265 for the Queue Panel A
+per-leg conclusion control. `reason="non_issue"` drops the leg as a
+non-issue; `reason="cannot_dispute"` drops it as non-contestable.
+Mirrors the terminal-step branch of `/sop-advance`: stamps
+`sop_outcome` + `drop_reason` + `dropped_at`, applies MAS
+derivations, and refreshes the leg + group caches.
+
+ * @summary Resolve a leg to a terminal SOP outcome without walking the tree
+ */
+export const ConcludeLegParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ConcludeLegBody = zod.object({
+  reason: zod
+    .enum(["non_issue", "cannot_dispute"])
+    .describe("Terminal SOP outcome to stamp on the leg."),
+  note: zod
+    .string()
+    .nullish()
+    .describe("Optional free-form note appended to the audit row."),
+});
+
+export const ConcludeLegResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
  * Source-state contract: `mas_action_required = 'cancel'` AND
 `mas_action_completed_at IS NULL`.
 
@@ -11906,8 +13457,52 @@ export const GetDashboardSummaryResponse = zod.object({
         .string()
         .nullish()
         .describe(
-          "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+          "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
         ),
+      useDirectEmail: zod
+        .boolean()
+        .nullish()
+        .describe(
+          "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+        ),
+      draftSubject: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+        ),
+      draftDescriptionHtml: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+        ),
+      aiBaselineSubject: zod
+        .string()
+        .nullish()
+        .describe(
+          "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+        ),
+      aiBaselineDescriptionHtml: zod
+        .string()
+        .nullish()
+        .describe(
+          "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+        ),
+      draftEditedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamped each time the operator saves an edit to the dispute draft.",
+        ),
+      draftEditedBy: zod.string().nullish(),
+      draftReviewedAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+        ),
+      draftReviewedBy: zod.string().nullish(),
       understandingReadback: zod
         .string()
         .nullish()
@@ -14065,8 +15660,52 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      "Operator-authored narrative for the entire invoice group, used to seed the dispute write-up.",
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
     ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
   understandingReadback: zod
     .string()
     .nullish()

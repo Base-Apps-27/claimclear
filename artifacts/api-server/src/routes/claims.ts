@@ -1716,6 +1716,104 @@ router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<vo
   res.json(updated);
 }));
 
+// POST /claims/:id/conclude-leg — operator-driven shortcut that resolves a
+// leg to a terminal SOP outcome without walking the decision tree
+// (Task #265). Used by the Queue Panel A "conclude" buttons:
+// reason="non_issue"      → leg drops as a non-issue;
+// reason="cannot_dispute" → leg drops as non-contestable.
+// Implementation mirrors the terminal-step branch of /sop-advance: stamps
+// sop_outcome + drop_reason + dropped_at, applies MAS derivations,
+// refreshes the leg + group caches.
+const CONCLUDE_LEG_REASONS = new Set(["non_issue", "cannot_dispute"]);
+router.post("/claims/:id/conclude-leg", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const reason = (req.body?.reason ?? "") as string;
+  const note = typeof req.body?.note === "string" ? (req.body.note as string) : null;
+  if (!CONCLUDE_LEG_REASONS.has(reason)) {
+    res.status(400).json({
+      error: `reason must be one of: ${Array.from(CONCLUDE_LEG_REASONS).join(", ")}`,
+    });
+    return;
+  }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null) {
+    res.status(409).json({
+      error: "Leg must belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "no-group",
+    });
+    return;
+  }
+  const [parentGroup] = await db
+    .select()
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (!parentGroup) {
+    res.status(409).json({
+      error: "Leg must belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "missing-group",
+    });
+    return;
+  }
+  const phase = getGroupMacroPhase(parentGroup);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Leg can only be concluded in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const subStatus = deriveLegSubStatus(leg);
+  if (subStatus === "ready" || subStatus === "dropped" || subStatus === "excluded") {
+    res.status(409).json({
+      error: `Leg already resolved (${subStatus}); no conclusion needed`,
+      expectedState: "open",
+      actualState: subStatus,
+    });
+    return;
+  }
+
+  const now = new Date();
+  let [updated] = await db
+    .update(claimsTable)
+    .set({
+      sopOutcome: reason,
+      dropReason: reason,
+      droppedAt: now,
+    })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(
+    id,
+    "leg_concluded",
+    `Leg concluded as ${reason}${note ? `: ${note}` : ""}`,
+    req,
+    { reason, note },
+  );
+  await emitStateEvent({
+    eventKey: "leg.concluded",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { reason, note },
+  });
+  const masUpdated = await applyMasDerivationsForLeg(id, null);
+  if (masUpdated) updated = masUpdated;
+  await refreshClaimDenormalizedCache(id);
+  await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "concluded", req);
+
+  res.json(updated);
+}));
+
 // POST /claims/:id/per-leg-context — operator records the leg-specific
 // narrative used by the dispute write-up assembly. Source-state contract:
 // the leg's parent invoice group must be in `pre-submit` (per-leg context
