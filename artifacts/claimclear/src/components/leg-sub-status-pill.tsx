@@ -36,25 +36,69 @@ const CLASSES: Record<LegSubStatus, string> = {
   frozen: "bg-slate-100 text-slate-700 border-slate-300",
 };
 
+// Inline SVG check used by the one-shot completion microinteraction
+// (Task #324). Mirrors the cohesion StatusPill's AnimatedCheck so the
+// queue panel and detail page share visual language. Stroke-dash draw-in
+// is driven by `.cc-check-tick` in `index.css`, which also handles
+// `prefers-reduced-motion`.
+function AnimatedCheck() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        d="M5 12.5l4 4 10-10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="cc-check-tick"
+      />
+    </svg>
+  );
+}
+
 interface LegSubStatusPillProps {
   /** Pass either the derived sub-status or the leg row to derive from. */
   subStatus?: LegSubStatus;
   leg?: LegForSubStatus;
   className?: string;
+  /**
+   * One-shot decoration used when this leg has just transitioned to a
+   * processed sub-status (ready/dropped/excluded) from the operator's own
+   * SOP advance. Renders an animated check that draws in over ~420ms plus
+   * a soft background glow. The caller is responsible for clearing the
+   * prop after the animation so it cannot replay on re-render. See
+   * Task #324 (and Task #315 for the detail-page sibling).
+   */
+  justTransitioned?: boolean;
 }
 
-export function LegSubStatusPill({ subStatus, leg, className = "" }: LegSubStatusPillProps) {
+export function LegSubStatusPill({
+  subStatus,
+  leg,
+  className = "",
+  justTransitioned = false,
+}: LegSubStatusPillProps) {
   const value: LegSubStatus = subStatus ?? (leg ? deriveLegSubStatus(leg) : "needs_classification");
   // When we have the leg row in hand, prefer the reason-aware label so a
   // dropped-via-cannot_dispute leg reads as "Non-contestable" and a
   // dropped-via-non_issue leg reads as "Non-issue".
   const label = leg ? legSubStatusDisplayLabel(value, leg) : glossarySubStatusLabel(value);
+  const transitionClass = justTransitioned ? " cc-pill-just-transitioned" : "";
   return (
     <Badge
       variant="outline"
-      className={`${CLASSES[value]} ${className}`}
+      className={`${CLASSES[value]} inline-flex items-center gap-1 ${className}${transitionClass}`}
       data-testid={`leg-sub-status-pill-${value}`}
+      data-just-transitioned={justTransitioned ? "true" : undefined}
     >
+      {justTransitioned ? <AnimatedCheck /> : null}
       {label}
     </Badge>
   );

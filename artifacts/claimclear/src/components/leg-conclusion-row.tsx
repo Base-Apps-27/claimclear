@@ -29,6 +29,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { useToast } from "@/hooks/use-toast";
+import { useClaimEvents } from "@/hooks/use-claim-events";
+import { useAuth } from "@workspace/replit-auth-web";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -114,6 +116,38 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     const subStatus = deriveLegSubStatus(claim);
     const isResolved = PROCESSED_SUB_STATUSES.has(subStatus);
     const isOpen = !isResolved && variant !== "terminal";
+
+    // ─────────────────────────────────────────────────────────────────────
+    // "You finished a leg" microinteraction (Task #324). Mirrors the
+    // claim-detail-v2 sibling (Task #315) so finishing an SOP from the
+    // queue feels just as rewarding as finishing it from the detail page.
+    // We track the row's variant transitioning from non-processed to
+    // processed and animate the LegSubStatusPill once. SSE author gating
+    // suppresses the animation when a collaborator's action triggered the
+    // refetch, and `prefers-reduced-motion` is honored by the shared CSS
+    // hooks (`cc-check-tick` / `cc-pill-just-transitioned`).
+    // ─────────────────────────────────────────────────────────────────────
+    const { user } = useAuth();
+    const { lastClaimUpdateBy } = useClaimEvents(claim.id);
+    const prevVariantRef = useRef<LegVariant | undefined>(undefined);
+    const [justProcessed, setJustProcessed] = useState(false);
+    useEffect(() => {
+      const prev = prevVariantRef.current;
+      prevVariantRef.current = variant;
+      // Skip on initial mount (and on subsequent re-renders that don't
+      // actually flip the variant) so the animation cannot replay on
+      // remount or background refetches.
+      if (prev === undefined) return;
+      if (prev === variant) return;
+      if (variant !== "processed") return;
+      // If the most recent SSE event for this claim came from a different
+      // operator, the transition isn't "ours" — stay quiet.
+      const lastBy = lastClaimUpdateBy.current?.email ?? null;
+      if (lastBy && user?.email && lastBy !== user.email) return;
+      setJustProcessed(true);
+      const t = setTimeout(() => setJustProcessed(false), 500);
+      return () => clearTimeout(t);
+    }, [variant, user?.email, lastClaimUpdateBy]);
 
     const concludeLegMutation = useConcludeLeg();
 
@@ -216,7 +250,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
             </span>
             <span className="flex-1 min-w-0 flex items-center gap-2">
               {variantIcon}
-              <LegSubStatusPill leg={claim} />
+              <LegSubStatusPill leg={claim} justTransitioned={justProcessed} />
               {variant === "terminal" && claim.outcome && (
                 <Badge variant="outline" className="text-[10px]">
                   {claim.outcome}
