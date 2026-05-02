@@ -166,23 +166,29 @@ test("formatTabBadge — urgent filter, tab has zero urgent → no badge at all"
 // --- Page-level behavior, exercised through helpers used by queue.tsx ---
 
 test("Dashboard ↔ Queue agreement: hero count = sum of urgent across the on-clock lanes", () => {
-  // Mirrors what dashboard.tsx counts (`expiringGroups.filter(g => g.effectiveDaysLeft === 0)`)
-  // and what queue.tsx shows in the hero (`computeAggregateUrgentCount(...)`).
-  // Same fixture rows must produce the same number on both pages.
+  // Mirrors what dashboard.tsx counts (`expiringGroups.filter(g => g.isUrgent)`,
+  // matching the server's `urgentCount`) and what queue.tsx shows in
+  // the hero (`computeAggregateUrgentCount(...)`). Same fixture rows
+  // must produce the same number on both pages — including past-due
+  // rows whose `effectiveDaysLeft` is negative. Pre-fix, the dashboard
+  // counted only `effectiveDaysLeft === 0` so a backlog of past-due
+  // urgent rows rendered as "0 to file" while the queue (and the
+  // server's own `urgentCount`) reported the real number.
   const dashboardExpiring = [
+    { effectiveDaysLeft: -4, isUrgent: true }, // past-due, still urgent
+    { effectiveDaysLeft: 0, isUrgent: true },  // due today
     { effectiveDaysLeft: 0, isUrgent: true },
-    { effectiveDaysLeft: 0, isUrgent: true },
-    { effectiveDaysLeft: 1, isUrgent: false },
+    { effectiveDaysLeft: 1, isUrgent: false }, // tomorrow, not urgent
     { effectiveDaysLeft: 2, isUrgent: false },
   ];
-  const dashboardCount = dashboardExpiring.filter(g => g.effectiveDaysLeft === 0).length;
+  const dashboardCount = dashboardExpiring.filter(g => g.isUrgent).length;
   // Same urgent rows distributed across the queue's on-clock lanes:
-  const actionable = [{ isUrgent: true, effectiveDaysLeft: 0 }];
+  const actionable = [{ isUrgent: true, effectiveDaysLeft: -4 }];
   const portalQueued = [{ isUrgent: true, effectiveDaysLeft: 0 }];
-  const onHold: Array<{ isUrgent: boolean; effectiveDaysLeft: number }> = [];
+  const onHold = [{ isUrgent: true, effectiveDaysLeft: 0 }];
   const heroCount = computeAggregateUrgentCount(actionable, portalQueued, onHold);
   assert.equal(heroCount, dashboardCount, "hero count must match Dashboard for the same data");
-  assert.equal(heroCount, 2);
+  assert.equal(heroCount, 3);
 });
 
 test("computeAggregateUrgentCount handles empty lanes and missing isUrgent flags", () => {
