@@ -1,110 +1,170 @@
-export function daysRemaining(serviceDate: string | null): number | null {
-  if (!serviceDate) return null;
-  const deadline = new Date(serviceDate);
-  deadline.setDate(deadline.getDate() + 30);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  deadline.setHours(0, 0, 0, 0);
-  return Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
+// Deadline / "today" math, anchored to America/New_York.
+//
+// The team operates from a single ET-based office, so every "today",
+// "30-day filing window", and "is this urgent?" decision must use the
+// ET calendar — not the host's wall clock and not UTC. Earlier versions
+// of this module relied on `setHours(0,0,0,0)` and `getDate()` against a
+// `Date`, which silently followed the host's `TZ` env var. In autoscaled
+// containers that defaults to UTC, which made an item with a Friday-ET
+// deadline flip to "urgent" up to five hours late and made the
+// urgent-snapshot key swap days at the wrong moment. See Task #298.
+//
+// All math is performed on YYYY-MM-DD calendar strings, with day-of-week
+// computed from a UTC anchor — that way DST transitions never produce a
+// 23h or 25h day for our purposes (the office's "Friday" is still
+// "Friday" on the spring-forward Sunday, and the cron's idea of "today"
+// stays stable across the boundary).
 
+const DEFAULT_TZ = "America/New_York";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-function rawDeadline(serviceDate: string): Date {
-  const d = new Date(serviceDate);
-  d.setDate(d.getDate() + 30);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function isWeekend(date: Date): boolean {
-  const dow = date.getDay();
-  return dow === 0 || dow === 6;
-}
-
 /**
- * If a deadline falls on a Saturday or Sunday, shift it back to the prior
- * Friday, since the office is closed on weekends. Other days pass through
- * unchanged.
+ * Render a Date as a YYYY-MM-DD calendar key in the given IANA timezone.
+ * Uses Intl so it never depends on the process TZ env var.
  */
-export function shiftDeadlineForOfficeClosure(deadline: Date): Date {
-  const d = new Date(deadline);
-  const dow = d.getDay();
-  if (dow === 6) {
-    d.setDate(d.getDate() - 1);
-  } else if (dow === 0) {
-    d.setDate(d.getDate() - 2);
-  }
-  return d;
+export function dateKeyInTz(date: Date, tz: string = DEFAULT_TZ): string {
+  // en-CA happens to format as YYYY-MM-DD natively, so we avoid the
+  // locale-specific reordering en-US would do.
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(date);
+}
+
+function parseYMD(s: string): { y: number; m: number; d: number } {
+  const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+  return { y, m, d };
+}
+
+function ymdToUtcMillis(parts: { y: number; m: number; d: number }): number {
+  return Date.UTC(parts.y, parts.m - 1, parts.d);
+}
+
+export function addDaysToYMD(s: string, days: number): string {
+  const ms = ymdToUtcMillis(parseYMD(s)) + days * MS_PER_DAY;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** 0 = Sunday, ..., 6 = Saturday. Operates purely on the calendar key. */
+function dayOfWeekYMD(s: string): number {
+  return new Date(ymdToUtcMillis(parseYMD(s))).getUTCDay();
+}
+
+function diffDaysYMD(later: string, earlier: string): number {
+  return Math.round(
+    (ymdToUtcMillis(parseYMD(later)) - ymdToUtcMillis(parseYMD(earlier))) / MS_PER_DAY,
+  );
+}
+
+function rawDeadlineKey(serviceDate: string): string {
+  // Service dates may arrive as `YYYY-MM-DD` or as ISO timestamps; we
+  // normalise to the calendar day. The 30-day filing rule is a calendar
+  // count, not a 30 * 24h elapsed-time count.
+  return addDaysToYMD(serviceDate.slice(0, 10), 30);
 }
 
 /**
- * Returns the next business day strictly after `today`. Skips Saturday and
- * Sunday.
+ * If a YYYY-MM-DD deadline lands on a Saturday or Sunday, pull it back
+ * to the prior Friday because the office is closed on weekends.
  */
-export function nextBusinessDay(today: Date): Date {
-  const d = startOfDay(today);
-  d.setDate(d.getDate() + 1);
-  while (isWeekend(d)) {
-    d.setDate(d.getDate() + 1);
-  }
-  return d;
+function shiftDeadlineKeyForOfficeClosure(deadlineKey: string): string {
+  const dow = dayOfWeekYMD(deadlineKey);
+  if (dow === 6) return addDaysToYMD(deadlineKey, -1); // Sat -> Fri
+  if (dow === 0) return addDaysToYMD(deadlineKey, -2); // Sun -> Fri
+  return deadlineKey;
+}
+
+// ---------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------
+
+/**
+ * Server-clock "today" key as YYYY-MM-DD in ET. Embedded into deadline-
+ * driven API responses so the client can detect day rollover via a
+ * server signal instead of trusting the user's machine clock.
+ */
+export function serverTodayKey(now: Date = new Date(), tz: string = DEFAULT_TZ): string {
+  return dateKeyInTz(now, tz);
 }
 
 /**
- * Like {@link daysRemaining}, but pulls weekend deadlines back to the prior
- * Friday so the displayed countdown reflects the day the team can actually
- * act. Also accepts an explicit `now` for deterministic testing.
+ * Calendar days remaining until the raw 30-day deadline. Negative when
+ * the deadline has already passed.
+ */
+export function daysRemaining(
+  serviceDate: string | null,
+  now: Date = new Date(),
+  tz: string = DEFAULT_TZ,
+): number | null {
+  if (!serviceDate) return null;
+  const today = dateKeyInTz(now, tz);
+  const deadline = rawDeadlineKey(serviceDate);
+  return diffDaysYMD(deadline, today);
+}
+
+/**
+ * Like {@link daysRemaining}, but pulls weekend deadlines back to the
+ * prior Friday so the displayed countdown reflects the day the team can
+ * actually act.
  */
 export function effectiveDaysRemaining(
   serviceDate: string | null,
   now: Date = new Date(),
+  tz: string = DEFAULT_TZ,
 ): number | null {
   if (!serviceDate) return null;
-  const deadline = shiftDeadlineForOfficeClosure(rawDeadline(serviceDate));
-  const today = startOfDay(now);
-  return Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
+  const today = dateKeyInTz(now, tz);
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
+  return diffDaysYMD(deadline, today);
 }
 
 /**
- * A deadline is "urgent" when, after shifting weekend deadlines back to the
- * prior Friday, it lands on today or earlier. In other words: the team must
- * file it today because tomorrow is too late.
- *
- * On a Friday this naturally captures Sat/Sun raw deadlines (they shift back
- * to Friday = today). It does NOT capture next Monday's deadlines on a
- * Friday, because those can still be filed on Monday morning.
+ * A deadline is "urgent" when, after shifting weekend deadlines back to
+ * the prior Friday, it lands on today (in ET) or earlier — the team
+ * must file it today because tomorrow is too late.
  */
 export function isUrgentDeadline(
   serviceDate: string | null,
   now: Date = new Date(),
+  tz: string = DEFAULT_TZ,
 ): boolean {
   if (!serviceDate) return false;
-  const deadline = shiftDeadlineForOfficeClosure(rawDeadline(serviceDate));
-  const today = startOfDay(now);
-  return deadline.getTime() <= today.getTime();
+  const today = dateKeyInTz(now, tz);
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
+  // YYYY-MM-DD strings sort lexicographically as dates, so `<=` is a
+  // valid calendar comparison here — no Date round-trip required.
+  return deadline <= today;
 }
 
 /**
- * Server-clock "today" key as `YYYY-MM-DD`, in the server's local
- * timezone. Matches the day boundary used by {@link daysRemaining},
- * {@link effectiveDaysRemaining}, and {@link isUrgentDeadline} (which all
- * call `setHours(0, 0, 0, 0)` on a local-time `Date`).
- *
- * Embedded into deadline-driven API responses (`/dashboard/summary`,
- * `/invoice-groups`) so the client can detect day rollover via a server
- * signal instead of a per-page midnight `setTimeout` keyed off the
- * user's machine clock. See `lib/server-day-rollover.ts` on the client.
+ * Backwards-compatible Date-input variant of the office-closure shift.
+ * Mirrors the YMD logic but operates on a `Date`, used by callers that
+ * still pass `Date` objects (e.g. weekend deadline shifting in the
+ * dashboard). New code should prefer the YMD-string variants above.
  */
-export function serverTodayKey(now: Date = new Date()): string {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+export function shiftDeadlineForOfficeClosure(deadline: Date): Date {
+  const d = new Date(deadline);
+  const dow = d.getDay();
+  if (dow === 6) d.setDate(d.getDate() - 1);
+  else if (dow === 0) d.setDate(d.getDate() - 2);
+  return d;
+}
+
+/**
+ * The next business day strictly after `today`. Skips Saturday and
+ * Sunday. Operates on host-local Date math; intended for callers that
+ * already have a local-time anchor (the API process is pinned to ET via
+ * the `TZ` env var, so this matches the rest of this module).
+ */
+export function nextBusinessDay(today: Date): Date {
+  const d = new Date(today);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
 }

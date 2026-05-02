@@ -2442,6 +2442,77 @@ export interface DashboardActivity {
   events: DashboardActivityEvent[];
 }
 
+export type UrgentTodayTransitionsByStatus = { [key: string]: number };
+
+export interface UrgentTodayCurrentRow {
+  id: number;
+  invoiceNumber: string;
+  clientNumber: string | null;
+  status: string;
+  totalAmount: string | null;
+  /** Earliest service date (YYYY-MM-DD) across the group's claims */
+  earliestDate: string | null;
+}
+
+export interface UrgentTodayClearedRow {
+  id: number;
+  invoiceGroupId: number | null;
+  invoiceNumber: string | null;
+  /** Payor identifier (invoice_groups.client_number). */
+  clientNumber: string | null;
+  actor: string | null;
+  /** Origin of the status change as recorded on the audit row's
+metadata: e.g. `operator` (manual UI), `bot` (the portal
+bot), or `auto-after-classify` (automatic post-classification
+transition). Free-form string — the UI just renders it.
+ */
+  source: string | null;
+  /** Free-text reason recorded on the audit row, when present. */
+  reason: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  /** ISO-8601 UTC instant. */
+  timestamp: string;
+  /** Pre-formatted ET wall-clock for direct rendering ("3:14 PM ET"). */
+  timestampET: string;
+}
+
+export type UrgentTodayClearedSummaryByToStatus = { [key: string]: number };
+
+export interface UrgentTodayClearedSummary {
+  total: number;
+  byToStatus: UrgentTodayClearedSummaryByToStatus;
+  actors: string[];
+}
+
+export interface UrgentTodaySnapshotPoint {
+  /** ISO timestamp the snapshot was written */
+  at: string;
+  urgentCount: number;
+  totalActionable: number;
+}
+
+/**
+ * Backing data for the "File today" hero. `today` is the
+America/New_York YYYY-MM-DD calendar key.
+
+ */
+export interface UrgentTodayTransitions {
+  /** ET YYYY-MM-DD calendar key */
+  today: string;
+  urgentCount: number;
+  totalActionable: number;
+  byStatus: UrgentTodayTransitionsByStatus;
+  /** True when the file-today queue had ≥1 urgent group at any point today (current snapshot, the snapshot series, or the cleared-today rows). When false, the UI should suppress the "Why?" line entirely. */
+  wasUrgentToday: boolean;
+  /** Peak urgent count observed today across the snapshot series, the current snapshot, and the cleared-today rows. */
+  maxUrgentToday: number;
+  currentlyUrgent: UrgentTodayCurrentRow[];
+  clearedToday: UrgentTodayClearedRow[];
+  clearedSummary: UrgentTodayClearedSummary;
+  snapshots: UrgentTodaySnapshotPoint[];
+}
+
 export type DashboardTimeseriesPointsItem = {
   /** ISO date (YYYY-MM-DD) at UTC midnight */
   date: string;

@@ -13,6 +13,7 @@ import type {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StatusBadge } from "@/components/status-badge";
+import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -97,14 +98,17 @@ function QueueUrgencyHero({
         }}
       >
         <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span
-            className="text-3xl font-bold tabular-nums"
-            data-testid="queue-urgency-hero-count"
-          >
-            {soonCount}
-          </span>
-          <span className="text-sm">due in the next 3 days · stay ahead of the clock</span>
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span
+              className="text-3xl font-bold tabular-nums"
+              data-testid="queue-urgency-hero-count"
+            >
+              {soonCount}
+            </span>
+            <span className="text-sm">due in the next 3 days · stay ahead of the clock</span>
+          </div>
+          <UrgentTodayWhyLine tone="amber" testid="queue-urgent-today-why-amber" />
         </div>
       </div>
     );
@@ -127,22 +131,29 @@ function QueueUrgencyHero({
         }}
       >
         <AlertTriangle className="h-7 w-7 shrink-0" style={{ color: "hsl(var(--destructive))" }} />
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span
-            className="text-4xl font-bold tabular-nums"
-            style={{ color: "hsl(var(--destructive))" }}
-            data-testid="queue-urgency-hero-count"
-          >
-            {urgentCount}
-          </span>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold">
-              {urgentCount === 1 ? "group" : "groups"} must be submitted before EOD
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span
+              className="text-4xl font-bold tabular-nums"
+              style={{ color: "hsl(var(--destructive))" }}
+              data-testid="queue-urgency-hero-count"
+            >
+              {urgentCount}
             </span>
-            <span className="text-xs opacity-80">
-              File today across Action Required, Portal Queued, and On Hold.
-            </span>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">
+                {urgentCount === 1 ? "group" : "groups"} must be submitted before EOD
+              </span>
+              <span className="text-xs opacity-80">
+                File today across Action Required, Portal Queued, and On Hold.
+              </span>
+            </div>
           </div>
+          <UrgentTodayWhyLine
+            tone="red"
+            urgentCountOverride={urgentCount}
+            testid="queue-urgent-today-why-red"
+          />
         </div>
       </div>
     );
@@ -163,20 +174,23 @@ function QueueUrgencyHero({
       }}
     >
       <Sparkles className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-green-fg))" }} />
-      <div className="flex items-baseline gap-3 flex-wrap">
-        <span
-          className="text-3xl font-bold tabular-nums"
-          style={{ color: "hsl(var(--cc-green-fg))" }}
-          data-testid="queue-urgency-hero-count"
-        >
-          0
-        </span>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold">All clear — nothing must file today.</span>
-          <span className="text-xs opacity-80">
-            File-today queue is empty. Work the next tier so it stays that way.
+      <div className="flex flex-col gap-1 min-w-0 flex-1">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span
+            className="text-3xl font-bold tabular-nums"
+            style={{ color: "hsl(var(--cc-green-fg))" }}
+            data-testid="queue-urgency-hero-count"
+          >
+            0
           </span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold">All clear — nothing must file today.</span>
+            <span className="text-xs opacity-80">
+              File-today queue is empty. Work the next tier so it stays that way.
+            </span>
+          </div>
         </div>
+        <UrgentTodayWhyLine tone="green" urgentCountOverride={0} testid="queue-urgent-today-why-green" />
       </div>
     </div>
   );

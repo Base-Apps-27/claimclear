@@ -175,6 +175,7 @@ import type {
   UpdatePortalSubmissionDraftBody,
   UploadUrlRequest,
   UploadUrlResponse,
+  UrgentTodayTransitions,
   ValidTransitionsResponse,
   WithdrawalsListResponse,
   WorkerActivityResponse,
@@ -8923,6 +8924,92 @@ export function useGetDashboardSummary<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Powers the "Why?" line and activity panel rendered next to the
+File-today hero on the Dashboard and the urgency hero on the
+Queue. All "today" math is anchored on America/New_York. See
+Task #298.
+
+ * @summary File-today hero — currently urgent groups, today-cleared activity, and snapshot sparkline series
+ */
+export const getGetDashboardUrgentTodayTransitionsUrl = () => {
+  return `/api/dashboard/urgent-today/transitions`;
+};
+
+export const getDashboardUrgentTodayTransitions = async (
+  options?: RequestInit,
+): Promise<UrgentTodayTransitions> => {
+  return customFetch<UrgentTodayTransitions>(
+    getGetDashboardUrgentTodayTransitionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardUrgentTodayTransitionsQueryKey = () => {
+  return [`/api/dashboard/urgent-today/transitions`] as const;
+};
+
+export const getGetDashboardUrgentTodayTransitionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardUrgentTodayTransitionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>
+  > = ({ signal }) =>
+    getDashboardUrgentTodayTransitions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardUrgentTodayTransitionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>
+>;
+export type GetDashboardUrgentTodayTransitionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary File-today hero — currently urgent groups, today-cleared activity, and snapshot sparkline series
+ */
+
+export function useGetDashboardUrgentTodayTransitions<
+  TData = Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardUrgentTodayTransitions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getGetDashboardUrgentTodayTransitionsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

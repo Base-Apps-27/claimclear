@@ -33,6 +33,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
@@ -125,6 +126,9 @@ interface HeroCardProps {
   isLoading?: boolean;
   footer?: React.ReactNode;
   testid?: string;
+  /** Optional inline element rendered next to the count (e.g. the
+   *  File-today "Why?" line). */
+  headerExtra?: React.ReactNode;
 }
 
 function heroToneVars(tone: HeroTone): {
@@ -177,6 +181,7 @@ function HeroCard({
   isLoading,
   footer,
   testid,
+  headerExtra,
 }: HeroCardProps) {
   const t = heroToneVars(tone);
   return (
@@ -217,6 +222,11 @@ function HeroCard({
           </span>
           <span className="text-sm text-muted-foreground">{title}</span>
         </div>
+        {headerExtra && (
+          <div className="mt-1 -ml-0.5">
+            {headerExtra}
+          </div>
+        )}
       </div>
       <div className="flex-1">
         {isLoading ? (
@@ -545,6 +555,13 @@ export default function Dashboard() {
             seeAllHref="/queue?expiring=urgent"
             isLoading={false}
             itemsEmpty="No filings due today. Nice."
+            headerExtra={
+              <UrgentTodayWhyLine
+                tone={fileTodayCount === 0 ? "green" : "red"}
+                urgentCountOverride={fileTodayCount}
+                testid="dashboard-urgent-today-why"
+              />
+            }
             items={fileTodayItems.map(g => (
               <HeroRow
                 key={g.id}

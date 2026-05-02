@@ -18,7 +18,9 @@ import {
   RESPONSE_TRACKER,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
+  URGENT_SNAPSHOT,
 } from "./lib/cron-schedule";
+import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 
 // Cap on how long a cron-triggered worker run blocks its cron lane. On
 // timeout the cron row is recorded as degraded and the worker continues in
@@ -475,7 +477,27 @@ if (!process.env.BOT_SERVICE_TOKEN) {
   logger.warn("BOT_SERVICE_TOKEN not set; cron jobs that call internal HTTP endpoints will fail authentication.");
 }
 
+// Hourly "File today" snapshot. Records the urgent-count + status
+// breakdown into state_events so the Dashboard hero and the Queue
+// urgency hero can render an inline sparkline of how the count moved
+// today. See Task #298 + lib/urgent-snapshot.ts.
+cron.schedule(URGENT_SNAPSHOT.cron, async () => {
+  await recordCronRun(URGENT_SNAPSHOT.name, async () => {
+    const snap = await snapshotUrgentCounts();
+    if (!snap) {
+      return { status: "degraded" as const, message: "Urgent snapshot returned null (write failed)" };
+    }
+    return {
+      message: `Urgent snapshot: ${snap.urgentCount}/${snap.totalActionable} on ${snap.todayKey}`,
+      metadata: { urgentCount: snap.urgentCount, totalActionable: snap.totalActionable, todayKey: snap.todayKey, byStatus: snap.byStatus },
+    };
+  });
+}, { timezone: URGENT_SNAPSHOT.tz });
+
 cron.schedule(DAILY_BRIEF.cron, async () => {
+  // Drop a snapshot before the brief sends so the morning email and the
+  // dashboard sparkline both anchor on the same day-start count.
+  await snapshotUrgentCounts();
   await recordCronRun(DAILY_BRIEF.name, async () => {
     logger.info("Daily brief cron: sending morning brief");
     const res = await fetch(`http://localhost:${port}/api/daily-brief`, {
@@ -553,6 +575,9 @@ cron.schedule(STUCK_SUBMISSION_RESET.cron, async () => {
 // Submissions queue-status pill all reason about the exact same schedule
 // that actually fires here.
 cron.schedule(PORTAL_BATCH_SWEEPER.cron, async () => {
+  // Snapshot before the sweep so we get a "before" data point — the
+  // sparkline then visualises whether the sweep moved the urgent count.
+  await snapshotUrgentCounts();
   await recordCronRun(PORTAL_BATCH_SWEEPER.name, async () => {
     const [{ value: dueCount } = { value: 0 }] = await db
       .select({ value: count() })

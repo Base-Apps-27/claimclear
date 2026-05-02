@@ -12,6 +12,13 @@ paths = ["/api", "/"]
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
 
+[services.development.env]
+# Pin the wall-clock timezone for the API process. All "today" / urgency /
+# 30-day-deadline math is anchored to America/New_York via Intl, but we
+# still pin TZ here so any Date.toLocale*, audit timestamps, and cron
+# tz-defaulting helpers also agree with the office calendar. See Task #298.
+TZ = "America/New_York"
+
 [services.production]
 
 [services.production.build]
@@ -36,6 +43,13 @@ args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
 PORT = "8080"
 NODE_ENV = "production"
 PLAYWRIGHT_BROWSERS_PATH = "./pw-browsers"
+# Pin the wall-clock timezone in production so the autoscaled container's
+# default UTC clock cannot leak into urgency math, audit timestamps, or
+# cron firing windows. The deadline helpers in lib/dates.ts anchor on
+# America/New_York via Intl regardless, but pinning TZ keeps every other
+# Date.toLocale* call (logs, briefs, cron-parser ticks) on the same
+# calendar as the office. See Task #298.
+TZ = "America/New_York"
 
 [services.production.health.startup]
 path = "/api/healthz"

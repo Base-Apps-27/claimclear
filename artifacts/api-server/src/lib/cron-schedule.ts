@@ -58,12 +58,23 @@ export const STUCK_SUBMISSION_RESET: CronJobSchedule = {
   tz: "America/New_York",
 };
 
+// Hourly during the office's working hours (8am – 8pm ET). Records a
+// `dashboard_urgent_snapshot` state_event so the Dashboard's "File
+// today" hero and the Queue's urgency hero can render an inline
+// sparkline of how the count evolves over the day. See Task #298.
+export const URGENT_SNAPSHOT: CronJobSchedule = {
+  name: "urgent_snapshot",
+  cron: "0 8-20 * * *",
+  tz: "America/New_York",
+};
+
 export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
   RESPONSE_TRACKER,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
+  URGENT_SNAPSHOT,
 ];
 
 // Default grace window between a scheduled sweep firing and the moment we

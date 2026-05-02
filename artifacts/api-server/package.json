@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/__tests__/*.test.ts",
+    "test": "TZ=America/New_York node --import tsx --test src/__tests__/*.test.ts",
     "bot:run": "npx tsx src/bot/portal-bot.ts",
     "bot:save-session": "npx tsx src/bot/save-session.ts"
   },

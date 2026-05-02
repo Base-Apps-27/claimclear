@@ -1,13 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable, stateEventsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
+import { addDaysToYMD, daysRemaining, effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 import { getOverdueCount } from "../lib/overdue-submissions";
+import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
 
 const router: IRouter = Router();
 
@@ -666,5 +667,298 @@ router.get("/dashboard/user-productivity", asyncHandler(async (req, res): Promis
 
   res.json({ days, users });
 }));
+
+// ─────────────────────────────────────────────────────────────────────
+// /dashboard/urgent-today/transitions
+//
+// Powers the "Why?" line and activity panel rendered next to the
+// File-today hero on the Dashboard and the urgency hero on the Queue.
+// Returns:
+//   • currentlyUrgent: groups with an urgent (today-or-earlier) ET
+//     deadline AND a status in the actionable set.
+//   • clearedToday: rows in audit_logs from this ET day where a
+//     `group_status_changed` moved a group OUT of the actionable set
+//     (e.g. an operator filed it / packaged it). The point is to show
+//     the team what already cleared today, so a low "File today" count
+//     reads as "we did the work" rather than "we forgot".
+//   • snapshots: the last 24 `dashboard_urgent_snapshot` rows from
+//     state_events for the inline sparkline.
+//   • todayKey: the ET day this response is anchored to (mirrors
+//     `today` on /dashboard/summary; lets the rollover signal flip the
+//     activity panel atomically too).
+//
+// See Task #298 for the design doc.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/dashboard/urgent-today/transitions", asyncHandler(async (_req, res): Promise<void> => {
+  const now = new Date();
+  const todayKey = serverTodayKey(now);
+
+  const snap = await computeUrgentSnapshot(now);
+
+  // Hydrate the urgent-group rows with the columns the UI needs.
+  // (computeUrgentSnapshot only returns IDs to keep the snapshot record
+  // small.)
+  const currentlyUrgentRows = snap.urgentGroupIds.length === 0
+    ? []
+    : await db
+        .select({
+          id: invoiceGroupsTable.id,
+          invoiceNumber: invoiceGroupsTable.invoiceNumber,
+          clientNumber: invoiceGroupsTable.clientNumber,
+          status: invoiceGroupsTable.status,
+          totalAmount: invoiceGroupsTable.totalAmount,
+          earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+        })
+        .from(invoiceGroupsTable)
+        .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+        .where(inArray(invoiceGroupsTable.id, snap.urgentGroupIds))
+        .groupBy(invoiceGroupsTable.id);
+
+  // ET-anchored today window for audit_logs. We can't use a SQL
+  // expression keyed on the host process's TZ (the db is UTC); convert
+  // the ET day boundaries to UTC instants here and filter by them.
+  // DST safety: dayEnd is the *next* ET midnight, NOT dayStart + 24h.
+  // On spring-forward Sundays the ET day is 23h long; on fall-back it
+  // is 25h. Computing both endpoints from `etMidnightUtcInstant`
+  // delegates the offset math to Intl and keeps the window correct
+  // across the boundary.
+  const dayStartET = etMidnightUtcInstant(todayKey);
+  const dayEndET = etMidnightUtcInstant(addDaysToYMD(todayKey, 1));
+
+  // Pull every group_status_changed for the day, then filter in JS to
+  // keep the SQL boring. Also include the parent group's earliest
+  // claim date so the panel can render "(was urgent)" badges.
+  const auditRows = await db
+    .select({
+      id: auditLogsTable.id,
+      invoiceGroupId: auditLogsTable.invoiceGroupId,
+      metadata: auditLogsTable.metadata,
+      userName: auditLogsTable.userName,
+      userEmail: auditLogsTable.userEmail,
+      timestamp: auditLogsTable.timestamp,
+    })
+    .from(auditLogsTable)
+    .where(
+      and(
+        eq(auditLogsTable.action, "group_status_changed"),
+        gte(auditLogsTable.timestamp, dayStartET),
+        lte(auditLogsTable.timestamp, dayEndET),
+      ),
+    )
+    .orderBy(desc(auditLogsTable.timestamp));
+
+  type ClearedRow = {
+    id: number;
+    invoiceGroupId: number | null;
+    invoiceNumber: string | null;
+    /** Payor identifier (invoice_groups.client_number). */
+    clientNumber: string | null;
+    actor: string | null;
+    /** Where did the change come from: operator UI / bot / classifier? */
+    source: string | null;
+    /** Free-text reason recorded on the audit row (operator note, etc.). */
+    reason: string | null;
+    fromStatus: string | null;
+    toStatus: string | null;
+    timestamp: string;
+    /** ET wall-clock formatting for the panel ("3:14 PM ET"). */
+    timestampET: string;
+  };
+
+  const ACTIONABLE = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUSES);
+  const candidateRows: ClearedRow[] = [];
+  for (const row of auditRows) {
+    const meta = (row.metadata ?? {}) as {
+      from?: string;
+      to?: string;
+      source?: string;
+      reason?: string;
+    };
+    const fromStatus = meta.from ?? null;
+    const toStatus = meta.to ?? null;
+    // Only count transitions that LEFT the actionable set — those
+    // genuinely cleared filing-clock work. (A New → Needs Evidence
+    // move is a re-categorisation; the row is still on the clock.)
+    if (!fromStatus || !toStatus) continue;
+    if (!ACTIONABLE.has(fromStatus)) continue;
+    if (ACTIONABLE.has(toStatus)) continue;
+    candidateRows.push({
+      id: row.id,
+      invoiceGroupId: row.invoiceGroupId,
+      invoiceNumber: null, // joined below
+      clientNumber: null, // joined below
+      actor: row.userName ?? row.userEmail ?? null,
+      source: meta.source ?? null,
+      reason: meta.reason ?? null,
+      fromStatus,
+      toStatus,
+      timestamp: row.timestamp.toISOString(),
+      timestampET: formatEtTimeOfDay(row.timestamp),
+    });
+  }
+
+  // Join invoice_number, client_number (payor), and the earliest
+  // service date for each parent group. The earliest service date
+  // determines whether the group was actually urgent today (deadline
+  // ≤ today ET) — without this guard, the panel would surface an
+  // unrelated New→Closed transition as "cleared today" even though
+  // the row was nowhere near the file-today clock.
+  const groupMeta = new Map<number, { invoiceNumber: string | null; clientNumber: string | null; earliestDate: string | null }>();
+  if (candidateRows.length > 0) {
+    const ids = Array.from(new Set(candidateRows.map(r => r.invoiceGroupId).filter((x): x is number => x != null)));
+    if (ids.length > 0) {
+      const groups = await db
+        .select({
+          id: invoiceGroupsTable.id,
+          invoiceNumber: invoiceGroupsTable.invoiceNumber,
+          clientNumber: invoiceGroupsTable.clientNumber,
+          earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+        })
+        .from(invoiceGroupsTable)
+        .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+        .where(inArray(invoiceGroupsTable.id, ids))
+        .groupBy(invoiceGroupsTable.id, invoiceGroupsTable.invoiceNumber, invoiceGroupsTable.clientNumber);
+      for (const g of groups) {
+        groupMeta.set(g.id, {
+          invoiceNumber: g.invoiceNumber,
+          clientNumber: g.clientNumber,
+          earliestDate: g.earliestDate,
+        });
+      }
+    }
+  }
+
+  // Final filter: only include rows whose group was urgent (by
+  // deadline math) at some point today. We use the earliest service
+  // date as the proxy — if `effectiveDaysRemaining(earliestDate, now) <= 0`
+  // the group was on the file-today clock immediately before this row
+  // moved it out of the actionable set.
+  const clearedRowsRaw: ClearedRow[] = [];
+  for (const c of candidateRows) {
+    const meta = c.invoiceGroupId != null ? groupMeta.get(c.invoiceGroupId) : undefined;
+    const earliestDate = meta?.earliestDate ?? null;
+    const eff = effectiveDaysRemaining(earliestDate, now);
+    if (eff == null || eff > 0) continue; // group wasn't urgent today, skip
+    clearedRowsRaw.push({
+      ...c,
+      invoiceNumber: meta?.invoiceNumber ?? null,
+      clientNumber: meta?.clientNumber ?? null,
+    });
+  }
+
+  const byToStatus: Record<string, number> = {};
+  const actorSet = new Set<string>();
+  for (const r of clearedRowsRaw) {
+    byToStatus[r.toStatus ?? "?"] = (byToStatus[r.toStatus ?? "?"] ?? 0) + 1;
+    if (r.actor) actorSet.add(r.actor);
+  }
+
+  // Inline sparkline data — last 24 snapshots for the current ET day.
+  // The cron records hourly during business hours; on a fresh deploy
+  // the series may be empty and the UI will degrade gracefully.
+  const snapshotRows = await db
+    .select({
+      createdAt: stateEventsTable.createdAt,
+      metadata: stateEventsTable.metadata,
+    })
+    .from(stateEventsTable)
+    .where(
+      and(
+        eq(stateEventsTable.eventKey, "dashboard_urgent_snapshot"),
+        gte(stateEventsTable.createdAt, dayStartET),
+        lte(stateEventsTable.createdAt, dayEndET),
+      ),
+    )
+    .orderBy(stateEventsTable.createdAt);
+
+  type SnapPoint = { at: string; urgentCount: number; totalActionable: number };
+  const snapshots: SnapPoint[] = snapshotRows.map(r => {
+    const meta = (r.metadata ?? {}) as { urgentCount?: number; totalActionable?: number };
+    return {
+      at: r.createdAt.toISOString(),
+      urgentCount: typeof meta.urgentCount === "number" ? meta.urgentCount : 0,
+      totalActionable: typeof meta.totalActionable === "number" ? meta.totalActionable : 0,
+    };
+  });
+
+  // Today-was-urgent guard for the UI: the "Why?" line should
+  // suppress itself entirely on calm days where nothing was ever
+  // urgent. Compute the max urgentCount we saw today across the
+  // snapshot series so the frontend can render nothing when both
+  // urgentCount AND cleared AND maxUrgentToday are zero.
+  const maxUrgentToday = Math.max(
+    snap.urgentCount,
+    clearedRowsRaw.length,
+    ...snapshots.map(s => s.urgentCount),
+  );
+  const wasUrgentToday = maxUrgentToday > 0;
+
+  res.json({
+    today: todayKey,
+    urgentCount: snap.urgentCount,
+    totalActionable: snap.totalActionable,
+    byStatus: snap.byStatus,
+    /** True when the file-today queue was ≥1 at any point today (snapshot series, current count, or cleared rows). */
+    wasUrgentToday,
+    /** Highest urgent count we saw today, used for the "peaked at N" sentence in the panel. */
+    maxUrgentToday,
+    currentlyUrgent: currentlyUrgentRows.map(r => ({
+      id: r.id,
+      invoiceNumber: r.invoiceNumber,
+      clientNumber: r.clientNumber,
+      status: r.status,
+      totalAmount: r.totalAmount,
+      earliestDate: r.earliestDate,
+    })),
+    clearedToday: clearedRowsRaw.slice(0, 50),
+    clearedSummary: {
+      total: clearedRowsRaw.length,
+      byToStatus,
+      actors: Array.from(actorSet).sort(),
+    },
+    snapshots,
+  });
+}));
+
+// "3:14 PM ET" — the wall-clock the operators read off the clock on
+// the wall. Used in the cleared-today rows so the panel doesn't have
+// to do its own client-side TZ math.
+function formatEtTimeOfDay(d: Date): string {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${fmt.format(d)} ET`;
+}
+
+// Convert a YYYY-MM-DD ET calendar key to the UTC `Date` representing
+// midnight at the start of that ET day. Handles DST automatically by
+// asking Intl what the UTC offset is at the requested instant.
+export function etMidnightUtcInstant(ymd: string): Date {
+  // Build the candidate UTC midnight for the date, then ask what the
+  // ET offset is at that instant. Subtract that offset to land on the
+  // true ET midnight. This is correct on both sides of DST because
+  // `Intl.DateTimeFormat` reports the offset at the queried instant.
+  const utcGuess = new Date(`${ymd}T00:00:00Z`);
+  // Compute ET offset (in minutes) at the guess instant.
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
+    hour: "numeric",
+  });
+  const parts = fmt.formatToParts(utcGuess);
+  const tzPart = parts.find(p => p.type === "timeZoneName")?.value ?? "GMT-5";
+  // tzPart is like "GMT-5" or "GMT-4". Parse the hour offset.
+  const m = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(tzPart);
+  const sign = m && m[1] === "-" ? -1 : 1;
+  const hours = m ? parseInt(m[2], 10) : 5;
+  const mins = m && m[3] ? parseInt(m[3], 10) : 0;
+  const offsetMin = sign * (hours * 60 + mins);
+  // ET midnight = UTC midnight - offset. (When ET is UTC-5, ET midnight
+  // == UTC 05:00, so we add 5h.)
+  return new Date(utcGuess.getTime() - offsetMin * 60 * 1000);
+}
 
 export default router;

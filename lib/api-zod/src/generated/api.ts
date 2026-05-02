@@ -14427,6 +14427,90 @@ export const GetDashboardSummaryResponse = zod.object({
 });
 
 /**
+ * Powers the "Why?" line and activity panel rendered next to the
+File-today hero on the Dashboard and the urgency hero on the
+Queue. All "today" math is anchored on America/New_York. See
+Task #298.
+
+ * @summary File-today hero — currently urgent groups, today-cleared activity, and snapshot sparkline series
+ */
+export const GetDashboardUrgentTodayTransitionsResponse = zod
+  .object({
+    today: zod.string().describe("ET YYYY-MM-DD calendar key"),
+    urgentCount: zod.number(),
+    totalActionable: zod.number(),
+    byStatus: zod.record(zod.string(), zod.number()),
+    wasUrgentToday: zod
+      .boolean()
+      .describe(
+        'True when the file-today queue had ≥1 urgent group at any point today (current snapshot, the snapshot series, or the cleared-today rows). When false, the UI should suppress the \"Why?\" line entirely.',
+      ),
+    maxUrgentToday: zod
+      .number()
+      .describe(
+        "Peak urgent count observed today across the snapshot series, the current snapshot, and the cleared-today rows.",
+      ),
+    currentlyUrgent: zod.array(
+      zod.object({
+        id: zod.number(),
+        invoiceNumber: zod.string(),
+        clientNumber: zod.union([zod.string(), zod.null()]),
+        status: zod.string(),
+        totalAmount: zod.union([zod.string(), zod.null()]),
+        earliestDate: zod
+          .union([zod.string(), zod.null()])
+          .describe(
+            "Earliest service date (YYYY-MM-DD) across the group's claims",
+          ),
+      }),
+    ),
+    clearedToday: zod.array(
+      zod.object({
+        id: zod.number(),
+        invoiceGroupId: zod.union([zod.number(), zod.null()]),
+        invoiceNumber: zod.union([zod.string(), zod.null()]),
+        clientNumber: zod
+          .union([zod.string(), zod.null()])
+          .describe("Payor identifier (invoice_groups.client_number)."),
+        actor: zod.union([zod.string(), zod.null()]),
+        source: zod
+          .union([zod.string(), zod.null()])
+          .describe(
+            "Origin of the status change as recorded on the audit row's\nmetadata: e.g. `operator` (manual UI), `bot` (the portal\nbot), or `auto-after-classify` (automatic post-classification\ntransition). Free-form string — the UI just renders it.\n",
+          ),
+        reason: zod
+          .union([zod.string(), zod.null()])
+          .describe(
+            "Free-text reason recorded on the audit row, when present.",
+          ),
+        fromStatus: zod.union([zod.string(), zod.null()]),
+        toStatus: zod.union([zod.string(), zod.null()]),
+        timestamp: zod.string().describe("ISO-8601 UTC instant."),
+        timestampET: zod
+          .string()
+          .describe(
+            'Pre-formatted ET wall-clock for direct rendering (\"3:14 PM ET\").',
+          ),
+      }),
+    ),
+    clearedSummary: zod.object({
+      total: zod.number(),
+      byToStatus: zod.record(zod.string(), zod.number()),
+      actors: zod.array(zod.string()),
+    }),
+    snapshots: zod.array(
+      zod.object({
+        at: zod.string().describe("ISO timestamp the snapshot was written"),
+        urgentCount: zod.number(),
+        totalActionable: zod.number(),
+      }),
+    ),
+  })
+  .describe(
+    'Backing data for the \"File today\" hero. `today` is the\nAmerica\/New_York YYYY-MM-DD calendar key.\n',
+  );
+
+/**
  * @summary Daily activity time series for the summary page
  */
 export const getDashboardTimeseriesQueryDaysDefault = 30;

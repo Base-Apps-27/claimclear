@@ -2860,6 +2860,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
 
+  /dashboard/urgent-today/transitions:
+    get:
+      operationId: getDashboardUrgentTodayTransitions
+      tags: [dashboard]
+      summary: File-today hero — currently urgent groups, today-cleared activity, and snapshot sparkline series
+      description: |
+        Powers the "Why?" line and activity panel rendered next to the
+        File-today hero on the Dashboard and the urgency hero on the
+        Queue. All "today" math is anchored on America/New_York. See
+        Task #298.
+      responses:
+        "200":
+          description: Today's urgent-count snapshot, the cleared-today activity, and the snapshot series for the inline sparkline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UrgentTodayTransitions"
+
   /dashboard/timeseries:
     get:
       operationId: getDashboardTimeseries
@@ -6384,6 +6402,181 @@ components:
             $ref: "#/components/schemas/DashboardActivityEvent"
       required:
         - events
+
+    UrgentTodayTransitions:
+      type: object
+      description: |
+        Backing data for the "File today" hero. `today` is the
+        America/New_York YYYY-MM-DD calendar key.
+      properties:
+        today:
+          type: string
+          description: ET YYYY-MM-DD calendar key
+        urgentCount:
+          type: integer
+        totalActionable:
+          type: integer
+        byStatus:
+          type: object
+          additionalProperties:
+            type: integer
+        wasUrgentToday:
+          type: boolean
+          description: True when the file-today queue had ≥1 urgent group at any point today (current snapshot, the snapshot series, or the cleared-today rows). When false, the UI should suppress the "Why?" line entirely.
+        maxUrgentToday:
+          type: integer
+          description: Peak urgent count observed today across the snapshot series, the current snapshot, and the cleared-today rows.
+        currentlyUrgent:
+          type: array
+          items:
+            $ref: "#/components/schemas/UrgentTodayCurrentRow"
+        clearedToday:
+          type: array
+          items:
+            $ref: "#/components/schemas/UrgentTodayClearedRow"
+        clearedSummary:
+          $ref: "#/components/schemas/UrgentTodayClearedSummary"
+        snapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/UrgentTodaySnapshotPoint"
+      required:
+        - today
+        - urgentCount
+        - totalActionable
+        - byStatus
+        - wasUrgentToday
+        - maxUrgentToday
+        - currentlyUrgent
+        - clearedToday
+        - clearedSummary
+        - snapshots
+
+    UrgentTodayCurrentRow:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceNumber:
+          type: string
+        clientNumber:
+          oneOf:
+            - type: string
+            - type: "null"
+        status:
+          type: string
+        totalAmount:
+          oneOf:
+            - type: string
+            - type: "null"
+        earliestDate:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Earliest service date (YYYY-MM-DD) across the group's claims
+      required:
+        - id
+        - invoiceNumber
+        - clientNumber
+        - status
+        - totalAmount
+        - earliestDate
+
+    UrgentTodayClearedRow:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceGroupId:
+          oneOf:
+            - type: integer
+            - type: "null"
+        invoiceNumber:
+          oneOf:
+            - type: string
+            - type: "null"
+        clientNumber:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Payor identifier (invoice_groups.client_number).
+        actor:
+          oneOf:
+            - type: string
+            - type: "null"
+        source:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: |
+            Origin of the status change as recorded on the audit row's
+            metadata: e.g. `operator` (manual UI), `bot` (the portal
+            bot), or `auto-after-classify` (automatic post-classification
+            transition). Free-form string — the UI just renders it.
+        reason:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: Free-text reason recorded on the audit row, when present.
+        fromStatus:
+          oneOf:
+            - type: string
+            - type: "null"
+        toStatus:
+          oneOf:
+            - type: string
+            - type: "null"
+        timestamp:
+          type: string
+          description: ISO-8601 UTC instant.
+        timestampET:
+          type: string
+          description: Pre-formatted ET wall-clock for direct rendering ("3:14 PM ET").
+      required:
+        - id
+        - invoiceGroupId
+        - invoiceNumber
+        - clientNumber
+        - actor
+        - source
+        - reason
+        - fromStatus
+        - toStatus
+        - timestamp
+        - timestampET
+
+    UrgentTodayClearedSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+        byToStatus:
+          type: object
+          additionalProperties:
+            type: integer
+        actors:
+          type: array
+          items:
+            type: string
+      required:
+        - total
+        - byToStatus
+        - actors
+
+    UrgentTodaySnapshotPoint:
+      type: object
+      properties:
+        at:
+          type: string
+          description: ISO timestamp the snapshot was written
+        urgentCount:
+          type: integer
+        totalActionable:
+          type: integer
+      required:
+        - at
+        - urgentCount
+        - totalActionable
 
     DashboardActivityEvent:
       type: object
