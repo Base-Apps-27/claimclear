@@ -35,6 +35,7 @@ const MIRRORABLE_LEG_STATUSES: ReadonlySet<ClaimStatus> = new Set<ClaimStatus>([
   "Ready to Review",
   "Awaiting Response",
   "On Hold",
+  "MAS Eligible",
   "Resolved",
   "Denied",
 ]);

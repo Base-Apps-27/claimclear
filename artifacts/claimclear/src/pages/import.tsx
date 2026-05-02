@@ -5,9 +5,12 @@ import {
   useLookupErrorDetailMappings,
   useSaveErrorDetailMappings,
   useListErrorTypes,
+  useListInvoiceGroups,
+  useTriageInvoiceGroup,
+  useMarkInvoiceGroupMasEligible,
   getListClaimsQueryKey,
 } from "@workspace/api-client-react";
-import type { ImportSummary, ErrorTypeResponse } from "@workspace/api-client-react";
+import type { ImportSummary, ErrorTypeResponse, InvoiceGroupResponse } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1376,11 +1379,258 @@ function ConfirmStep({
             Batch ID: <code className="bg-muted px-1 rounded font-mono">{result.batchId}</code>
           </p>
         </Section>
+
+        {/* Phase 3 of the post-upload triage bridge: surface every group
+            from THIS batch that landed without a source-provided error
+            description, and let the operator route it inline (define
+            error type from a picker, mark non-issue, or send straight
+            to MAS Eligible — which auto-engages attestation via the
+            cascade wired in Phase 1). The component is mounted only
+            when we have a batchId so we never render an empty bridge.
+        */}
+        {result.batchId && <PostUploadBridge batchId={result.batchId} />}
       </>
     );
   }
 
   return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Post-upload triage bridge (Phase 3)
+//
+// The bridge is the connective tissue between import and the rest of the
+// claim lifecycle: every freshly-imported group whose source row had no
+// error description gets one inline action (error-type picker, non-issue,
+// or MAS Eligible) so the operator never has to context-switch to the
+// Queue page just to clear the obvious cases.
+//
+// Design notes that took thought:
+//   1. PICKER, NOT TEXT INPUT. Per explicit user direction: the only
+//      acceptable error-type entry mode at this stage is selecting from
+//      the existing `error_types` table. Free-text would re-open the
+//      messy "everyone names errors slightly differently" problem the
+//      taxonomy was created to fix.
+//   2. PREDICATE IS errorDetails=empty (matches the user's stated rule:
+//      "legs with no error_description"). But not every action SETS an
+//      errorDetails value:
+//        - triage(issue_found) sets errorTypeId/errorTypeName, NOT
+//          errorDetails;
+//        - mark-mas-eligible doesn't touch errorDetails at all;
+//        - triage(non_issue) closes the group (Resolved) but again
+//          doesn't set errorDetails.
+//      Refetching after an action would therefore still return the
+//      same row and the row would not "disappear" as the operator
+//      expects. Solution: track actioned ids in component state and
+//      filter them out client-side. We still invalidate the broader
+//      ["listInvoiceGroups"] cache so the Queue page / dashboard
+//      reflect the change immediately.
+//   3. The bridge does NOT block the operator. They can ignore it
+//      entirely and use the existing nav (Open Queue, Import another)
+//      in the right rail — the bridge is purely additive.
+// ────────────────────────────────────────────────────────────────────────────
+function PostUploadBridge({ batchId }: { batchId: string }) {
+  const queryClient = useQueryClient();
+  // No need for an `{ enabled }` guard here: the parent (`ConfirmStep`'s
+  // complete branch) only mounts <PostUploadBridge /> when `result.batchId`
+  // is truthy, so this hook never fires with an empty batch id.
+  const groupsQuery = useListInvoiceGroups({ importBatch: batchId, errorDetails: "empty", limit: 200 });
+  const errorTypesQuery = useListErrorTypes();
+
+  // Local state — see design note (2) above for why we don't rely on
+  // refetch alone to drop actioned rows from the visible list.
+  const [actioned, setActioned] = useState<Set<number>>(new Set());
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [errorByGroup, setErrorByGroup] = useState<Record<number, string>>({});
+
+  // Broad-stroke cache invalidation: every other surface that reads
+  // groups (Queue, dashboard tiles, attestation pending list, etc.)
+  // should reflect the new state. Cheap and safe — these queries are
+  // already paginated/scoped on the consumer side.
+  const invalidateGroupCaches = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["listInvoiceGroups"] });
+    queryClient.invalidateQueries({ queryKey: ["listClaimsAttestationPending"] });
+    queryClient.invalidateQueries({ queryKey: ["getDashboardSummary"] });
+  }, [queryClient]);
+
+  const handleSuccess = useCallback((id: number) => {
+    setActioned(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setBusyId(null);
+    invalidateGroupCaches();
+  }, [invalidateGroupCaches]);
+
+  const handleError = useCallback((id: number, err: unknown) => {
+    const msg = err instanceof Error ? err.message : "Action failed — please try again.";
+    setErrorByGroup(prev => ({ ...prev, [id]: msg }));
+    setBusyId(null);
+  }, []);
+
+  // Explicit param types on the mutation callbacks: orval's generated
+  // mutation hooks declare a generic `TContext` that `noImplicitAny`
+  // refuses to infer through the options-object indirection. Spelling
+  // the variables type out is cheaper than fighting the inference.
+  const triage = useTriageInvoiceGroup({
+    mutation: {
+      onSuccess: (_data: unknown, vars: { id: number }) => handleSuccess(vars.id),
+      onError: (err: unknown, vars: { id: number }) => handleError(vars.id, err),
+    },
+  });
+
+  const markEligible = useMarkInvoiceGroupMasEligible({
+    mutation: {
+      onSuccess: (_data: unknown, vars: { id: number }) => handleSuccess(vars.id),
+      onError: (err: unknown, vars: { id: number }) => handleError(vars.id, err),
+    },
+  });
+
+  if (groupsQuery.isLoading) {
+    return (
+      <Section title="Quick triage" icon={<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}>
+        <p className="text-sm text-muted-foreground">Looking for groups that need triage…</p>
+      </Section>
+    );
+  }
+
+  const allGroups = (groupsQuery.data ?? []) as InvoiceGroupResponse[];
+  const visibleGroups = allGroups.filter(g => !actioned.has(g.id));
+  const errorTypes = (errorTypesQuery.data ?? []) as ErrorTypeResponse[];
+
+  if (allGroups.length === 0) {
+    return (
+      <Section title="Quick triage" icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}>
+        <p className="text-sm text-muted-foreground">
+          Every imported group already has an error description from the source. Nothing to triage here.
+        </p>
+      </Section>
+    );
+  }
+
+  if (visibleGroups.length === 0) {
+    return (
+      <Section title="Quick triage" icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}>
+        <p className="text-sm">
+          All {allGroups.length} group{allGroups.length === 1 ? "" : "s"} routed. Open the queue to keep working.
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section
+      title={`Quick triage · ${visibleGroups.length} of ${allGroups.length}`}
+      icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+    >
+      <p className="text-xs text-muted-foreground mb-3">
+        These groups landed without an error description from the source file. Pick an existing error type,
+        mark them as a non-issue, or send straight to MAS Eligible — which will queue attestation automatically.
+      </p>
+      <div className="border border-border rounded-md divide-y divide-border" data-testid="post-upload-bridge-list">
+        {visibleGroups.map(g => {
+          const isBusy = busyId === g.id;
+          const rowError = errorByGroup[g.id];
+          return (
+            <div
+              key={g.id}
+              className="p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+              data-testid={`bridge-row-${g.id}`}
+            >
+              <div className="text-sm min-w-0 flex-1">
+                <div className="font-mono font-medium truncate">{g.invoiceNumber || `Group #${g.id}`}</div>
+                <div className="text-xs text-muted-foreground">
+                  {g.rideCount} ride{g.rideCount === 1 ? "" : "s"}
+                  {g.totalAmount && ` · $${parseFloat(g.totalAmount).toFixed(2)}`}
+                  {g.clientNumber && ` · ${g.clientNumber}`}
+                </div>
+                {rowError && (
+                  <div className="text-xs text-red-600 mt-1" data-testid={`bridge-row-error-${g.id}`}>
+                    {rowError}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select
+                  value=""
+                  disabled={isBusy || errorTypesQuery.isLoading || errorTypes.length === 0}
+                  onValueChange={(value) => {
+                    // Select values are strings, but ErrorTypeResponse.id
+                    // is the table's serial primary key (number). Coerce
+                    // for the lookup. The triage body's errorTypeId is
+                    // typed as string (`text` foreign-key column on the
+                    // invoice_groups side — historical schema choice),
+                    // so we send the stringified id.
+                    const numericId = parseInt(value, 10);
+                    const et = errorTypes.find(e => e.id === numericId);
+                    if (!et) return;
+                    setBusyId(g.id);
+                    setErrorByGroup(prev => {
+                      const next = { ...prev };
+                      delete next[g.id];
+                      return next;
+                    });
+                    triage.mutate({
+                      id: g.id,
+                      data: { triageOutcome: "issue_found", errorTypeId: String(et.id), errorTypeName: et.name },
+                    });
+                  }}
+                >
+                  <SelectTrigger
+                    className="w-[200px] h-8 text-xs"
+                    data-testid={`bridge-select-error-${g.id}`}
+                  >
+                    <SelectValue placeholder="Define error…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {errorTypes.map(et => (
+                      <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={() => {
+                    setBusyId(g.id);
+                    setErrorByGroup(prev => {
+                      const next = { ...prev };
+                      delete next[g.id];
+                      return next;
+                    });
+                    triage.mutate({ id: g.id, data: { triageOutcome: "non_issue" } });
+                  }}
+                  data-testid={`bridge-btn-non-issue-${g.id}`}
+                >
+                  Non-issue
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={() => {
+                    setBusyId(g.id);
+                    setErrorByGroup(prev => {
+                      const next = { ...prev };
+                      delete next[g.id];
+                      return next;
+                    });
+                    markEligible.mutate({ id: g.id, data: {} });
+                  }}
+                  data-testid={`bridge-btn-mas-eligible-${g.id}`}
+                >
+                  MAS Eligible
+                </Button>
+                {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
 }
 
 function ResultTile({ label, value, tone }: { label: string; value: number; tone: Tone }) {

@@ -30,6 +30,11 @@ const STATUS_COLORS: Record<string, string> = {
   "Ready to Review": "bg-cyan-100 text-cyan-800 border-cyan-200",
   "Awaiting Response": "bg-violet-100 text-violet-800 border-violet-200",
   "On Hold": "bg-purple-100 text-purple-800 border-purple-200",
+  // MAS Eligible: positive MAS portal verdict (carrier owes), but
+  // re-attestation in MAS still owed. Emerald sits between the
+  // green of "Resolved" and the cyan of "Ready to Review" — a
+  // verdict has landed but it's not closed yet.
+  "MAS Eligible": "bg-emerald-100 text-emerald-800 border-emerald-200",
   "Resolved": "bg-green-100 text-green-800 border-green-200",
   "Denied": "bg-red-100 text-red-800 border-red-200",
   "Pending": "bg-gray-100 text-gray-800 border-gray-200",

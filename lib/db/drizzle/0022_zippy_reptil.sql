@@ -1,0 +1,1 @@
+ALTER TYPE "public"."claim_status" ADD VALUE 'MAS Eligible' BEFORE 'Resolved';

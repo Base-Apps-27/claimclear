@@ -110,8 +110,18 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   const createdTo = query.createdTo as string | undefined;
   const amountMin = query.amountMin as string | undefined;
   const amountMax = query.amountMax as string | undefined;
+  // Post-upload triage bridge filter: scope the listing to a single
+  // import batch so the bridge UI can show ONLY the groups created by
+  // the just-completed import. The batch tag is a free-form text
+  // column populated by the importer (`import_<timestamp>`); we accept
+  // an exact match only to keep the predicate cheap and unambiguous.
+  const importBatch = query.importBatch as string | undefined;
 
   const conditions: SQL[] = [];
+
+  if (importBatch && typeof importBatch === "string" && importBatch.length > 0) {
+    conditions.push(eq(invoiceGroupsTable.importBatch, importBatch));
+  }
 
   if (status && typeof status === "string") {
     const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof invoiceGroupsTable.status.enumValues)[number][];
@@ -1138,6 +1148,65 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
     const msg = err.message || "Failed to classify";
     if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
     res.status(400).json({ error: msg });
+  }
+}));
+
+// POST /invoice-groups/:id/mark-mas-eligible — dedicated entry point for
+// the post-upload triage bridge (Phase 2 of the bridge work). Distinct
+// from the generic PATCH /status because:
+//
+//   1. It tags the audit trail with `source: "post_upload_bridge"` so we
+//      can later trace bridge-driven flows separately from generic
+//      status flips (analytics + debugging).
+//   2. It hard-codes the destination so a buggy client can't send the
+//      wrong status here.
+//   3. It returns the count of legs that just got auto-routed into the
+//      attestation queue (`attestationsEngaged`) so the bridge UI can
+//      show "queued N legs for attestation" without a follow-up fetch.
+//
+// The transition itself runs through `transitionGroupStatus`, which
+// invokes `engageMasEligibleAttestationCascade` as a side-effect (see
+// the cascade's docstring in lib/attestation.ts). Calling this endpoint
+// against a group already in MAS Eligible is a no-op transition (409)
+// — the bridge UI guards against that by hiding the button once the
+// group is already MAS Eligible.
+router.post("/invoice-groups/:id/mark-mas-eligible", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { reason } = req.body ?? {};
+
+  try {
+    const result = await transitionGroupStatus({
+      groupId: id,
+      newStatus: "MAS Eligible",
+      source: "post_upload_bridge",
+      reason: reason || "Marked MAS Eligible from post-upload bridge",
+      actor: actorFromReq(req),
+    });
+
+    // Count how many legs in this group are now `pending` attestation —
+    // this is the cascade's observable result. Counts disputed, non-held
+    // legs (matches the cascade's predicate). The count is for UI
+    // feedback only; the cascade has already run and is the source of
+    // truth.
+    const pendingRows = await db
+      .select({ id: claimsTable.id })
+      .from(claimsTable)
+      .where(and(
+        eq(claimsTable.invoiceGroupId, id),
+        eq(claimsTable.attestationState, "pending"),
+        isNotNull(claimsTable.errorTypeId),
+      ));
+
+    res.json({ ...result.group, attestationsEngaged: pendingRows.length });
+  } catch (err: any) {
+    const msg = err.message || "Failed to mark MAS Eligible";
+    if (msg.includes("not found")) { res.status(404).json({ error: msg }); return; }
+    // 409 covers both "current status precludes the move" and "already
+    // in MAS Eligible" (no-op transition rejected by the transition
+    // helper). Standard semantics across the rest of this router.
+    res.status(409).json({ error: msg });
   }
 }));
 

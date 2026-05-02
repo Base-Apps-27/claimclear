@@ -5,7 +5,7 @@ import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
-import { computeAttestationDelta } from "./attestation";
+import { computeAttestationDelta, engageMasEligibleAttestationCascade } from "./attestation";
 import { checkAndEmitDayCompleteForGroup } from "./day-complete";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
@@ -26,14 +26,27 @@ export interface GroupTransitionResult {
 }
 
 export const VALID_GROUP_STATUS_TRANSITIONS: Record<string, string[]> = {
-  "New": ["Needs Evidence", "Needs Review", "On Hold", "Resolved", "Denied"],
-  "Needs Review": ["New", "Needs Evidence", "On Hold", "Resolved", "Denied"],
+  // "MAS Eligible" is a destination from the three statuses where an
+  // operator could realistically discover the MAS portal verdict —
+  // straight from upload (New / Needs Review) or after a portal round
+  // trip (Awaiting Response). It deliberately is NOT a destination
+  // from Needs Evidence or On Hold; those have their own resolution
+  // paths and reaching MAS Eligible from them would skip the
+  // outstanding evidence / hold-reason housekeeping.
+  "New": ["Needs Evidence", "Needs Review", "On Hold", "MAS Eligible", "Resolved", "Denied"],
+  "Needs Review": ["New", "Needs Evidence", "On Hold", "MAS Eligible", "Resolved", "Denied"],
   "Needs Evidence": ["Needs Review", "On Hold", "Resolved", "Denied"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
-  "Awaiting Response": ["Needs Review", "On Hold", "Resolved", "Denied"],
+  "Awaiting Response": ["Needs Review", "On Hold", "MAS Eligible", "Resolved", "Denied"],
   "On Hold": ["New", "Needs Review", "Needs Evidence"],
+  // From MAS Eligible an operator can revert (mistake / re-triage) or
+  // close the group as Resolved once the off-system MAS portal
+  // re-attestation is complete. Going to Denied / Needs Evidence /
+  // On Hold from here would muddy the post-verdict state — explicitly
+  // omitted.
+  "MAS Eligible": ["Needs Review", "Resolved"],
   "Resolved": ["New", "Needs Review"],
   "Denied": ["New", "Needs Review"],
 };
@@ -49,6 +62,14 @@ export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
   "Ready to Review": [],
   "Awaiting Response": ["Approved", "Partially Approved", "Denied", "Withdrawn"],
   "On Hold": [],
+  // MAS Eligible carries an implicit positive verdict (carrier owes
+  // money) but the formal outcome stays Pending until the operator
+  // closes the group as Resolved with an explicit Approved /
+  // Partially Approved decision. Keeping outcome=Pending here also
+  // preserves the existing Approved/Partially-Approved attestation
+  // trigger semantics (attestation here is engaged via the dedicated
+  // MAS Eligible cascade in `engageMasEligibleAttestationCascade`).
+  "MAS Eligible": ["Pending"],
   "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };
@@ -307,6 +328,17 @@ export async function transitionGroupStatus(opts: {
     });
 
     await syncChildRides(groupId, newStatus, group.outcome, actor, childFields, ex, source);
+
+    // MAS Eligible side-effect: stamp the group as re-attest-required
+    // and engage attestation_state=pending on every disputed leg. This
+    // is what bridges Phase 1 (the status) to the existing attestation
+    // queue (which already lists pending+queued legs). Runs unconditionally
+    // when the destination is MAS Eligible — the helper itself is
+    // idempotent, so a no-op transition (already in MAS Eligible) does
+    // nothing.
+    if (newStatus === "MAS Eligible") {
+      await engageMasEligibleAttestationCascade(groupId, ex);
+    }
 
     // Auto-exclusion of blank no-issue siblings on the qualifying transition.
     // Runs in the same executor so it shares the caller's transaction (when
@@ -670,6 +702,13 @@ export async function transitionGroupStatusAndOutcome(opts: {
     closureChildFields.closureReviewState = "pending";
   }
   await syncChildRides(groupId, newStatus, newOutcome, actor, { ...closureChildFields, ...childFields }, ex, source);
+
+  // MAS Eligible side-effect (mirror of the same block in
+  // `transitionGroupStatus` — combined transitions take this path
+  // when a caller flips status+outcome together). See note there.
+  if (newStatus === "MAS Eligible") {
+    await engageMasEligibleAttestationCascade(groupId, ex);
+  }
 
   broadcastGroupEvent({
     type: "status_changed",

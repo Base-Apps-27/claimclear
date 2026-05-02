@@ -33,6 +33,15 @@ export type ListInvoiceGroupsParams = {
    */
   errorDetails?: ListInvoiceGroupsErrorDetails;
   /**
+ * Restrict to groups tagged with the given import batch id
+(`import_<timestamp>`). Drives the post-upload triage bridge
+screen, which lists only the groups produced by the just-
+completed import so the operator can route them without
+sifting through historical groups.
+
+ */
+  importBatch?: string;
+  /**
    * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
    */
   errorTypeId?: string;

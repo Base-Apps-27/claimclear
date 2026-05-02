@@ -71,6 +71,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .enum(["empty", "present"])
     .optional()
     .describe("Filter by presence of an error description on the group"),
+  importBatch: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Restrict to groups tagged with the given import batch id\n(`import_<timestamp>`). Drives the post-upload triage bridge\nscreen, which lists only the groups produced by the just-\ncompleted import so the operator can route them without\nsifting through historical groups.\n",
+    ),
   errorTypeId: zod.coerce
     .string()
     .optional()
@@ -2740,6 +2746,327 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
 });
+
+/**
+ * Transitions the group to status="MAS Eligible" and engages the attestation cascade as a side-effect (sets reattest_required=true on the group and attestation_state="pending" on every disputed, non-held leg). Used by the post-upload triage bridge UI so an operator can route a freshly-imported batch's eligible groups straight into the attestation queue without going through the generic PATCH /status path. Returns the updated group plus `attestationsEngaged` (count of legs now in pending state).
+
+ * @summary Mark an invoice group as MAS Eligible
+ */
+export const MarkInvoiceGroupMasEligibleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkInvoiceGroupMasEligibleBody = zod.object({
+  reason: zod
+    .string()
+    .optional()
+    .describe(
+      'Optional audit-trail note. Defaults to \"Marked MAS Eligible from post-upload bridge\".',
+    ),
+});
+
+export const MarkInvoiceGroupMasEligibleResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string(),
+    clientNumber: zod.string().nullish(),
+    errorDetails: zod.string().nullish(),
+    errorTypeId: zod.string().nullish(),
+    errorTypeName: zod.string().nullish(),
+    status: zod.enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ]),
+    outcome: zod.enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ]),
+    closureReason: zod
+      .union([
+        zod.literal("denied_by_payor"),
+        zod.literal("cannot_dispute"),
+        zod.literal("non_issue"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    closureCategory: zod.string().nullish(),
+    closureCategoryOther: zod.string().nullish(),
+    closureRootCause: zod.string().nullish(),
+    closureRootCauseOther: zod.string().nullish(),
+    closureNarrative: zod.string().nullish(),
+    closureAccountabilityTags: zod.array(zod.string()).nullish(),
+    closureAccountabilityOther: zod.string().nullish(),
+    closureDrivers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureDispatchers: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            id: zod.string().nullish(),
+          })
+          .describe(
+            "A person referenced from a structured closure (driver\/dispatcher).",
+          ),
+      )
+      .nullish(),
+    closureCommunicatedTo: zod.string().nullish(),
+    closureReviewState: zod
+      .union([
+        zod.literal("pending"),
+        zod.literal("acknowledged"),
+        zod.literal("needs_revisit"),
+        zod.literal("resolved"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    closureAddressedAt: zod.string().nullish(),
+    closureAddressedBy: zod.string().nullish(),
+    closureAddressedByEmail: zod.string().nullish(),
+    closureReviewNotes: zod.string().nullish(),
+    approvedAmount: zod.string().nullish(),
+    rideCount: zod.number(),
+    totalAmount: zod.string().nullish(),
+    holdReason: zod.string().nullish(),
+    holdPendingFrom: zod.string().nullish(),
+    holdPlacedAt: zod.string().nullish(),
+    triageNotes: zod.string().nullish(),
+    triagedAt: zod.string().nullish(),
+    disputeEmailSent: zod.boolean(),
+    disputeEmailSentAt: zod.string().nullish(),
+    generatedEmailSubject: zod.string().nullish(),
+    generatedEmailBody: zod.string().nullish(),
+    generatedEmailAt: zod.string().nullish(),
+    evidenceFiles: zod.object({}).passthrough().nullish(),
+    evidenceNotes: zod.string().nullish(),
+    evidenceChecklist: zod.object({}).passthrough().nullish(),
+    payorEmail: zod.string().nullish(),
+    payorDenialReason: zod
+      .union([
+        zod
+          .enum([
+            "payor_rejected_gps",
+            "payor_rejected_signature",
+            "payor_reclassified_error",
+            "payor_cited_benefit_rule",
+            "payor_cited_timely_filing",
+            "payor_no_clear_reason",
+            "payor_other",
+          ])
+          .describe(
+            "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Last-recorded payor denial reason code, or null when none has been captured yet.",
+      ),
+    payorDenialReasonNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+      ),
+    payorDenialReasonAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamped each time the operator records (or re-records) a payor denial reason.",
+      ),
+    payorDenialReasonBy: zod.string().nullish(),
+    awaitingPayorAgainAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+      ),
+    importBatch: zod.string().nullish(),
+    reattestRequired: zod
+      .boolean()
+      .describe(
+        "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+      ),
+    reattestCompletedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+      ),
+    reattestCompletedBy: zod.string().nullish(),
+    reattestNote: zod.string().nullish(),
+    macroPhase: zod
+      .union([
+        zod.literal("pre-submit"),
+        zod.literal("in-flight"),
+        zod.literal("response-pending"),
+        zod.literal("mas-action-required"),
+        zod.literal("awaiting-payout"),
+        zod.literal("closed"),
+        zod.literal("on-hold"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      ),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+    earliestDate: zod
+      .string()
+      .nullish()
+      .describe(
+        "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+      ),
+    serviceDateReason: zod
+      .union([
+        zod.literal("has_date"),
+        zod.literal("no_claims"),
+        zod.literal("no_dated_claims"),
+        zod.literal("parse_failed"),
+        zod.literal("all_dated_legs_excluded"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+      ),
+    effectiveDaysLeft: zod
+      .number()
+      .nullish()
+      .describe(
+        "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+      ),
+    isUrgent: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+      ),
+    submittedStuck: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+      ),
+    groupContext: zod
+      .string()
+      .nullish()
+      .describe(
+        "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+      ),
+    useDirectEmail: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+      ),
+    draftSubject: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+      ),
+    draftDescriptionHtml: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+      ),
+    aiBaselineSubject: zod
+      .string()
+      .nullish()
+      .describe(
+        "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+      ),
+    aiBaselineDescriptionHtml: zod
+      .string()
+      .nullish()
+      .describe(
+        "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+      ),
+    draftEditedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamped each time the operator saves an edit to the dispute draft.",
+      ),
+    draftEditedBy: zod.string().nullish(),
+    draftReviewedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+      ),
+    draftReviewedBy: zod.string().nullish(),
+    understandingReadback: zod
+      .string()
+      .nullish()
+      .describe(
+        "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      ),
+    understandingReadbackAt: zod.coerce.date().nullish(),
+    understandingReadbackBy: zod.string().nullish(),
+    previewGeneratedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+      ),
+    previewGeneratedBy: zod.string().nullish(),
+    legSubStatusCounts: zod
+      .object({
+        excluded: zod.number().optional(),
+        needs_classification: zod.number().optional(),
+        investigating: zod.number().optional(),
+        blocked: zod.number().optional(),
+        ready: zod.number().optional(),
+        dropped: zod.number().optional(),
+        duplicate: zod
+          .number()
+          .optional()
+          .describe(
+            "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+          ),
+      })
+      .nullish()
+      .describe(
+        "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+      ),
+  })
+  .and(
+    zod.object({
+      attestationsEngaged: zod
+        .number()
+        .optional()
+        .describe(
+          'Number of legs whose attestation_state is now \"pending\" after the cascade.',
+        ),
+    }),
+  );
 
 /**
  * @summary Triage an invoice group

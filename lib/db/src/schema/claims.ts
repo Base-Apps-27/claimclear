@@ -6,7 +6,7 @@ import { invoiceGroupsTable } from "./invoice-groups";
 
 export const claimStatusEnum = pgEnum("claim_status", [
   "New", "Needs Review", "Needs Evidence", "Processed", "Portal Queued", "Generating Email",
-  "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"
+  "Ready to Review", "Awaiting Response", "On Hold", "MAS Eligible", "Resolved", "Denied"
 ]);
 
 export const claimOutcomeEnum = pgEnum("claim_outcome", [

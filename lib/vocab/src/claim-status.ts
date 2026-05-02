@@ -28,6 +28,7 @@ export const CLAIM_STATUSES = [
   "Ready to Review",
   "Awaiting Response",
   "On Hold",
+  "MAS Eligible",
   "Resolved",
   "Denied",
   "Portal Queued",
@@ -77,6 +78,12 @@ export const CLAIM_STATUS: Record<ClaimStatus, GlossaryEntry> = {
     enumValue: "On Hold",
     label: "On Hold",
     description: "Claim is paused, usually waiting for additional information. Next: follow up on the pending item and resume processing.",
+    domain: "claim_status",
+  },
+  "MAS Eligible": {
+    enumValue: "MAS Eligible",
+    label: "MAS Eligible",
+    description: "MAS portal confirmed this is a contestable claim — the carrier owes money, but re-attestation in the MAS portal is still owed before the funds are released. Next: complete the re-attestation in MAS, then mark the claim Resolved.",
     domain: "claim_status",
   },
   "Resolved": {

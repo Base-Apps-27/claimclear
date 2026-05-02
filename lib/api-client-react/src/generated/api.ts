@@ -123,6 +123,8 @@ import type {
   LookupMappingsBody,
   LookupMappingsResponse,
   MarkAwaitingPayorAgainRequest,
+  MarkInvoiceGroupMasEligible200,
+  MarkInvoiceGroupMasEligibleBody,
   MarkLegDuplicateBody,
   MyProcessedTodayCount,
   NeedsClassificationInboxResponse,
@@ -1235,6 +1237,99 @@ export const useUpdateInvoiceGroupOutcome = <
   TContext
 > => {
   return useMutation(getUpdateInvoiceGroupOutcomeMutationOptions(options));
+};
+
+/**
+ * Transitions the group to status="MAS Eligible" and engages the attestation cascade as a side-effect (sets reattest_required=true on the group and attestation_state="pending" on every disputed, non-held leg). Used by the post-upload triage bridge UI so an operator can route a freshly-imported batch's eligible groups straight into the attestation queue without going through the generic PATCH /status path. Returns the updated group plus `attestationsEngaged` (count of legs now in pending state).
+
+ * @summary Mark an invoice group as MAS Eligible
+ */
+export const getMarkInvoiceGroupMasEligibleUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/mark-mas-eligible`;
+};
+
+export const markInvoiceGroupMasEligible = async (
+  id: number,
+  markInvoiceGroupMasEligibleBody?: MarkInvoiceGroupMasEligibleBody,
+  options?: RequestInit,
+): Promise<MarkInvoiceGroupMasEligible200> => {
+  return customFetch<MarkInvoiceGroupMasEligible200>(
+    getMarkInvoiceGroupMasEligibleUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(markInvoiceGroupMasEligibleBody),
+    },
+  );
+};
+
+export const getMarkInvoiceGroupMasEligibleMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>,
+    TError,
+    { id: number; data: BodyType<MarkInvoiceGroupMasEligibleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>,
+  TError,
+  { id: number; data: BodyType<MarkInvoiceGroupMasEligibleBody> },
+  TContext
+> => {
+  const mutationKey = ["markInvoiceGroupMasEligible"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>,
+    { id: number; data: BodyType<MarkInvoiceGroupMasEligibleBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return markInvoiceGroupMasEligible(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkInvoiceGroupMasEligibleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>
+>;
+export type MarkInvoiceGroupMasEligibleMutationBody =
+  BodyType<MarkInvoiceGroupMasEligibleBody>;
+export type MarkInvoiceGroupMasEligibleMutationError = ErrorType<void>;
+
+/**
+ * @summary Mark an invoice group as MAS Eligible
+ */
+export const useMarkInvoiceGroupMasEligible = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>,
+    TError,
+    { id: number; data: BodyType<MarkInvoiceGroupMasEligibleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markInvoiceGroupMasEligible>>,
+  TError,
+  { id: number; data: BodyType<MarkInvoiceGroupMasEligibleBody> },
+  TContext
+> => {
+  return useMutation(getMarkInvoiceGroupMasEligibleMutationOptions(options));
 };
 
 /**

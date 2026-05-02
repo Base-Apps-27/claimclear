@@ -4,11 +4,13 @@
 // touching this file.
 //
 // Phases (the only thing UI code should switch on):
-//   pre-submit       — work the dispute is still being prepared for the portal
-//   in-flight        — portal/email submission queued, sent, or awaiting reply
-//   response-pending — payer response landed and needs a human verdict
-//   on-hold          — manually parked; deadline clock still ticks
-//   closed           — terminal state, nothing else to do
+//   pre-submit          — work the dispute is still being prepared for the portal
+//   in-flight           — portal/email submission queued, sent, or awaiting reply
+//   response-pending    — payer response landed and needs a human verdict
+//   mas-action-required — MAS portal verdict received (Eligible); operator must
+//                         re-attest in MAS portal before funds release
+//   on-hold             — manually parked; deadline clock still ticks
+//   closed              — terminal state, nothing else to do
 //
 // The "two flavors of Needs Review" semantic split (pre-classification vs
 // post-response) is a separate task — for now Needs Review maps to
@@ -19,6 +21,7 @@ export type LifecyclePhase =
   | "pre-submit"
   | "in-flight"
   | "response-pending"
+  | "mas-action-required"
   | "closed"
   | "on-hold";
 
@@ -32,6 +35,12 @@ export const STATUSES_BY_PHASE: Record<LifecyclePhase, readonly string[]> = {
   "pre-submit": ["New", "Needs Evidence", "Processed"],
   "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
   "response-pending": ["Ready to Review", "Needs Review"],
+  // MAS Eligible: positive MAS portal verdict, re-attestation owed in
+  // MAS portal before the carrier releases funds. Distinct from
+  // response-pending (which means a payor response landed via the
+  // dispute path). See `engageMasEligibleAttestationCascade` on the
+  // server for the auto-routing into the attestation queue.
+  "mas-action-required": ["MAS Eligible"],
   "closed": ["Resolved", "Denied", "Withdrawn"],
   "on-hold": ["On Hold"],
 };
@@ -66,11 +75,16 @@ export const isOnHold = (s: string | null | undefined) =>
 // Order is the natural reading direction of work; on-hold is grouped with
 // the in-flight stretch so a parked leg shows up as still blocking
 // downstream work but doesn't masquerade as either pre-submit or closed.
+// `mas-action-required` sits just before `closed` because a MAS-Eligible
+// leg has a positive verdict and only one off-system step remaining
+// (re-attest in MAS portal) — closer to closed than to response-pending,
+// but still active work.
 const PHASE_ORDER: readonly LifecyclePhase[] = [
   "pre-submit",
   "in-flight",
   "response-pending",
   "on-hold",
+  "mas-action-required",
   "closed",
 ];
 
@@ -105,6 +119,7 @@ export type LifecycleTabKey =
   | "Action Required"
   | "In Flight"
   | "Response Pending"
+  | "MAS Action"
   | "On Hold"
   | "Closed";
 
@@ -130,6 +145,11 @@ export const LIFECYCLE_TABS: LifecycleTab[] = [
     key: "Response Pending",
     label: "Response Pending",
     statuses: [...STATUSES_BY_PHASE["response-pending"]],
+  },
+  {
+    key: "MAS Action",
+    label: "MAS Action",
+    statuses: [...STATUSES_BY_PHASE["mas-action-required"]],
   },
   {
     key: "On Hold",

@@ -426,12 +426,27 @@ router.get("/claims/attestation-pending", asyncHandler(async (req, res): Promise
   }
   const limit = Math.min(parseInt(String(req.query.limit ?? "100"), 10) || 100, 500);
 
+  // Admit two families of attestation-pending claims:
+  //   (1) Approved / Partially-Approved verdict — the historical case;
+  //       attestation_state moves to pending via `computeAttestationDelta`
+  //       when the operator records the verdict.
+  //   (2) Status = "MAS Eligible" — the post-upload triage bridge case;
+  //       attestation_state moves to pending via
+  //       `engageMasEligibleAttestationCascade` when an operator marks
+  //       the parent group MAS-Eligible. The leg's outcome stays Pending
+  //       in this branch (the formal verdict only lands when the group
+  //       moves to Resolved), so without this OR clause the legs would
+  //       be silently filtered out of the queue even though their
+  //       attestation_state is correctly set to pending.
   const rows = await db
     .select()
     .from(claimsTable)
     .where(and(
       eq(claimsTable.attestationState, stateRaw),
-      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
     ))
     .orderBy(asc(claimsTable.attestationQueuedAt), asc(claimsTable.id))
     .limit(limit);
@@ -1485,11 +1500,17 @@ router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promis
 // attestation state we care about. Lives under /attestation rather than
 // /claims so the path doesn't clash with parametric /claims/:id routes.
 router.get("/attestation/counts", asyncHandler(async (_req, res): Promise<void> => {
+  // Mirror of the admit predicate in /claims/attestation-pending: count
+  // both Approved-family verdict legs AND MAS-Eligible-routed legs.
+  // See the longer comment on that route for the rationale.
   const rows = await db
     .select({ state: claimsTable.attestationState, count: count() })
     .from(claimsTable)
     .where(and(
-      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
       inArray(claimsTable.attestationState, ["pending", "queued"]),
     ))
     .groupBy(claimsTable.attestationState);

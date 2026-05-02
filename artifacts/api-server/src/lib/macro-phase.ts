@@ -7,15 +7,22 @@ export type MacroPhase =
   | "closed"
   | "on-hold";
 
-const STATUSES_BY_PHASE: Record<Exclude<MacroPhase, "mas-action-required" | "awaiting-payout">, readonly string[]> = {
+// "mas-action-required" now has BOTH a status-driven entry (the new
+// "MAS Eligible" status from the post-upload triage bridge) AND a
+// derived entry (any group with reattestRequired=true regardless of
+// status — typically an Approved/Partially-Approved group whose payor
+// verdict triggered re-attestation). "awaiting-payout" remains purely
+// derived (reattestCompletedAt != null).
+const STATUSES_BY_PHASE: Record<Exclude<MacroPhase, "awaiting-payout">, readonly string[]> = {
   "pre-submit": ["New", "Needs Evidence"],
   "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
   "response-pending": ["Ready to Review", "Needs Review"],
+  "mas-action-required": ["MAS Eligible"],
   "closed": ["Resolved", "Denied", "Withdrawn"],
   "on-hold": ["On Hold"],
 };
 
-export function getMacroPhase(status: string | null | undefined): Exclude<MacroPhase, "mas-action-required" | "awaiting-payout"> {
+export function getMacroPhase(status: string | null | undefined): Exclude<MacroPhase, "awaiting-payout"> {
   if (!status) return "pre-submit";
   for (const phase of Object.keys(STATUSES_BY_PHASE) as Array<keyof typeof STATUSES_BY_PHASE>) {
     if (STATUSES_BY_PHASE[phase].includes(status)) return phase;

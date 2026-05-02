@@ -61,6 +61,11 @@ export function toneForStatus(status: string | null | undefined): Tone {
     case "Resolved":
     case "Approved":
     case "Partially Approved":
+    // MAS Eligible carries a positive MAS portal verdict and is the
+    // last step before Resolved (just the off-system re-attest left).
+    // Group it with the green family rather than introducing a new
+    // tone — keeps the cohesion palette stable.
+    case "MAS Eligible":
       return "green";
     case "Denied":
       return "red";

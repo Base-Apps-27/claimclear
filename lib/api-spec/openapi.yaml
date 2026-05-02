@@ -138,6 +138,16 @@ paths:
           schema:
             type: string
             enum: [empty, present]
+        - name: importBatch
+          in: query
+          description: |
+            Restrict to groups tagged with the given import batch id
+            (`import_<timestamp>`). Drives the post-upload triage bridge
+            screen, which lists only the groups produced by the just-
+            completed import so the operator can route them without
+            sifting through historical groups.
+          schema:
+            type: string
         - name: errorTypeId
           in: query
           description: Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
@@ -485,6 +495,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupResponse"
+
+  /invoice-groups/{id}/mark-mas-eligible:
+    post:
+      operationId: markInvoiceGroupMasEligible
+      tags: [invoice-groups]
+      summary: Mark an invoice group as MAS Eligible
+      description: >
+        Transitions the group to status="MAS Eligible" and engages the
+        attestation cascade as a side-effect (sets reattest_required=true
+        on the group and attestation_state="pending" on every disputed,
+        non-held leg). Used by the post-upload triage bridge UI so an
+        operator can route a freshly-imported batch's eligible groups
+        straight into the attestation queue without going through the
+        generic PATCH /status path. Returns the updated group plus
+        `attestationsEngaged` (count of legs now in pending state).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Optional audit-trail note. Defaults to "Marked MAS Eligible from post-upload bridge".
+      responses:
+        "200":
+          description: Updated group with attestation engagement count
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/InvoiceGroupResponse"
+                  - type: object
+                    properties:
+                      attestationsEngaged:
+                        type: integer
+                        description: Number of legs whose attestation_state is now "pending" after the cascade.
+        "404":
+          description: Invoice group not found
+        "409":
+          description: Group cannot transition to MAS Eligible from its current status
 
   /invoice-groups/{id}/triage:
     post:

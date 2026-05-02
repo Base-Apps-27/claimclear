@@ -168,16 +168,25 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const denied = statusCounts["Denied"] || 0;
   const onHold = statusCounts["On Hold"] || 0;
 
-  // "Awaiting attestation" = Approved-family CLAIMS whose off-system
-  // re-attestation step in the payor portal is still owed (state=pending)
-  // or parked for someone with portal access (state=queued). Counted at
-  // the CLAIM level so multi-claim groups don't undercount the workload —
-  // each outstanding attestation step is its own unit of work for the team.
+  // "Awaiting attestation" = CLAIMS whose off-system re-attestation step
+  // in the payor portal is still owed (state=pending) or parked for
+  // someone with portal access (state=queued). Counted at the CLAIM
+  // level so multi-claim groups don't undercount the workload — each
+  // outstanding attestation step is its own unit of work for the team.
+  //
+  // Two admit branches (mirrors /claims/attestation-pending):
+  //   (1) Approved/Partially-Approved verdict — historical case.
+  //   (2) status="MAS Eligible" — post-upload triage bridge case;
+  //       outcome stays Pending here, so the OR is required to
+  //       prevent silent under-count.
   const [{ value: awaitingAttestation } = { value: 0 }] = await db
     .select({ value: count() })
     .from(claimsTable)
     .where(and(
-      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
       inArray(claimsTable.attestationState, ["pending", "queued"]),
     ));
 

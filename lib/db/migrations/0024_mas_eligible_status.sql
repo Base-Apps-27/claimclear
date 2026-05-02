@@ -1,0 +1,31 @@
+-- 0024_mas_eligible_status.sql
+--
+-- Adds the "MAS Eligible" value to the claim_status enum so an invoice
+-- group whose MAS portal verdict is "Eligible" (carrier owes money,
+-- re-attestation in MAS portal still owed) is distinguishable from a
+-- generic "Needs Review" group that has not been triaged yet.
+--
+-- This is the first phase of the post-upload triage bridge:
+--   Phase 1 (this migration): give "Eligible" a first-class status so
+--           operators can see at a glance which invoices are MAS-confirmed
+--           contestable vs un-triaged, and so transition logic has a
+--           target to hand attestation routing off to.
+--   Phase 2: when a group transitions INTO MAS Eligible, automatically
+--           stamp `reattest_required = true` on the group and
+--           `attestation_state = 'pending'` on every disputed leg, so the
+--           existing attestation queue picks them up.
+--   Phase 3: post-upload bridge UI surfaces a "mark MAS Eligible" action
+--           for legs with no error description.
+--
+-- Why a dedicated migration file:
+--   PostgreSQL forbids ALTER TYPE ... ADD VALUE inside an explicit OR
+--   implicit transaction block. Same constraint as 0002_add_processed_status
+--   — keep this file to a single autocommit DDL statement.
+--
+-- Idempotent: `ADD VALUE IF NOT EXISTS` is a no-op if "MAS Eligible" is
+-- already on the enum (safe to re-run during dev pushes and on prod).
+--
+-- Position: BEFORE 'Resolved' so the enum reads in lifecycle order
+-- (..., 'Awaiting Response', 'On Hold', 'MAS Eligible', 'Resolved', 'Denied').
+
+ALTER TYPE "public"."claim_status" ADD VALUE IF NOT EXISTS 'MAS Eligible' BEFORE 'Resolved';

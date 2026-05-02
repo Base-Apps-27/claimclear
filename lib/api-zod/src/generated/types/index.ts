@@ -225,6 +225,8 @@ export * from "./lookupMappingsBody";
 export * from "./lookupMappingsResponse";
 export * from "./mappingResult";
 export * from "./markAwaitingPayorAgainRequest";
+export * from "./markInvoiceGroupMasEligible200";
+export * from "./markInvoiceGroupMasEligibleBody";
 export * from "./markLegDuplicateBody";
 export * from "./myProcessedTodayCount";
 export * from "./needsClassificationInboxClaim";
