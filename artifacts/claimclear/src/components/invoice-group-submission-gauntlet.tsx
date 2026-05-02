@@ -77,6 +77,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
   const regenDraftMutation = useRegenerateInvoiceGroupDraft();
   const markReviewedMutation = useMarkInvoiceGroupDraftReviewed();
   const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
+  // Save-confirmation breath replaces the "Draft saved" toast on the
+  // Save-draft button (Task #316). The counter increments on every
+  // successful save so the Button's `breathTrigger` prop can detect the
+  // change and replay the animation cleanly across consecutive saves.
+  const [draftSaveBreath, setDraftSaveBreath] = useState(0);
 
   const [readback, setReadback] = useState("");
   useEffect(() => {
@@ -193,7 +198,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
       },
       {
         onSuccess: () => {
-          toast({ title: "Draft saved" });
+          // Quiet in-place "breath" on the Save-draft button instead of a toast.
+          setDraftSaveBreath((n) => n + 1);
           invalidateGroup();
         },
         onError: (e: unknown) =>
@@ -506,6 +512,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                       !!lockReason || !draftDirty || saveDraftMutation.isPending
                     }
                     title={lockReason ?? undefined}
+                    breathTrigger={draftSaveBreath}
                     data-testid="draft-save"
                   >
                     {saveDraftMutation.isPending ? (

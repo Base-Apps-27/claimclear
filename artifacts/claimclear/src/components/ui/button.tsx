@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { useBreath } from "@/hooks/use-breath"
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" +
@@ -39,15 +40,39 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /**
+   * Save-confirmation breath (Task #316). Pass any value that *changes*
+   * after a successful routine save (a counter is the typical choice) and
+   * the button will play a quiet ~250ms scale-down + success-tint
+   * animation in place of a "Saved" toast, briefly disabling itself so it
+   * can't be double-clicked. Honors `prefers-reduced-motion` (skips the
+   * scale, only shows the tint). Compared by `Object.is` against the
+   * previous render — undefined disables the affordance entirely.
+   */
+  breathTrigger?: unknown
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (
+    { className, variant, size, asChild = false, breathTrigger, disabled, ...props },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "button"
+    const { breathing, trigger, className: breathClass } = useBreath()
+    const lastTriggerRef = React.useRef<unknown>(breathTrigger)
+
+    React.useEffect(() => {
+      if (breathTrigger === undefined) return
+      if (Object.is(breathTrigger, lastTriggerRef.current)) return
+      lastTriggerRef.current = breathTrigger
+      trigger()
+    }, [breathTrigger, trigger])
+
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(buttonVariants({ variant, size, className }), breathClass)}
         ref={ref}
+        disabled={disabled || breathing}
         {...props}
       />
     )

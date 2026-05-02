@@ -258,6 +258,37 @@
   pointer-events: none;
 }
 
+/* ---------------------------------------------------------------- */
+/* Save-confirmation breath (Task #316).                            */
+/* A ~250ms one-shot used in place of a "Saved" toast on small/     */
+/* routine save sites. The motion variant scales the button down a  */
+/* hair and overlays a soft success tint via inset box-shadow so it */
+/* works with every Button variant (default / outline / etc.) — the */
+/* tint sits on top of whatever background the variant paints. The  */
+/* reduced-motion variant skips the scale and shows the tint only.  */
+/* See `hooks/use-breath.ts` and the `breathTrigger` prop on the    */
+/* shared Button component.                                         */
+/* ---------------------------------------------------------------- */
+@keyframes cc-button-breath {
+  0%   { transform: scale(1);    box-shadow: inset 0 0 0 9999px hsl(142 71% 45% / 0); }
+  45%  { transform: scale(0.96); box-shadow: inset 0 0 0 9999px hsl(142 71% 45% / 0.22); }
+  100% { transform: scale(1);    box-shadow: inset 0 0 0 9999px hsl(142 71% 45% / 0); }
+}
+
+@keyframes cc-button-breath-reduced {
+  0%, 100% { box-shadow: inset 0 0 0 9999px hsl(142 71% 45% / 0); }
+  40%, 60% { box-shadow: inset 0 0 0 9999px hsl(142 71% 45% / 0.24); }
+}
+
+.animate-cc-breath {
+  animation: cc-button-breath 250ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cc-breath {
+    animation-name: cc-button-breath-reduced;
+  }
+}
 
 .tiptap p.is-editor-empty:first-child::before {
   color: hsl(var(--muted-foreground));

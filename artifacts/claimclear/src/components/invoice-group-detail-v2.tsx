@@ -42,6 +42,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useBreath } from "@/hooks/use-breath";
+import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
@@ -262,6 +264,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
   const [newNote, setNewNote] = useState("");
+  // Save-confirmation breath replaces the success toast for routine saves
+  // (Task #316). Errors still toast via the mutation's onError below.
+  const noteBreath = useBreath();
 
   /* ---- Place-on-hold reason prompt (cc-scope inline) ---- */
   const [holdOpen, setHoldOpen] = useState(false);
@@ -486,7 +491,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       {
         onSuccess: () => {
           setNewNote("");
-          toast({ title: "Group note added" });
+          // Quiet in-place confirmation in place of a "Saved" toast.
+          noteBreath.trigger();
           invalidateGroup();
         },
         onError: (e: unknown) =>
@@ -1530,12 +1536,24 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   <button
                     type="button"
                     onClick={onSubmitNote}
-                    disabled={!newNote.trim() || createNoteMutation.isPending}
-                    className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
+                    disabled={
+                      !newNote.trim() ||
+                      createNoteMutation.isPending ||
+                      noteBreath.breathing
+                    }
+                    className={cn(
+                      "cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5",
+                      noteBreath.className,
+                    )}
                     style={{
                       background: "var(--cc-purple-fg)",
                       color: "white",
-                      opacity: !newNote.trim() || createNoteMutation.isPending ? 0.6 : 1,
+                      opacity:
+                        !newNote.trim() ||
+                        createNoteMutation.isPending ||
+                        noteBreath.breathing
+                          ? 0.6
+                          : 1,
                     }}
                     data-testid="group-note-submit-button"
                   >
