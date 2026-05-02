@@ -42,20 +42,157 @@ function useAnimatedVisibility(isActive: boolean) {
   return { mounted, animating };
 }
 
-function ViewerAvatar({ viewer, isNew }: { viewer: PresenceViewer; isNew: boolean }) {
+type PresenceTransitionState = "idle" | "joining" | "leaving";
+type ViewerTransition = { viewer: PresenceViewer; state: PresenceTransitionState };
+
+const PRESENCE_RIPPLE_MS = 500;
+const PRESENCE_LEAVE_MS = 200;
+
+/**
+ * Tracks presence-list joins and leaves so we can play a one-shot ripple on
+ * join and a brief fade on leave. Skips ripples on the very first commit so
+ * a fresh page load doesn't ripple every already-present viewer. Keeps a
+ * leaving viewer mounted for ~200ms after they disappear from the upstream
+ * list so the fade-out can play before unmount. Stable identity is the
+ * viewer email — re-orders or background refetches that don't change the
+ * email set won't fire a ripple.
+ */
+function usePresenceTransitions(viewers: PresenceViewer[]): ViewerTransition[] {
+  const [items, setItems] = useState<ViewerTransition[]>(() =>
+    viewers.map(v => ({ viewer: v, state: "idle" as const })),
+  );
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const initialMountRef = useRef(true);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const viewersKey = viewers.map(v => v.userEmail).sort().join("|");
+
+  useEffect(() => {
+    const prev = itemsRef.current;
+    const prevByEmail = new Map(prev.map(p => [p.viewer.userEmail, p]));
+    const currentEmails = new Set(viewers.map(v => v.userEmail));
+    const wasInitialMount = initialMountRef.current;
+    const result: ViewerTransition[] = [];
+
+    viewers.forEach(v => {
+      // If this viewer was mid-leave (e.g. flapping connection), cancel the
+      // leave so we don't yank them out from under a re-join.
+      const leaveKey = `leave:${v.userEmail}`;
+      const pendingLeave = timersRef.current.get(leaveKey);
+      if (pendingLeave) {
+        clearTimeout(pendingLeave);
+        timersRef.current.delete(leaveKey);
+      }
+
+      const existing = prevByEmail.get(v.userEmail);
+      if (!existing || existing.state === "leaving") {
+        if (wasInitialMount) {
+          result.push({ viewer: v, state: "idle" });
+        } else {
+          result.push({ viewer: v, state: "joining" });
+          const joinKey = `join:${v.userEmail}`;
+          const oldJoin = timersRef.current.get(joinKey);
+          if (oldJoin) clearTimeout(oldJoin);
+          const email = v.userEmail;
+          timersRef.current.set(
+            joinKey,
+            setTimeout(() => {
+              timersRef.current.delete(joinKey);
+              setItems(curr =>
+                curr.map(p =>
+                  p.viewer.userEmail === email && p.state === "joining"
+                    ? { ...p, state: "idle" }
+                    : p,
+                ),
+              );
+            }, PRESENCE_RIPPLE_MS),
+          );
+        }
+      } else {
+        // Preserve any in-flight transition (e.g. mid-ripple) and refresh the
+        // viewer payload so heartbeat updates flow through without restarting
+        // the animation.
+        result.push({ viewer: v, state: existing.state });
+      }
+    });
+
+    prev.forEach(p => {
+      if (currentEmails.has(p.viewer.userEmail)) return;
+      if (p.state === "leaving") {
+        // Already leaving with a timer in flight — keep the entry.
+        result.push(p);
+        return;
+      }
+      result.push({ viewer: p.viewer, state: "leaving" });
+      const leaveKey = `leave:${p.viewer.userEmail}`;
+      const oldLeave = timersRef.current.get(leaveKey);
+      if (oldLeave) clearTimeout(oldLeave);
+      const email = p.viewer.userEmail;
+      timersRef.current.set(
+        leaveKey,
+        setTimeout(() => {
+          timersRef.current.delete(leaveKey);
+          setItems(curr =>
+            curr.filter(q => !(q.viewer.userEmail === email && q.state === "leaving")),
+          );
+        }, PRESENCE_LEAVE_MS),
+      );
+    });
+
+    initialMountRef.current = false;
+    setItems(result);
+  }, [viewersKey]);
+
+  useEffect(
+    () => () => {
+      timersRef.current.forEach(t => clearTimeout(t));
+      timersRef.current.clear();
+    },
+    [],
+  );
+
+  return items;
+}
+
+function ViewerAvatar({
+  viewer,
+  state,
+}: {
+  viewer: PresenceViewer;
+  state: PresenceTransitionState;
+}) {
   const name = viewer.userName || viewer.userEmail;
   const initial = name.charAt(0).toUpperCase();
+
+  // Opacity classes: leaving fades to 0, joining and idle stay visible.
+  // The CSS transition handles both the leave fade-out and the in-place
+  // fade-in (initial mount of the wrapper renders at opacity 0 only when
+  // state === "joining" because we add the join keyframe class).
+  const wrapperClass =
+    state === "leaving"
+      ? "opacity-0"
+      : state === "joining"
+        ? "animate-presence-fade-in"
+        : "opacity-100";
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`relative ${isNew ? "animate-in zoom-in-50 duration-300" : ""}`}>
+        <div
+          className={`relative transition-opacity duration-200 ${wrapperClass}`}
+          aria-hidden={state === "leaving" ? "true" : undefined}
+        >
           <Avatar className="h-8 w-8 border-2 border-blue-400 shadow-sm">
             <AvatarFallback className="text-xs font-medium bg-blue-100 text-blue-700">
               {initial}
             </AvatarFallback>
           </Avatar>
-          <span className="absolute inset-0 rounded-full animate-pulse-ring" />
+          {state === "joining" && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full pointer-events-none animate-presence-ripple motion-reduce:hidden"
+            />
+          )}
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom">
@@ -76,28 +213,9 @@ export function HumanPresenceBanner({
   resourceLabel?: "claim" | "group";
 }) {
   const { user } = useAuth();
-  const prevViewersRef = useRef<Set<string>>(new Set());
-  const [newViewers, setNewViewers] = useState<Set<string>>(new Set());
-
   const otherViewers = viewers.filter(v => v.userEmail !== user?.email);
   const { mounted, animating } = useAnimatedVisibility(otherViewers.length > 0);
-
-  useEffect(() => {
-    const currentEmails = new Set(otherViewers.map(v => v.userEmail));
-    const prevEmails = prevViewersRef.current;
-    const justJoined = new Set<string>();
-    currentEmails.forEach(email => {
-      if (!prevEmails.has(email)) justJoined.add(email);
-    });
-    if (justJoined.size > 0) {
-      setNewViewers(justJoined);
-      const timer = setTimeout(() => setNewViewers(new Set()), 2000);
-      prevViewersRef.current = currentEmails;
-      return () => clearTimeout(timer);
-    }
-    prevViewersRef.current = currentEmails;
-    return undefined;
-  }, [otherViewers.map(v => v.userEmail).join(",")]);
+  const transitions = usePresenceTransitions(otherViewers);
 
   if (!mounted) return null;
 
@@ -124,8 +242,8 @@ export function HumanPresenceBanner({
         </p>
       </div>
       <div className="flex -space-x-2 shrink-0">
-        {otherViewers.map(v => (
-          <ViewerAvatar key={v.userEmail} viewer={v} isNew={newViewers.has(v.userEmail)} />
+        {transitions.map(t => (
+          <ViewerAvatar key={t.viewer.userEmail} viewer={t.viewer} state={t.state} />
         ))}
       </div>
     </div>
@@ -176,13 +294,14 @@ export function BotPresenceBanner({ botActivity }: { botActivity: BotPresenceEnt
 export function PresenceAvatars({ viewers }: { viewers: PresenceViewer[] }) {
   const { user } = useAuth();
   const otherViewers = viewers.filter(v => v.userEmail !== user?.email);
+  const transitions = usePresenceTransitions(otherViewers);
 
-  if (otherViewers.length === 0) return null;
+  if (transitions.length === 0) return null;
 
   return (
     <div className="flex -space-x-2 mr-2">
-      {otherViewers.map(v => (
-        <ViewerAvatar key={v.userEmail} viewer={v} isNew={false} />
+      {transitions.map(t => (
+        <ViewerAvatar key={t.viewer.userEmail} viewer={t.viewer} state={t.state} />
       ))}
     </div>
   );
