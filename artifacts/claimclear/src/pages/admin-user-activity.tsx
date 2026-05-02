@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { BackBar } from "@/components/back-bar";
 import { useAuth } from "@workspace/replit-auth-web";
 import {
   useAdminListAuditLogs,
@@ -105,13 +106,16 @@ export default function AdminUserActivity() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/settings">
-          <Button variant="ghost" size="sm" className="gap-1">
-            <ArrowLeft className="h-4 w-4" /> Back to settings
-          </Button>
-        </Link>
-      </div>
+      {/* Hybrid back: literal Back goes to N-1 (true browser back), and the
+          breadcrumb gives an honest logical-parent fallback for deep links. */}
+      <BackBar
+        fallbackHref="/settings"
+        crumbs={[
+          { label: "Settings", href: "/settings" },
+          { label: "User activity" },
+        ]}
+        testId="admin-user-activity-back-bar"
+      />
 
       <div>
         <h2 className="text-2xl font-bold tracking-tight">User Activity</h2>

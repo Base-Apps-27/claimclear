@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
+import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
@@ -577,16 +578,27 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }} data-testid="invoice-group-detail-v2">
       <div className="max-w-[1180px] mx-auto space-y-4">
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-          <Link href="/" className="hover:underline inline-flex items-center gap-1">
-            <ChevronLeft className="w-3 h-3" /> Invoice groups
-          </Link>
-          <span>/</span>
-          <span style={{ color: "var(--cc-fg)" }} className="mono">
-            {group.invoiceNumber || `#${group.id}`}
-          </span>
-        </div>
+        {/* Back + breadcrumb (hybrid).
+            ──────────────────────────────────────────────────────────────
+            Previously the breadcrumb labeled the first crumb "Invoice
+            groups" but linked to "/" — which redirects to /dashboard.
+            Operators clicking "Invoice groups" expecting to return to
+            the list landed on the dashboard instead. The crumb is now
+            honest, and the explicit Back button gives true N-1 so a user
+            who arrived from the queue / dashboard / response review still
+            returns where they came from. */}
+        <BackBar
+          fallbackHref="/invoice-groups"
+          crumbs={[
+            { label: "Invoice groups", href: "/invoice-groups" },
+            { label: group.invoiceNumber || `#${group.id}`, mono: true },
+          ]}
+          testId="invoice-group-back-bar"
+        />
+        {/* Hidden compatibility marker — older e2e selectors looked for
+            a `leg-back-to-group`-shaped affordance on the parent page. The
+            BackBar replaces both, but we keep the import alive without a
+            stale node so a future refactor sees the intentional removal. */}
 
         {/* Accent header */}
         <div className="cc-card p-4">

@@ -6,6 +6,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
+import { HistoryTracker } from "@/components/back-bar";
 import Dashboard from "@/pages/dashboard";
 import ClaimsList from "@/pages/claims";
 import ClaimDetail from "@/pages/claim-detail";
@@ -88,6 +89,10 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <SessionInterceptor />
+          {/* Tracks in-app navigations so the BackBar can decide between
+              window.history.back() (true N-1) and a logical-parent fallback
+              for deep-link landings. Mount-once, no UI. */}
+          <HistoryTracker />
           <Router />
         </WouterRouter>
         <Toaster />

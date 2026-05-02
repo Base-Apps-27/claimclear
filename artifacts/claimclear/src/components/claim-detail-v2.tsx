@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
+import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -350,24 +351,33 @@ export function ClaimDetailV2({ claimId }: Props) {
     <div className="cc-scope min-h-screen p-6" data-testid="claim-detail-v2">
       <div className="max-w-[820px] mx-auto space-y-4">
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-          <Link href="/queue" className="hover:underline">Claims</Link>
-          {parentGroup && (
-            <>
-              <span>/</span>
-              <Link
-                href={`/invoice-groups/${parentGroup.id}`}
-                className="hover:underline inline-flex items-center gap-1"
-                data-testid="leg-back-to-group"
-              >
-                <ChevronLeft className="w-3 h-3" /> Invoice #{parentGroup.invoiceNumber || parentGroup.id}
-              </Link>
-            </>
-          )}
-          <span>/</span>
-          <span style={{ color: "var(--cc-fg)" }}>Leg #{claim.id}</span>
-        </div>
+        {/* Back + breadcrumb (hybrid).
+            ──────────────────────────────────────────────────────────────
+            Previously the first crumb was labeled "Claims" but linked to
+            /queue — so clicking "Claims" landed on the Queue, not the
+            Claims list. The crumb is now honest. The Back button gives
+            true N-1 so a user who came here from the queue still goes
+            back to the queue. The fallback prefers the parent invoice
+            (more useful context than the bare claims list), with /claims
+            as the final safety net for deep-link landings on legs that
+            no longer have a parent group hydrated. */}
+        <BackBar
+          fallbackHref={parentGroup ? `/invoice-groups/${parentGroup.id}` : "/claims"}
+          crumbs={[
+            { label: "Claims", href: "/claims" },
+            ...(parentGroup
+              ? [
+                  {
+                    label: `Invoice #${parentGroup.invoiceNumber || parentGroup.id}`,
+                    href: `/invoice-groups/${parentGroup.id}`,
+                    mono: true,
+                  },
+                ]
+              : []),
+            { label: `Leg #${claim.id}`, mono: true },
+          ]}
+          testId="claim-back-bar"
+        />
 
         {/* Minimal header — identification only */}
         <div className="cc-card p-3" data-testid="leg-header">
