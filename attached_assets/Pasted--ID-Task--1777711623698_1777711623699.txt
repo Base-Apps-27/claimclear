@@ -1,0 +1,122 @@
+
+
+|ID |Task                                                                                                 |Status / Type   |Age|
+|---|-----------------------------------------------------------------------------------------------------|----------------|---|
+|305|Run the legacy-leg healing script in production                                                      |Planned by Agent|5h |
+|306|Add an end-to-end test for the “Record outcome anyway” flow                                          |Planned by Agent|5h |
+|304|Add a Playwright test that verifies the File-today “Why?” sheet opens and lists today’s clearings    |Planned by Agent|6h |
+|303|Show the file-today activity panel as a toast when the urgent count drops to zero                    |Planned by Agent|6h |
+|302|Run the inbox heal in production after the dev dry-run review                                        |Planned by Agent|6h |
+|295|Keep urgency badges fresh on the Invoice Groups, Responses to Review, and Claims pages too           |Planned by Agent|9h |
+|292|Add a real React DOM test for the Queue page so layout regressions are caught visually               |Planned by Agent|9h |
+|293|Show “Generating Email” as a distinct state in Dashboard urgency breakdowns                          |Planned by Agent|9h |
+|291|Show embedded payor images instead of broken-image icons                                             |Planned by Agent|10h|
+|285|Extend the vocabulary guardrail to API server error messages                                         |Planned by Agent|11h|
+|286|Wire the vocabulary drift check into the post-merge validation pipeline                              |Planned by Agent|11h|
+|281|Carry the same urgent/soon hero treatment to the Claims and Groups list pages                        |Planned by Agent|11h|
+|282|Cover the new Queue urgency hero and filter behavior with a real browser test                        |Planned by Agent|11h|
+|279|Surface backfill-produced audit rows in the activity feed UI                                         |Planned by Agent|11h|
+|280|Add a reusable backfill scaffold so new scripts follow the convention by default                     |Planned by Agent|11h|
+|278|Drop the boot-time stale-error backfill once it has run in production                                |Planned by Agent|11h|
+|275|Test the new per-leg conclusion shortcut so it stays correct                                         |Planned by Agent|11h|
+|276|Test the editable AI write-up so unreviewed drafts can’t ship                                        |Planned by Agent|11h|
+|277|Give operators a rich-text editor for the AI write-up                                                |Planned by Agent|11h|
+|270|Apply the email-classifier cleanup to live data                                                      |Planned by Agent|11h|
+|271|Catch new payor reply templates before they pile up                                                  |Planned by Agent|11h|
+|266|Let users add notes directly on the invoice group page                                               |Planned by Agent|12h|
+|267|Reassign owner and place group on hold from the new detail header                                    |Planned by Agent|12h|
+|256|Track who closed each withdrawal directly on the row                                                 |Planned by Agent|13h|
+|257|Make sure the new Closed by filter keeps working as the page evolves                                 |Planned by Agent|13h|
+|253|Make the lifecycle and group-status tab strips keyboard-friendly too                                 |Planned by Agent|14h|
+|254|Add automated tests for the filter popover’s keyboard navigation                                     |Planned by Agent|14h|
+|252|Verify the date-range presets with a small unit test                                                 |Planned by Agent|14h|
+|251|Show the active preset name in the date filter chip                                                  |Planned by Agent|14h|
+|249|Let staff attach evidence files to group-level email replies                                         |Planned by Agent|14h|
+|250|Show formatted email bodies (not just plain text) in the group thread                                |Planned by Agent|14h|
+|243|Backfill the “submitted in run #N” label for older portal submissions                                |Planned by Agent|14h|
+|241|Wire continuation buttons to dedicated endpoints instead of a status flip                            |Planned by Agent|14h|
+|242|Add automated tests for the Responses Awaiting Review page                                           |Planned by Agent|14h|
+|233|Open the per-leg investigation surface inline on the Queue page                                      |Planned by Agent|15h|
+|235|Cover the new Queue inbox + auto-exclusion behaviour with a UI smoke test                            |Planned by Agent|15h|
+|234|Let operators mark blank claims as “non-issue” or “cannot dispute” from the inbox                    |Planned by Agent|15h|
+|227|Fix the api-server submit-flow gates test that references a missing column                           |Planned by Agent|20h|
+|226|Fix pre-existing typecheck errors in the training guide app                                          |Planned by Agent|20h|
+|224|Build the admin-correction flow for post-MAS edits                                                   |Planned by Agent|20h|
+|225|Detect and alert when reclassify is being used to escape stuck MAS states                            |Planned by Agent|20h|
+|223|Wire Submit CTA to show real-time gate status from server                                            |Planned by Agent|20h|
+|221|Add operator-path positive test (all four gates pass → 201)                                          |Planned by Agent|20h|
+|222|Enforce phase gate on wrong-phase groups (e.g. Portal Queued → 409)                                  |Planned by Agent|20h|
+|218|Show SOP-hold reason context (the node question) in the hold terminal panel                          |Planned by Agent|21h|
+|219|Track SOP-hold duration for analytics (time between hold and resume)                                 |Planned by Agent|21h|
+|217|Make the training guide build cleanly with the rest of the project                                   |Planned by Agent|21h|
+|214|Show MAS cancel and re-attest stamps in the leg activity feed                                        |Planned by Agent|21h|
+|215|Test the leg detail MAS history panel renders pending and completed states                           |Planned by Agent|21h|
+|206|Diagnose claimclear web preview not opening on workflow restart                                      |Planned by Agent|22h|
+|207|Wire up MAS action queue and reattest UI for the per-leg flow                                        |Planned by Agent|22h|
+|204|Let leads filter the MAS Action queue by team or assignee                                            |Planned by Agent|22h|
+|203|Track and display how long reviewers spend per verdict                                               |Planned by Agent|22h|
+|201|Wire the new per-leg endpoints into the operator UI                                                  |Planned by Agent|23h|
+|186|Add the Attestation tab inside Responses Awaiting Review                                             |Planned by Agent|1d |
+|187|Send-follow-up button in the page header for one-click composer focus                                |Planned by Agent|1d |
+|185|Add a group-level post-response action so verdicts feel less indirect                                |Planned by Agent|1d |
+|184|Let operators mark a payor response as paid offline                                                  |Planned by Agent|1d |
+|182|Send a reminder when an Approved claim has been waiting for re-attestation too long                  |Planned by Agent|1d |
+|183|Let admins re-open or undo a completed re-attestation                                                |Planned by Agent|1d |
+|181|Stop pre-existing type errors from blocking future builds                                            |Planned by Agent|1d |
+|180|Show the verdict picker on group claims with payor responses                                         |Planned by Agent|1d |
+|177|Add a slide explaining how AI hints are color-coded and how confidence scores work                   |Planned by Agent|1d |
+|178|Refresh the deck’s screenshots to match the new Queue page layout                                    |Planned by Agent|1d |
+|179|Fix pre-existing TypeScript errors in the training-guide app shell                                   |Planned by Agent|1d |
+|172|Show special-circumstances context to portal queue reviewers in the drawer                           |Planned by Agent|2d |
+|173|Make the AI catch unsafe operator context before it lands in a dispute                               |Planned by Agent|2d |
+|170|Fix broken type errors on the training-guide app entry                                               |Planned by Agent|2d |
+|171|Add automated tests covering the stage-aware closure-reason guardrails                               |Planned by Agent|2d |
+|157|Show clearer Accepted Loss styling on closure dialog and detail pages                                |Planned by Agent|2d |
+|159|Add an automated test that proves Accept-as-Loss never bypasses the closure dialog                   |Planned by Agent|2d |
+|149|Let staff attach files larger than 3MB to replies                                                    |Planned by Agent|2d |
+|150|Let staff upload a one-off file when replying without first saving it as evidence                    |Planned by Agent|2d |
+|151|Show attached files as clickable links in the thread instead of plain text                           |Planned by Agent|2d |
+|145|Show closure details in the email and Slack notifications                                            |Planned by Agent|2d |
+|146|Add a Withdrawals Review walkthrough video to the training guide                                     |Planned by Agent|2d |
+|147|Let reviewers filter the activity feed by closure events                                             |Planned by Agent|2d |
+|142|Validate closure leaves are fully configured before publishing a tree                                |Planned by Agent|2d |
+|141|Persist closure-leaf outcomes in tree run history with reason and category                           |Planned by Agent|2d |
+|138|Add the structured Withdraw / Non-Issue closure UI                                                   |Planned by Agent|2d |
+|137|Build the Withdrawals Review queue page                                                              |Planned by Agent|2d |
+|139|Surface the closure rationale in the activity timeline                                               |Planned by Agent|2d |
+|127|Auto-rerun missed cron jobs once after a deploy                                                      |Planned by Agent|2d |
+|128|Show a “fresh deploy” note on the dashboard right after a restart                                    |Planned by Agent|2d |
+|129|Cover the cron-runs table layout with a visual smoke test                                            |Planned by Agent|2d |
+|126|Pick the winning Claim Detail variant and ship it to the real app                                    |Planned by Agent|2d |
+|123|Show a notification when something important happens on the dashboard                                |Planned by Agent|2d |
+|122|Filter the activity feed by person, action, or time range                                            |Planned by Agent|2d |
+|121|Cover the other dashboard endpoints with automated tests                                             |Planned by Agent|2d |
+|116|Let users edit subjects and apply error types in bulk from the queue                                 |Planned by Agent|3d |
+|117|Make the new submission drawer keyboard-friendly with up/down navigation                             |Planned by Agent|3d |
+|115|Test that two reviewers can no longer step on each other on a group                                  |Planned by Agent|3d |
+|114|Show who’s collaborating from the queue list itself                                                  |Planned by Agent|3d |
+|105|Keep table column headers visible while scrolling capped tables                                      |Planned by Agent|3d |
+|104|Cap and scroll batch run history and other long lists on system pages                                |Planned by Agent|3d |
+|103|Treat company holidays the same as weekends for urgent deadlines                                     |Planned by Agent|3d |
+|96 |Show how long each batch run took, at a glance                                                       |Planned by Agent|3d |
+|98 |Email admins when a batch run fails or is stopped unexpectedly                                       |Planned by Agent|3d |
+|97 |Let admins click a past run to see which submissions were processed                                  |Planned by Agent|3d |
+|92 |Add a real two-browser test that proves Queued badges and disabled buttons render for the second user|Planned by Agent|3d |
+|91 |Cover the other draft Quality checks with automated tests                                            |Planned by Agent|3d |
+|78 |Require a short note when staff withdraw a claim or group                                            |Planned by Agent|4d |
+|77 |Show a closure-reason filter on the claims and groups list pages                                     |Planned by Agent|4d |
+|79 |Add a monthly Withdrawn-vs-Denied trend chart to the dashboard                                       |Planned by Agent|4d |
+|59 |Show notification opt-out controls in user-facing settings                                           |Planned by Agent|2w |
+|60 |Verify daily brief sends correct content end-to-end with automated tests                             |Planned by Agent|2w |
+|57 |Let bots reload the service token without a full restart                                             |Planned by Agent|2w |
+|56 |Show attachment file sizes for every preview                                                         |Planned by Agent|2w |
+|55 |Show preview button on submitted/failed submissions too                                              |Planned by Agent|2w |
+|53 |Let users reply to a payor directly from the email thread                                            |Planned by Agent|2w |
+|54 |Auto-suggest the right claim when an email response looks misrouted                                  |Planned by Agent|2w |
+|52 |Show sent emails alongside drafts in the daily brief outbox                                          |Planned by Agent|2w |
+|51 |One-click manual rerun for a failed scheduled job                                                    |Planned by Agent|2w |
+|50 |Auto-pause sending to addresses that have bounced                                                    |Planned by Agent|2w |
+|48 |Show full audit metadata in the activity feed                                                        |Planned by Agent|2w |
+|49 |Sortable activity columns and quick action-key search                                                |Planned by Agent|2w |
+|47 |Friendlier empty messages on the Queue page tabs                                                     |Planned by Agent|2w |
+|28 |Let users add group evidence directly from the detail page                                           |Planned by Agent|2w |
