@@ -67,6 +67,7 @@ const GROUP_ONLY: Record<string, string> = {
   group_triaged: "Classification completed",
   group_resolved: "Group resolved",
   group_denied: "Group denied",
+  mas_reattest_recorded_offline: "MAS re-attest recorded (offline)",
 };
 
 export const AUDIT_ACTION_LABELS_BY_KIND = {

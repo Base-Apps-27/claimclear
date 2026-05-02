@@ -123,6 +123,7 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   response_unmatched: meta("response_unmatched", "group", MailQuestion, "text-amber-600", "communication"),
   outbound_sent: meta("outbound_sent", "group", Mail, "text-emerald-600", "communication"),
   bounce_received: meta("bounce_received", "group", MailX, "text-rose-600", "communication"),
+  mas_reattest_recorded_offline: meta("mas_reattest_recorded_offline", "group", ShieldCheck, "text-amber-600", "status"),
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {

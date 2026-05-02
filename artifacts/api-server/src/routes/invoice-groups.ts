@@ -1888,51 +1888,84 @@ router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, 
 // re-attest as complete and engages the attestation gate. Pre: phase
 // is mas-action-required AND every leg with mas_action_required='cancel'
 // has been completed.
+//
+// Admin override (Task #333): when `recordedOffline=true` is set on
+// the body, an admin actor with a >=10-char trimmed `offlineNote`
+// bypasses the macro-phase + cancel-completeness preconditions and
+// stamps the same columns. The audit row uses the distinct
+// `mas_reattest_recorded_offline` action so the activity feed can
+// distinguish a checklist-driven completion from an after-the-fact
+// recording. Same `group.reattest_completed` SSE event is emitted so
+// listeners (dashboards, queue counters, attestation gate) react
+// identically.
 router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   const note = (req.body?.note ?? null) as string | null;
   const masReference = (req.body?.masReference ?? null) as string | null;
+  const recordedOffline = req.body?.recordedOffline === true;
+  const offlineNoteRaw = (req.body?.offlineNote ?? "") as string;
+  const offlineNote = typeof offlineNoteRaw === "string" ? offlineNoteRaw.trim() : "";
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  // Source-state contract: the group must be in the
-  // `mas-action-required` derived macro phase. The phase is computed
-  // from {status, reattestRequired, reattestCompletedAt} — see
-  // getGroupMacroPhase. Enforcing the phase (rather than the raw
-  // `reattest_required` bit) keeps the contract honest if we later add
-  // intermediate phases between response-pending and reattest.
-  const phase = getGroupMacroPhase(group);
-  if (phase !== "mas-action-required") {
-    res.status(409).json({
-      error: "Group is not in the mas-action-required phase",
-      expectedState: "mas-action-required",
-      actualState: phase,
-    });
-    return;
-  }
+  if (recordedOffline) {
+    // Admin override path: enforce admin role + a meaningful note,
+    // then skip phase + cancel-completeness preconditions. The path
+    // still stamps the same completion columns and graduates legs.
+    if (req.user?.role !== "admin") {
+      res.status(403).json({ error: "Admin access required for offline re-attest recording" });
+      return;
+    }
+    if (offlineNote.length < 10) {
+      res.status(400).json({
+        error: "offlineNote is required and must be at least 10 characters",
+        field: "offlineNote",
+      });
+      return;
+    }
+  } else {
+    // Standard path: source-state contract — the group must be in
+    // the `mas-action-required` derived macro phase. The phase is
+    // computed from {status, reattestRequired, reattestCompletedAt} —
+    // see getGroupMacroPhase. Enforcing the phase (rather than the
+    // raw `reattest_required` bit) keeps the contract honest if we
+    // later add intermediate phases between response-pending and
+    // reattest.
+    const phase = getGroupMacroPhase(group);
+    if (phase !== "mas-action-required") {
+      res.status(409).json({
+        error: "Group is not in the mas-action-required phase",
+        expectedState: "mas-action-required",
+        actualState: phase,
+      });
+      return;
+    }
 
-  // Every leg owing a MAS cancel must have completed it first.
-  const incompleteCancels = await db
-    .select({ id: claimsTable.id })
-    .from(claimsTable)
-    .where(and(
-      eq(claimsTable.invoiceGroupId, id),
-      eq(claimsTable.masActionRequired, "cancel"),
-      isNull(claimsTable.masActionCompletedAt),
-    ));
-  if (incompleteCancels.length > 0) {
-    res.status(409).json({
-      error: "Not all MAS cancel actions are complete",
-      expectedState: "all-cancels-complete",
-      actualState: `${incompleteCancels.length}-incomplete`,
-    });
-    return;
+    // Every leg owing a MAS cancel must have completed it first.
+    const incompleteCancels = await db
+      .select({ id: claimsTable.id })
+      .from(claimsTable)
+      .where(and(
+        eq(claimsTable.invoiceGroupId, id),
+        eq(claimsTable.masActionRequired, "cancel"),
+        isNull(claimsTable.masActionCompletedAt),
+      ));
+    if (incompleteCancels.length > 0) {
+      res.status(409).json({
+        error: "Not all MAS cancel actions are complete",
+        expectedState: "all-cancels-complete",
+        actualState: `${incompleteCancels.length}-incomplete`,
+      });
+      return;
+    }
   }
 
   const now = new Date();
-  const fullNote = masReference ? `${note ? note + " " : ""}(MAS ref: ${masReference})` : note;
+  const fullNote = recordedOffline
+    ? offlineNote
+    : (masReference ? `${note ? note + " " : ""}(MAS ref: ${masReference})` : note);
   const [updated] = await db
     .update(invoiceGroupsTable)
     .set({
@@ -1943,12 +1976,24 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
 
-  await createGroupAuditLog(id, "mas_reattest_completed", "MAS re-attest completed", req, { note, masReference });
+  if (recordedOffline) {
+    await createGroupAuditLog(
+      id,
+      "mas_reattest_recorded_offline",
+      "MAS re-attest recorded (offline)",
+      req,
+      { offlineNote, recordedOffline: true },
+    );
+  } else {
+    await createGroupAuditLog(id, "mas_reattest_completed", "MAS re-attest completed", req, { note, masReference });
+  }
   await emitStateEvent({
     eventKey: "group.reattest_completed",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: { note, masReference },
+    metadata: recordedOffline
+      ? { recordedOffline: true, offlineNote }
+      : { note, masReference },
   });
 
   // Trigger gate: graduate any leg with an operator-confirmed

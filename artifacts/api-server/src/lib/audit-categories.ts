@@ -82,6 +82,7 @@ const GROUP_CATEGORY_MAP: Record<string, ActionCategory> = {
   group_readback_confirmed: "draft",
   group_preview_generated: "draft",
   mas_reattest_completed: "workflow",
+  mas_reattest_recorded_offline: "status",
 };
 
 const CLAIM_LABELS: Record<string, string> = {
@@ -142,6 +143,7 @@ const GROUP_LABELS: Record<string, string> = {
   group_readback_confirmed: "Understanding readback confirmed",
   group_preview_generated: "Dispute preview generated",
   mas_reattest_completed: "MAS re-attest completed",
+  mas_reattest_recorded_offline: "MAS re-attest recorded (offline)",
 };
 
 function humanizeFallback(action: string): string {

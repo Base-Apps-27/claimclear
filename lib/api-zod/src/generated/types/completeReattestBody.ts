@@ -17,4 +17,15 @@ export interface CompleteReattestBody {
   note?: string | null;
   /** @nullable */
   masReference?: string | null;
+  /** Admin override. When true, bypass the macro-phase + cancel-completeness
+preconditions and stamp the same `reattestCompletedAt`/`By` columns,
+recording a distinct `mas_reattest_recorded_offline` audit row. Requires
+an admin actor and a non-empty `offlineNote` (>= 10 trimmed chars).
+ */
+  recordedOffline?: boolean;
+  /** Required when `recordedOffline` is true. Free-form note (>= 10 trimmed
+chars) explaining when/where the re-attest was recorded outside the
+standard checklist.
+ */
+  offlineNote?: string;
 }

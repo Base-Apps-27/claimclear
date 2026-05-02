@@ -5897,6 +5897,18 @@ export const CompleteGroupReattestParams = zod.object({
 export const CompleteGroupReattestBody = zod.object({
   note: zod.string().nullish(),
   masReference: zod.string().nullish(),
+  recordedOffline: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Admin override. When true, bypass the macro-phase + cancel-completeness\npreconditions and stamp the same `reattestCompletedAt`\/`By` columns,\nrecording a distinct `mas_reattest_recorded_offline` audit row. Requires\nan admin actor and a non-empty `offlineNote` (>= 10 trimmed chars).\n",
+    ),
+  offlineNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Required when `recordedOffline` is true. Free-form note (>= 10 trimmed\nchars) explaining when\/where the re-attest was recorded outside the\nstandard checklist.\n",
+    ),
 });
 
 export const CompleteGroupReattestResponse = zod.object({

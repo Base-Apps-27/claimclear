@@ -980,6 +980,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupResponse"
+        "400":
+          description: |
+            `recordedOffline=true` but `offlineNote` is missing or shorter than 10 trimmed characters.
+        "403":
+          description: |
+            `recordedOffline=true` but the actor is not an admin.
         "409":
           description: Source-state contract violation
           content:
@@ -5616,6 +5622,19 @@ components:
           type: ["string", "null"]
         masReference:
           type: ["string", "null"]
+        recordedOffline:
+          type: boolean
+          description: |
+            Admin override. When true, bypass the macro-phase + cancel-completeness
+            preconditions and stamp the same `reattestCompletedAt`/`By` columns,
+            recording a distinct `mas_reattest_recorded_offline` audit row. Requires
+            an admin actor and a non-empty `offlineNote` (>= 10 trimmed chars).
+        offlineNote:
+          type: string
+          description: |
+            Required when `recordedOffline` is true. Free-form note (>= 10 trimmed
+            chars) explaining when/where the re-attest was recorded outside the
+            standard checklist.
 
     AttestationActionBody:
       type: object

@@ -17,17 +17,15 @@ import {
   useCreateInvoiceGroupNote,
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
-  useCompleteLegMasAction,
   useCompleteGroupReattest,
 } from "@workspace/api-client-react";
-import { MasActionChecklist } from "@/components/mas-action-checklist";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import type {
   ClaimResponse,
@@ -225,6 +223,8 @@ function authorInitial(name: string | null | undefined): string {
 export function InvoiceGroupDetailV2({ groupId }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { data: group, isLoading } = useGetInvoiceGroup(groupId, {
     query: { queryKey: getGetInvoiceGroupQueryKey(groupId), enabled: !!groupId },
   });
@@ -242,7 +242,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   // win). Mirrors the leg-level "you finished a thing" flourish on
   // claim-detail-v2 (Task #315).
   // ─────────────────────────────────────────────────────────────────────
-  const { user } = useAuth();
   const { lastGroupUpdateBy } = useInvoiceGroupEvents(groupId);
   const prevGroupStatusRef = useRef<string | null | undefined>(undefined);
   const [justShipped, setJustShipped] = useState(false);
@@ -253,12 +252,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const createNoteMutation = useCreateInvoiceGroupNote();
   const holdMutation = useHoldInvoiceGroup();
   const removeHoldMutation = useRemoveInvoiceGroupHold();
-  // MAS action workflow — the cancel-in-MAS chore + re-attest confirm.
-  // Hooked here so the checklist can live on this page (inside the
-  // re-attest modal) after the standalone "MAS action" tab on
-  // Responses Awaiting Review was retired. invalidateGroup() is the
-  // existing helper defined further down in this component.
-  const completeMasMutation = useCompleteLegMasAction();
+  // MAS re-attest mutation — used by the admin "recorded offline"
+  // override modal in the right rail (Task #333). The standard
+  // checklist-driven completion now lives on Responses Awaiting Review
+  // so the detail page right rail is a quiet status panel pointing the
+  // operator there.
   const completeReattestMutation = useCompleteGroupReattest();
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
@@ -268,12 +266,32 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReason, setHoldReason] = useState("");
 
-  /* ---- Re-attest modal (the "I'm re-attesting now" flow). The
-     MAS-cancel checklist + reattest confirm copy lives inside this
-     modal so the operator gets the playbook at the moment they say
-     they're doing the work, instead of as a permanent slab on the
-     page. */
-  const [reattestOpen, setReattestOpen] = useState(false);
+  /* ---- Admin override modal (Task #333). Lets an admin record that
+     the MAS re-attest happened outside the in-app checklist (paper
+     log, after-the-fact correction). Requires a >=10-char trimmed
+     note + an explicit confirm checkbox before the submit button
+     enables. The non-admin path on this page is a quiet status panel
+     pointing the operator at Responses Awaiting Review for the real
+     checklist work. */
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [offlineNote, setOfflineNote] = useState("");
+  const [offlineConfirmed, setOfflineConfirmed] = useState(false);
+  // Inline error surface for the override modal. Toasts are easy to
+  // miss when the user's eyes are on the form, so 400 ("note too
+  // short" — server-side validation) and 403 ("admin only") responses
+  // are also pinned next to the submit row. Cleared on every retry,
+  // on close, and on success.
+  const [offlineErrorMsg, setOfflineErrorMsg] = useState<string | null>(null);
+  const [offlineErrorKind, setOfflineErrorKind] = useState<"forbidden" | "validation" | "other" | null>(null);
+  const offlineNoteTrim = offlineNote.trim();
+  const offlineNoteValid = offlineNoteTrim.length >= 10;
+  const canSubmitOffline = offlineNoteValid && offlineConfirmed && !completeReattestMutation.isPending;
+  function resetOfflineForm() {
+    setOfflineNote("");
+    setOfflineConfirmed(false);
+    setOfflineErrorMsg(null);
+    setOfflineErrorKind(null);
+  }
 
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId, {
     query: {
@@ -1104,10 +1122,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           {/* RIGHT — rail (4 cols) */}
           <div className="col-span-4 space-y-4">
 
-            {/* MAS action card — opens the re-attest modal. The modal
-                holds the cancel-in-MAS checklist and the reattest
-                confirm step so the operator gets the playbook only
-                when they say they're doing the work. */}
+            {/* MAS action — quiet status panel (Task #333). The actual
+                cancel-in-MAS + re-attest checklist lives on the
+                Responses Awaiting Review (RAR) workspace; this card
+                points the operator there instead of duplicating the
+                playbook in the right rail. Admins get a subdued
+                "Mark as already re-attested" link below the panel
+                that opens the offline-recording override modal. */}
             {group.reattestRequired && (
               <CcCard
                 title="MAS action"
@@ -1137,60 +1158,265 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     )}
                   </div>
                 ) : (
-                  <div data-testid="group-reattest-pending" className="space-y-2">
+                  <div data-testid="group-reattest-pending" className="space-y-3">
                     <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      Cancel each affected leg in MAS, re-attest with the corrected
-                      info, then confirm here so the dashboard and audit trail line
-                      up.
+                      Cancel each affected leg in MAS, re-attest with the
+                      corrected info, then confirm completion from the response
+                      workspace so the dashboard and audit trail line up.
                     </p>
-                    <Dialog open={reattestOpen} onOpenChange={setReattestOpen}>
-                      <DialogTrigger asChild>
-                        <button
-                          className="cc-btn w-full justify-center text-xs gap-1 inline-flex items-center py-2"
-                          style={{ background: "var(--cc-amber-fg)", color: "white" }}
-                          data-testid="button-open-reattest-modal"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> I'm re-attesting now
-                        </button>
-                      </DialogTrigger>
-                      <DialogContent
-                        className="max-w-2xl max-h-[85vh] overflow-y-auto"
-                        data-testid="reattest-modal"
+                    <Link
+                      href="/responses-awaiting-review"
+                      className="text-xs font-medium inline-flex items-center gap-1 hover:underline"
+                      style={{ color: "var(--cc-blue-fg)" }}
+                      data-testid="link-reattest-go-to-rar"
+                    >
+                      Open in Responses Awaiting Review
+                      <ChevronRight className="w-3 h-3" />
+                    </Link>
+                    {isAdmin && (
+                      <div
+                        className="pt-2 mt-1"
+                        style={{ borderTop: "1px dashed var(--cc-border)" }}
+                        data-testid="reattest-admin-overrides"
                       >
-                        <DialogHeader>
-                          <DialogTitle>Re-attest in MAS</DialogTitle>
-                          <DialogDescription>
-                            Walk through the cancel-and-re-attest steps for this
-                            invoice. Tick each leg as you cancel it in MAS, then
-                            confirm the re-attest at the bottom — that releases the
-                            group for resubmission.
-                          </DialogDescription>
-                        </DialogHeader>
-                        {detail && (
-                          <MasActionChecklist
-                            group={detail}
-                            onCompleteLegMasAction={async (claimId, body) => {
-                              await completeMasMutation.mutateAsync({ id: claimId, data: body });
-                              invalidateGroup();
-                              toast({ title: "MAS cancellation recorded", duration: 3000 });
-                            }}
-                            onCompleteGroupReattest={async (body) => {
-                              await completeReattestMutation.mutateAsync({ id: groupId, data: body });
-                              invalidateGroup();
-                              setReattestOpen(false);
-                              toast({
-                                title: "Re-attest confirmed",
-                                description: "Group is now awaiting payout.",
-                                duration: 3000,
-                              });
-                            }}
-                          />
-                        )}
-                      </DialogContent>
-                    </Dialog>
+                        <div
+                          className="text-[10px] uppercase tracking-wide mb-1"
+                          style={{ color: "var(--cc-muted-fg)" }}
+                        >
+                          Admin overrides
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetOfflineForm();
+                            setOfflineModalOpen(true);
+                          }}
+                          className="text-xs hover:underline inline-flex items-center gap-1"
+                          style={{ color: "var(--cc-amber-fg)" }}
+                          data-testid="button-open-mark-reattested-offline"
+                        >
+                          <ClipboardCheck className="w-3 h-3" /> Mark as already re-attested →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CcCard>
+            )}
+
+            {/* Admin offline-recording override modal. Amber chrome
+                makes it visually distinct from a normal completion;
+                the submit button stays disabled until the trimmed
+                note hits 10 chars AND the operator ticks the
+                acknowledgement checkbox. */}
+            {isAdmin && group.reattestRequired && !group.reattestCompletedAt && (
+              <Dialog
+                open={offlineModalOpen}
+                onOpenChange={(next) => {
+                  setOfflineModalOpen(next);
+                  if (!next) resetOfflineForm();
+                }}
+              >
+                <DialogContent
+                  className="max-w-lg"
+                  data-testid="reattest-offline-modal"
+                  style={{
+                    borderTop: "4px solid var(--cc-amber-fg)",
+                  }}
+                >
+                  <DialogHeader>
+                    <div
+                      className="-mx-6 -mt-6 px-6 py-3 mb-3 flex items-center gap-2"
+                      style={{
+                        background: "var(--cc-amber-bg)",
+                        color: "var(--cc-amber-fg)",
+                        borderBottom: "1px solid var(--cc-amber-fg)",
+                      }}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      <DialogTitle className="text-sm font-semibold m-0" style={{ color: "var(--cc-amber-fg)" }}>
+                        Mark MAS re-attest as already done (admin override)
+                      </DialogTitle>
+                    </div>
+                    <DialogDescription className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                      Use this only when the re-attest happened outside the
+                      app — paper log, MAS-side correction, or
+                      after-the-fact reconciliation. The activity timeline
+                      will show a distinct &quot;recorded offline&quot;
+                      entry instead of the standard checklist completion.
+                      Bypasses the cancel-completeness gate.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div>
+                      <label
+                        htmlFor="offline-note-textarea"
+                        className="block text-xs font-medium mb-1"
+                        style={{ color: "var(--cc-fg)" }}
+                      >
+                        What happened? <span style={{ color: "var(--cc-amber-fg)" }}>*</span>
+                      </label>
+                      <textarea
+                        id="offline-note-textarea"
+                        value={offlineNote}
+                        onChange={(e) => setOfflineNote(e.target.value)}
+                        placeholder="When/where the re-attest was actually performed (min 10 chars)…"
+                        rows={4}
+                        className="w-full rounded text-xs px-2 py-1.5"
+                        style={{
+                          border: "1px solid var(--cc-border)",
+                          background: "var(--cc-input-bg, transparent)",
+                          color: "var(--cc-fg)",
+                        }}
+                        data-testid="textarea-offline-note"
+                      />
+                      <div
+                        className="mt-1 text-[11px] flex justify-between"
+                        style={{ color: offlineNoteValid ? "var(--cc-muted-fg)" : "var(--cc-amber-fg)" }}
+                      >
+                        <span>{offlineNoteValid ? "Note looks good." : `Need ${Math.max(0, 10 - offlineNoteTrim.length)} more characters.`}</span>
+                        <span className="mono">{offlineNoteTrim.length}/10</span>
+                      </div>
+                    </div>
+                    <label
+                      className="flex items-start gap-2 text-xs cursor-pointer"
+                      style={{ color: "var(--cc-fg)" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={offlineConfirmed}
+                        onChange={(e) => setOfflineConfirmed(e.target.checked)}
+                        className="mt-0.5"
+                        data-testid="checkbox-offline-confirm"
+                      />
+                      <span>
+                        I confirm the MAS re-attest has already been completed
+                        outside this app and I am recording it here for the audit trail.
+                      </span>
+                    </label>
+                    {/* Inline error surface — pinned to the form so the
+                        operator's eyes don't have to leave the modal to
+                        understand a 400/403. Coloured rose for
+                        forbidden, amber for validation, slate for
+                        anything else. Toast also fires as a secondary
+                        cue. */}
+                    {offlineErrorMsg && (
+                      <div
+                        role="alert"
+                        data-testid="offline-error-inline"
+                        data-error-kind={offlineErrorKind ?? "other"}
+                        className="text-xs px-2 py-1.5 rounded flex items-start gap-1.5"
+                        style={
+                          offlineErrorKind === "forbidden"
+                            ? { background: "var(--cc-rose-bg)", color: "var(--cc-rose-fg)", border: "1px solid var(--cc-rose-fg)" }
+                            : offlineErrorKind === "validation"
+                              ? { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", border: "1px solid var(--cc-amber-fg)" }
+                              : { background: "var(--cc-muted-bg, transparent)", color: "var(--cc-fg)", border: "1px solid var(--cc-border)" }
+                        }
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <span>
+                          <strong className="font-semibold mr-1">
+                            {offlineErrorKind === "forbidden"
+                              ? "Admin only:"
+                              : offlineErrorKind === "validation"
+                                ? "Note rejected:"
+                                : "Could not record:"}
+                          </strong>
+                          {offlineErrorMsg}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOfflineModalOpen(false)}
+                      className="cc-btn text-xs px-3 py-1.5"
+                      style={{ background: "transparent", color: "var(--cc-fg)", border: "1px solid var(--cc-border)" }}
+                      data-testid="button-offline-cancel"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canSubmitOffline}
+                      onClick={() => {
+                        if (!canSubmitOffline) return;
+                        // Clear any prior inline error before retrying
+                        // so the user sees a fresh state during the
+                        // request.
+                        setOfflineErrorMsg(null);
+                        setOfflineErrorKind(null);
+                        completeReattestMutation.mutate(
+                          {
+                            id: groupId,
+                            data: { recordedOffline: true, offlineNote: offlineNoteTrim },
+                          },
+                          {
+                            onSuccess: () => {
+                              invalidateGroup();
+                              setOfflineModalOpen(false);
+                              resetOfflineForm();
+                              toast({
+                                title: "Recorded as re-attested (offline)",
+                                description: "Activity timeline now shows the override entry.",
+                                duration: 3500,
+                              });
+                            },
+                            onError: (e: unknown) => {
+                              // Pull the server's status code + body
+                              // out of the axios-shaped error so we can
+                              // route the inline copy by 400 vs 403 vs
+                              // generic. Toast still fires as a
+                              // secondary surface in case the modal
+                              // closes mid-error.
+                              let status: number | null = null;
+                              let serverMsg: string | null = null;
+                              if (e != null && typeof e === "object" && "response" in e) {
+                                const ax = e as { response?: { status?: number; data?: { error?: string } } };
+                                status = ax.response?.status ?? null;
+                                serverMsg = ax.response?.data?.error ?? null;
+                              }
+                              const fallback = e instanceof Error ? e.message : String(e);
+                              const kind: "forbidden" | "validation" | "other" =
+                                status === 403 ? "forbidden" : status === 400 ? "validation" : "other";
+                              const inlineMsg =
+                                kind === "forbidden"
+                                  ? (serverMsg ?? "You don't have permission to record an offline re-attest. This action is admin-only.")
+                                  : kind === "validation"
+                                    ? (serverMsg ?? "The note didn't pass server-side validation. It needs at least 10 characters after trimming.")
+                                    : (serverMsg ?? fallback);
+                              setOfflineErrorMsg(inlineMsg);
+                              setOfflineErrorKind(kind);
+                              toast({
+                                title: "Could not record offline re-attest",
+                                description: inlineMsg,
+                                variant: "destructive",
+                              });
+                            },
+                          },
+                        );
+                      }}
+                      className="cc-btn text-xs px-3 py-1.5 inline-flex items-center gap-1"
+                      style={{
+                        background: canSubmitOffline ? "var(--cc-amber-fg)" : "var(--cc-muted)",
+                        color: "white",
+                        opacity: canSubmitOffline ? 1 : 0.6,
+                        cursor: canSubmitOffline ? "pointer" : "not-allowed",
+                      }}
+                      data-testid="button-submit-offline-reattest"
+                    >
+                      {completeReattestMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <ClipboardCheck className="w-3 h-3" />
+                      )}
+                      Mark as re-attested
+                    </button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             )}
 
             {/* Ready to package — surfaced separately when readiness payload exists */}

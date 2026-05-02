@@ -2728,7 +2728,7 @@ export const completeGroupReattest = async (
 };
 
 export const getCompleteGroupReattestMutationOptions = <
-  TError = ErrorType<StateConflictResponse>,
+  TError = ErrorType<void | StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2770,13 +2770,13 @@ export type CompleteGroupReattestMutationResult = NonNullable<
 >;
 export type CompleteGroupReattestMutationBody = BodyType<CompleteReattestBody>;
 export type CompleteGroupReattestMutationError =
-  ErrorType<StateConflictResponse>;
+  ErrorType<void | StateConflictResponse>;
 
 /**
  * @summary Operator stamps that the group's MAS re-attest is complete
  */
 export const useCompleteGroupReattest = <
-  TError = ErrorType<StateConflictResponse>,
+  TError = ErrorType<void | StateConflictResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
