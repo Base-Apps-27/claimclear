@@ -105,7 +105,7 @@ export async function isDayConcluded(
         ${invoiceGroupsTable.outcome} AS outcome,
         -- Normalize text-typed date through ::date so MIN compares
         -- calendar-correctly and the comparison key matches the ISO
-        -- "day" argument. See getInvoiceGroupDay for context.
+        -- \`day\` argument. See getInvoiceGroupDay for context.
         to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD') AS earliest_date
       FROM ${invoiceGroupsTable}
       INNER JOIN ${claimsTable}

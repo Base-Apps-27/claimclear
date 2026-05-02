@@ -82,6 +82,19 @@ export const BACKFILL_IDS = {
   // `leg_sop_outcome_backfilled` audit row per healed leg.
   preGroupLegSopOutcome: "2026-05-pre-group-leg-sop-outcome",
 
+  // Task #346: recover invoice groups that the Task #299 stuck-inbox
+  // heal mis-demoted out of `Needs Review` into `Awaiting Response`
+  // (or `Resolved` / Non-Issue) even though they had never been
+  // classified. Each recovered group has every active leg (`included
+  // _in_dispute=true`, `duplicate_of_claim_id IS NULL`) with
+  // `error_type_id IS NULL` AND blank `error_details`, and no
+  // reviewable portal_response on file. Reverts via
+  // transitionGroupStatus(systemOverride: true) back to `Needs Review`
+  // and writes a separate per-group `inbox_heal_reverted` audit row +
+  // system note so the round-trip is traceable on each group's
+  // timeline.
+  recoverMisdemotedClassifyInbox: "2026-05-recover-misdemoted-classify-inbox",
+
   // Task #299: heal invoice groups that the prior reclassification
   // backfills (Tasks #283/#284) demoted from approval/denial/etc. to
   // acknowledgment but whose group status was left stuck in `Needs

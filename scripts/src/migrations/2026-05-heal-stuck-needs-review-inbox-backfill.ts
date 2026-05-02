@@ -7,17 +7,35 @@
 // to silently revert. They render as blank "Response details unavailable"
 // rows in the Stage 2 inbox.
 //
+// Task #346 update
+// ----------------
+// The original predicate matched any group in {Needs Review, Ready to
+// Review} that had no reviewable portal_response. That swept up groups
+// that had never been triaged at all (every active leg still has
+// `error_type_id IS NULL` and a blank `error_details`) — they sit in
+// `Needs Review` because the importer puts them there for the operator
+// to classify, NOT because a payor reply needed reviewing. Demoting
+// them to `Awaiting Response` made them silently disappear from the
+// Classify section of the Queue page. We now skip any stuck group that
+// still has at least one **active** leg (`included_in_dispute = true`,
+// `duplicate_of_claim_id IS NULL`) with `error_type_id IS NULL`. The
+// new guard runs ahead of the existing reviewable-response check so the
+// log/report makes the skip reason clear.
+//
 // What this script does
 // ---------------------
 //   1. Selects every invoice group currently in `Needs Review` or
 //      `Ready to Review`.
-//   2. Skips groups that have at least one reviewable portal_response on
+//   2. Skips groups that still have at least one **active** unclassified
+//      leg (Task #346 guard) — those are pre-classification, not
+//      stuck-post-response, and belong in the Classify inbox.
+//   3. Skips groups that have at least one reviewable portal_response on
 //      file (`approval`, `denial`, `partial_approval`, `info_request`,
 //      `other`) linked directly via `invoice_group_id`. These belong in
 //      the inbox — there is something for staff to triage. The set of
 //      reviewable types matches `pickLatestReviewableResponse` in
 //      artifacts/claimclear/src/components/queue-response-review-panel.tsx.
-//   3. For each remaining (stuck) group, walks its `audit_logs`
+//   4. For each remaining (stuck) group, walks its `audit_logs`
 //      (`action='group_status_changed'`) backward from now and looks at
 //      the `from` field on each row — that is the status the group held
 //      *before* the transition. The most recent `from` value that is in
@@ -27,19 +45,19 @@
 //      prior statuses are system-controlled like `Generating Email` /
 //      `Portal Queued`, or the group has no group_status_changed audit
 //      rows at all), the script defaults to `Awaiting Response`.
-//   4. Calls `transitionGroupStatus({ systemOverride: true, ... })` to
+//   5. Calls `transitionGroupStatus({ systemOverride: true, ... })` to
 //      flip the status. The shared helper writes the standard
 //      `group_status_changed` audit row + status-change note + cascades
 //      to disputed children, exactly the same way an operator-driven
 //      revert would.
-//   5. Writes a SEPARATE `audit_logs` row tagged
+//   6. Writes a SEPARATE `audit_logs` row tagged
 //      `action='inbox_heal_applied'` with rich metadata for traceability:
 //      the chosen prior status, the chosen target, the count of
 //      portal_responses considered (broken down by responseType), the
 //      list of response ids (capped for size safety), the source string,
 //      and the registered `backfillId`. This row appears on the group's
 //      audit timeline so staff can see why the group moved.
-//   6. Inserts a short group note pointing at the heal so reviewers can
+//   7. Inserts a short group note pointing at the heal so reviewers can
 //      see "Stuck Inbox Heal: reverted to <target> — see audit entry".
 //
 // Idempotency
@@ -68,8 +86,9 @@ import {
   portalResponsesTable,
   auditLogsTable,
   notesTable,
+  claimsTable,
 } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { transitionGroupStatus, type GroupStatus } from "@workspace/api-server/src/lib/group-transitions";
 import { BACKFILL_IDS } from "./_backfill-audit";
 
@@ -198,6 +217,28 @@ async function fetchGroupResponses(groupId: number): Promise<ResponseRow[]> {
   return rows.map((r) => ({ id: r.id, responseType: String(r.responseType) }));
 }
 
+// Task #346 guard. An "active" leg is one that's actually in the
+// dispute pipeline (`included_in_dispute = true`) and isn't a sibling
+// duplicate (`duplicate_of_claim_id IS NULL`). If even one active leg
+// is still unclassified (`error_type_id IS NULL`), the group is
+// pre-classification — it landed in `Needs Review` because the
+// importer wants an operator to triage it, NOT because a payor reply
+// got stuck. Demoting it to `Awaiting Response` would silently hide
+// the group from the Classify section of the Queue page. The fix is
+// to leave such groups alone: the inbox is exactly where they belong.
+async function fetchUnclassifiedActiveLegCount(groupId: number): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, groupId),
+      eq(claimsTable.includedInDispute, true),
+      isNull(claimsTable.duplicateOfClaimId),
+      isNull(claimsTable.errorTypeId),
+    ));
+  return rows[0]?.count ?? 0;
+}
+
 function bucketResponses(rows: ResponseRow[]): {
   countsByType: Record<string, number>;
   reviewableIds: number[];
@@ -317,6 +358,8 @@ interface PerGroupSummary {
 interface ReportTotals {
   scanned: number;
   skippedHasReviewable: number;
+  /** Task #346: groups skipped because they still have unclassified active legs. */
+  skippedUnclassifiedLegs: number;
   healed: number;
   healedDefaulted: number;
   healedFromAudit: number;
@@ -325,6 +368,8 @@ interface ReportTotals {
 export interface HealReport {
   perGroup: PerGroupSummary[];
   skippedHasReviewable: { groupId: number; invoiceNumber: string | null; reviewableIds: number[] }[];
+  /** Task #346: per-group detail on the unclassified-leg skip. */
+  skippedUnclassifiedLegs: { groupId: number; invoiceNumber: string | null; unclassifiedActiveLegCount: number }[];
   totals: ReportTotals;
   applied: boolean;
 }
@@ -333,9 +378,11 @@ function newReport(): HealReport {
   return {
     perGroup: [],
     skippedHasReviewable: [],
+    skippedUnclassifiedLegs: [],
     totals: {
       scanned: 0,
       skippedHasReviewable: 0,
+      skippedUnclassifiedLegs: 0,
       healed: 0,
       healedDefaulted: 0,
       healedFromAudit: 0,
@@ -366,6 +413,23 @@ export async function runBackfill(opts: HealOptions): Promise<HealReport> {
   log(`[scan] ${stuck.length} group(s) currently in {Needs Review, Ready to Review}`);
 
   for (const g of stuck) {
+    // Task #346 guard runs FIRST — before we even look at responses —
+    // so a pre-classification group is reported as "kept in Classify
+    // inbox", not as "no reviewable response on file → demote".
+    const unclassifiedActive = await fetchUnclassifiedActiveLegCount(g.id);
+    if (unclassifiedActive > 0) {
+      report.totals.skippedUnclassifiedLegs++;
+      report.skippedUnclassifiedLegs.push({
+        groupId: g.id,
+        invoiceNumber: g.invoiceNumber,
+        unclassifiedActiveLegCount: unclassifiedActive,
+      });
+      log(
+        `  ⏸ group#${g.id} (#${g.invoiceNumber ?? "(no-invoice)"}) status=${g.status} has ${unclassifiedActive} unclassified active leg(s) — keep in Classify inbox (Task #346 guard)`,
+      );
+      continue;
+    }
+
     const responses = await fetchGroupResponses(g.id);
     const buckets = bucketResponses(responses);
 
@@ -494,6 +558,7 @@ function printReport(report: HealReport, mode: "dry-run" | "apply"): void {
   console.log("\n===== STUCK INBOX HEAL — VERIFICATION REPORT =====");
   console.log(`mode:                                  ${mode}`);
   console.log(`groups scanned (in stuck statuses):    ${report.totals.scanned}`);
+  console.log(`  skipped — unclassified active legs:  ${report.totals.skippedUnclassifiedLegs}  (Task #346 guard: pre-classification, keep in Classify inbox)`);
   console.log(`  skipped — has reviewable response:   ${report.totals.skippedHasReviewable}`);
   console.log(`  healed total:                        ${report.totals.healed}`);
   console.log(`    of which from audit trail:         ${report.totals.healedFromAudit}`);

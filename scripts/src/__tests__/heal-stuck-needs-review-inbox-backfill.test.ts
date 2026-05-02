@@ -40,6 +40,7 @@ import {
   auditLogsTable,
   notesTable,
   portalResponsesTable,
+  claimsTable,
 } from "@workspace/db";
 
 import {
@@ -145,7 +146,39 @@ async function fetchHealNotes(groupId: number): Promise<Array<{ content: string;
     );
 }
 
+async function seedClaim(opts: {
+  groupId: number;
+  errorTypeId?: string | null;
+  errorDetails?: string | null;
+  includedInDispute?: boolean;
+  duplicateOfClaimId?: number | null;
+}): Promise<typeof claimsTable.$inferSelect> {
+  const confNumber = `T346-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const [row] = await db.insert(claimsTable).values({
+    confNumber,
+    invoiceGroupId: opts.groupId,
+    errorTypeId: opts.errorTypeId ?? null,
+    errorDetails: opts.errorDetails ?? null,
+    includedInDispute: opts.includedInDispute ?? true,
+    duplicateOfClaimId: opts.duplicateOfClaimId ?? null,
+    claimAmount: "100.00",
+    status: "Needs Review",
+    outcome: "Pending",
+  }).returning();
+  return row;
+}
+
 async function cleanupGroup(id: number): Promise<void> {
+  // Walk children first so we don't leave orphan audit/claim rows
+  // around between tests.
+  const children = await db
+    .select({ id: claimsTable.id })
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, id));
+  for (const c of children) {
+    await db.delete(auditLogsTable).where(eq(auditLogsTable.claimId, c.id)).catch(() => undefined);
+  }
+  await db.delete(claimsTable).where(eq(claimsTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(portalResponsesTable).where(eq(portalResponsesTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, id)).catch(() => undefined);
   await db.delete(notesTable).where(eq(notesTable.invoiceGroupId, id)).catch(() => undefined);
@@ -437,5 +470,129 @@ test("heal-stuck-needs-review-inbox: --group-id scopes to a single group", async
   } finally {
     await cleanupGroup(targeted.id);
     await cleanupGroup(bystander.id);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Task #346 regression. The original predicate would demote any stuck
+// group with no reviewable response — including pre-classification
+// groups whose legs had simply never been triaged. Those groups must
+// now be left alone so they stay in the Classify section of the Queue
+// page. We also want to be sure the existing "stuck after
+// acknowledgment" case still gets healed, so Task #299's fix isn't
+// regressed.
+// ──────────────────────────────────────────────────────────────────────
+
+test("heal-stuck-needs-review-inbox: skips Needs Review groups whose active legs are still unclassified (Task #346 guard)", async () => {
+  const g = await createSeedGroup({ status: "Needs Review" });
+  // Two active legs, both unclassified. No portal responses. Under
+  // the old predicate this group would have been demoted to Awaiting
+  // Response and silently disappeared from the Classify inbox.
+  await seedClaim({ groupId: g.id, errorTypeId: null, errorDetails: null });
+  await seedClaim({ groupId: g.id, errorTypeId: null, errorDetails: null });
+
+  try {
+    const report = await runBackfill({ apply: true, groupId: g.id, silent: true });
+    assert.equal(report.totals.scanned, 1);
+    assert.equal(report.totals.healed, 0, "guard must prevent the heal");
+    assert.equal(report.totals.skippedUnclassifiedLegs, 1);
+    assert.equal(report.skippedUnclassifiedLegs[0]?.unclassifiedActiveLegCount, 2);
+
+    // Status unchanged.
+    assert.equal(await fetchGroupStatus(g.id), "Needs Review");
+    // No audit/note was written.
+    assert.equal((await fetchHealAudits(g.id)).length, 0);
+    assert.equal((await fetchStatusChangeAudits(g.id)).length, 0);
+    assert.equal((await fetchHealNotes(g.id)).length, 0);
+  } finally {
+    await cleanupGroup(g.id);
+  }
+});
+
+test("heal-stuck-needs-review-inbox: guard also skips groups whose only active leg is unclassified, even with acknowledgment-only responses on file", async () => {
+  // The existing Task #299 case (ack-only response → demote) must
+  // NOT fire when the group has unclassified active legs. The new
+  // guard runs ahead of the reviewable-response check on purpose.
+  const g = await createSeedGroup({ status: "Needs Review" });
+  await seedClaim({ groupId: g.id, errorTypeId: null, errorDetails: null });
+  await seedResponse({ groupId: g.id, responseType: "acknowledgment" });
+
+  try {
+    const report = await runBackfill({ apply: true, groupId: g.id, silent: true });
+    assert.equal(report.totals.healed, 0);
+    assert.equal(report.totals.skippedUnclassifiedLegs, 1);
+    assert.equal(report.totals.skippedHasReviewable, 0);
+    assert.equal(await fetchGroupStatus(g.id), "Needs Review");
+  } finally {
+    await cleanupGroup(g.id);
+  }
+});
+
+test("heal-stuck-needs-review-inbox: guard does NOT skip when every active leg has been classified (Task #299 stuck-after-ack case still heals)", async () => {
+  // Same shape as the Task #299 case but with a classified leg in
+  // place — the guard must NOT trigger here, and the existing heal
+  // must still fire so we don't regress the Task #299 fix.
+  const g = await createSeedGroup({ status: "Needs Review" });
+  await seedClaim({
+    groupId: g.id,
+    errorTypeId: "billing-mismatch",
+    errorDetails: "amount differs",
+  });
+  await seedResponse({ groupId: g.id, responseType: "acknowledgment" });
+
+  try {
+    const report = await runBackfill({ apply: true, groupId: g.id, silent: true });
+    assert.equal(report.totals.skippedUnclassifiedLegs, 0);
+    assert.equal(report.totals.healed, 1);
+    assert.equal(await fetchGroupStatus(g.id), "Awaiting Response");
+    assert.equal((await fetchHealAudits(g.id)).length, 1);
+  } finally {
+    await cleanupGroup(g.id);
+  }
+});
+
+test("heal-stuck-needs-review-inbox: guard ignores excluded and duplicate legs (only ACTIVE legs gate the skip)", async () => {
+  // An "active" leg is `included_in_dispute=true` AND
+  // `duplicate_of_claim_id IS NULL`. Excluded or duplicate legs
+  // that happen to also have `error_type_id IS NULL` must NOT keep
+  // the heal from running, because they aren't sitting in the
+  // Classify inbox waiting on triage anyway.
+  const g = await createSeedGroup({ status: "Needs Review" });
+  // The "real" active leg has been classified.
+  await seedClaim({
+    groupId: g.id,
+    errorTypeId: "billing-mismatch",
+    errorDetails: "amount differs",
+  });
+  // Excluded leg: still has error_type_id IS NULL — must NOT count.
+  await seedClaim({
+    groupId: g.id,
+    errorTypeId: null,
+    errorDetails: null,
+    includedInDispute: false,
+  });
+  // Duplicate leg pointing at the active classified leg above: the
+  // FK target id is just a sentinel to make duplicate_of_claim_id
+  // non-null. We can't reference the freshly-inserted row's id
+  // before the await resolves, but for this test we don't actually
+  // need the reference to resolve to a real row — drizzle accepts a
+  // valid integer and the heal predicate only checks `IS NOT NULL`.
+  // Using the group's first leg id keeps the FK valid.
+  const firstLeg = (await db.select({ id: claimsTable.id }).from(claimsTable).where(eq(claimsTable.invoiceGroupId, g.id))).at(0);
+  await seedClaim({
+    groupId: g.id,
+    errorTypeId: null,
+    errorDetails: null,
+    duplicateOfClaimId: firstLeg?.id ?? null,
+  });
+  await seedResponse({ groupId: g.id, responseType: "acknowledgment" });
+
+  try {
+    const report = await runBackfill({ apply: true, groupId: g.id, silent: true });
+    assert.equal(report.totals.skippedUnclassifiedLegs, 0, "excluded/duplicate legs must not gate the guard");
+    assert.equal(report.totals.healed, 1);
+    assert.equal(await fetchGroupStatus(g.id), "Awaiting Response");
+  } finally {
+    await cleanupGroup(g.id);
   }
 });
