@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   PAYOR_DENIAL_REASONS,
   isPayorDenialReasonCode,
@@ -52,6 +52,21 @@ export function PayorDenialReasonPicker({ group, suggestedCode, onAfterSave }: P
   const { toast } = useToast();
   const recordReason = useRecordPayorDenialReason();
   const [open, setOpen] = useState(false);
+  // Counter that bumps on each successful inline save so the shared
+  // Button can play its `breath` microinteraction in lieu of a toast —
+  // routine metadata edit, not a status change.
+  const [savedTick, setSavedTick] = useState(0);
+  // Tracks the deferred popover-close timer so we can cancel it on
+  // unmount and avoid setState-after-unmount warnings.
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Pre-select the AI hint only if it matches a real code in the vocab.
   // Falls back to whatever the group already has on file (so re-opening
@@ -98,11 +113,18 @@ export function PayorDenialReasonPicker({ group, suggestedCode, onAfterSave }: P
         },
       });
       onAfterSave();
-      setOpen(false);
-      toast({
-        title: "Payor denial reason recorded",
-        duration: 2500,
-      });
+      // Quiet breath on the Save button instead of a generic toast —
+      // routine inline save, no workflow change. Trigger the breath
+      // first, then delay the popover close past the ~250ms animation
+      // so the affordance is actually perceivable before the button
+      // unmounts. The persisted chip on the trigger gives the lasting
+      // confirmation.
+      setSavedTick((n) => n + 1);
+      if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null;
+        setOpen(false);
+      }, 280);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not save reason.";
       toast({
@@ -225,6 +247,7 @@ export function PayorDenialReasonPicker({ group, suggestedCode, onAfterSave }: P
               size="sm"
               onClick={handleSave}
               disabled={!canSubmit || recordReason.isPending}
+              breathTrigger={savedTick}
               data-testid="payor-denial-reason-save"
             >
               Save

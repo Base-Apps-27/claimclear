@@ -37,6 +37,10 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
   const [communicatedTo, setCommunicatedTo] = useState("");
+  // Bumps on a successful notes-only save so the "Save notes" button
+  // breathes instead of firing a generic toast. Status-changing
+  // saves (Mark addressed / Reopen) keep their loud toasts below.
+  const [notesSaveTick, setNotesSaveTick] = useState(0);
 
   useEffect(() => {
     if (row) {
@@ -75,14 +79,14 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
         await updateGroup.mutateAsync({ id: row.id, data });
       }
       queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
-      toast({
-        title:
-          overrides.addressed === true
-            ? "Marked addressed"
-            : overrides.addressed === false
-              ? "Reopened for review"
-              : "Review notes saved",
-      });
+      if (overrides.addressed === true) {
+        toast({ title: "Marked addressed" });
+      } else if (overrides.addressed === false) {
+        toast({ title: "Reopened for review" });
+      } else {
+        // Routine notes-only save — quiet breath on the button, no toast.
+        setNotesSaveTick((n) => n + 1);
+      }
       if (overrides.addressed !== undefined) onClose();
     } catch {
       toast({
@@ -247,6 +251,7 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
               size="sm"
               onClick={() => persist()}
               disabled={isPending}
+              breathTrigger={notesSaveTick}
               data-testid="button-save-notes"
             >
               {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
