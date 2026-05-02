@@ -81,6 +81,18 @@ export const BACKFILL_IDS = {
   // evidence of a prior submission and writes one
   // `leg_sop_outcome_backfilled` audit row per healed leg.
   preGroupLegSopOutcome: "2026-05-pre-group-leg-sop-outcome",
+
+  // Task #299: heal invoice groups that the prior reclassification
+  // backfills (Tasks #283/#284) demoted from approval/denial/etc. to
+  // acknowledgment but whose group status was left stuck in `Needs
+  // Review` / `Ready to Review` because the safety checks blocked the
+  // automatic revert. Each healed group gets its status reverted via
+  // transitionGroupStatus(systemOverride: true) to the most recent
+  // prior non-review status from the audit trail (defaulting to
+  // `Awaiting Response`), and a separate per-group audit row is
+  // written carrying the prior status, response-id breakdown, and
+  // chosen target so the heal is fully traceable.
+  healStuckNeedsReviewInbox: "2026-05-heal-stuck-needs-review-inbox",
 } as const;
 
 export type BackfillId = (typeof BACKFILL_IDS)[keyof typeof BACKFILL_IDS];

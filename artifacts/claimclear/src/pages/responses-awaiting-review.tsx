@@ -191,28 +191,53 @@ export default function ResponsesAwaitingReview() {
     [data?.groups],
   );
 
-  // For "oldest/newest response first" sort modes we need each group's
-  // latest reviewable response timestamp. The list endpoint doesn't
-  // include responses, so fan out per-group detail fetches in parallel
-  // (cached, so each row re-uses the same query the row itself reads).
-  // Other sort modes (urgency, amount) don't need this data.
-  const needsResponseTimes =
-    sortMode === "oldest_response" || sortMode === "newest_response";
+  // Fan out per-group detail fetches in parallel for every row in the
+  // list. Two reasons:
+  //   1. The "oldest/newest response first" sort modes need each group's
+  //      latest reviewable response timestamp (the list endpoint doesn't
+  //      ship responses).
+  //   2. Task #299 safety net — if a group's status/response state
+  //      drifted between status='Needs Review' and "no reviewable
+  //      response on file", drop it from the list before rendering so
+  //      it can't show as a blank "Response details unavailable" row.
+  //      The API endpoint already filters this case via an EXISTS check;
+  //      this is belt-and-suspenders, and makes the UI self-healing if
+  //      the cached list is briefly stale after a status change.
+  // Each query is keyed exactly the way `useGetInvoiceGroup(g.id)` keys
+  // its detail fetch in the row component, so this hoists the fetch up
+  // to the parent without firing any extra network requests.
   const detailQueries = useQueries({
-    queries: needsResponseTimes
-      ? baseGroups.map((g) => ({
-          queryKey: getGetInvoiceGroupQueryKey(g.id),
-          queryFn: ({ signal }: { signal?: AbortSignal }) =>
-            getInvoiceGroup(g.id, { signal }),
-          // Stale window long enough that flipping sort mode doesn't
-          // re-trigger a network storm; SSE invalidation keeps it fresh.
-          staleTime: 30_000,
-        }))
-      : [],
+    queries: baseGroups.map((g) => ({
+      queryKey: getGetInvoiceGroupQueryKey(g.id),
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        getInvoiceGroup(g.id, { signal }),
+      // Stale window long enough that flipping sort mode doesn't
+      // re-trigger a network storm; SSE invalidation keeps it fresh.
+      staleTime: 30_000,
+    })),
   });
+
+  // Per-group derived signals — `hasReviewable` is undefined while the
+  // detail query is still loading (we keep the row visible during
+  // hydration to avoid flicker), `true` once a reviewable response is
+  // confirmed, `false` once the detail loaded and showed nothing
+  // reviewable (drop the row).
+  const reviewableByGroupId = useMemo(() => {
+    const map = new Map<number, boolean | undefined>();
+    baseGroups.forEach((g, idx) => {
+      const q = detailQueries[idx];
+      if (!q || q.isLoading || q.data === undefined) {
+        map.set(g.id, undefined);
+        return;
+      }
+      const latest = pickLatestReviewableResponse(q.data.responses);
+      map.set(g.id, !!latest);
+    });
+    return map;
+  }, [baseGroups, detailQueries]);
+
   const responseTimeByGroupId = useMemo(() => {
     const map = new Map<number, number | null>();
-    if (!needsResponseTimes) return map;
     baseGroups.forEach((g, idx) => {
       const detail = detailQueries[idx]?.data;
       const latest = pickLatestReviewableResponse(detail?.responses);
@@ -222,10 +247,15 @@ export default function ResponsesAwaitingReview() {
       map.set(g.id, time);
     });
     return map;
-  }, [needsResponseTimes, baseGroups, detailQueries]);
+  }, [baseGroups, detailQueries]);
 
   const groups: InvoiceGroupResponse[] = useMemo(() => {
-    const arr = [...baseGroups];
+    // Safety net: drop rows whose detail loaded and had no reviewable
+    // response. Rows whose detail hasn't loaded yet (`undefined`) stay
+    // in so the list renders immediately on mount.
+    const arr = baseGroups.filter(
+      (g) => reviewableByGroupId.get(g.id) !== false,
+    );
     // totalAmount comes off the wire as a string (decimal preserved); parse
     // once and treat NaN/null as 0 so numeric sorting still terminates.
     const amountOf = (g: InvoiceGroupResponse) => {
@@ -260,7 +290,7 @@ export default function ResponsesAwaitingReview() {
       }
     });
     return arr;
-  }, [baseGroups, sortMode, responseTimeByGroupId]);
+  }, [baseGroups, sortMode, responseTimeByGroupId, reviewableByGroupId]);
 
   const handleSortChange = (value: string) => {
     const next = SORT_OPTIONS.find((o) => o.value === value)?.value ?? "oldest_response";

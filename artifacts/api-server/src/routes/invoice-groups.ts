@@ -217,6 +217,22 @@ function buildMacroPhaseCondition(phase: string): SQL | undefined {
             and c.mas_action_required = 'cancel'
             and c.mas_action_completed_at is null
         )`,
+        // Defensive guard for Task #299: the inbox UI's row hint comes
+        // from `pickLatestReviewableResponse` over portal_responses
+        // linked directly to the group. If a reclassifier has demoted
+        // every response on file to acknowledgment / abstain — leaving
+        // nothing reviewable — the row would render blank. Hide those
+        // groups from the list endpoint so they can't reappear in the
+        // inbox while a heal backfill catches up. Reviewable types
+        // mirror the REVIEWABLE_RESPONSE_TYPES set in
+        // artifacts/claimclear/src/components/queue-response-review-panel.tsx.
+        sql`exists (
+          select 1 from portal_responses pr
+          where pr.invoice_group_id = ${invoiceGroupsTable.id}
+            and pr.response_type in (
+              'approval', 'denial', 'partial_approval', 'info_request', 'other'
+            )
+        )`,
       );
     }
     return statusCondition;
@@ -1280,6 +1296,18 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
       eq(invoiceGroupsTable.status, "Needs Review"),
       isNotNull(invoiceGroupsTable.errorTypeId),
       ne(invoiceGroupsTable.errorTypeId, ""),
+      // Task #299: keep the sidebar/dashboard badge in sync with the
+      // Stage 2 inbox list filter — only count groups that actually
+      // have a reviewable payor reply on file. Without this, blank
+      // "Needs Review" rows that the inbox already hides would still
+      // bump the badge.
+      sql`exists (
+        select 1 from portal_responses pr
+        where pr.invoice_group_id = ${invoiceGroupsTable.id}
+          and pr.response_type in (
+            'approval', 'denial', 'partial_approval', 'info_request', 'other'
+          )
+      )`,
     ));
 
   const masResult = await db.execute(sql`
