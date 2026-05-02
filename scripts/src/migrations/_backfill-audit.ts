@@ -95,6 +95,19 @@ export const BACKFILL_IDS = {
   // timeline.
   recoverMisdemotedClassifyInbox: "2026-05-recover-misdemoted-classify-inbox",
 
+  // One-shot 2026-05-02: bulk-close invoice groups in Needs Review whose
+  // MAS portal status came back as `Cancelled/Combined` (verdict = the
+  // ride was already covered by another approved invoice, so there is
+  // nothing to dispute). Reads (member, invoice_number, mas_status) from
+  // a TSV input list, matches each row to an invoice_group currently in
+  // `Needs Review`, and routes it through transitionGroupStatusAndOutcome
+  // to `Resolved` / `Non-Issue` with closureReason = `non_issue` — the
+  // same path the operator triage UI uses. Writes a per-group
+  // `mas_bulk_combined_classified` audit row + system note pointing back
+  // at the input source. Eligible / unmatched / non-NeedsReview rows are
+  // reported but never written.
+  masBulkCombinedNonIssue: "2026-05-mas-bulk-combined-non-issue",
+
   // Task #299: heal invoice groups that the prior reclassification
   // backfills (Tasks #283/#284) demoted from approval/denial/etc. to
   // acknowledgment but whose group status was left stuck in `Needs

@@ -16,6 +16,7 @@
     "backfill:pre-group-leg-sop-outcome": "tsx ./src/migrations/2026-05-pre-group-leg-sop-outcome-backfill.ts",
     "backfill:heal-stuck-needs-review-inbox": "tsx ./src/migrations/2026-05-heal-stuck-needs-review-inbox-backfill.ts",
     "backfill:recover-misdemoted-classify-inbox": "tsx ./src/migrations/2026-05-recover-misdemoted-classify-inbox-backfill.ts",
+    "backfill:mas-bulk-combined-non-issue": "tsx ./src/migrations/2026-05-mas-bulk-combined-non-issue-backfill.ts",
     "check:vocab-drift": "tsx ./src/check-vocab-drift.ts"
   },
   "dependencies": {
