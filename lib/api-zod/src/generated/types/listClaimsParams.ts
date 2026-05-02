@@ -66,7 +66,7 @@ export type ListClaimsParams = {
    */
   expiring?: ListClaimsExpiring;
   /**
-   * Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+   * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
    */
   legSubStatus?: string;
   /**

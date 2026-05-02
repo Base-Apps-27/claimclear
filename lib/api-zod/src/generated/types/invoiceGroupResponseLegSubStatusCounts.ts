@@ -23,4 +23,6 @@ export type InvoiceGroupResponseLegSubStatusCounts = {
   blocked?: number;
   ready?: number;
   dropped?: number;
+  /** Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error). */
+  duplicate?: number;
 } | null;

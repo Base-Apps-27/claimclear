@@ -33,6 +33,7 @@ router.post("/error-types", asyncHandler(async (req, res): Promise<void> => {
     disputeInstructions: body.disputeInstructions || null,
     useGpsControlDeviation: body.useGpsControlDeviation === true,
     useDirectEmail: body.useDirectEmail === true,
+    tripOverriding: body.tripOverriding === true,
   }).returning();
 
   res.status(201).json(errorType);
@@ -65,6 +66,9 @@ router.patch("/error-types/:id", asyncHandler(async (req, res): Promise<void> =>
   }
   if (req.body.useDirectEmail !== undefined) {
     updateData.useDirectEmail = req.body.useDirectEmail === true;
+  }
+  if (req.body.tripOverriding !== undefined) {
+    updateData.tripOverriding = req.body.tripOverriding === true;
   }
 
   const [errorType] = await db.update(errorTypesTable).set(updateData).where(eq(errorTypesTable.id, id)).returning();

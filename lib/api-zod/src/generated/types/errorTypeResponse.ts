@@ -50,6 +50,12 @@ portal — e.g. "Attesting too Soon" or "Invoice Number not in
 System"). When true, useGpsControlDeviation is ignored.
  */
   useDirectEmail: boolean;
+  /** When true, this error invalidates the entire trip (e.g.
+eligibility lapse, time-at-facility violation). Sibling legs
+on the same invoice can be marked as `Sibling Duplicate` of
+the leg carrying this error so the dispute isn't double-billed.
+ */
+  tripOverriding: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

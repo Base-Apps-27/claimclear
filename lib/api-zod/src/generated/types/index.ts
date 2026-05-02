@@ -212,6 +212,7 @@ export * from "./listWithdrawalsSort";
 export * from "./lookupMappingsBody";
 export * from "./lookupMappingsResponse";
 export * from "./mappingResult";
+export * from "./markLegDuplicateBody";
 export * from "./needsClassificationInboxClaim";
 export * from "./needsClassificationInboxGroup";
 export * from "./needsClassificationInboxResponse";

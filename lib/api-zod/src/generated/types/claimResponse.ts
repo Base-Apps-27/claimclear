@@ -127,6 +127,11 @@ export interface ClaimResponse {
   /** False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings). */
   includedInDispute: boolean;
   /**
+   * When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP/verdict to the dispute.
+   * @nullable
+   */
+  duplicateOfClaimId?: number | null;
+  /**
    * ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.
    * @nullable
    */

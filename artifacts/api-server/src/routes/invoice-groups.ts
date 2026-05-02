@@ -273,6 +273,10 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
         errorTypeId: claimsTable.errorTypeId,
         holdReason: claimsTable.holdReason,
         sopOutcome: claimsTable.sopOutcome,
+        // duplicateOfClaimId is read by deriveLegSubStatus to surface the
+        // `duplicate` sub-status (Sibling Duplicate). Without it, those
+        // legs would mis-tally into needs_classification/investigating.
+        duplicateOfClaimId: claimsTable.duplicateOfClaimId,
       })
       .from(claimsTable)
       .where(inArray(claimsTable.invoiceGroupId, groupIds));
@@ -421,6 +425,9 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
       includedInDispute: claimsTable.includedInDispute,
       holdReason: claimsTable.holdReason,
       sopOutcome: claimsTable.sopOutcome,
+      // Required for deriveLegSubStatus to surface `duplicate` so Sibling
+      // Duplicate legs aren't mis-counted into needs_classification.
+      duplicateOfClaimId: claimsTable.duplicateOfClaimId,
     })
     .from(claimsTable)
     .innerJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))

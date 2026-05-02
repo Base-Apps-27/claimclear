@@ -28,4 +28,5 @@ export interface UpdateErrorTypeBody {
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
   useDirectEmail?: boolean;
+  tripOverriding?: boolean;
 }

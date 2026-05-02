@@ -118,6 +118,7 @@ import type {
   ListWithdrawalsParams,
   LookupMappingsBody,
   LookupMappingsResponse,
+  MarkLegDuplicateBody,
   NeedsClassificationInboxResponse,
   NoteResponse,
   NotificationPreferencesResponse,
@@ -4967,6 +4968,195 @@ export const useIncludeLeg = <
   TContext
 > => {
   return useMutation(getIncludeLegMutationOptions(options));
+};
+
+/**
+ * Mark this leg as a sibling duplicate of `primaryClaimId`. The leg's
+derived sub-status becomes `duplicate` and its SOP walk is short-circuited.
+The invoice gauntlet's gate then pairs its resolution with the primary's
+terminal state (see `lib/group-readiness.ts`).
+
+Validation:
+- Both claims must exist and live in the same invoice group.
+- Self-reference is rejected.
+- The chosen primary cannot itself be a sibling duplicate (no chains).
+- The leg must currently be in `{needs_classification, investigating,
+  blocked, ready, dropped}` — refused from `excluded` or `duplicate`.
+- Parent group must still be pre-submit.
+
+ * @summary Mark a leg as a sibling duplicate of another leg in the same invoice group
+ */
+export const getMarkLegDuplicateUrl = (id: number) => {
+  return `/api/claims/${id}/duplicate-of`;
+};
+
+export const markLegDuplicate = async (
+  id: number,
+  markLegDuplicateBody: MarkLegDuplicateBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getMarkLegDuplicateUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(markLegDuplicateBody),
+  });
+};
+
+export const getMarkLegDuplicateMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markLegDuplicate>>,
+    TError,
+    { id: number; data: BodyType<MarkLegDuplicateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markLegDuplicate>>,
+  TError,
+  { id: number; data: BodyType<MarkLegDuplicateBody> },
+  TContext
+> => {
+  const mutationKey = ["markLegDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markLegDuplicate>>,
+    { id: number; data: BodyType<MarkLegDuplicateBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return markLegDuplicate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkLegDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markLegDuplicate>>
+>;
+export type MarkLegDuplicateMutationBody = BodyType<MarkLegDuplicateBody>;
+export type MarkLegDuplicateMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Mark a leg as a sibling duplicate of another leg in the same invoice group
+ */
+export const useMarkLegDuplicate = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markLegDuplicate>>,
+    TError,
+    { id: number; data: BodyType<MarkLegDuplicateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markLegDuplicate>>,
+  TError,
+  { id: number; data: BodyType<MarkLegDuplicateBody> },
+  TContext
+> => {
+  return useMutation(getMarkLegDuplicateMutationOptions(options));
+};
+
+/**
+ * Clear `duplicate_of_claim_id` so the leg derives back to its underlying
+state (typically `needs_classification`). Pre-submit only.
+
+ * @summary Clear the sibling-duplicate pointer on a leg
+ */
+export const getUnmarkLegDuplicateUrl = (id: number) => {
+  return `/api/claims/${id}/duplicate-of`;
+};
+
+export const unmarkLegDuplicate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getUnmarkLegDuplicateUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getUnmarkLegDuplicateMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmarkLegDuplicate>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unmarkLegDuplicate>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["unmarkLegDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unmarkLegDuplicate>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unmarkLegDuplicate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnmarkLegDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unmarkLegDuplicate>>
+>;
+
+export type UnmarkLegDuplicateMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Clear the sibling-duplicate pointer on a leg
+ */
+export const useUnmarkLegDuplicate = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmarkLegDuplicate>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unmarkLegDuplicate>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getUnmarkLegDuplicateMutationOptions(options));
 };
 
 /**

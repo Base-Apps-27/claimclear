@@ -9,6 +9,8 @@ import {
   useListErrorTypes,
   useReclassifyLeg,
   useExcludeLeg,
+  useMarkLegDuplicate,
+  useUnmarkLegDuplicate,
 } from "@workspace/api-client-react";
 import type {
   ErrorTypeResponse,
@@ -23,7 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Loader2, ChevronLeft, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText,
+  Loader2, ChevronLeft, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -53,6 +55,7 @@ const SUB_STATUS_TO_TONE: Record<string, Tone> = {
   dropped: "muted",
   blocked: "amber",
   excluded: "muted",
+  duplicate: "muted",
 };
 
 export function ClaimDetailV2({ claimId }: Props) {
@@ -91,6 +94,8 @@ export function ClaimDetailV2({ claimId }: Props) {
 
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();
+  const markDuplicateMutation = useMarkLegDuplicate();
+  const unmarkDuplicateMutation = useUnmarkLegDuplicate();
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [excludeOpen, setExcludeOpen] = useState(false);
   const [excludeReason, setExcludeReason] = useState<ExcludeLegBodyReason | "">("");
@@ -98,6 +103,42 @@ export function ClaimDetailV2({ claimId }: Props) {
   const excludeValid =
     excludeReason !== "" &&
     (excludeReason !== "other" || excludeNote.trim().length > 0);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicatePrimaryId, setDuplicatePrimaryId] = useState<string>("");
+  const [duplicateNote, setDuplicateNote] = useState("");
+  const [unmarkDuplicateOpen, setUnmarkDuplicateOpen] = useState(false);
+
+  // Trip-overriding error type lookup for the sibling-duplicate picker.
+  // A leg can only be marked as a Sibling Duplicate of a sibling whose
+  // assigned errorType has tripOverriding=true (e.g. eligibility lapse).
+  const tripOverridingErrorTypeIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!errorTypes) return set;
+    for (const t of errorTypes as Array<ErrorTypeResponse & { tripOverriding?: boolean }>) {
+      if (t.tripOverriding === true) set.add(String(t.id));
+    }
+    return set;
+  }, [errorTypes]);
+
+  // Candidate primaries: same group, not self, not itself a duplicate, with a
+  // trip-overriding error type. We sort by service date / conf number for
+  // stable display in the picker.
+  const duplicatePrimaryCandidates = useMemo(() => {
+    const rides = parentGroup?.rides ?? [];
+    return rides
+      .filter((r) => r.id !== claimId)
+      .filter((r) => r.duplicateOfClaimId == null)
+      .filter((r) => r.errorTypeId != null && tripOverridingErrorTypeIds.has(String(r.errorTypeId)))
+      .sort((a, b) => (a.confNumber || "").localeCompare(b.confNumber || ""));
+  }, [parentGroup?.rides, claimId, tripOverridingErrorTypeIds]);
+
+  const isDuplicate = claim?.duplicateOfClaimId != null;
+  const primaryRef = useMemo(() => {
+    if (!isDuplicate || !parentGroup?.rides) return null;
+    return parentGroup.rides.find((r) => r.id === claim?.duplicateOfClaimId) ?? null;
+  }, [isDuplicate, parentGroup?.rides, claim?.duplicateOfClaimId]);
+
+  const groupIsPreSubmit = parentGroup?.macroPhase === "pre-submit";
 
   function invalidateLeg() {
     qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
@@ -147,6 +188,46 @@ export function ClaimDetailV2({ claimId }: Props) {
     );
   }
 
+  function onMarkDuplicate() {
+    const primaryId = Number(duplicatePrimaryId);
+    if (!Number.isFinite(primaryId) || primaryId <= 0) return;
+    markDuplicateMutation.mutate(
+      { id: claimId, data: { primaryClaimId: primaryId, note: duplicateNote || null } },
+      {
+        onSuccess: () => {
+          toast({ title: "Leg marked as Sibling Duplicate" });
+          setDuplicateOpen(false);
+          setDuplicatePrimaryId("");
+          setDuplicateNote("");
+          invalidateLeg();
+        },
+        onError: (e: unknown) => toast({
+          title: "Mark as duplicate failed",
+          description: String((e as Error).message),
+          variant: "destructive",
+        }),
+      },
+    );
+  }
+
+  function onUnmarkDuplicate() {
+    unmarkDuplicateMutation.mutate(
+      { id: claimId },
+      {
+        onSuccess: () => {
+          toast({ title: "Sibling-duplicate link cleared" });
+          setUnmarkDuplicateOpen(false);
+          invalidateLeg();
+        },
+        onError: (e: unknown) => toast({
+          title: "Unmark failed",
+          description: String((e as Error).message),
+          variant: "destructive",
+        }),
+      },
+    );
+  }
+
   if (isLoading || !claim) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground gap-2">
@@ -157,25 +238,50 @@ export function ClaimDetailV2({ claimId }: Props) {
 
   const hasSopOutcome = !!claim.sopOutcome;
   const canShowPlayer =
-    hasSopOutcome ||
-    subStatus === "investigating" ||
-    subStatus === "ready" ||
-    subStatus === "dropped";
+    !isDuplicate && (
+      hasSopOutcome ||
+      subStatus === "investigating" ||
+      subStatus === "ready" ||
+      subStatus === "dropped"
+    );
   const playerDisabledReason = canShowPlayer
     ? null
     : subStatus === "blocked"
       ? "Leg is on hold — clear the hold to advance the SOP."
       : subStatus === "excluded"
         ? "Leg is excluded from the dispute."
-        : subStatus === "needs_classification"
-          ? "Pick an error type before walking the SOP."
-          : null;
+        : subStatus === "duplicate"
+          ? "Leg is a Sibling Duplicate — its dispute rolls up to the primary leg, no SOP walk needed."
+          : subStatus === "needs_classification"
+            ? "Pick an error type before walking the SOP."
+            : null;
 
   const canReclassify =
-    subStatus === "investigating" ||
-    subStatus === "ready" ||
-    subStatus === "dropped" ||
-    subStatus === "blocked";
+    !isDuplicate && (
+      subStatus === "investigating" ||
+      subStatus === "ready" ||
+      subStatus === "dropped" ||
+      subStatus === "blocked"
+    );
+
+  // Mark-as-duplicate availability mirrors the server-side validation in
+  // POST /claims/:id/duplicate-of: leg state is one of the editable
+  // pre-submit states and the parent group is still pre-submit. We hide
+  // the affordance entirely when there is no candidate primary so the
+  // user doesn't see a useless button.
+  const canMarkDuplicate =
+    !isDuplicate &&
+    groupIsPreSubmit &&
+    duplicatePrimaryCandidates.length > 0 &&
+    (
+      subStatus === "needs_classification" ||
+      subStatus === "investigating" ||
+      subStatus === "blocked" ||
+      subStatus === "ready" ||
+      subStatus === "dropped"
+    );
+
+  const canUnmarkDuplicate = isDuplicate && groupIsPreSubmit;
 
   return (
     <div className="cc-scope min-h-screen p-6" data-testid="claim-detail-v2">
@@ -330,9 +436,163 @@ export function ClaimDetailV2({ claimId }: Props) {
                   </DialogContent>
                 </Dialog>
               )}
+
+              {canMarkDuplicate && (
+                <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1"
+                      data-testid="leg-mark-duplicate-trigger"
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Mark as duplicate
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Mark this leg as a Sibling Duplicate?</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Sibling Duplicates ride along with a primary leg whose
+                        trip-overriding error invalidates the whole trip
+                        (e.g. eligibility lapse). The primary leg's SOP and
+                        verdict cover this leg, so we don't double-bill the
+                        same dispute.
+                      </p>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Primary leg (same invoice)</label>
+                        <Select
+                          value={duplicatePrimaryId}
+                          onValueChange={setDuplicatePrimaryId}
+                        >
+                          <SelectTrigger data-testid="leg-mark-duplicate-primary">
+                            <SelectValue placeholder="Pick a primary leg…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {duplicatePrimaryCandidates.map((p) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.confNumber || `CLM-${p.id}`}
+                                {p.errorTypeName ? ` · ${p.errorTypeName}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Note (optional)</label>
+                        <Textarea
+                          value={duplicateNote}
+                          onChange={(e) => setDuplicateNote(e.target.value)}
+                          placeholder="e.g. Same eligibility lapse covers both legs of this trip."
+                          rows={3}
+                          data-testid="leg-mark-duplicate-note"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setDuplicateOpen(false)}>Cancel</Button>
+                      <Button
+                        onClick={onMarkDuplicate}
+                        disabled={!duplicatePrimaryId || markDuplicateMutation.isPending}
+                        data-testid="leg-mark-duplicate-confirm"
+                      >
+                        {markDuplicateMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Mark as Sibling Duplicate
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+
+              {canUnmarkDuplicate && (
+                <Dialog open={unmarkDuplicateOpen} onOpenChange={setUnmarkDuplicateOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1"
+                      data-testid="leg-unmark-duplicate-trigger"
+                    >
+                      <Link2Off className="h-3.5 w-3.5" /> Unmark duplicate
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Clear the Sibling-Duplicate link?</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-2 text-sm">
+                      <p>
+                        The leg returns to its underlying SOP state. You'll
+                        need to walk its decision tree (or exclude it) before
+                        the invoice can be packaged.
+                      </p>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setUnmarkDuplicateOpen(false)}>Cancel</Button>
+                      <Button
+                        onClick={onUnmarkDuplicate}
+                        disabled={unmarkDuplicateMutation.isPending}
+                        data-testid="leg-unmark-duplicate-confirm"
+                      >
+                        {unmarkDuplicateMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        ) : (
+                          <Link2Off className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Clear duplicate link
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </div>
           </div>
         </div>
+
+        {/* Sibling-duplicate banner — shown when this leg points at a primary
+            in the same group. We render before the SOP card so it's the
+            first thing the operator sees and the SOP card stays disabled. */}
+        {isDuplicate && (
+          <div className="cc-card p-3" data-testid="leg-duplicate-banner">
+            <div className="flex items-start gap-2 text-sm">
+              <Copy className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
+              <div className="space-y-1">
+                <div>
+                  <strong>Sibling Duplicate</strong> of
+                  {primaryRef ? (
+                    <>
+                      {" "}
+                      <Link
+                        href={`/claims/${primaryRef.id}`}
+                        className="underline mono"
+                      >
+                        {primaryRef.confNumber || `CLM-${primaryRef.id}`}
+                      </Link>
+                      {primaryRef.errorTypeName ? (
+                        <span style={{ color: "var(--cc-muted-fg)" }}>
+                          {" "}· {primaryRef.errorTypeName}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="mono"> CLM-{claim.duplicateOfClaimId}</span>
+                  )}
+                  .
+                </div>
+                <div className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                  This leg's dispute is covered by the primary's SOP and
+                  verdict. No independent SOP walk is required.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SOP walk — the entire purpose of this surface */}
         <div className="cc-card p-4" data-testid="leg-sop-card">

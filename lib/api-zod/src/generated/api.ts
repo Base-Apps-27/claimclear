@@ -358,6 +358,12 @@ export const ListInvoiceGroupsResponse = zod.object({
           blocked: zod.number().optional(),
           ready: zod.number().optional(),
           dropped: zod.number().optional(),
+          duplicate: zod
+            .number()
+            .optional()
+            .describe(
+              "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+            ),
         })
         .nullish()
         .describe(
@@ -719,6 +725,12 @@ export const GetInvoiceGroupResponse = zod
         blocked: zod.number().optional(),
         ready: zod.number().optional(),
         dropped: zod.number().optional(),
+        duplicate: zod
+          .number()
+          .optional()
+          .describe(
+            "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+          ),
       })
       .nullish()
       .describe(
@@ -852,6 +864,12 @@ export const GetInvoiceGroupResponse = zod
               .boolean()
               .describe(
                 "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+              ),
+            duplicateOfClaimId: zod
+              .number()
+              .nullish()
+              .describe(
+                "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
               ),
             sopNodeId: zod
               .string()
@@ -1519,6 +1537,12 @@ export const UpdateInvoiceGroupResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -1762,6 +1786,12 @@ export const PackageInvoiceGroupResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -2001,6 +2031,12 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -2295,6 +2331,12 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -2536,6 +2578,12 @@ export const TriageInvoiceGroupResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -2774,6 +2822,12 @@ export const HoldInvoiceGroupResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -3008,6 +3062,12 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -3347,6 +3407,12 @@ export const SetGroupContextResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -3588,6 +3654,12 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -3835,6 +3907,12 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -4075,6 +4153,12 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -4312,6 +4396,12 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -4549,6 +4639,12 @@ export const StampPreviewGeneratedResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -4794,6 +4890,12 @@ export const CompleteGroupReattestResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(
@@ -5199,7 +5301,7 @@ export const ListClaimsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).",
+      "Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).",
     ),
   sort: zod
     .enum([
@@ -5337,6 +5439,12 @@ export const ListClaimsResponse = zod.object({
         .boolean()
         .describe(
           "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+        ),
+      duplicateOfClaimId: zod
+        .number()
+        .nullish()
+        .describe(
+          "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
         ),
       sopNodeId: zod
         .string()
@@ -5620,6 +5728,12 @@ export const GetClaimResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -5874,6 +5988,12 @@ export const UpdateClaimResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -6151,6 +6271,12 @@ export const UpdateClaimStatusResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -6451,6 +6577,12 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -6700,6 +6832,12 @@ export const ListAttestationPendingResponse = zod.object({
         .boolean()
         .describe(
           "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+        ),
+      duplicateOfClaimId: zod
+        .number()
+        .nullish()
+        .describe(
+          "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
         ),
       sopNodeId: zod
         .string()
@@ -6987,6 +7125,12 @@ export const AttestClaimResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -7233,6 +7377,12 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -7478,6 +7628,12 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -7804,6 +7960,12 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -8062,6 +8224,12 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -8303,6 +8471,12 @@ export const RemoveLegHoldResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -8540,6 +8714,12 @@ export const ClearLegHoldResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -8786,6 +8966,12 @@ export const ClassifyLegResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -9035,6 +9221,12 @@ export const SopAdvanceLegResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -9295,6 +9487,12 @@ export const ExcludeLegResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -9541,6 +9739,528 @@ export const IncludeLegResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Mark this leg as a sibling duplicate of `primaryClaimId`. The leg's
+derived sub-status becomes `duplicate` and its SOP walk is short-circuited.
+The invoice gauntlet's gate then pairs its resolution with the primary's
+terminal state (see `lib/group-readiness.ts`).
+
+Validation:
+- Both claims must exist and live in the same invoice group.
+- Self-reference is rejected.
+- The chosen primary cannot itself be a sibling duplicate (no chains).
+- The leg must currently be in `{needs_classification, investigating,
+  blocked, ready, dropped}` — refused from `excluded` or `duplicate`.
+- Parent group must still be pre-submit.
+
+ * @summary Mark a leg as a sibling duplicate of another leg in the same invoice group
+ */
+export const MarkLegDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkLegDuplicateBody = zod.object({
+  primaryClaimId: zod
+    .number()
+    .describe(
+      "ID of the leg this one is a sibling duplicate of. Must live in the same invoice group.",
+    ),
+  note: zod
+    .string()
+    .nullish()
+    .describe("Optional human-readable note attached to the audit trail."),
+});
+
+export const MarkLegDuplicateResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
+  sopNodeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+    ),
+  sopOutcome: zod
+    .union([
+      zod.literal("portal_dispute"),
+      zod.literal("dispute"),
+      zod.literal("hold"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+    ),
+  dropReason: zod
+    .union([
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+    ),
+  readyAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+    ),
+  droppedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+  perLegContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  masActionRequired: zod
+    .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+    ),
+  masActionCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Operator-confirmed completion stamp for the MAS action."),
+  masActionCompletedBy: zod.string().nullish(),
+  masActionNote: zod.string().nullish(),
+  latestVerdict: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+    ),
+  latestAiSuggestion: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+});
+
+/**
+ * Clear `duplicate_of_claim_id` so the leg derives back to its underlying
+state (typically `needs_classification`). Pre-submit only.
+
+ * @summary Clear the sibling-duplicate pointer on a leg
+ */
+export const UnmarkLegDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnmarkLegDuplicateResponse = zod.object({
+  id: zod.number(),
+  invoiceGroupId: zod.number().nullish(),
+  confNumber: zod.string(),
+  date: zod.string().nullish(),
+  refNumber: zod.string().nullish(),
+  clientNumber: zod.string().nullish(),
+  carNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  claimAmount: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  invoiceNumbers: zod.string().nullish(),
+  payorEmail: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  importBatch: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  attestationState: zod
+    .enum(["not_required", "pending", "queued", "completed"])
+    .describe(
+      "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+    ),
+  attestedAt: zod.string().nullish(),
+  attestedBy: zod.string().nullish(),
+  attestationNote: zod.string().nullish(),
+  attestationQueuedAt: zod.string().nullish(),
+  attestationQueuedBy: zod.string().nullish(),
+  includedInDispute: zod
+    .boolean()
+    .describe(
+      "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -9782,6 +10502,12 @@ export const ReclassifyLegResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -10076,6 +10802,12 @@ export const SetLegContextResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -10331,6 +11063,12 @@ export const ConcludeLegResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -10580,6 +11318,12 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -10824,6 +11568,12 @@ export const TriageClaimResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -11072,6 +11822,12 @@ export const PostResponseActionResponse = zod.object({
     .boolean()
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+    ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
     ),
   sopNodeId: zod
     .string()
@@ -11334,6 +12090,12 @@ export const GenerateClaimEmailResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -11565,6 +12327,11 @@ export const ListErrorTypesResponseItem = zod.object({
     .describe(
       'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
     ),
+  tripOverriding: zod
+    .boolean()
+    .describe(
+      "When true, this error invalidates the entire trip (e.g.\neligibility lapse, time-at-facility violation). Sibling legs\non the same invoice can be marked as `Sibling Duplicate` of\nthe leg carrying this error so the dispute isn't double-billed.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -11586,6 +12353,7 @@ export const CreateErrorTypeBody = zod.object({
   disputeInstructions: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
   useDirectEmail: zod.boolean().optional(),
+  tripOverriding: zod.boolean().optional(),
 });
 
 /**
@@ -11617,6 +12385,11 @@ export const GetErrorTypeResponse = zod.object({
     .describe(
       'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
     ),
+  tripOverriding: zod
+    .boolean()
+    .describe(
+      "When true, this error invalidates the entire trip (e.g.\neligibility lapse, time-at-facility violation). Sibling legs\non the same invoice can be marked as `Sibling Duplicate` of\nthe leg carrying this error so the dispute isn't double-billed.\n",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -11641,6 +12414,7 @@ export const UpdateErrorTypeBody = zod.object({
   disputeInstructions: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
   useDirectEmail: zod.boolean().optional(),
+  tripOverriding: zod.boolean().optional(),
 });
 
 export const UpdateErrorTypeResponse = zod.object({
@@ -11664,6 +12438,11 @@ export const UpdateErrorTypeResponse = zod.object({
     .boolean()
     .describe(
       'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
+    ),
+  tripOverriding: zod
+    .boolean()
+    .describe(
+      "When true, this error invalidates the entire trip (e.g.\neligibility lapse, time-at-facility violation). Sibling legs\non the same invoice can be marked as `Sibling Duplicate` of\nthe leg carrying this error so the dispute isn't double-billed.\n",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -13596,6 +14375,12 @@ export const GetDashboardSummaryResponse = zod.object({
           blocked: zod.number().optional(),
           ready: zod.number().optional(),
           dropped: zod.number().optional(),
+          duplicate: zod
+            .number()
+            .optional()
+            .describe(
+              "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+            ),
         })
         .nullish()
         .describe(
@@ -15525,6 +16310,12 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .describe(
       "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
     ),
+  duplicateOfClaimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+    ),
   sopNodeId: zod
     .string()
     .nullish()
@@ -15887,6 +16678,12 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
       blocked: zod.number().optional(),
       ready: zod.number().optional(),
       dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
     })
     .nullish()
     .describe(

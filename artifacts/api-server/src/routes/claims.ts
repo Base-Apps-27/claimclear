@@ -205,6 +205,11 @@ function buildLegSubStatusCondition(sub: string): SQL | null {
     isNull(claimsTable.includedInDispute),
     eq(claimsTable.includedInDispute, true),
   )!;
+  // `duplicate` takes precedence over the SOP-derived sub-statuses in
+  // deriveLegSubStatus (excluded > duplicate > rest). All non-`excluded`,
+  // non-`duplicate` filters must therefore exclude duplicates so the SQL
+  // tally matches the JS derivation.
+  const notDuplicate = isNull(claimsTable.duplicateOfClaimId);
   const hasErrorType = and(
     isNotNull(claimsTable.errorTypeId),
     sql`${claimsTable.errorTypeId} <> ''`,
@@ -216,20 +221,27 @@ function buildLegSubStatusCondition(sub: string): SQL | null {
   switch (sub) {
     case "excluded":
       return eq(claimsTable.includedInDispute, false);
+    case "duplicate":
+      // Sibling Duplicate — leg is included in dispute but rolls up to a
+      // primary leg in the same invoice (trip-overriding error).
+      return and(notExcluded, isNotNull(claimsTable.duplicateOfClaimId))!;
     case "needs_classification":
       return and(
         notExcluded,
+        notDuplicate,
         or(isNull(claimsTable.errorTypeId), eq(claimsTable.errorTypeId, ""))!,
       )!;
     case "blocked":
       return and(
         notExcluded,
+        notDuplicate,
         hasErrorType,
         or(isNotNull(claimsTable.holdReason), eq(claimsTable.sopOutcome, "hold"))!,
       )!;
     case "investigating":
       return and(
         notExcluded,
+        notDuplicate,
         hasErrorType,
         noHold,
         isNull(claimsTable.sopOutcome),
@@ -237,6 +249,7 @@ function buildLegSubStatusCondition(sub: string): SQL | null {
     case "ready":
       return and(
         notExcluded,
+        notDuplicate,
         hasErrorType,
         noHold,
         inArray(claimsTable.sopOutcome, ["portal_dispute", "dispute"]),
@@ -244,6 +257,7 @@ function buildLegSubStatusCondition(sub: string): SQL | null {
     case "dropped":
       return and(
         notExcluded,
+        notDuplicate,
         hasErrorType,
         noHold,
         inArray(claimsTable.sopOutcome, ["cannot_dispute", "non_issue"]),
@@ -1554,6 +1568,11 @@ router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void>
             includedInDispute: claimsTable.includedInDispute,
             holdReason: claimsTable.holdReason,
             sopOutcome: claimsTable.sopOutcome,
+            // Sibling-duplicate legs derive to "duplicate" ahead of
+            // "needs_classification"; omitting this column would cause
+            // them to look unclassified and incorrectly block the
+            // auto-advance cascade. See Task #196 / sibling-duplicate spec.
+            duplicateOfClaimId: claimsTable.duplicateOfClaimId,
           })
           .from(claimsTable)
           .where(eq(claimsTable.invoiceGroupId, leg.invoiceGroupId));
@@ -1950,6 +1969,11 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
             includedInDispute: claimsTable.includedInDispute,
             holdReason: claimsTable.holdReason,
             sopOutcome: claimsTable.sopOutcome,
+            // Sibling-duplicate legs derive to "duplicate" ahead of
+            // "needs_classification"; omitting this column would cause
+            // them to look unclassified and incorrectly block the
+            // auto-advance cascade. See Task #196 / sibling-duplicate spec.
+            duplicateOfClaimId: claimsTable.duplicateOfClaimId,
           })
           .from(claimsTable)
           .where(eq(claimsTable.invoiceGroupId, leg.invoiceGroupId));
@@ -2044,6 +2068,193 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
   await refreshClaimDenormalizedCache(id);
   if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
   emitClaimEvent(id, "included", req);
+
+  res.json(updated);
+}));
+
+// POST /claims/:id/duplicate-of — mark a leg as a sibling duplicate of
+// another leg in the same invoice group. The marked leg derives to
+// sub-status `duplicate` (see lib/leg-state) and short-circuits its own
+// SOP walk; the gauntlet's gate then pairs its resolution with the
+// primary's (see lib/group-readiness).
+//
+// Validation:
+// - Both legs must exist.
+// - Self-reference is rejected (a leg cannot be its own duplicate).
+// - Both legs must belong to the same invoice group.
+// - The primary cannot itself be a sibling duplicate (no chains: A→B→C
+//   would make the gate semantics ambiguous).
+// - The leg being marked must currently be in {needs_classification,
+//   investigating, blocked, ready, dropped}. We refuse from `excluded`
+//   (re-include first) and from `duplicate` (use the unmark endpoint
+//   first to switch primaries — this keeps event history honest).
+// - Parent group must still be pre-submit (no rewriting after filing).
+router.post("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const primaryIdRaw = req.body?.primaryClaimId;
+  const primaryId = typeof primaryIdRaw === "number" ? primaryIdRaw : parseInt(String(primaryIdRaw ?? ""), 10);
+  if (!Number.isFinite(primaryId)) {
+    res.status(400).json({ error: "primaryClaimId required (number)" });
+    return;
+  }
+  if (primaryId === id) {
+    res.status(400).json({ error: "A leg cannot be a duplicate of itself" });
+    return;
+  }
+
+  const note = (req.body?.note ?? null) as string | null;
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const [primary] = await db.select().from(claimsTable).where(eq(claimsTable.id, primaryId));
+  if (!primary) { res.status(404).json({ error: "Primary claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null || leg.invoiceGroupId !== primary.invoiceGroupId) {
+    res.status(400).json({ error: "Primary must belong to the same invoice group" });
+    return;
+  }
+
+  if (primary.duplicateOfClaimId != null) {
+    // Disallow chains. The operator should pick the *true* primary directly.
+    res.status(400).json({
+      error: "Primary is itself a sibling duplicate; pick the original primary",
+      primaryPointsAt: primary.duplicateOfClaimId,
+    });
+    return;
+  }
+
+  // Disallow making this leg a duplicate when other legs already point to
+  // *it* as primary — that would create an implicit chain
+  // (dependent → leg → primary). The operator must first un-mark the
+  // dependents so the relationship stays a flat A ← {B, C, …} fan-out.
+  const dependents = await db
+    .select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
+    .from(claimsTable)
+    .where(eq(claimsTable.duplicateOfClaimId, id));
+  if (dependents.length > 0) {
+    res.status(400).json({
+      error: "Cannot mark this leg as a sibling duplicate; other legs already point to it as primary (would create a chain)",
+      dependentClaimIds: dependents.map((d) => d.id),
+    });
+    return;
+  }
+
+  const subStatus = deriveLegSubStatus(leg);
+  const ALLOWED: ReadonlySet<LegSubStatus> = new Set([
+    "needs_classification", "investigating", "blocked", "ready", "dropped",
+  ]);
+  if (!ALLOWED.has(subStatus)) {
+    res.status(409).json({
+      error: "Cannot mark this leg as duplicate from its current state",
+      actualState: subStatus,
+      allowedStates: [...ALLOWED],
+    });
+    return;
+  }
+
+  const [parentGroup] = await db
+    .select()
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (parentGroup) {
+    const phase = getGroupMacroPhase(parentGroup);
+    if (phase !== "pre-submit") {
+      res.status(409).json({
+        error: "Cannot mark a duplicate after the group leaves pre-submit",
+        actualState: phase,
+      });
+      return;
+    }
+  }
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ duplicateOfClaimId: primaryId })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(
+    id,
+    "leg_marked_duplicate",
+    `Marked as sibling duplicate of CLM-${primary.confNumber || primaryId}${note ? `: ${note}` : ""}`,
+    req,
+    { primaryClaimId: primaryId, primaryConfNumber: primary.confNumber, previousSubStatus: subStatus, note },
+  );
+  await emitStateEvent({
+    eventKey: "leg.marked_duplicate",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { primaryClaimId: primaryId, previousSubStatus: subStatus },
+  });
+  await refreshClaimDenormalizedCache(id);
+  await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "marked_duplicate", req);
+
+  res.json(updated);
+}));
+
+// DELETE /claims/:id/duplicate-of — clear the sibling-duplicate pointer
+// on a leg. The leg derives back to its underlying state (typically
+// `needs_classification` if no errorType is set, or whichever state its
+// other fields imply). Pre-submit only.
+router.delete("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.duplicateOfClaimId == null) {
+    res.status(409).json({ error: "Leg is not marked as a duplicate" });
+    return;
+  }
+
+  if (leg.invoiceGroupId != null) {
+    const [parentGroup] = await db
+      .select()
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+    if (parentGroup) {
+      const phase = getGroupMacroPhase(parentGroup);
+      if (phase !== "pre-submit") {
+        res.status(409).json({
+          error: "Cannot unmark a duplicate after the group leaves pre-submit",
+          actualState: phase,
+        });
+        return;
+      }
+    }
+  }
+
+  const previousPrimaryId = leg.duplicateOfClaimId;
+
+  const [updated] = await db
+    .update(claimsTable)
+    .set({ duplicateOfClaimId: null })
+    .where(eq(claimsTable.id, id))
+    .returning();
+
+  await createAuditLog(
+    id,
+    "leg_unmarked_duplicate",
+    `Cleared sibling-duplicate pointer (was CLM-${previousPrimaryId})`,
+    req,
+    { previousPrimaryClaimId: previousPrimaryId },
+  );
+  await emitStateEvent({
+    eventKey: "leg.unmarked_duplicate",
+    claimId: id,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: { previousPrimaryClaimId: previousPrimaryId },
+  });
+  await refreshClaimDenormalizedCache(id);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(id, "unmarked_duplicate", req);
 
   res.json(updated);
 }));

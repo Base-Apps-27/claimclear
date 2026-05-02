@@ -1082,7 +1082,7 @@ paths:
             enum: [soon, urgent]
         - name: legSubStatus
           in: query
-          description: Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+          description: Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
           schema:
             type: string
         - name: sort
@@ -1800,6 +1800,82 @@ paths:
                 $ref: "#/components/schemas/ClaimResponse"
         "409":
           description: Source-state contract violation (leg state or group phase)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /claims/{id}/duplicate-of:
+    post:
+      operationId: markLegDuplicate
+      tags: [claims]
+      summary: Mark a leg as a sibling duplicate of another leg in the same invoice group
+      description: |
+        Mark this leg as a sibling duplicate of `primaryClaimId`. The leg's
+        derived sub-status becomes `duplicate` and its SOP walk is short-circuited.
+        The invoice gauntlet's gate then pairs its resolution with the primary's
+        terminal state (see `lib/group-readiness.ts`).
+
+        Validation:
+        - Both claims must exist and live in the same invoice group.
+        - Self-reference is rejected.
+        - The chosen primary cannot itself be a sibling duplicate (no chains).
+        - The leg must currently be in `{needs_classification, investigating,
+          blocked, ready, dropped}` — refused from `excluded` or `duplicate`.
+        - Parent group must still be pre-submit.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkLegDuplicateBody"
+      responses:
+        "200":
+          description: Leg marked as sibling duplicate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "400":
+          description: Validation error (self-reference, cross-group, primary is itself a duplicate, etc.)
+        "404":
+          description: Either the leg or the primary was not found
+        "409":
+          description: Source-state contract violation (leg sub-status or group phase)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+    delete:
+      operationId: unmarkLegDuplicate
+      tags: [claims]
+      summary: Clear the sibling-duplicate pointer on a leg
+      description: |
+        Clear `duplicate_of_claim_id` so the leg derives back to its underlying
+        state (typically `needs_classification`). Pre-submit only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sibling-duplicate pointer cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "404":
+          description: Claim not found
+        "409":
+          description: Leg is not a duplicate, or group is no longer pre-submit
           content:
             application/json:
               schema:
@@ -4114,6 +4190,9 @@ components:
         includedInDispute:
           type: boolean
           description: "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings)."
+        duplicateOfClaimId:
+          type: ["integer", "null"]
+          description: "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP/verdict to the dispute."
         sopNodeId:
           type: ["string", "null"]
           description: "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk."
@@ -4402,6 +4481,9 @@ components:
               type: integer
             dropped:
               type: integer
+            duplicate:
+              type: integer
+              description: "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error)."
       required:
         - id
         - invoiceNumber
@@ -5188,6 +5270,17 @@ components:
         note:
           type: ["string", "null"]
 
+    MarkLegDuplicateBody:
+      type: object
+      required: [primaryClaimId]
+      properties:
+        primaryClaimId:
+          type: integer
+          description: ID of the leg this one is a sibling duplicate of. Must live in the same invoice group.
+        note:
+          type: ["string", "null"]
+          description: Optional human-readable note attached to the audit trail.
+
     SetLegContextBody:
       type: object
       required: [context]
@@ -5544,6 +5637,13 @@ components:
             issue classes that MAS resolves over email rather than via the
             portal — e.g. "Attesting too Soon" or "Invoice Number not in
             System"). When true, useGpsControlDeviation is ignored.
+        tripOverriding:
+          type: boolean
+          description: |
+            When true, this error invalidates the entire trip (e.g.
+            eligibility lapse, time-at-facility violation). Sibling legs
+            on the same invoice can be marked as `Sibling Duplicate` of
+            the leg carrying this error so the dispute isn't double-billed.
         createdAt:
           type: string
         updatedAt:
@@ -5553,6 +5653,7 @@ components:
         - name
         - useGpsControlDeviation
         - useDirectEmail
+        - tripOverriding
 
     CreateErrorTypeBody:
       type: object
@@ -5580,6 +5681,8 @@ components:
         useGpsControlDeviation:
           type: boolean
         useDirectEmail:
+          type: boolean
+        tripOverriding:
           type: boolean
       required:
         - name
@@ -5610,6 +5713,8 @@ components:
         useGpsControlDeviation:
           type: boolean
         useDirectEmail:
+          type: boolean
+        tripOverriding:
           type: boolean
 
     AppSettingsResponse:

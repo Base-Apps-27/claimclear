@@ -45,13 +45,14 @@ import { type LegSubStatus } from "@workspace/leg-state";
 import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
 
-// v2 claims-list tab strip: spec'd six filters in this order.
+// v2 claims-list tab strip: filter chips in display order.
 const CLAIM_LEG_TABS: readonly LegSubStatus[] = [
   "needs_classification",
   "investigating",
   "blocked",
   "ready",
   "dropped",
+  "duplicate",
   "frozen",
 ];
 

@@ -298,6 +298,12 @@ interface ErrorTypeFormState {
   decisionTree: DecisionTree | null;
   useGpsControlDeviation: boolean;
   useDirectEmail: boolean;
+  // Trip-overriding error types (eligibility, time-at-facility) invalidate
+  // the entire trip — once one leg in an invoice has this error, sibling
+  // legs become candidates to be marked as `Sibling Duplicate` so we
+  // don't double-bill the dispute. Surfaces in the SOP picker and the
+  // leg-detail "Mark as duplicate" affordance.
+  tripOverriding: boolean;
 }
 
 // Three mutually-exclusive submission paths. Backed by two independent
@@ -341,6 +347,7 @@ export default function ErrorTypes() {
     decisionTree: null,
     useGpsControlDeviation: false,
     useDirectEmail: false,
+    tripOverriding: false,
   };
 
   const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
@@ -370,6 +377,7 @@ export default function ErrorTypes() {
         decisionTree: convertedTree,
         useGpsControlDeviation: form.useGpsControlDeviation,
         useDirectEmail: form.useDirectEmail,
+        tripOverriding: form.tripOverriding,
       });
     } catch (err: unknown) {
       setSopError(err instanceof Error ? err.message : "Analysis failed");
@@ -398,6 +406,7 @@ export default function ErrorTypes() {
       decisionTree: convertedTree,
       useGpsControlDeviation: et.useGpsControlDeviation === true,
       useDirectEmail: et.useDirectEmail === true,
+      tripOverriding: (et as { tripOverriding?: boolean }).tripOverriding === true,
     });
     setEditingId(et.id);
   };
@@ -413,6 +422,7 @@ export default function ErrorTypes() {
         : undefined,
       useGpsControlDeviation: form.useGpsControlDeviation,
       useDirectEmail: form.useDirectEmail,
+      tripOverriding: form.tripOverriding,
     };
 
     if (editingId) {
@@ -678,6 +688,34 @@ export default function ErrorTypes() {
                     </div>
                   </label>
                 </RadioGroup>
+              </div>
+              <Separator />
+              {/*
+                Trip-overriding toggle. When ON, this error type signals
+                the entire trip is invalid (e.g. eligibility lapse,
+                time-at-facility) — sibling legs in the same invoice can
+                be marked as `Sibling Duplicate` of the leg carrying this
+                error so we don't double-bill the dispute. The flag is
+                read by the SOP completion path and by the leg-detail
+                "Mark as duplicate" affordance.
+              */}
+              <div className="rounded-lg border p-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="trip-overriding-toggle" className="flex items-center gap-1">
+                      Trip-overriding error
+                      <InfoTooltip content="ON when this error invalidates the whole trip (e.g. driver eligibility lapse, time-at-facility violation). When ON, sibling legs on the same invoice can be marked as 'Sibling Duplicate' so the dispute isn't double-billed. Leave OFF for per-leg errors that don't override siblings (most error types)." />
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Lets siblings on the same invoice ride along as <em>Sibling Duplicate</em> instead of running their own SOP.
+                    </p>
+                  </div>
+                  <Switch
+                    id="trip-overriding-toggle"
+                    checked={form.tripOverriding}
+                    onCheckedChange={(checked) => setForm({ ...form, tripOverriding: checked })}
+                  />
+                </div>
               </div>
               <Separator />
               <div>

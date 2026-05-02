@@ -277,6 +277,11 @@ export interface ClaimResponse {
   /** False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings). */
   includedInDispute: boolean;
   /**
+   * When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP/verdict to the dispute.
+   * @nullable
+   */
+  duplicateOfClaimId?: number | null;
+  /**
    * ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.
    * @nullable
    */
@@ -448,6 +453,8 @@ export type InvoiceGroupResponseLegSubStatusCounts = {
   blocked?: number;
   ready?: number;
   dropped?: number;
+  /** Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error). */
+  duplicate?: number;
 } | null;
 
 export interface InvoiceGroupResponse {
@@ -1659,6 +1666,16 @@ export interface IncludeLegBody {
   note?: string | null;
 }
 
+export interface MarkLegDuplicateBody {
+  /** ID of the leg this one is a sibling duplicate of. Must live in the same invoice group. */
+  primaryClaimId: number;
+  /**
+   * Optional human-readable note attached to the audit trail.
+   * @nullable
+   */
+  note?: string | null;
+}
+
 export interface SetLegContextBody {
   /** Free-form per-leg narrative. Empty string clears the field. */
   context: string;
@@ -1959,6 +1976,12 @@ portal — e.g. "Attesting too Soon" or "Invoice Number not in
 System"). When true, useGpsControlDeviation is ignored.
  */
   useDirectEmail: boolean;
+  /** When true, this error invalidates the entire trip (e.g.
+eligibility lapse, time-at-facility violation). Sibling legs
+on the same invoice can be marked as `Sibling Duplicate` of
+the leg carrying this error so the dispute isn't double-billed.
+ */
+  tripOverriding: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1986,6 +2009,7 @@ export interface CreateErrorTypeBody {
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
   useDirectEmail?: boolean;
+  tripOverriding?: boolean;
 }
 
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
@@ -2011,6 +2035,7 @@ export interface UpdateErrorTypeBody {
   disputeInstructions?: string;
   useGpsControlDeviation?: boolean;
   useDirectEmail?: boolean;
+  tripOverriding?: boolean;
 }
 
 export interface AppSettingsResponse {
@@ -3320,7 +3345,7 @@ export type ListClaimsParams = {
    */
   expiring?: ListClaimsExpiring;
   /**
-   * Comma-separated list of derived per-leg sub-status values (excluded, needs_classification, investigating, blocked, ready, dropped, frozen). `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+   * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
    */
   legSubStatus?: string;
   /**
