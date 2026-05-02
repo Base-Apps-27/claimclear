@@ -1,0 +1,35 @@
+Create the neccesary tasks for T005,6,9.
+
+recall this is the context: 13 tasks in 5 waves
+Wave 1 — Foundation (must land first, in order)
+
+T001 Schema: claims.duplicate_of_claim_id + error_types.trip_overriding + duplicate sub-status enum
+T002 outcomeRole() helper + deriveLegSubStatus returns duplicate with high precedence
+T003 Group-readiness gate respects duplicates (auto-satisfies when primary terminal, re-locks on reclassify)
+Wave 2 — Server contract (parallel after Wave 1)
+
+T004 POST /mark-duplicate-of + /unmark-duplicate endpoints, regen api-client
+T005 Thread per_leg_context + duplicate annotations into Claude prompts (portal write-up, preview, readback, ai-email)
+Wave 3 — UI core (sequential)
+
+T006 SOP terminal redesign — role-driven: include shows narrative editor + handoff CTA, abridged for the others, sibling-detection prompt at SOP entry
+T007 "Mark as duplicate of…" header action on the leg surface
+Wave 4 — Surrounding surfaces (parallel)
+
+T008 Status pills + Queue hides duplicates by default (with toggle)
+T009 Per-leg verdict picker + tree authoring (relabel portal_dispute, hide dispute/email from new authoring)
+T010 Error type details page — trip-overriding toggle
+T011 Audit invoice group page surfaces leg-scoped events (evidence/notes/audit/mentions for child claims)
+T012 Dashboard KPI tile label cleanup ("Ready for Portal" → "Ready")
+Wave 5 — Close the loop
+
+T013 Test coverage refreshed across leg-state, readiness, duplicates, prompt threading
+Out of scope (pinned for later, not lost)
+Promoting SOP/error_type to invoice level
+Lockstep multi-leg SOP advancement
+Reframing the Process button from leg-unit to invoice-unit
+Internal-fix automation (routing internal outcomes to an ops queue)
+Daily Brief / outbox vocabulary updates (works at invoice level, not affected)
+
+
+Review all parts of this which are done, all of which were done by you in this conversations Before the clean up scripts were run. Use all neccesary guards documented in the system. Multiple per task guards against ai slop content that hallucinates or leaves thing 1/2 done. We cannot afford these to regress nor diverge. Apply all other common constraints we use.
