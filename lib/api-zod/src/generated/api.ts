@@ -14618,6 +14618,52 @@ export const GetDashboardActivityResponse = zod.object({
 });
 
 /**
+ * Powers the personal "streak pip" overlay on the sidebar avatar. Counts
+every claim that the currently-authenticated user moved into the
+`Processed` status since the start of "today" in the user's local
+timezone. Sourced from the per-claim status-transition history
+(`audit_logs`), filtered by `userEmail` of the actor.
+
+The pip is private — only the requesting user's count is returned, and
+nothing is exposed about other users.
+
+ * @summary Count of claims the current user transitioned into Processed today
+ */
+export const GetMyProcessedTodayQueryParams = zod.object({
+  tz: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'IANA timezone (e.g. `America\/New_York`) used to anchor \"start of\ntoday\". Defaults to the server\'s office timezone if absent or\ninvalid so the response is never empty due to a bad client value.\n',
+    ),
+});
+
+export const getMyProcessedTodayResponseCountMin = 0;
+
+export const GetMyProcessedTodayResponse = zod
+  .object({
+    count: zod
+      .number()
+      .min(getMyProcessedTodayResponseCountMin)
+      .describe(
+        'Number of claims the current user transitioned into the\n`Processed` status since the start of \"today\" in the supplied\ntimezone.\n',
+      ),
+    timezone: zod
+      .string()
+      .describe(
+        "IANA timezone the count is anchored to (echoes back the validated\nrequest `tz`, or the server default if the client omitted\/sent an\ninvalid value).\n",
+      ),
+    dayKey: zod
+      .string()
+      .describe(
+        'YYYY-MM-DD calendar key for \"today\" in the resolved timezone.\nThe client uses this to detect day rollover.\n',
+      ),
+  })
+  .describe(
+    'Personal \"claims processed today\" counter for the streak pip on the\nsidebar avatar. The pip is private — only the requesting user\'s count\nis returned.\n',
+  );
+
+/**
  * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
  */
 export const getDashboardRepeatOffendersQueryDaysDefault = 30;

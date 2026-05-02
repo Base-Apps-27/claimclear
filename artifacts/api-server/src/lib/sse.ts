@@ -6,6 +6,12 @@ export interface ClaimEvent {
   userName: string | null;
   userEmail: string | null;
   timestamp: string;
+  // For `type: "status_changed"`, the new status the claim was moved into.
+  // Lets clients react to specific transitions (e.g. the streak-pip
+  // microinteraction in Task #317 that bumps when the actor moves a leg
+  // into "Processed") without having to refetch the row first. Optional
+  // because not every event carries a meaningful status change.
+  toStatus?: string | null;
 }
 
 export interface GroupEvent {

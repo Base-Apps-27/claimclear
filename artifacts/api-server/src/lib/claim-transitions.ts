@@ -163,6 +163,7 @@ export async function transitionClaimStatus(opts: {
     userName: actor.userName,
     userEmail: actor.userEmail,
     timestamp: new Date().toISOString(),
+    toStatus: newStatus,
   });
 
   return { success: true, claim, previousStatus: old.status, previousOutcome: old.outcome };

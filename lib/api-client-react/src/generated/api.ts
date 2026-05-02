@@ -94,6 +94,7 @@ import type {
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
   GetInvoiceGroupEmailThread404,
+  GetMyProcessedTodayParams,
   GetSystemHealthBouncesParams,
   HealthStatus,
   HoldInvoiceGroupBody,
@@ -119,6 +120,7 @@ import type {
   LookupMappingsBody,
   LookupMappingsResponse,
   MarkLegDuplicateBody,
+  MyProcessedTodayCount,
   NeedsClassificationInboxResponse,
   NoteResponse,
   NotificationPreferencesResponse,
@@ -9322,6 +9324,118 @@ export function useGetDashboardActivity<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardActivityQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Powers the personal "streak pip" overlay on the sidebar avatar. Counts
+every claim that the currently-authenticated user moved into the
+`Processed` status since the start of "today" in the user's local
+timezone. Sourced from the per-claim status-transition history
+(`audit_logs`), filtered by `userEmail` of the actor.
+
+The pip is private — only the requesting user's count is returned, and
+nothing is exposed about other users.
+
+ * @summary Count of claims the current user transitioned into Processed today
+ */
+export const getGetMyProcessedTodayUrl = (
+  params?: GetMyProcessedTodayParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/my-processed-today?${stringifiedParams}`
+    : `/api/dashboard/my-processed-today`;
+};
+
+export const getMyProcessedToday = async (
+  params?: GetMyProcessedTodayParams,
+  options?: RequestInit,
+): Promise<MyProcessedTodayCount> => {
+  return customFetch<MyProcessedTodayCount>(getGetMyProcessedTodayUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMyProcessedTodayQueryKey = (
+  params?: GetMyProcessedTodayParams,
+) => {
+  return [
+    `/api/dashboard/my-processed-today`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetMyProcessedTodayQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyProcessedToday>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMyProcessedTodayParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyProcessedToday>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMyProcessedTodayQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyProcessedToday>>
+  > = ({ signal }) =>
+    getMyProcessedToday(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyProcessedToday>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyProcessedTodayQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyProcessedToday>>
+>;
+export type GetMyProcessedTodayQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Count of claims the current user transitioned into Processed today
+ */
+
+export function useGetMyProcessedToday<
+  TData = Awaited<ReturnType<typeof getMyProcessedToday>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMyProcessedTodayParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyProcessedToday>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyProcessedTodayQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

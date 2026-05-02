@@ -2542,6 +2542,32 @@ export interface DashboardUserProductivity {
   users: DashboardUserProductivityUsersItem[];
 }
 
+/**
+ * Personal "claims processed today" counter for the streak pip on the
+sidebar avatar. The pip is private — only the requesting user's count
+is returned.
+
+ */
+export interface MyProcessedTodayCount {
+  /**
+   * Number of claims the current user transitioned into the
+`Processed` status since the start of "today" in the supplied
+timezone.
+
+   * @minimum 0
+   */
+  count: number;
+  /** IANA timezone the count is anchored to (echoes back the validated
+request `tz`, or the server default if the client omitted/sent an
+invalid value).
+ */
+  timezone: string;
+  /** YYYY-MM-DD calendar key for "today" in the resolved timezone.
+The client uses this to detect day rollover.
+ */
+  dayKey: string;
+}
+
 export type RepeatOffenderDriverTrend =
   (typeof RepeatOffenderDriverTrend)[keyof typeof RepeatOffenderDriverTrend];
 
@@ -3622,6 +3648,16 @@ export type GetDashboardActivityParams = {
    * @maximum 50
    */
   limit?: number;
+};
+
+export type GetMyProcessedTodayParams = {
+  /**
+ * IANA timezone (e.g. `America/New_York`) used to anchor "start of
+today". Defaults to the server's office timezone if absent or
+invalid so the response is never empty due to a bad client value.
+
+ */
+  tz?: string;
 };
 
 export type GetDashboardRepeatOffendersParams = {

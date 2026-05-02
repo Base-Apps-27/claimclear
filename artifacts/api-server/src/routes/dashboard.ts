@@ -339,6 +339,68 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   res.json({ days, points });
 }));
 
+// Office wall-clock fallback. The streak pip is anchored to the user's
+// local timezone (taken from the client query param), but if the client
+// sends nothing — or sends garbage we can't validate — we fall back to
+// the operations team's office tz so the count is never empty by accident.
+const PIP_DEFAULT_TZ = "America/New_York";
+
+function isValidIanaTz(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function dayKeyInTz(now: Date, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+// Streak pip on the user avatar (Task #317). Returns the count of claims
+// the calling user transitioned into "Processed" since the start of
+// "today" in their local timezone. Drawn straight from the per-claim
+// status-transition history (`audit_logs.action IN ('status_changed',
+// 'claim_status_changed')` with `metadata->>'to' = 'Processed'`), so
+// both direct manual transitions and group-cascaded ones initiated by
+// the user count toward their personal momentum. Never exposes anything
+// about other users — the actor filter is pinned to `req.user.email`.
+router.get("/dashboard/my-processed-today", asyncHandler(async (req, res): Promise<void> => {
+  const userEmail = req.user?.email;
+  if (!userEmail) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const rawTz = typeof req.query.tz === "string" ? req.query.tz : "";
+  const tz = rawTz && isValidIanaTz(rawTz) ? rawTz : PIP_DEFAULT_TZ;
+  const now = new Date();
+  const dayKey = dayKeyInTz(now, tz);
+
+  // Compare the audit-log timestamp's calendar date *in the user's tz*
+  // against the resolved dayKey. Postgres's `timestamptz AT TIME ZONE`
+  // returns a wall-clock timestamp in that zone; casting to `date`
+  // strips the time, giving us the local YYYY-MM-DD. This avoids any
+  // off-by-one from doing the math in JS and round-tripping bounds.
+  const [{ value } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(auditLogsTable)
+    .where(and(
+      eq(auditLogsTable.userEmail, userEmail),
+      inArray(auditLogsTable.action, ["status_changed", "claim_status_changed"]),
+      sql`${auditLogsTable.metadata}->>'to' = 'Processed'`,
+      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date = ${dayKey}::date`,
+    ));
+
+  res.json({ count: Number(value) || 0, timezone: tz, dayKey });
+}));
+
 export function parseLimit(raw: unknown, fallback: number, max = 50): number {
   const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
   if (!Number.isFinite(n) || n <= 0) return fallback;

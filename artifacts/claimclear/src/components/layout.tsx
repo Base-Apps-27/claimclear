@@ -22,10 +22,10 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
+import { StreakPipAvatar, useStreakPipLiveUpdates } from "@/components/streak-pip-avatar";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -81,6 +81,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, sessionExpiry, login, logout } = useAuth();
 
   const isAdmin = user?.role === "admin";
+
+  // Mounts the SSE listener that bumps the personal "claims processed
+  // today" counter the moment the current user moves a leg into
+  // Processed. Lives at the layout level so it's active on every
+  // signed-in surface — the pip stays accurate whether you process a
+  // claim from the queue, the claim detail, or the invoice group.
+  useStreakPipLiveUpdates();
 
   // Nav badge for the Attestation Queue: pending = approved verdicts that
   // landed and have not been actioned (amber, urgent), queued = parked for a
@@ -367,12 +374,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarFooter className="border-t border-sidebar-border p-4">
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3 overflow-hidden">
-                <Avatar className="h-9 w-9 border border-sidebar-border">
-                  <AvatarImage src={user.profileImageUrl || undefined} />
-                  <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
-                    {user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <StreakPipAvatar
+                  imageUrl={user.profileImageUrl}
+                  fallback={user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                />
                 <div className="flex flex-col overflow-hidden">
                   <span className="text-sm font-medium text-sidebar-foreground truncate">
                     {user.displayName || "User"}
