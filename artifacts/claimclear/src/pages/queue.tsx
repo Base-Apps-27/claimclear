@@ -333,12 +333,17 @@ export default function Queue() {
   const clearExpiringFilter = () => set({ expiring: null }, false);
 
   // URL-persisted: which workflow group is open in the inline workspace,
-  // and whether the Classification Inbox is expanded.
+  // whether the Classification Inbox is expanded, and which triage row's
+  // modal is open. `?triage=<id>` mirrors `?group=` so a refresh, hot
+  // reload, or shared link reopens the triage modal on the same inbox
+  // row instead of dropping the operator back to the list.
   const groupParam = Number.parseInt(get("group"), 10);
   const selectedWorkflowId: number | null = Number.isFinite(groupParam) && groupParam > 0 ? groupParam : null;
   const inboxOpen = get("inbox") === "open";
+  const triageParam = Number.parseInt(get("triage"), 10);
+  const selectedTriageId: number | null =
+    Number.isFinite(triageParam) && triageParam > 0 ? triageParam : null;
 
-  const [selectedTriageId, setSelectedTriageId] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
@@ -354,6 +359,9 @@ export default function Queue() {
   };
   const setInboxOpen = (open: boolean) => {
     set({ inbox: open ? "open" : null }, false);
+  };
+  const setSelectedTriageId = (id: number | null) => {
+    set({ triage: id == null ? null : String(id) }, false);
   };
 
   const selectWorkflow = (id: number) => {
@@ -545,12 +553,19 @@ export default function Queue() {
     return () => clearTimeout(t);
   }, [successMessage]);
 
-  // Drop a stale triage selection if the inbox no longer surfaces that group.
+  // Drop a stale `?triage=<id>` if the inbox no longer surfaces that
+  // group — same posture as the other URL-derived filters: a shared
+  // link or refresh that points at something gone falls back to the
+  // empty state instead of pinning a phantom modal open. Gated on the
+  // inbox query actually returning data so the param survives the
+  // initial load when the modal is reopened from the URL.
   useEffect(() => {
+    if (!inboxQuery.data) return;
     if (selectedTriageId && !inboxGroups.some(g => g.id === selectedTriageId)) {
       setSelectedTriageId(null);
     }
-  }, [selectedTriageId, inboxGroups]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTriageId, inboxGroups, inboxQuery.data]);
 
   const invalidate = () => {
     // Single key — both the workflow tabs and the embedded inbox live
@@ -771,8 +786,10 @@ export default function Queue() {
         onSelect={selectTriage}
       />
 
-      {/* Triage workspace dialog. Open whenever an inbox row is
-          selected; closing it (Esc, overlay, X) clears the selection.
+      {/* Triage workspace dialog. Open whenever `?triage=<id>` matches
+          a row in the embedded inbox payload; closing it (Esc, overlay,
+          X) clears the URL param. Selection is URL-persisted so a
+          refresh, hot reload, or shared link reopens on the same row.
           We re-find the inbox payload row each render so per-claim
           mutations show their effect (the row is a derivation of the
           embedded inbox payload, which the cache invalidate refetches
