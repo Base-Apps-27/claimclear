@@ -68,13 +68,15 @@ export async function getInvoiceGroupDay(
 ): Promise<string | null> {
   const ex: DbExecutor = executor ?? db;
   const [row] = await ex
-    .select({ earliest: sql<string | null>`MIN(${claimsTable.date})` })
+    .select({
+      // Cast text-typed claims.date through ::date so MIN compares
+      // calendar-correctly across mixed historical formats (M/D/YYYY,
+      // M/D/YY, ISO) and re-emit as ISO `YYYY-MM-DD` for the caller.
+      earliest: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
+    })
     .from(claimsTable)
-    .where(sql`${claimsTable.invoiceGroupId} = ${groupId} AND ${claimsTable.date} IS NOT NULL`);
-  const earliest = row?.earliest ?? null;
-  if (!earliest) return null;
-  // Defensive trim to a 10-char ISO date in case a stray timestamp slipped in.
-  return earliest.length > 10 ? earliest.slice(0, 10) : earliest;
+    .where(sql`${claimsTable.invoiceGroupId} = ${groupId} AND ${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`);
+  return row?.earliest ?? null;
 }
 
 /**
@@ -101,11 +103,14 @@ export async function isDayConcluded(
         ${invoiceGroupsTable.id}      AS group_id,
         ${invoiceGroupsTable.status}  AS status,
         ${invoiceGroupsTable.outcome} AS outcome,
-        MIN(${claimsTable.date})      AS earliest_date
+        -- Normalize text-typed date through ::date so MIN compares
+        -- calendar-correctly and the comparison key matches the ISO
+        -- "day" argument. See getInvoiceGroupDay for context.
+        to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD') AS earliest_date
       FROM ${invoiceGroupsTable}
       INNER JOIN ${claimsTable}
         ON ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-      WHERE ${claimsTable.date} IS NOT NULL
+      WHERE ${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''
       GROUP BY ${invoiceGroupsTable.id}
     )
     SELECT

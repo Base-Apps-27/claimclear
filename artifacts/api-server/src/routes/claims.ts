@@ -72,7 +72,10 @@ function actorFromReq(req: Request) {
 
 const CLAIMS_SORTABLE_COLUMNS = {
   confNumber: claimsTable.confNumber,
-  date: claimsTable.date,
+  // Cast text-typed claims.date through ::date so user-requested sorts
+  // (sort=date) are calendar-correct across mixed historical formats.
+  // Lexical text sort would put "10/2/2026" before "4/2/2026".
+  date: sql`NULLIF(${claimsTable.date}, '')::date`,
   clientNumber: claimsTable.clientNumber,
   errorTypeName: claimsTable.errorTypeName,
   claimAmount: sql`${claimsTable.claimAmount}::numeric`,
@@ -159,10 +162,13 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
     conditions.push(lte(sql`${claimsTable.claimAmount}::numeric`, sql`${amountMax}::numeric`));
   }
   if (serviceDateFrom) {
-    conditions.push(gte(claimsTable.date, serviceDateFrom));
+    // Cast text-typed claims.date through ::date so the comparison is
+    // calendar-correct across mixed historical formats. Lexical gte/lte
+    // on text would mishandle "4/2/2026" vs "4/15/2026".
+    conditions.push(sql`NULLIF(${claimsTable.date}, '')::date >= ${serviceDateFrom}::date`);
   }
   if (serviceDateTo) {
-    conditions.push(lte(claimsTable.date, serviceDateTo));
+    conditions.push(sql`NULLIF(${claimsTable.date}, '')::date <= ${serviceDateTo}::date`);
   }
   if (carNumber && typeof carNumber === "string") {
     conditions.push(eq(claimsTable.carNumber, carNumber));
@@ -283,7 +289,10 @@ function buildClaimsOrderBy(sortCol: string | undefined, sortDir: string | undef
     return [dirFn(col)];
   }
   return [
-    sql`${claimsTable.date} ASC NULLS LAST`,
+    // Cast text-typed claims.date through ::date so the sort is calendar-
+    // correct across mixed historical formats (M/D/YYYY, M/D/YY, ISO).
+    // Lexical text sort would put "10/2/2026" before "4/2/2026".
+    sql`NULLIF(${claimsTable.date}, '')::date ASC NULLS LAST`,
     desc(claimsTable.createdAt),
   ];
 }

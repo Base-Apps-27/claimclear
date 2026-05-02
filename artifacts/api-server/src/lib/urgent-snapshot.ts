@@ -38,14 +38,18 @@ async function loadActionableRows(): Promise<ActionableRow[]> {
     .select({
       id: invoiceGroupsTable.id,
       status: invoiceGroupsTable.status,
-      earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+      // ISO-normalize text-typed claims.date so MIN compares
+      // calendar-correctly and the JS deadline helpers receive a
+      // YYYY-MM-DD string. See routes/invoice-groups.ts for the
+      // historical context.
+      earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
     .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
     .where(
       and(
         inArray(invoiceGroupsTable.status, [...GROUP_EXPIRING_ACTIONABLE_STATUSES]),
-        sql`${claimsTable.date} IS NOT NULL`,
+        sql`${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`,
       ),
     )
     .groupBy(invoiceGroupsTable.id);

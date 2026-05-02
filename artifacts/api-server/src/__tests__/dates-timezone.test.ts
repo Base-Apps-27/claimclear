@@ -6,6 +6,7 @@ import {
   effectiveDaysRemaining,
   isUrgentDeadline,
   dateKeyInTz,
+  normalizeServiceDate,
 } from "../lib/dates";
 
 // Task #298 — anchor "today" / urgency math on America/New_York.
@@ -166,4 +167,65 @@ test("default tz parameter is America/New_York", () => {
   const sample = new Date("2026-01-24T02:00:00Z");
   assert.equal(serverTodayKey(sample), serverTodayKey(sample, ET));
   assert.equal(dateKeyInTz(sample), dateKeyInTz(sample, ET));
+});
+
+// ---------------------------------------------------------------------
+// normalizeServiceDate — production data has historically been stored
+// as M/D/YYYY and (later) M/D/YY text. The deadline helpers must accept
+// any of these formats so a single non-ISO row can't silently fall out
+// of the dashboard's "must file today" count. See migration 0020.
+// ---------------------------------------------------------------------
+
+test("normalizeServiceDate: ISO YYYY-MM-DD passes through unchanged", () => {
+  assert.equal(normalizeServiceDate("2026-04-02"), "2026-04-02");
+  // Trailing time component (defensive — some legacy paths used to pass
+  // a full ISO timestamp).
+  assert.equal(normalizeServiceDate("2026-04-02T15:30:00Z"), "2026-04-02");
+});
+
+test("normalizeServiceDate: M/D/YYYY (the dominant historical shape)", () => {
+  assert.equal(normalizeServiceDate("4/2/2026"), "2026-04-02");
+  assert.equal(normalizeServiceDate("4/15/2026"), "2026-04-15");
+  assert.equal(normalizeServiceDate("12/31/2026"), "2026-12-31");
+  // Zero-padded variants, just in case.
+  assert.equal(normalizeServiceDate("04/02/2026"), "2026-04-02");
+});
+
+test("normalizeServiceDate: M/D/YY two-digit-year window", () => {
+  // 00-69 -> 20YY (current decade & near future).
+  assert.equal(normalizeServiceDate("4/28/26"), "2026-04-28");
+  assert.equal(normalizeServiceDate("1/1/00"), "2000-01-01");
+  assert.equal(normalizeServiceDate("12/31/69"), "2069-12-31");
+  // 70-99 -> 19YY (defensive — should never happen for our domain).
+  assert.equal(normalizeServiceDate("1/1/70"), "1970-01-01");
+});
+
+test("normalizeServiceDate: returns null for empty / unparseable / impossible dates", () => {
+  for (const bad of [null, undefined, "", "   ", "not-a-date", "2026-13-01", "2026-02-30", "13/45/2026", "4/31/2026"]) {
+    assert.equal(
+      normalizeServiceDate(bad as string | null | undefined),
+      null,
+      `expected null for ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test("daysRemaining accepts M/D/YYYY and M/D/YY directly", () => {
+  // Production data used to silently fall out of the dashboard's
+  // urgency math because the helpers required strict ISO. After the
+  // dates.ts normalizer + migration 0020 backfill, M/D/YYYY values
+  // must compute the same as their ISO equivalents.
+  const today = new Date("2026-04-02T16:00:00Z"); // Apr 2 noon ET
+  assert.equal(daysRemaining("4/2/2026", today, ET), daysRemaining("2026-04-02", today, ET));
+  assert.equal(daysRemaining("4/28/26", today, ET), daysRemaining("2026-04-28", today, ET));
+});
+
+test("isUrgentDeadline flags an Apr 2 service date on May 2 (deadline today, M/D/YYYY input)", () => {
+  // The exact bug the user reported: it's May 2 and Apr 2 service
+  // dates have hit their 30-day deadline. The deadline helpers must
+  // treat the historical M/D/YYYY string as urgent, not silently
+  // ignore it.
+  const may2et = new Date("2026-05-02T16:00:00Z"); // May 2 noon ET
+  assert.equal(isUrgentDeadline("4/2/2026", may2et, ET), true);
+  assert.equal(isUrgentDeadline("2026-04-02", may2et, ET), true);
 });

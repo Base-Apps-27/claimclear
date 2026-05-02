@@ -39,30 +39,73 @@ function parseYMD(s: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
-/**
- * True when `s` looks like a valid YYYY-MM-DD prefix. Production data
- * has historically included empty strings, partial dates, and other
- * malformed entries that cause `addDaysToYMD` to throw a RangeError
- * deep inside dashboard aggregation. Public deadline helpers gate on
- * this so a single bad row can't 500 the whole dashboard. */
-function isValidYMD(s: string | null | undefined): s is string {
-  if (!s || typeof s !== "string") return false;
-  const head = s.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(head)) return false;
-  const { y, m, d } = parseYMD(head);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
-    return false;
-  }
-  // Round-trip guard catches things like 2026-02-30 that `Date.UTC`
-  // would silently roll forward to March 2.
-  const ms = ymdToUtcMillis({ y, m, d });
-  if (!Number.isFinite(ms)) return false;
+function pad2(n: number): string { return n < 10 ? `0${n}` : String(n); }
+function pad4(n: number): string { return String(n).padStart(4, "0"); }
+
+function reassembleIfValid(y: number, m: number, d: number): string | null {
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const ms = Date.UTC(y, m - 1, d);
+  if (!Number.isFinite(ms)) return null;
   const back = new Date(ms);
-  return (
-    back.getUTCFullYear() === y &&
-    back.getUTCMonth() + 1 === m &&
-    back.getUTCDate() === d
-  );
+  if (
+    back.getUTCFullYear() !== y ||
+    back.getUTCMonth() + 1 !== m ||
+    back.getUTCDate() !== d
+  ) return null;
+  return `${pad4(y)}-${pad2(m)}-${pad2(d)}`;
+}
+
+/**
+ * Normalize a service-date string to ISO `YYYY-MM-DD`. Accepts:
+ *   - ISO `YYYY-MM-DD` (with or without a trailing time component)
+ *   - US-style `M/D/YYYY` and `M/D/YY` (with optional zero padding)
+ *
+ * Returns null for empty / unparseable / impossible-calendar input
+ * (e.g. `2026-02-30`) so callers can skip the row instead of throwing
+ * inside deadline math.
+ *
+ * Why this exists: `claims.date` was a TEXT column historically populated
+ * from the importer's raw CSV inputs, which arrived in M/D/YYYY (and
+ * later M/D/YY) shape. Migration 0020 backfilled stored values to ISO
+ * and the importer now writes ISO, but this normalizer remains the
+ * safety net for any stray non-ISO row that slips in.
+ */
+export function normalizeServiceDate(input: string | null | undefined): string | null {
+  if (!input || typeof input !== "string") return null;
+  const s = input.trim();
+  if (!s) return null;
+
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return reassembleIfValid(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+  }
+
+  const usMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (usMatch) {
+    const m = Number(usMatch[1]);
+    const d = Number(usMatch[2]);
+    let y = Number(usMatch[3]);
+    if (usMatch[3].length === 2) {
+      // Excel-style window: 00-69 -> 2000-2069, 70-99 -> 1970-1999.
+      y = y < 70 ? 2000 + y : 1900 + y;
+    }
+    return reassembleIfValid(y, m, d);
+  }
+
+  return null;
+}
+
+/**
+ * Backwards-compatible name retained for call sites that historically
+ * gated on a strict ISO check. Now accepts any format
+ * {@link normalizeServiceDate} can parse — the callers immediately
+ * normalize before doing math, so widening this guard simply lets a
+ * legitimately parseable non-ISO row through instead of being silently
+ * dropped from the dashboard.
+ */
+function isValidYMD(s: string | null | undefined): s is string {
+  return normalizeServiceDate(s) !== null;
 }
 
 function ymdToUtcMillis(parts: { y: number; m: number; d: number }): number {
@@ -125,9 +168,10 @@ export function daysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  if (!isValidYMD(serviceDate)) return null;
+  const norm = normalizeServiceDate(serviceDate);
+  if (!norm) return null;
   const today = dateKeyInTz(now, tz);
-  const deadline = rawDeadlineKey(serviceDate);
+  const deadline = rawDeadlineKey(norm);
   return diffDaysYMD(deadline, today);
 }
 
@@ -141,9 +185,10 @@ export function effectiveDaysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  if (!isValidYMD(serviceDate)) return null;
+  const norm = normalizeServiceDate(serviceDate);
+  if (!norm) return null;
   const today = dateKeyInTz(now, tz);
-  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(norm));
   return diffDaysYMD(deadline, today);
 }
 
@@ -157,9 +202,10 @@ export function isUrgentDeadline(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): boolean {
-  if (!isValidYMD(serviceDate)) return false;
+  const norm = normalizeServiceDate(serviceDate);
+  if (!norm) return false;
   const today = dateKeyInTz(now, tz);
-  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(norm));
   // YYYY-MM-DD strings sort lexicographically as dates, so `<=` is a
   // valid calendar comparison here — no Date round-trip required.
   return deadline <= today;

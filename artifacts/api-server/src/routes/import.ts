@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
+import { normalizeServiceDate } from "../lib/dates";
 
 const router: IRouter = Router();
 
@@ -134,7 +135,14 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
       if (existingId != null) {
         if (dupAction === "update") {
           const updateData: Partial<typeof claimsTable.$inferInsert> = { invoiceGroupId: groupId };
-          if (row.date) updateData.date = row.date;
+          // Only persist the date if we can normalize it to ISO. Storing
+          // raw unparseable text would re-poison the read paths (which
+          // cast through ::date) — better to leave the column null than
+          // to crash MIN()/sort/expiring-filter queries on a bad row.
+          if (row.date) {
+            const normalized = normalizeServiceDate(row.date);
+            if (normalized) updateData.date = normalized;
+          }
           if (row.refNumber) updateData.refNumber = row.refNumber;
           if (row.clientNumber) updateData.clientNumber = row.clientNumber;
           if (row.carNumber) updateData.carNumber = String(row.carNumber);
@@ -153,7 +161,11 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         await db.insert(claimsTable).values({
           invoiceGroupId: groupId,
           confNumber: row.confNumber,
-          date: row.date || null,
+          // Normalize at write time so all rows land in ISO YYYY-MM-DD.
+          // Unparseable input is stored as NULL (not raw text) so it can't
+          // 500 the read-side queries that cast claims.date through ::date
+          // — operators see "no date" rather than the dashboard going dark.
+          date: row.date ? (normalizeServiceDate(row.date) ?? null) : null,
           refNumber: row.refNumber || "",
           clientNumber: row.clientNumber || groupClientNumber || "",
           carNumber: String(row.carNumber || ""),
@@ -179,7 +191,12 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
     if (existingId != null) {
       if (dupAction === "update") {
         const updateData: Partial<typeof claimsTable.$inferInsert> = {};
-        if (row.date) updateData.date = row.date;
+        // See grouped-rows branch above: drop unparseable dates rather
+        // than re-poisoning the read paths with raw text.
+        if (row.date) {
+          const normalized = normalizeServiceDate(row.date);
+          if (normalized) updateData.date = normalized;
+        }
         if (row.refNumber) updateData.refNumber = row.refNumber;
         if (row.clientNumber) updateData.clientNumber = row.clientNumber;
         if (row.carNumber) updateData.carNumber = String(row.carNumber);
@@ -201,7 +218,9 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
       const hasErrorType = row.errorTypeId != null;
       await db.insert(claimsTable).values({
         confNumber: row.confNumber,
-        date: row.date || null,
+        // Same write-time normalization as the grouped-rows branch above:
+        // unparseable input lands as NULL so it can't 500 read-side casts.
+        date: row.date ? (normalizeServiceDate(row.date) ?? null) : null,
         refNumber: row.refNumber || "",
         clientNumber: row.clientNumber || "",
         carNumber: String(row.carNumber || ""),

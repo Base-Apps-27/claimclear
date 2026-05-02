@@ -40,10 +40,26 @@ const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUS
 // Correlated subquery returning the earliest service date across the rides in
 // a given invoice group. Used both as a sortable column and (separately) for
 // row decoration so a single group's deadline math has one source of truth.
+//
+// `claims.date` is a TEXT column historically populated in `M/D/YYYY` and
+// `M/D/YY` shape. We cast each value through `::date` and re-emit ISO
+// `YYYY-MM-DD` so:
+//   1. MIN() compares calendar-correctly (lexical text MIN of "4/2/2026"
+//      vs "4/15/2026" picks the wrong one — '1' < '2'),
+//   2. the API consistently returns ISO regardless of stored format,
+//   3. the JS deadline helpers receive a value they can parse without
+//      relying on the M/D/YYYY normalizer fallback.
+// Empty strings are coerced to NULL so a single bad row doesn't poison
+// the whole group's earliest-date calculation.
+// The IS NOT NULL / <> '' predicates here mirror the partial-index
+// predicate on `claims_date_parsed_idx` (migration 0020) so the planner
+// can use that expression index for this MIN() instead of seq-scanning.
 const earliestServiceDateExpr = sql<string | null>`(
-  SELECT MIN(${claimsTable.date})
+  SELECT to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')
   FROM ${claimsTable}
   WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+    AND ${claimsTable.date} IS NOT NULL
+    AND ${claimsTable.date} <> ''
 )`;
 
 const router: IRouter = Router();

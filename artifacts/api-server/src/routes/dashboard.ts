@@ -196,11 +196,14 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       totalAmount: invoiceGroupsTable.totalAmount,
       status: invoiceGroupsTable.status,
       rideCount: invoiceGroupsTable.rideCount,
-      earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+      // See `earliestServiceDateExpr` in routes/invoice-groups.ts — same
+      // ISO normalization rationale: cast text → date so MIN is calendar-
+      // correct, then re-emit `YYYY-MM-DD` for JS deadline helpers.
+      earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
     .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
+    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`))
     .groupBy(invoiceGroupsTable.id);
 
   const expiringNow = new Date();
@@ -769,7 +772,7 @@ router.get("/dashboard/urgent-today/transitions", asyncHandler(async (_req, res)
           clientNumber: invoiceGroupsTable.clientNumber,
           status: invoiceGroupsTable.status,
           totalAmount: invoiceGroupsTable.totalAmount,
-          earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+          earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
         })
         .from(invoiceGroupsTable)
         .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
@@ -874,7 +877,7 @@ router.get("/dashboard/urgent-today/transitions", asyncHandler(async (_req, res)
           id: invoiceGroupsTable.id,
           invoiceNumber: invoiceGroupsTable.invoiceNumber,
           clientNumber: invoiceGroupsTable.clientNumber,
-          earliestDate: sql<string | null>`MIN(${claimsTable.date})`,
+          earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
         })
         .from(invoiceGroupsTable)
         .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
