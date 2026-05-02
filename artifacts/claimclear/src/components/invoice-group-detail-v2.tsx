@@ -39,6 +39,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
   XCircle, PauseCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -1561,24 +1562,93 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   No audit events yet.
                 </div>
               ) : (
-                sortedAudit.slice(0, 12).map((e, i, arr) => (
-                  <div
-                    key={e.id}
-                    className="px-4 py-2 flex items-start gap-2 text-xs"
-                    style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                    data-testid={`audit-${e.id}`}
-                  >
-                    <div className="mt-0.5 flex-shrink-0" style={{ color: auditTone(e.action) }}>
-                      {auditIcon(e.action)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div style={{ color: "var(--cc-fg)" }}>{e.details || e.action}</div>
-                      <div className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
-                        {(e.userName || e.userEmail || "system")} · {relativeTime(e.timestamp)}
+                sortedAudit.slice(0, 12).map((e, i, arr) => {
+                  // Task #334: render the admin "recorded offline" override
+                  // (mas_reattest_recorded_offline) with an unmistakable
+                  // amber ShieldCheck + "Admin override" badge so reviewers
+                  // can tell it apart from a normal mas_reattest_completed
+                  // row. The trimmed offlineNote and the recorded-by email
+                  // are surfaced inline (the note is on the audit row's
+                  // metadata; see the offline branch in
+                  // routes/invoice-groups.ts).
+                  const isOfflineOverride =
+                    e.action === "mas_reattest_recorded_offline";
+                  const meta =
+                    isOfflineOverride && e.metadata && typeof e.metadata === "object"
+                      ? (e.metadata as Record<string, unknown>)
+                      : null;
+                  const offlineNoteFromMeta =
+                    meta && typeof meta.offlineNote === "string"
+                      ? meta.offlineNote.trim()
+                      : "";
+                  return (
+                    <div
+                      key={e.id}
+                      className="px-4 py-2 flex items-start gap-2 text-xs"
+                      style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                      data-testid={`audit-${e.id}`}
+                    >
+                      <div
+                        className="mt-0.5 flex-shrink-0"
+                        style={{ color: isOfflineOverride ? "var(--cc-amber-fg)" : auditTone(e.action) }}
+                      >
+                        {isOfflineOverride ? <ShieldCheck className="w-3 h-3" /> : auditIcon(e.action)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cc-fg)" }}>
+                          <span>{e.details || e.action}</span>
+                          {isOfflineOverride && (
+                            <span
+                              data-testid={`audit-${e.id}-admin-override-badge`}
+                              className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded"
+                              style={{
+                                background: "var(--cc-amber-bg)",
+                                color: "var(--cc-amber-fg)",
+                                border: "1px solid var(--cc-amber-fg)",
+                              }}
+                            >
+                              Admin override
+                            </span>
+                          )}
+                        </div>
+                        {isOfflineOverride && offlineNoteFromMeta && (
+                          <div
+                            data-testid={`audit-${e.id}-offline-note`}
+                            className="text-[11px] mt-1 px-2 py-1 rounded whitespace-pre-wrap break-words"
+                            style={{
+                              background: "var(--cc-amber-bg)",
+                              border: "1px solid var(--cc-amber-fg)",
+                              color: "var(--cc-fg)",
+                            }}
+                          >
+                            <span className="font-semibold" style={{ color: "var(--cc-amber-fg)" }}>
+                              Offline note:
+                            </span>{" "}
+                            {offlineNoteFromMeta}
+                          </div>
+                        )}
+                        <div className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
+                          {isOfflineOverride ? (
+                            <>
+                              <span data-testid={`audit-${e.id}-recorded-by`}>
+                                Recorded by{" "}
+                                <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
+                                  {e.userEmail || e.userName || "system"}
+                                </span>
+                              </span>
+                              {" · "}
+                              {relativeTime(e.timestamp)}
+                            </>
+                          ) : (
+                            <>
+                              {(e.userName || e.userEmail || "system")} · {relativeTime(e.timestamp)}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </CcCard>
 
