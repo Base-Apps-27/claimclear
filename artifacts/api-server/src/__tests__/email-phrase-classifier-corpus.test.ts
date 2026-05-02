@@ -1,15 +1,26 @@
-// Production-corpus regression test for the phrase-signature classifier.
+// Production-corpus regression test for the acknowledgment-only phrase
+// pre-filter (Task #314).
 //
-// Loads every email body we have ever received in production (snapshotted in
-// __fixtures__/email-classifier-corpus.json) and asserts the new classifier
-// produces the labelled outcome for every single row. When this test fails,
-// the failure message includes the email id, sender, subject, the matched
-// signatures, the cleaned body, and the expected vs. actual outcome — so a
-// reviewer can decide in one glance whether the regression is a bug in the
-// classifier or a relabelling of the fixture.
+// CONTRACT
+// --------
+// The phrase classifier is no longer the source of truth for decisions —
+// it can ONLY return `"acknowledgment"` (when a known boilerplate template
+// matches) or `"unknown"` (so the caller escalates to the LLM). This test
+// pins both halves of that contract against every email body we have ever
+// received in production:
+//
+//   - Acknowledgment fixtures (`expectedOutcome === "acknowledgment"`)
+//     must match the documented signature exactly. If a template silently
+//     drifts, this catches it.
+//   - Every other fixture (`approval` / `denial` / `info_request` / etc.)
+//     must produce `"unknown"` so the LLM is invoked downstream. If a
+//     decision phrase ever sneaks back into SIGNATURES, this catches it.
+//
+// The `expectedOutcome` field still holds the operator-truth label for
+// each row (so the file doubles as a hand-labelled dataset for the LLM).
 //
 // To intentionally change behaviour: relabel the affected fixture rows in
-// the corpus JSON (use the audit script to find the right rows) and re-run.
+// the corpus JSON and re-run.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -47,18 +58,58 @@ test("corpus: fixture file is non-empty (sanity)", () => {
   );
 });
 
-test("corpus: every row produces the expected outcome", () => {
+test("corpus: every acknowledgment row matches the documented signature", () => {
+  // Ack rows are the only thing the phrase classifier is allowed to assert
+  // on. Drift here means a payor template changed shape, an ack signature
+  // was accidentally removed, or a row was misfiled.
   const failures: string[] = [];
   for (const row of corpus) {
+    if (row.expectedOutcome !== "acknowledgment") continue;
     const result = classifyByPhrase(row.body);
-    if (result.outcome !== row.expectedOutcome) {
+    if (result.outcome !== "acknowledgment") {
       failures.push(
         [
           `id=${row.id}`,
           `sender=${row.senderEmail ?? "(none)"}`,
           `subject=${(row.subject ?? "").slice(0, 80)}`,
-          `expected=${row.expectedOutcome} (signature=${row.expectedSignature ?? "(none)"})`,
+          `expected=acknowledgment (signature=${row.expectedSignature ?? "(none)"})`,
           `actual=${result.outcome} (selected=${result.selectedSignatureId ?? "(none)"}, all=${result.matchedSignatureIds.join(",")})`,
+          `cleanedBody="${result.normalizedBody.slice(0, 280)}"`,
+        ].join("\n  "),
+      );
+      continue;
+    }
+    if (row.expectedSignature && result.selectedSignatureId !== row.expectedSignature) {
+      failures.push(
+        `id=${row.id} ack matched but wrong signature — expected ${row.expectedSignature}, got ${result.selectedSignatureId ?? "(none)"} (all matches: ${result.matchedSignatureIds.join(",") || "(none)"})`,
+      );
+    }
+  }
+  if (failures.length > 0) {
+    assert.fail(
+      `phrase classifier regressed on ${failures.length} acknowledgment fixture rows:\n\n` +
+        failures.join("\n\n"),
+    );
+  }
+});
+
+test("corpus: every non-acknowledgment row abstains so the LLM is invoked", () => {
+  // The whole point of demoting the phrase classifier (Task #314) is that
+  // decisions come from the LLM. If a decision phrase ever creeps back
+  // into SIGNATURES, this test catches it: every approval/denial/info_request/
+  // etc. row in the corpus must come back as "unknown" from the phrase pass.
+  const failures: string[] = [];
+  for (const row of corpus) {
+    if (row.expectedOutcome === "acknowledgment") continue;
+    const result = classifyByPhrase(row.body);
+    if (result.outcome !== "unknown") {
+      failures.push(
+        [
+          `id=${row.id}`,
+          `sender=${row.senderEmail ?? "(none)"}`,
+          `subject=${(row.subject ?? "").slice(0, 80)}`,
+          `truth=${row.expectedOutcome} (operator label)`,
+          `phrase classifier returned=${result.outcome} via signature=${result.selectedSignatureId ?? "(none)"} — should have abstained`,
           `cleanedBody="${result.normalizedBody.slice(0, 280)}"`,
         ].join("\n  "),
       );
@@ -66,53 +117,31 @@ test("corpus: every row produces the expected outcome", () => {
   }
   if (failures.length > 0) {
     assert.fail(
-      `phrase classifier regressed on ${failures.length}/${corpus.length} fixture rows:\n\n` +
+      `phrase classifier produced a non-ack verdict on ${failures.length} fixture rows — only the LLM is allowed to decide non-ack outcomes:\n\n` +
         failures.join("\n\n"),
     );
   }
 });
 
-test("corpus: when a signature is expected, the classifier picks the SAME signature", () => {
-  // Catches the "right outcome by accident" case — e.g. a denial signature
-  // accidentally matching an approval body whose true outcome was approval.
-  const failures: string[] = [];
-  for (const row of corpus) {
-    if (!row.expectedSignature) continue;
-    const result = classifyByPhrase(row.body);
-    if (result.selectedSignatureId !== row.expectedSignature) {
-      failures.push(
-        `id=${row.id} expected signature=${row.expectedSignature}, actual=${result.selectedSignatureId ?? "(none)"} (all matches: ${result.matchedSignatureIds.join(",") || "(none)"})`,
-      );
-    }
-  }
-  if (failures.length > 0) {
-    assert.fail(
-      `signature mismatch on ${failures.length}/${corpus.length} fixture rows:\n` +
-        failures.join("\n"),
-    );
-  }
-});
-
-test("corpus: zero unknowns — every production email matches a signature", () => {
-  // When this test starts failing it means a new payor template has shown
-  // up. Add a SIGNATURES entry, relabel the fixture, and re-pin.
-  const unknowns = corpus.filter(r => r.expectedOutcome === "unknown");
-  assert.equal(
-    unknowns.length,
-    0,
-    `${unknowns.length} corpus rows are still labelled "unknown" — add signatures and re-label`,
-  );
-});
-
-test("precedence: a real decision wins when boilerplate ack also matches", () => {
-  // This is the canonical correctness check that drove the rebuild.
+test("ack-only contract: a body with both ack boilerplate AND decision text returns acknowledgment", () => {
+  // After Task #314, the phrase classifier is only allowed to assert
+  // acknowledgments. Decision phrases like "GPS Exemption Request
+  // Approved" must NOT trigger anything here — they are the LLM's job.
+  // The ack pre-filter still runs and reports the matched ack signature.
   const synthetic = `Caution: This is an external email and has a suspicious subject or content. Please do not click any links or attachments.
     Ticket Under Review
     GPS Exemption Request Approved`;
   const result = classifyByPhrase(synthetic);
-  assert.equal(result.outcome, "approval");
-  assert.equal(result.selectedSignatureId, "mas_gps_exemption_approved");
-  assert.ok(result.matchedSignatureIds.includes("mas_ticket_under_review"));
+  assert.equal(result.outcome, "acknowledgment");
+  assert.equal(result.selectedSignatureId, "mas_ticket_under_review");
+});
+
+test("ack-only contract: a pure decision body abstains so the LLM is invoked", () => {
+  // No ack signature → unknown, even though decision keywords are present.
+  const synthetic = "GPS Exemption Request Approved\nThe invoice will be made attestable within two business days.";
+  const result = classifyByPhrase(synthetic);
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.selectedSignatureId, null);
 });
 
 test("abstain: completely unknown body returns unknown with no signatures matched", () => {

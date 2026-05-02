@@ -329,6 +329,10 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       isRead: email.isRead,
       phraseSignature: phraseResult.selectedSignatureId,
       phraseSignatureMatches: phraseResult.matchedSignatureIds,
+      // Stamp every row so the LLM-first cohort (Task #314) is
+      // distinguishable from earlier classifier generations in audits and
+      // backfills (the backfill keys idempotency off this exact value).
+      classifierVersion: "llm-first-v1",
     },
   }).returning();
 

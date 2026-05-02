@@ -29,18 +29,22 @@ export interface InboundEmailContext {
 const SYSTEM_PROMPT = `You are an expert claims-dispute analyst at a Non-Emergency Medical Transportation (NEMT) provider.
 
 You read inbound emails the provider receives in response to claim disputes. Your job is to:
-1. Classify the email's actual intent (real decision vs. automated acknowledgment).
+1. Classify the email's actual intent (real decision vs. automated acknowledgment vs. request for more info).
 2. Extract the key information a human reviewer would need at a glance.
 
+Decision categories (one-line examples — match the spirit, not the exact words):
+- "approval" — payor approved the claim for THIS invoice. Examples: "GPS Exemption Request Approved" (template header), "Your GPS Exemption Request for 1846045330 is approved", "the invoice will be made attestable", "your claim has been approved for $45.20".
+- "denial" — payor denied the claim for THIS invoice. Examples: "GPS Exemption Request Denied", "Your GPS Exemption Request is denied", "the invoice will remain cancelled/ineligible as the enrollee was not active", "the dispute is denied".
+- "partial_approval" — payor approved some legs/amount but not all (rare).
+- "info_request" — payor needs us to do something else before they can decide, OR is closing this channel and redirecting us elsewhere. The operator has work to do, but no approval/denial was issued. Examples: "Corrections - Ticket Closed … you must enter a correction through your MAS portal" (payor closed the ticket, told us to refile via the portal), "Please provide GPS breadcrumbs for confirmation #X", "Submit this through the GPS Deviation Control category".
+- "acknowledgment" — payor is just confirming receipt, queueing the dispute for review, or explaining how their dispute process works. NO decision yet, NO new action required from us. Examples: "We have received your request", "Ticket Under Review — this ticket will be reviewed for GPS compliance" (queued for review only), "To have a leg flagged for Incomplete GPS reviewed, you must submit one ticket per invoice…" (generic process explanation, not a per-ticket directive), "Corrections can take up to 30 days before you receive a response" (status ping).
+- "other" — anything else (unrelated, unclear, internal forward, etc.).
+
 Critical distinctions:
-- "acknowledgment" = the payor is just confirming they received our request, queueing it for review, or explaining how their dispute process works. NO decision yet. Examples: "We have received your inquiry and will respond within 5 business days", "Your case has been logged as #12345", autoresponders, "This ticket will be reviewed for GPS compliance" (queued for review only), "To have a leg flagged for Incomplete GPS reviewed, you must submit one ticket per invoice…" (process-explanation boilerplate, not a decision), "Corrections can take up to 30 days before you receive a response" (status ping, not a decision).
-- "info_request" = the payor needs MORE information from us before deciding. They are asking us to do something.
-- "approval" / "denial" / "partial_approval" = an actual decision has been made. Look for unambiguous decision language about THIS specific dispute, e.g. "GPS Exemption Request Approved", "GPS Exemption Request Denied", "the invoice will remain cancelled/ineligible", "your claim has been approved for $X".
-- "other" = anything else (unrelated, unclear, internal forward, etc.).
-
-Be strict about "acknowledgment". An email that explains process or confirms a queue position is an acknowledgment, even if it uses the words "approved", "denied", or "review" while doing so. Do NOT treat the text of our own quoted outbound dispute (which appears below the payor's reply, often after "On <date>, <name> wrote:") as decision evidence — only the payor's actual reply at the top of the message counts.
-
-If the email contains both a genuine decision AND boilerplate template text, classify as the decision. But if it is ONLY a confirmation of receipt or a process explanation with no decision content about this specific dispute, it is an acknowledgment.
+- "Corrections - Ticket Closed" with instructions to use the MAS portal is an "info_request", NOT an "approval" — the payor has closed the ticket and is redirecting us to a different workflow we must execute.
+- Be strict about "acknowledgment". An email that explains process or confirms a queue position is an acknowledgment, even if it uses the words "approved", "denied", or "review" while doing so.
+- Do NOT treat the text of our own quoted outbound dispute (which appears below the payor's reply, often after "On <date>, <name> wrote:") as decision evidence — only the payor's actual reply at the top of the message counts.
+- If the email contains both a genuine decision AND boilerplate template text, classify as the decision.
 
 Always respond with valid JSON in this exact shape:
 {
@@ -128,8 +132,12 @@ export function parseClassifierResponse(rawText: string): ClassifiedInboundEmail
 }
 
 /**
- * AI-classify an inbound email. Best-effort: throws on failure. Caller should
- * catch and fall back to keyword classification.
+ * AI-classify an inbound email. Best-effort: throws on failure. Callers
+ * should catch and abstain — there is no longer a keyword fallback for
+ * decisions (Task #314 demoted the phrase classifier to ack-only). The
+ * `response-matcher` write path treats abstain as "leave the row at
+ * `other` and DON'T transition the group", so a Haiku outage degrades
+ * gracefully into a no-op rather than a wrong decision.
  */
 export async function classifyInboundEmail(
   subject: string,
@@ -138,8 +146,13 @@ export async function classifyInboundEmail(
 ): Promise<ClassifiedInboundEmail> {
   const prompt = buildUserPrompt(subject || "", body || "", context);
 
+  // Cheap-by-default: Claude Haiku is the smallest model the AI Integrations
+  // proxy exposes. The classifier only needs to emit a fixed-shape JSON
+  // verdict, which Haiku handles easily — keeping the per-email cost an
+  // order of magnitude below Sonnet so the LLM-first pipeline (Task #314)
+  // stays cheaper than the keyword-first pipeline it replaced.
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
@@ -154,9 +167,10 @@ export async function classifyInboundEmail(
 }
 
 /**
- * Wrapper that swallows errors and logs. Returns null when the AI call fails so
- * the caller can fall back to keyword classification without disrupting the
- * inbound-email pipeline.
+ * Wrapper that swallows errors and logs. Returns null when the AI call
+ * fails so the caller can ABSTAIN (record the row as `other` without
+ * transitioning the group) without disrupting the inbound-email pipeline.
+ * Note: there is no keyword fallback path anymore — see Task #314.
  */
 export async function tryClassifyInboundEmail(
   subject: string,
@@ -168,7 +182,7 @@ export async function tryClassifyInboundEmail(
   } catch (err) {
     logger.warn(
       { err: err instanceof Error ? err.message : String(err), subject },
-      "AI inbound-email classification failed; falling back to keyword classifier",
+      "AI inbound-email classification failed; abstaining (caller will record row as 'other' without transitioning the group)",
     );
     return null;
   }

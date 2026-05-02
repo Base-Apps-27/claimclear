@@ -11,6 +11,7 @@
     "backfill:portal-submissions-group-link": "tsx ./src/migrations/2026-05-portal-submissions-group-link-backfill.ts",
     "backfill:auto-non-issue-siblings": "tsx ./src/migrations/2026-05-auto-non-issue-siblings-backfill.ts",
     "backfill:reclassify-confirmation-emails": "tsx ../artifacts/api-server/src/scripts/reclassify-confirmation-emails-backfill.ts",
+    "backfill:llm-first-classifier": "tsx ../artifacts/api-server/src/scripts/llm-first-classifier-backfill.ts",
     "backfill:clear-phrase-signature-ack-processed": "tsx ./src/migrations/2026-05-clear-phrase-signature-ack-processed-backfill.ts",
     "backfill:pre-group-leg-sop-outcome": "tsx ./src/migrations/2026-05-pre-group-leg-sop-outcome-backfill.ts",
     "backfill:heal-stuck-needs-review-inbox": "tsx ./src/migrations/2026-05-heal-stuck-needs-review-inbox-backfill.ts",
