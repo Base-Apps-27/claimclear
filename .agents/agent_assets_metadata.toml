@@ -65,3 +65,9 @@ id = "z-FbKiYtp5JlqSogsdyl9"
 uri = "file://attached_assets/screenshots/4276ad0d-3f74-4bd1-8f69-afddd96a767f-00-32i0jtya4oyx9_janeway_replit_dev_mockup_preview_queue-flow_QueueIntegrationFlow.png"
 type = "image"
 title = "Queue integration flow — full preview"
+
+[[outputs]]
+id = "Q8xqebXxRuLq7YjSaMTwK"
+uri = "file://exports/pending-classify-blank-sample.csv"
+type = "table"
+title = "Pending-Classify Blank-Error Sample (20 groups / 41 legs)"
