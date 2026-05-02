@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ExportInvoiceGroupsCsvExpiring = typeof ExportInvoiceGroupsCsvExpiring[keyof typeof ExportInvoiceGroupsCsvExpiring];
-
+export type ExportInvoiceGroupsCsvExpiring =
+  (typeof ExportInvoiceGroupsCsvExpiring)[keyof typeof ExportInvoiceGroupsCsvExpiring];
 
 export const ExportInvoiceGroupsCsvExpiring = {
-  soon: 'soon',
-  urgent: 'urgent',
+  soon: "soon",
+  urgent: "urgent",
 } as const;

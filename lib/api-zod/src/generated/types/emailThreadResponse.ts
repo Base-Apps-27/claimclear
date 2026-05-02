@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { EmailThreadConversation } from './emailThreadConversation';
-import type { EmailThreadMessage } from './emailThreadMessage';
+import type { EmailThreadConversation } from "./emailThreadConversation";
+import type { EmailThreadMessage } from "./emailThreadMessage";
 
 export interface EmailThreadResponse {
   /** Flat chronological list of every message across every conversation. Kept for backwards compatibility; new UIs should prefer `conversations`. */

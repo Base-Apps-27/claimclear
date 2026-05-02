@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { EmailBounceRecord } from './emailBounceRecord';
+import type { EmailBounceRecord } from "./emailBounceRecord";
 
 export interface EmailBouncesResponse {
   bounces: EmailBounceRecord[];

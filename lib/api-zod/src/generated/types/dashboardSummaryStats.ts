@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { DashboardSummaryStatsDeniedByReason } from './dashboardSummaryStatsDeniedByReason';
-import type { DashboardSummaryStatsWithdrawnByReason } from './dashboardSummaryStatsWithdrawnByReason';
+import type { DashboardSummaryStatsDeniedByReason } from "./dashboardSummaryStatsDeniedByReason";
+import type { DashboardSummaryStatsWithdrawnByReason } from "./dashboardSummaryStatsWithdrawnByReason";
 
 export type DashboardSummaryStats = {
   total: number;

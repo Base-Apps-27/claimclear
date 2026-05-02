@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuditLogResponseMetadata } from './auditLogResponseMetadata';
+import type { AuditLogResponseMetadata } from "./auditLogResponseMetadata";
 
 export interface AuditLogResponse {
   id: number;

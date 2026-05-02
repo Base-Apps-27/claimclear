@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ExcludeLegBodyReason } from './excludeLegBodyReason';
+import type { ExcludeLegBodyReason } from "./excludeLegBodyReason";
 
 /**
  * Body for `POST /claims/{id}/exclude`. When `reason` is `"other"`,

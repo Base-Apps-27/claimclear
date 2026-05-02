@@ -16,11 +16,12 @@ understanding readback / preview generation) instead.
  * Channel the latest payor response came in on.
  * @nullable
  */
-export type AttestationPendingExtrasLastResponseSource = typeof AttestationPendingExtrasLastResponseSource[keyof typeof AttestationPendingExtrasLastResponseSource] | null;
-
+export type AttestationPendingExtrasLastResponseSource =
+  | (typeof AttestationPendingExtrasLastResponseSource)[keyof typeof AttestationPendingExtrasLastResponseSource]
+  | null;
 
 export const AttestationPendingExtrasLastResponseSource = {
-  email: 'email',
-  portal: 'portal',
-  manual: 'manual',
+  email: "email",
+  portal: "portal",
+  manual: "manual",
 } as const;

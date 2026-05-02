@@ -13,10 +13,10 @@ understanding readback / preview generation) instead.
  */
 
 export type GetAiCalibrationParams = {
-errorTypeId: string;
-/**
- * @minimum 1
- * @maximum 365
- */
-windowDays?: number;
+  errorTypeId: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  windowDays?: number;
 };

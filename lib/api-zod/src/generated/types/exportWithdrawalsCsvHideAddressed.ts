@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ExportWithdrawalsCsvHideAddressed = typeof ExportWithdrawalsCsvHideAddressed[keyof typeof ExportWithdrawalsCsvHideAddressed];
-
+export type ExportWithdrawalsCsvHideAddressed =
+  (typeof ExportWithdrawalsCsvHideAddressed)[keyof typeof ExportWithdrawalsCsvHideAddressed];
 
 export const ExportWithdrawalsCsvHideAddressed = {
-  true: 'true',
-  false: 'false',
+  true: "true",
+  false: "false",
 } as const;

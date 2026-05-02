@@ -12,14 +12,15 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type EmailThreadMessageResponseType = typeof EmailThreadMessageResponseType[keyof typeof EmailThreadMessageResponseType] | null;
-
+export type EmailThreadMessageResponseType =
+  | (typeof EmailThreadMessageResponseType)[keyof typeof EmailThreadMessageResponseType]
+  | null;
 
 export const EmailThreadMessageResponseType = {
-  approval: 'approval',
-  denial: 'denial',
-  partial_approval: 'partial_approval',
-  info_request: 'info_request',
-  acknowledgment: 'acknowledgment',
-  other: 'other',
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
 } as const;

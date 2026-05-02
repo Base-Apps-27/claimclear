@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type EmailThreadMessageDirection = typeof EmailThreadMessageDirection[keyof typeof EmailThreadMessageDirection];
-
+export type EmailThreadMessageDirection =
+  (typeof EmailThreadMessageDirection)[keyof typeof EmailThreadMessageDirection];
 
 export const EmailThreadMessageDirection = {
-  inbound: 'inbound',
-  outbound: 'outbound',
+  inbound: "inbound",
+  outbound: "outbound",
 } as const;
