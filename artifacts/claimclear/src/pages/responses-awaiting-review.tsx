@@ -37,6 +37,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/status-badge";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
@@ -1011,6 +1021,36 @@ interface ActionRailProps {
  * Sticky positioning is applied by the parent wrapper so the step-3
  * pill stays glued to the rail.
  */
+// Task #196 contract: an operator-recordable verdict requires the leg's
+// `sop_outcome` to be in the submitted set. Mirrored on the API side at
+// `POST /claims/:id/verdict`. Pulled out so the action-rail filter and
+// the per-leg picker stay in lockstep.
+const SUBMITTED_SOP_OUTCOMES = new Set<string>(["portal_dispute", "dispute"]);
+
+function isLegReadyForActionablePicker(r: ClaimResponse): boolean {
+  return (
+    r.includedInDispute !== false &&
+    !!r.errorTypeId &&
+    // Either the modern SOP gate has been crossed, or the leg already
+    // has an operator-confirmed verdict on file (so the picker can render
+    // its "Verdict recorded" confirmation card). The second clause keeps
+    // legs healed via the Task #301 reconcile path visible inside the
+    // normal stack after their verdict lands, even though the leg's
+    // `sop_outcome` is still NULL.
+    (SUBMITTED_SOP_OUTCOMES.has(r.sopOutcome ?? "") ||
+      r.latestVerdict?.source === "operator_confirmed")
+  );
+}
+
+function isLegPreGroupReconcileCandidate(r: ClaimResponse): boolean {
+  return (
+    r.includedInDispute !== false &&
+    !!r.errorTypeId &&
+    !SUBMITTED_SOP_OUTCOMES.has(r.sopOutcome ?? "") &&
+    r.latestVerdict?.source !== "operator_confirmed"
+  );
+}
+
 function ActionRail({
   group,
   detail,
@@ -1018,15 +1058,23 @@ function ActionRail({
   onAfterVerdict,
 }: ActionRailProps) {
   // Real, actionable legs the operator can pick a verdict on. Mirrors
-  // the predicate from invoice-group-detail-v2: included, not excluded,
-  // has errorTypeId. Auto-excluded legs (per #232) and `Processed` legs
-  // (per #231) flow through naturally — excluded legs render below as a
-  // read-only summary and Processed legs stay in the picker stack.
+  // the predicate from invoice-group-detail-v2 plus the API-side
+  // `sop_outcome ∈ {portal_dispute, dispute}` gate so the picker never
+  // shows Approved/Denied/Partial buttons the API will reject (Task #301).
+  // Auto-excluded legs (per #232) and `Processed` legs (per #231) flow
+  // through naturally — excluded legs render below as a read-only summary
+  // and Processed legs stay in the picker stack.
   const actionableRides = useMemo(
-    () =>
-      allRides.filter(
-        (r) => r.includedInDispute !== false && !!r.errorTypeId,
-      ),
+    () => allRides.filter(isLegReadyForActionablePicker),
+    [allRides],
+  );
+  // Task #301: legs that pre-date the invoice-group flow — included,
+  // classified, but no `sop_outcome` because they were filed before the
+  // SOP walk shipped. Surfaced in their own section with a "Record
+  // outcome anyway" affordance that goes through the verdict endpoint's
+  // `reconcile: true` flag.
+  const preGroupRides = useMemo(
+    () => allRides.filter(isLegPreGroupReconcileCandidate),
     [allRides],
   );
   const excludedRides = useMemo(
@@ -1040,6 +1088,14 @@ function ActionRail({
         <PerLegVerdictRailSection
           actionableRides={actionableRides}
           excludedRides={excludedRides}
+          onAfterVerdict={onAfterVerdict}
+          groupId={group.id}
+        />
+      )}
+
+      {detail && preGroupRides.length > 0 && (
+        <PreGroupReconcileRailSection
+          rides={preGroupRides}
           onAfterVerdict={onAfterVerdict}
           groupId={group.id}
         />
@@ -1173,6 +1229,257 @@ function PerLegVerdictRailSection({
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Task #301 — pre-invoice-group reconcile rail ────────────────────────
+//
+// Companion to PerLegVerdictRailSection. Renders legs whose
+// `sop_outcome` is NULL (or otherwise not in the submitted set) — the
+// API's verdict gate refuses these, so we surface them in a separate
+// section with a single explicit affordance ("Record outcome anyway")
+// that opens a confirm dialog and posts the verdict with the
+// `reconcile: true` flag set.
+
+const RECONCILE_OUTCOMES: Array<"Approved" | "Denied" | "Partial"> = [
+  "Approved",
+  "Denied",
+  "Partial",
+];
+
+interface PreGroupReconcileRailSectionProps {
+  rides: ClaimResponse[];
+  onAfterVerdict: (message: string) => void;
+  groupId: number;
+}
+
+function PreGroupReconcileRailSection({
+  rides,
+  onAfterVerdict,
+  groupId,
+}: PreGroupReconcileRailSectionProps) {
+  const [activeLeg, setActiveLeg] = useState<ClaimResponse | null>(null);
+
+  return (
+    <div
+      className="rounded-md border bg-card overflow-hidden"
+      data-testid="pre-group-reconcile-stack"
+    >
+      <div className="px-4 py-2.5 border-b bg-amber-50/60 dark:bg-amber-950/20">
+        <h3 className="text-sm font-semibold">Filed before invoice groups</h3>
+        <p className="text-[11px] text-muted-foreground">
+          These legs were filed before the modern flow set per-leg state, so
+          the normal picker can't accept their verdict. Record the payor's
+          outcome here to keep the trail intact.
+        </p>
+      </div>
+      <div className="p-3 space-y-2">
+        {rides.map((ride) => (
+          <div
+            key={ride.id}
+            className="flex items-center justify-between gap-3 rounded border bg-background px-3 py-2"
+            data-testid={`pre-group-leg-${ride.id}`}
+          >
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-xs">#{ride.confNumber}</span>
+              {ride.errorTypeName && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {ride.errorTypeName}
+                </Badge>
+              )}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setActiveLeg(ride)}
+              data-testid={`button-record-outcome-anyway-${ride.id}`}
+            >
+              Record outcome anyway
+            </Button>
+          </div>
+        ))}
+      </div>
+      <ReconcileVerdictDialog
+        leg={activeLeg}
+        groupId={groupId}
+        onClose={() => setActiveLeg(null)}
+        onAfterVerdict={(msg) => {
+          setActiveLeg(null);
+          onAfterVerdict(msg);
+        }}
+      />
+    </div>
+  );
+}
+
+interface ReconcileVerdictDialogProps {
+  leg: ClaimResponse | null;
+  groupId: number;
+  onClose: () => void;
+  onAfterVerdict: (message: string) => void;
+}
+
+function ReconcileVerdictDialog({
+  leg,
+  groupId,
+  onClose,
+  onAfterVerdict,
+}: ReconcileVerdictDialogProps) {
+  const queryClient = useQueryClient();
+  const recordVerdict = useRecordLegVerdict();
+  const [picked, setPicked] = useState<"Approved" | "Denied" | "Partial" | null>(
+    null,
+  );
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset local form state every time a new leg opens the dialog.
+  useEffect(() => {
+    if (leg) {
+      setPicked(null);
+      setNote("");
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [leg?.id]);
+
+  if (!leg) return null;
+
+  const trimmedNote = note.trim();
+  const canConfirm = !!picked && trimmedNote.length > 0 && !submitting;
+
+  const handleConfirm = async () => {
+    if (!picked || !canConfirm) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await recordVerdict.mutateAsync({
+        id: leg.id,
+        data: {
+          source: "operator_confirmed",
+          outcome: picked,
+          note: trimmedNote,
+          reconcile: true,
+        },
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetInvoiceGroupQueryKey(groupId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetClaimQueryKey(leg.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getListInvoiceGroupsQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+      });
+      onAfterVerdict(
+        `Verdict recorded for #${leg.confNumber} (manual reconciliation).`,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to record verdict.";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={!!leg}
+      onOpenChange={(open) => {
+        if (!open && !submitting) onClose();
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="reconcile-verdict-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>Record outcome for #{leg.confNumber}</DialogTitle>
+          <DialogDescription>
+            This leg was filed before the invoice-group flow recorded per-leg
+            state, so the normal verdict picker can't accept it. Choose the
+            outcome the payor returned and add a one-line note — the verdict
+            and note will be saved to the audit log as a manual reconciliation.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+              Pick an outcome
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
+              {RECONCILE_OUTCOMES.map((o) => (
+                <Button
+                  key={o}
+                  type="button"
+                  variant={picked === o ? "default" : "outline"}
+                  size="sm"
+                  disabled={submitting}
+                  onClick={() => setPicked(o)}
+                  data-testid={`button-reconcile-pick-${o.toLowerCase()}-${leg.id}`}
+                >
+                  {o}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              htmlFor={`reconcile-note-${leg.id}`}
+              className="text-xs text-muted-foreground"
+            >
+              Note (required)
+            </Label>
+            <Textarea
+              id={`reconcile-note-${leg.id}`}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={submitting}
+              rows={2}
+              placeholder="e.g. Payor email on Apr 30 confirmed the leg was approved."
+              data-testid={`input-reconcile-note-${leg.id}`}
+            />
+          </div>
+
+          {error && (
+            <p
+              className="text-xs text-red-700 bg-red-50 rounded px-2 py-1"
+              data-testid={`error-reconcile-${leg.id}`}
+            >
+              {error}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={submitting}
+            onClick={onClose}
+            data-testid={`button-reconcile-cancel-${leg.id}`}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={!canConfirm}
+            onClick={handleConfirm}
+            data-testid={`button-reconcile-confirm-${leg.id}`}
+          >
+            {submitting && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+            Confirm verdict
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

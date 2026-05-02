@@ -2394,6 +2394,12 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
   const confidence = req.body?.confidence ?? null;
   const reasoning = (req.body?.reasoning ?? null) as string | null;
   const inspectionTimeMs = req.body?.inspectionTimeMs ?? null;
+  // Task #301: opt-in flag for the legacy reconcile path. When true, the
+  // sop_outcome gate is skipped (but every other source-state check still
+  // runs). Reserved for legs that pre-date the invoice-group flow and
+  // never had `sop_outcome` populated. Requires a non-empty operator note
+  // so the audit row carries a human-supplied reason.
+  const reconcile = req.body?.reconcile === true;
 
   if (source !== "ai_suggested" && source !== "operator_confirmed") {
     res.status(400).json({ error: "source must be ai_suggested or operator_confirmed" });
@@ -2402,6 +2408,17 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
   if (!(VERDICT_OUTCOMES as readonly string[]).includes(outcome)) {
     res.status(400).json({ error: `outcome must be one of: ${VERDICT_OUTCOMES.join(", ")}` });
     return;
+  }
+  if (reconcile) {
+    // Reconcile is operator-only — the AI never lands on a pre-group leg.
+    if (source !== "operator_confirmed") {
+      res.status(400).json({ error: "reconcile is only valid with source=operator_confirmed" });
+      return;
+    }
+    if (typeof note !== "string" || note.trim().length === 0) {
+      res.status(400).json({ error: "reconcile requires a non-empty note" });
+      return;
+    }
   }
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
@@ -2436,7 +2453,8 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
 
   // Verdicts (AI or operator) only apply to legs that were actually
   // submitted to the payor. Both source-state checks are enforced
-  // uniformly.
+  // uniformly. The `reconcile` flag bypasses ONLY the sop_outcome gate
+  // below — `included_in_dispute` is still required.
   if (!leg.includedInDispute) {
     res.status(409).json({
       error: "Leg was not included in the dispute",
@@ -2446,9 +2464,10 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     return;
   }
   const submittedSopOutcomes = new Set(["portal_dispute", "dispute"]);
-  if (!submittedSopOutcomes.has(leg.sopOutcome ?? "")) {
+  if (!reconcile && !submittedSopOutcomes.has(leg.sopOutcome ?? "")) {
     res.status(409).json({
       error: "Cannot record a verdict on a leg that wasn't submitted",
+      reason: "leg_not_in_submission",
       expectedState: "sop_outcome ∈ {portal_dispute, dispute}",
       actualState: leg.sopOutcome ?? "null",
     });
@@ -2466,12 +2485,28 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     inspectionTimeMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
   }).returning();
 
+  // Audit + state-event metadata carries `reason: "legacy_reconciliation"`
+  // when the reconcile bypass was used so the row is traceable in audit
+  // and observability without inventing a separate action key.
+  const auditMetadata: Record<string, unknown> = {
+    source,
+    outcome,
+    confidence,
+    inspectionTimeMs,
+  };
+  const eventMetadata: Record<string, unknown> = { source, outcome, confidence };
+  if (reconcile) {
+    auditMetadata.reason = "legacy_reconciliation";
+    eventMetadata.reason = "legacy_reconciliation";
+  }
   await createAuditLog(
     id,
     source === "ai_suggested" ? "leg_verdict_suggested" : "leg_verdict_confirmed",
-    `Verdict ${outcome} (${source})`,
+    reconcile
+      ? `Verdict ${outcome} (${source}, legacy_reconciliation)`
+      : `Verdict ${outcome} (${source})`,
     req,
-    { source, outcome, confidence, inspectionTimeMs },
+    auditMetadata,
   );
   await emitStateEvent({
     eventKey: source === "ai_suggested" ? "leg.verdict_suggested" : "leg.verdict_confirmed",
@@ -2479,7 +2514,7 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     invoiceGroupId: leg.invoiceGroupId,
     actorUserId: req.user?.email ?? null,
     durationMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
-    metadata: { source, outcome, confidence },
+    metadata: eventMetadata,
   });
 
   // Cache refresh runs unconditionally — the denormalized

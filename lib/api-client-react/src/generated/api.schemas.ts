@@ -1583,6 +1583,12 @@ group's current derived state.
  */
 export interface StateConflictResponse {
   error: string;
+  /** Optional stable machine-readable reason code that callers can
+branch on. Currently set on `POST /claims/{id}/verdict` when a
+leg pre-dates the invoice-group flow (`leg_not_in_submission`)
+so the UI can offer the reconcile path.
+ */
+  reason?: string;
   expectedState: string;
   actualState: string;
   /** Optional list of valid SOP answers when the conflict was about an unknown answer. */
@@ -1636,6 +1642,18 @@ export interface RecordVerdictBody {
    * @nullable
    */
   inspectionTimeMs?: number | null;
+  /** Task #301 reconcile path. When `true`, the verdict endpoint
+bypasses ONLY the `sop_outcome ∈ {portal_dispute, dispute}`
+gate so legs that pre-date the invoice-group flow (and thus
+never had `sop_outcome` populated) can still take an operator
+verdict. Every other source-state check still runs (group is
+`response-pending`, leg is `included_in_dispute`, parent group
+exists, etc.). Requires `source=operator_confirmed` and a
+non-empty `note`. The audit + state event for this row carry
+`metadata.reason = "legacy_reconciliation"` so the bypass is
+traceable in audit and observability.
+ */
+  reconcile?: boolean;
 }
 
 export type ExcludeLegBodyReason =

@@ -10651,6 +10651,12 @@ export const RecordLegVerdictBody = zod.object({
     .number()
     .nullish()
     .describe("Optional duration the operator spent reviewing."),
+  reconcile: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #301 reconcile path. When `true`, the verdict endpoint\nbypasses ONLY the `sop_outcome ∈ {portal_dispute, dispute}`\ngate so legs that pre-date the invoice-group flow (and thus\nnever had `sop_outcome` populated) can still take an operator\nverdict. Every other source-state check still runs (group is\n`response-pending`, leg is `included_in_dispute`, parent group\nexists, etc.). Requires `source=operator_confirmed` and a\nnon-empty `note`. The audit + state event for this row carry\n`metadata.reason = \"legacy_reconciliation\"` so the bypass is\ntraceable in audit and observability.\n',
+    ),
 });
 
 export const RecordLegVerdictResponse = zod.object({

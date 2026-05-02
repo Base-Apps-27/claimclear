@@ -12,6 +12,7 @@
     "backfill:auto-non-issue-siblings": "tsx ./src/migrations/2026-05-auto-non-issue-siblings-backfill.ts",
     "backfill:reclassify-confirmation-emails": "tsx ../artifacts/api-server/src/scripts/reclassify-confirmation-emails-backfill.ts",
     "backfill:clear-phrase-signature-ack-processed": "tsx ./src/migrations/2026-05-clear-phrase-signature-ack-processed-backfill.ts",
+    "backfill:pre-group-leg-sop-outcome": "tsx ./src/migrations/2026-05-pre-group-leg-sop-outcome-backfill.ts",
     "check:vocab-drift": "tsx ./src/check-vocab-drift.ts"
   },
   "dependencies": {

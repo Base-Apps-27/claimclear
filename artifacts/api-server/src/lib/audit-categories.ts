@@ -51,6 +51,10 @@ const CLAIM_CATEGORY_MAP: Record<string, ActionCategory> = {
   leg_reclassified: "edit",
   leg_verdict_suggested: "status",
   leg_verdict_confirmed: "status",
+  // Task #301 retro: per-leg sop_outcome backfilled by the
+  // 2026-05-pre-group-leg-sop-outcome backfill script. One row per
+  // healed leg, tagged with metadata.backfillId.
+  leg_sop_outcome_backfilled: "workflow",
   mas_cancel_completed: "workflow",
 };
 
@@ -111,6 +115,7 @@ const CLAIM_LABELS: Record<string, string> = {
   leg_reclassified: "Leg reclassified",
   leg_verdict_suggested: "AI verdict suggested",
   leg_verdict_confirmed: "Operator verdict recorded",
+  leg_sop_outcome_backfilled: "Pre-group SOP outcome backfilled",
   mas_cancel_completed: "MAS cancel completed",
 };
 

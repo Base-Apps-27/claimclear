@@ -21,6 +21,12 @@ group's current derived state.
  */
 export interface StateConflictResponse {
   error: string;
+  /** Optional stable machine-readable reason code that callers can
+branch on. Currently set on `POST /claims/{id}/verdict` when a
+leg pre-dates the invoice-group flow (`leg_not_in_submission`)
+so the UI can offer the reconcile path.
+ */
+  reason?: string;
   expectedState: string;
   actualState: string;
   /** Optional list of valid SOP answers when the conflict was about an unknown answer. */

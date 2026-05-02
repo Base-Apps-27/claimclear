@@ -474,7 +474,8 @@ test("POST /claims/:id/verdict (operator_confirmed Denied) writes claim_verdict 
 test("POST /claims/:id/verdict refuses operator confirmation on a non-submitted leg", async () => {
   // Leg is included in dispute but its sopOutcome is `cannot_dispute`
   // (was never submitted) — the operator-confirmed verdict path must
-  // refuse it.
+  // refuse it. Task #301 also stamps a machine-readable `reason` on the
+  // 409 body so the UI can route the operator into the reconcile flow.
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({ status: "Needs Review" });
   const claim = await createSeedClaim({
@@ -489,6 +490,115 @@ test("POST /claims/:id/verdict refuses operator confirmation on a non-submitted 
       method: "POST", body: { source: "operator_confirmed", outcome: "Approved" },
     });
     assert.equal(res.status, 409);
+    assert.equal(
+      res.json.reason,
+      "leg_not_in_submission",
+      "409 body must carry the machine reason so the UI can route to the reconcile path",
+    );
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// --- Task #301: legacy reconcile path -----------------------------------
+
+test("POST /claims/:id/verdict { reconcile: true } records a verdict on a NULL-sopOutcome legacy leg", async () => {
+  // The two stuck legs in the field had sop_outcome=NULL because they
+  // pre-date the invoice-group flow. The reconcile flag should bypass
+  // ONLY the sop_outcome gate and otherwise behave like a normal
+  // operator-confirmed verdict (verdict row inserted, denormalized
+  // outcome refreshed, audit row tagged with the reason).
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: null,
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST",
+      body: {
+        source: "operator_confirmed",
+        outcome: "Approved",
+        note: "Payor email on Apr 30 confirmed approval.",
+        reconcile: true,
+      },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.outcome, "Approved");
+
+    const verdicts = await db.select().from(claimVerdictTable).where(eq(claimVerdictTable.claimId, claim.id));
+    assert.equal(verdicts.length, 1);
+    assert.equal(verdicts[0].source, "operator_confirmed");
+    assert.equal(verdicts[0].note, "Payor email on Apr 30 confirmed approval.");
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.outcome, "Approved", "denormalized claims.outcome must update via the reconcile path");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/verdict { reconcile: true } still 409s when the leg is excluded from the dispute", async () => {
+  // The reconcile flag bypasses ONLY the sop_outcome gate. Other
+  // source-state gates (group phase, included_in_dispute) still apply.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: null,
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+    includedInDispute: false,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST",
+      body: {
+        source: "operator_confirmed",
+        outcome: "Denied",
+        note: "Trying to reconcile an excluded leg.",
+        reconcile: true,
+      },
+    });
+    assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.expectedState, "included_in_dispute");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/verdict { reconcile: true } refuses without an operator note", async () => {
+  // The reconcile path requires a human-supplied note so the audit row
+  // carries an explanation. Without it (or with whitespace only), the
+  // request must 400.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: null,
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST",
+      body: {
+        source: "operator_confirmed",
+        outcome: "Approved",
+        note: "   ",
+        reconcile: true,
+      },
+    });
+    assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);

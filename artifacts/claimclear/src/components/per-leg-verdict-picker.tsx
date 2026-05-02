@@ -73,8 +73,7 @@ export function PerLegVerdictPicker({
       const elapsed = Math.max(0, Date.now() - mountAt.current);
       await onConfirm(picked, note.trim() || undefined, elapsed);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to record verdict.";
-      setError(msg);
+      setError(toFriendlyVerdictError(e));
     } finally {
       setSubmitting(false);
     }
@@ -222,6 +221,26 @@ export function PerLegVerdictPicker({
       </CardContent>
     </Card>
   );
+}
+
+// Defensive 409-reason mapping (Task #301). The verdict endpoint returns
+// `{ error, reason }` on the sop_outcome gate; orval bubbles that body
+// up via `axios.error.response.data`. We translate the machine reason
+// to an inline operator-friendly hint so people aren't left staring at
+// a raw JSON error string. Falls back to the message verbatim for any
+// other shape.
+function toFriendlyVerdictError(e: unknown): string {
+  if (e != null && typeof e === "object" && "response" in e) {
+    const axiosErr = e as {
+      response?: { data?: { error?: string; reason?: string } };
+    };
+    const data = axiosErr.response?.data;
+    if (data?.reason === "leg_not_in_submission") {
+      return "This leg wasn't part of an invoice-group submission, so the normal verdict path is closed. Use the \u201CFiled before invoice groups\u201D section to record the outcome with a note.";
+    }
+    if (data?.error) return data.error;
+  }
+  return e instanceof Error ? e.message : "Failed to record verdict.";
 }
 
 function formatConfidence(c: string | null | undefined): string {

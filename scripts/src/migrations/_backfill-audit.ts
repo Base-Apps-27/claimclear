@@ -72,6 +72,15 @@ export const BACKFILL_IDS = {
   // row records `metadata.includeRetro` and `metadata.classifierSources`
   // so the cohort the run targeted is discoverable after the fact.
   clearPhraseSignatureAckProcessed: "2026-05-clear-phrase-signature-ack-processed",
+
+  // Task #301: backfill `claims.sop_outcome` for legs that were filed
+  // before the invoice-group flow shipped. The 2026-05 cutover migrations
+  // swept these legs into invoice groups but left their per-leg state
+  // empty, which kept the modern verdict gate from accepting them. The
+  // script stamps `'portal_dispute'` or `'dispute'` based on hard
+  // evidence of a prior submission and writes one
+  // `leg_sop_outcome_backfilled` audit row per healed leg.
+  preGroupLegSopOutcome: "2026-05-pre-group-leg-sop-outcome",
 } as const;
 
 export type BackfillId = (typeof BACKFILL_IDS)[keyof typeof BACKFILL_IDS];
