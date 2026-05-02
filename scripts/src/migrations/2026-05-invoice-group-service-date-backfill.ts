@@ -59,22 +59,33 @@ async function loadGroupsWithLegacyValue(): Promise<GroupRow[]> {
   // subquery would have produced, so we can compare to the helper-side
   // value in JS without N+1 round trips.
   //
-  // Originally this mirrored the pre-cutover legacy SQL exactly:
-  //   to_char(MIN(NULLIF(c.date, '')::date), 'YYYY-MM-DD')
-  // That worked when `claims.date` was TEXT. Task #351 retyped the
-  // column to DATE, so the NULLIF/text-cast wrapper now errors with
-  // `invalid input syntax for type date: ""`. Drop the wrapper — on a
-  // DATE column, `MIN(c.date)` is the apples-to-apples equivalent of
-  // what the old subquery used to produce, and the diff report below
-  // remains meaningful (any disagreement against `recomputeGroupServiceDate`
-  // is still surfaced).
+  // Schema tolerance: this backfill must run against prod even when
+  // Task #351 (retype `claims.date` from TEXT → DATE) hasn't been
+  // applied yet — the whole point of the backfill is to populate
+  // `invoice_groups.service_date` so the read-path code can lean on
+  // it regardless of the underlying claims-side schema state. We
+  // therefore wrap each value with `NULLIF(c.date::text, '')::date`:
+  //
+  //   • TEXT column: `c.date::text` is a no-op, NULLIF strips the
+  //     legacy empty-string sentinels, and `::date` parses each
+  //     string to a real date BEFORE MIN — so MIN is calendar-correct
+  //     even on the legacy 'M/D/YYYY' shape, exactly like the
+  //     original pre-cutover SQL.
+  //   • DATE column: `c.date::text` formats to ISO YYYY-MM-DD, NULLIF
+  //     against '' is harmless (a valid date never formats to ''),
+  //     and `::date` parses it back. Same answer either way.
+  //
+  // This is the only cast wrapping that's apples-to-apples on both
+  // schemas; a bare `MIN(c.date)` lexically MINs '4/15/2026' before
+  // '4/2/2026' on the TEXT schema, which would silently report the
+  // wrong "earliest" date.
   const r = await pool.query<GroupRow>(`
     SELECT
       g.id,
       g.invoice_number,
       to_char(g.service_date, 'YYYY-MM-DD') AS stored,
       (
-        SELECT to_char(MIN(c.date), 'YYYY-MM-DD')
+        SELECT to_char(MIN(NULLIF(c.date::text, '')::date), 'YYYY-MM-DD')
         FROM claims c
         WHERE c.invoice_group_id = g.id
       ) AS legacy
@@ -129,12 +140,17 @@ async function main(): Promise<void> {
       // the same way the helper would (via a SAVEPOINT/ROLLBACK
       // wouldn't work cleanly across the pg pool here). Inline the
       // read instead — same MIN semantics as the helper.
-      // claims.date is now a typed DATE column (Task #351); the legacy
-      // NULLIF/text-cast wrapper errors against a DATE input, so the
-      // dry-run peek reads MIN(c.date) directly. Same semantics — MIN
-      // skips NULLs natively.
+      // Schema-tolerant cast (mirrors loadGroupsWithLegacyValue above):
+      // `c.date::text` is a no-op when the column is TEXT, formats to
+      // ISO when DATE; NULLIF strips legacy empty-string sentinels;
+      // `::date` parses each value to a real date BEFORE MIN so the
+      // result is calendar-correct on either schema state. Required
+      // because prod still has TEXT-typed `claims.date` until Task
+      // #351's migration is applied — and this script must run pre-#351
+      // to make the read-path code that depends on
+      // `invoice_groups.service_date` actually work.
       const peek = await pool.query<{ next: string | null }>(`
-        SELECT to_char(MIN(c.date), 'YYYY-MM-DD') AS next
+        SELECT to_char(MIN(NULLIF(c.date::text, '')::date), 'YYYY-MM-DD') AS next
         FROM claims c
         WHERE c.invoice_group_id = $1
       `, [g.id]);
