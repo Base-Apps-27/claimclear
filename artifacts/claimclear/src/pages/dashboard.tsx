@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import {
   AlertTriangle,
   ChevronRight,
+  Clock,
   TrendingUp,
   Activity,
   Sparkles,
@@ -408,6 +409,11 @@ export default function Dashboard() {
     0,
   );
 
+  // Task #352 — "Stuck after submission" tier: Portal Queued groups whose
+  // effective deadline has slipped without a payor acknowledgement.
+  const stuckCount = summary.submittedStuckCount ?? 0;
+  const stuckItems = (summary.submittedStuckGroups ?? []).slice(0, 3);
+
   const responsesCount = reviewCount?.count ?? 0;
   const responsesItems: InvoiceGroupResponse[] = (responsesData?.groups ?? []).slice(0, 3);
 
@@ -536,12 +542,12 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* TODAY'S WORK — three hero columns: file today / respond / reattest */}
+      {/* TODAY'S WORK — four hero columns: file today / stuck / respond / reattest */}
       <div>
         <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
           Today's work
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <HeroCard
             tone={fileTodayCount === 0 ? "neutral" : "red"}
             icon={<AlertTriangle className="w-4 h-4" />}
@@ -588,6 +594,42 @@ export default function Dashboard() {
               ) : null
             }
             testid="hero-file-today"
+          />
+
+          {/* Task #352 — "Stuck after submission" tier: Portal Queued groups
+              whose effective deadline has slipped without a payor
+              acknowledgement. Operator action is to chase confirmation, not
+              re-file. Zero state is intentionally calm (neutral) — having
+              nothing stuck here is expected. */}
+          <HeroCard
+            tone={stuckCount === 0 ? "neutral" : "amber"}
+            icon={<Clock className="w-4 h-4" />}
+            eyebrow="Stuck after submission"
+            count={stuckCount}
+            title={
+              stuckCount === 1
+                ? "submitted but unconfirmed past deadline"
+                : "submitted but unconfirmed past deadline"
+            }
+            seeAllHref="/queue?tab=portal-queued&expiring=stuck"
+            isLoading={false}
+            itemsEmpty="No stuck submissions — portal confirmations are current."
+            items={stuckItems.map(g => (
+              <HeroRow
+                key={g.id}
+                to={`/invoice-groups/${g.id}`}
+                testid={`stuck-row-${g.id}`}
+                primary={g.invoiceNumber}
+                sub={
+                  <>
+                    {formatDate(g.earliestDate)} · {g.status}
+                  </>
+                }
+                right={formatCurrency(g.totalAmount)}
+              />
+            ))}
+            footer={null}
+            testid="hero-stuck-after-submission"
           />
 
           <HeroCard

@@ -2,19 +2,32 @@ import { and, eq, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
+  CLAIM_SUBMITTED_STUCK_STATUSES,
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
+  GROUP_SUBMITTED_STUCK_STATUSES,
 } from "../routes/dashboard";
 import { SOON_DAYS, URGENT_DAYS } from "./risk-config";
 
-export type ExpiringMode = "soon" | "urgent";
+// `stuck` is the parallel "submitted but unconfirmed" tier introduced
+// in Task #352 — same date math as `urgent` (deadline ≤ today), but a
+// different status filter (Portal Queued / Processed vs. the pre-submit
+// actionable set). Both tiers can be requested via `?expiring=` so the
+// Queue can render a "stuck after submission" lane that is provably
+// derived from the same source of truth as the dashboard's count.
+export type ExpiringMode = "soon" | "urgent" | "stuck";
 
 export function parseExpiringMode(raw: unknown): ExpiringMode | null {
-  if (raw === "soon" || raw === "urgent") return raw;
+  if (raw === "soon" || raw === "urgent" || raw === "stuck") return raw;
   return null;
 }
 
+// Pre-submit `urgent`/`soon` modes use the configured 30-day clock
+// (URGENT_DAYS = 0, SOON_DAYS = 3). The `stuck` tier means "deadline
+// already passed", so it pins to URGENT_DAYS so the SQL ≤ comparator
+// produces "deadline - today ≤ 0".
 function maxDaysFor(mode: ExpiringMode): number {
-  return mode === "urgent" ? URGENT_DAYS : SOON_DAYS;
+  if (mode === "urgent" || mode === "stuck") return URGENT_DAYS;
+  return SOON_DAYS;
 }
 
 // SQL fragment that yields the effective deadline (date type) for a given
@@ -35,13 +48,19 @@ function effectiveDeadlineSql(dateExpr: SQL): SQL {
   )`;
 }
 
-function actionableClaimStatusCondition(): SQL {
-  const parts = CLAIM_EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(claimsTable.status, s));
+function claimStatusCondition(mode: ExpiringMode): SQL {
+  const set = mode === "stuck"
+    ? CLAIM_SUBMITTED_STUCK_STATUSES
+    : CLAIM_EXPIRING_ACTIONABLE_STATUSES;
+  const parts = set.map((s) => eq(claimsTable.status, s));
   return or(...parts) as SQL;
 }
 
-function actionableGroupStatusCondition(): SQL {
-  const parts = GROUP_EXPIRING_ACTIONABLE_STATUSES.map((s) => eq(invoiceGroupsTable.status, s));
+function groupStatusCondition(mode: ExpiringMode): SQL {
+  const set = mode === "stuck"
+    ? GROUP_SUBMITTED_STUCK_STATUSES
+    : GROUP_EXPIRING_ACTIONABLE_STATUSES;
+  const parts = set.map((s) => eq(invoiceGroupsTable.status, s));
   return or(...parts) as SQL;
 }
 
@@ -53,7 +72,7 @@ export function buildClaimExpiringCondition(mode: ExpiringMode): SQL {
   const dateExpr = sql`${claimsTable.date}`;
   return and(
     sql`${dateExpr} IS NOT NULL`,
-    actionableClaimStatusCondition(),
+    claimStatusCondition(mode),
     sql`(${effectiveDeadlineSql(dateExpr)} - CURRENT_DATE) <= ${max}`,
   ) as SQL;
 }
@@ -70,7 +89,7 @@ export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   // calendar-correct without per-query NULLIF/text-cast wrappers.
   const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
   return and(
-    actionableGroupStatusCondition(),
+    groupStatusCondition(mode),
     isNotNull(invoiceGroupsTable.serviceDate),
     sql`(${effectiveDeadlineSql(dateExpr)} - CURRENT_DATE) <= ${max}`,
   ) as SQL;

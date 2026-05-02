@@ -2,12 +2,18 @@
 // Extracted so the filter, tier, and badge logic can be unit-tested
 // without spinning up React.
 
-export type ExpiringFilter = "urgent" | "soon" | null;
+// Task #352 — "stuck" is the parallel "submitted but unconfirmed" tier.
+// Same date math as "urgent" (deadline ≤ today), but the status filter
+// is the post-submit set (Portal Queued / Processed) rather than the
+// pre-submit actionable set. The backend's `?expiring=stuck` uses the
+// same ExpiringMode type, so these two values stay in sync.
+export type ExpiringFilter = "urgent" | "soon" | "stuck" | null;
 
 /** Validate the raw `?expiring=` URL param. Anything else collapses to null. */
 export function parseExpiringParam(raw: string | null | undefined): ExpiringFilter {
   if (raw === "urgent") return "urgent";
   if (raw === "soon") return "soon";
+  if (raw === "stuck") return "stuck";
   return null;
 }
 
@@ -16,23 +22,36 @@ export interface UrgencyShape {
   effectiveDaysLeft?: number | null;
 }
 
+// Task #352 — rows carry both `isUrgent` and `submittedStuck` from the
+// API so the filter helpers need to see them.
+export interface UrgencyShapeWithStuck extends UrgencyShape {
+  submittedStuck?: boolean | null;
+}
+
 /**
  * Match the Dashboard's "+ N more in next 3 days" set: 1..3 days left,
  * not already urgent. (`isUrgent` covers <=0 days, so the soon set is
  * strictly the upcoming-but-not-due-today bucket.)
+ *
+ * `stuck` mode (Task #352): pass rows whose `submittedStuck` flag is true —
+ * i.e. already filed, deadline slipped, needs a confirmation chase.
+ * These rows live in the Portal Queued lane and already have a separate
+ * `submittedStuck` flag computed by the backend; the filter simply
+ * surfaces them without any extra date math on the client.
  */
 export function matchesExpiringFilter(
-  group: UrgencyShape,
+  group: UrgencyShapeWithStuck,
   filter: ExpiringFilter,
 ): boolean {
   if (filter == null) return true;
-  if (filter === "urgent") return !!group.isUrgent;
+  if (filter === "urgent") return !!group.isUrgent && !group.submittedStuck;
+  if (filter === "stuck") return !!group.submittedStuck;
   if (group.isUrgent) return false;
   const d = group.effectiveDaysLeft;
   return d != null && d >= 1 && d <= 3;
 }
 
-export function filterByExpiringParam<T extends UrgencyShape>(
+export function filterByExpiringParam<T extends UrgencyShapeWithStuck>(
   rows: T[],
   filter: ExpiringFilter,
 ): T[] {
@@ -212,6 +231,12 @@ export function emptyStateCopy(
     if (lane === "actionable") return "No due-within-3-days groups in Action Required.";
     if (lane === "portal-queued") return "No due-within-3-days groups in Portal Queued.";
     return "No due-within-3-days groups on hold.";
+  }
+  // Task #352 — "stuck" only ever appears in the portal-queued lane;
+  // other lanes will show the normal unfiltered empty-state instead.
+  if (filter === "stuck") {
+    if (lane === "portal-queued") return "No stuck-after-submission groups in Portal Queued.";
+    return "No stuck-after-submission groups in this lane.";
   }
   if (lane === "actionable") return "No invoice groups need action right now.";
   if (lane === "portal-queued") return "No invoice groups queued for portal submission.";

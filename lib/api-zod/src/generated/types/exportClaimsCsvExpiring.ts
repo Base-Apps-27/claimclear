@@ -18,4 +18,5 @@ export type ExportClaimsCsvExpiring =
 export const ExportClaimsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;

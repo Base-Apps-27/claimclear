@@ -18,4 +18,5 @@ export type ListInvoiceGroupsExpiring =
 export const ListInvoiceGroupsExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;

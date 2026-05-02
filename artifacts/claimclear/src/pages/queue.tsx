@@ -30,6 +30,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Clock,
   FileText,
   AlertTriangle,
   Inbox,
@@ -78,13 +79,54 @@ const DEFAULT_TAB: QueueTab = "actionable";
  */
 function QueueUrgencyHero({
   urgentCount,
+  stuckCount,
   soonCount,
   filter,
 }: {
   urgentCount: number;
+  /** Task #352 — Portal Queued groups whose deadline slipped without ack. */
+  stuckCount: number;
   soonCount: number;
   filter: ExpiringFilter;
 }) {
+  // Task #352 — "stuck after submission" filter state. Amber-orange tone
+  // distinct from the pre-submit urgency red — the action here is "chase
+  // confirmation", not "file now".
+  if (filter === "stuck") {
+    return (
+      <div
+        data-testid="queue-urgency-hero"
+        data-tone="amber"
+        className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+        style={{
+          background: "hsl(var(--cc-amber-bg))",
+          borderColor: "hsl(var(--cc-amber-border))",
+          color: "hsl(var(--cc-amber-fg))",
+        }}
+      >
+        <Clock className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span
+              className="text-3xl font-bold tabular-nums"
+              data-testid="queue-urgency-hero-count"
+            >
+              {soonCount}
+            </span>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">
+                submitted but unconfirmed past deadline
+              </span>
+              <span className="text-xs opacity-80">
+                Chase portal confirmation — do not re-file. Clock was satisfied at submission.
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (filter === "soon") {
     return (
       <div
@@ -161,6 +203,9 @@ function QueueUrgencyHero({
 
   // Green "all clear" relief state — calm white-to-green gradient so it
   // celebrates the cleared file-today queue without screaming.
+  // Task #352: if there are stuck-after-submission groups, surface a
+  // secondary amber hint inside the green hero so the operator doesn't
+  // miss the parallel tier when urgentCount happens to be 0.
   return (
     <div
       data-testid="queue-urgency-hero"
@@ -191,6 +236,22 @@ function QueueUrgencyHero({
           </div>
         </div>
         <UrgentTodayWhyLine tone="green" urgentCountOverride={0} testid="queue-urgent-today-why-green" />
+        {stuckCount > 0 && (
+          <div
+            className="mt-1 flex items-center gap-1.5 text-xs font-medium"
+            style={{ color: "hsl(var(--cc-amber-fg))" }}
+            data-testid="queue-stuck-secondary-hint"
+          >
+            <Clock className="h-3 w-3" />
+            {stuckCount} submitted but stuck after deadline — check the{" "}
+            <a
+              href="/queue?tab=portal-queued&expiring=stuck"
+              className="underline underline-offset-2"
+            >
+              Portal Queued tab
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -209,19 +270,27 @@ function ExpiringFilterChip({
   count: number;
   onClear: () => void;
 }) {
-  const tone = filter === "urgent"
-    ? {
-        bg: "hsl(var(--cc-red-bg))",
-        border: "hsl(var(--cc-red-border))",
-        fg: "hsl(var(--cc-red-fg))",
-        label: `Urgent — file today (${count})`,
-      }
-    : {
-        bg: "hsl(var(--cc-amber-bg))",
-        border: "hsl(var(--cc-amber-border))",
-        fg: "hsl(var(--cc-amber-fg))",
-        label: `Due within 3 days (${count})`,
-      };
+  const tone =
+    filter === "urgent"
+      ? {
+          bg: "hsl(var(--cc-red-bg))",
+          border: "hsl(var(--cc-red-border))",
+          fg: "hsl(var(--cc-red-fg))",
+          label: `Urgent — file today (${count})`,
+        }
+      : filter === "stuck"
+        ? {
+            bg: "hsl(var(--cc-amber-bg))",
+            border: "hsl(var(--cc-amber-border))",
+            fg: "hsl(var(--cc-amber-fg))",
+            label: `Stuck after submission (${count})`,
+          }
+        : {
+            bg: "hsl(var(--cc-amber-bg))",
+            border: "hsl(var(--cc-amber-border))",
+            fg: "hsl(var(--cc-amber-fg))",
+            label: `Due within 3 days (${count})`,
+          };
   return (
     <div className="flex items-center gap-2" data-testid="expiring-filter-chip">
       <span className="text-xs text-muted-foreground">Showing:</span>
@@ -508,6 +577,14 @@ export default function Queue() {
     onHoldAll,
   );
 
+  // Task #352 — "Stuck after submission" count. Portal Queued rows whose
+  // effective deadline has slipped without a payor acknowledgement. These
+  // live exclusively in the Portal Queued lane (actionable and on-hold
+  // lanes only contain pre-submit statuses). Surfaced alongside
+  // `urgentCount` in the hero so the operator can see both tiers without
+  // drilling into the tab.
+  const stuckCount = portalQueuedAll.filter(g => g.submittedStuck).length;
+
   // Per-lane "soon" counts feed the soon-mode tab badge so it reflects
   // what's visible in that lane under `?expiring=soon`.
   const actionableSoonCount = actionableGroups.length;
@@ -716,7 +793,11 @@ export default function Queue() {
         <div className="py-3 px-6 flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
             <div className="whitespace-nowrap flex items-center gap-2">
-              <UrgentTodayBadge isUrgent={group.isUrgent} size={group.isUrgent ? "md" : "sm"} />
+              <UrgentTodayBadge
+                isUrgent={group.isUrgent}
+                submittedStuck={group.submittedStuck}
+                size={group.isUrgent || group.submittedStuck ? "md" : "sm"}
+              />
               <span className="font-mono font-semibold">{group.invoiceNumber}</span>
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
@@ -751,6 +832,7 @@ export default function Queue() {
 
       <QueueUrgencyHero
         urgentCount={urgentCount}
+        stuckCount={stuckCount}
         soonCount={visibleFilteredCount}
         filter={expiringFilter}
       />

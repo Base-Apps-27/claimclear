@@ -334,6 +334,99 @@ test("queue row layout — row clusters must not combine `shrink-0` (left) with 
   );
 });
 
+// Task #352 — "stuck" filter tests ----------------------------------------
+//
+// The `stuck` ExpiringFilter is the "submitted but unconfirmed" tier.
+// It surfaces Portal Queued / Processed rows whose deadline has already
+// slipped, prompting the operator to chase confirmation from the payor
+// rather than file again.
+
+test("parseExpiringParam accepts 'stuck' (Task #352)", () => {
+  assert.equal(parseExpiringParam("stuck"), "stuck");
+});
+
+test("matchesExpiringFilter — stuck matches submittedStuck flag, ignores isUrgent (Task #352)", () => {
+  // Row with submittedStuck=true must match.
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: true }, "stuck"),
+    true,
+    "stuck row with isUrgent=true still matches stuck filter",
+  );
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 0, submittedStuck: true }, "stuck"),
+    true,
+  );
+  // Row without submittedStuck must not match.
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: false }, "stuck"),
+    false,
+    "non-stuck urgent row must not appear in the stuck filter",
+  );
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0 }, "stuck"),
+    false,
+    "missing submittedStuck flag treated as false",
+  );
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: null }, "stuck"),
+    false,
+  );
+});
+
+test("matchesExpiringFilter — urgent filter excludes submittedStuck rows (Task #352)", () => {
+  // At the group level the two tiers are disjoint; this test documents
+  // the client-side behaviour for the (claim-level) case where a row
+  // can have both isUrgent=true and submittedStuck=true.
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: true }, "urgent"),
+    false,
+    "a stuck row must not bleed into the urgent filter lane",
+  );
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: false }, "urgent"),
+    true,
+    "a genuinely urgent (non-stuck) row must still appear in the urgent filter lane",
+  );
+});
+
+test("filterByExpiringParam narrows to stuck rows only under 'stuck' mode (Task #352)", () => {
+  const rows = [
+    { id: 1, isUrgent: true, effectiveDaysLeft: 0, submittedStuck: false },
+    { id: 2, isUrgent: false, effectiveDaysLeft: -1, submittedStuck: true },
+    { id: 3, isUrgent: false, effectiveDaysLeft: 5, submittedStuck: false },
+    { id: 4, isUrgent: true, effectiveDaysLeft: 0, submittedStuck: true },
+  ];
+  assert.deepEqual(
+    filterByExpiringParam(rows, "stuck").map(r => r.id),
+    [2, 4],
+    "only rows with submittedStuck=true survive the stuck filter",
+  );
+  // The urgent filter must not include stuck rows (they have a separate lane).
+  assert.deepEqual(
+    filterByExpiringParam(rows, "urgent").map(r => r.id),
+    [1],
+    "urgent filter excludes stuck rows even when isUrgent=true",
+  );
+});
+
+test("emptyStateCopy reflects stuck filter on portal-queued lane (Task #352)", () => {
+  assert.match(
+    emptyStateCopy("portal-queued", "stuck"),
+    /stuck-after-submission/,
+    "portal-queued + stuck filter must surface a 'stuck-after-submission' message",
+  );
+  // Other lanes fall back gracefully.
+  assert.match(
+    emptyStateCopy("actionable", "stuck"),
+    /stuck-after-submission/,
+    "actionable + stuck filter still names the stuck tier so the operator knows the filter is active",
+  );
+  assert.match(
+    emptyStateCopy("on-hold", "stuck"),
+    /stuck-after-submission/,
+  );
+});
+
 // Mobile row layout (cont.) — the per-row deadline pill itself must
 // keep `whitespace-nowrap` so its label doesn't wrap mid-pill at narrow
 // widths (which would defeat the purpose of the pill being a single

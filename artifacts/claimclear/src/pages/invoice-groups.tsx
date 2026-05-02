@@ -691,7 +691,7 @@ export default function InvoiceGroupsList() {
                             {visibleCols.has("invoiceNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.purple.fg }}>
                                 <div className="flex items-center gap-2">
-                                  <UrgentTodayBadge isUrgent={group.isUrgent} />
+                                  <UrgentTodayBadge isUrgent={group.isUrgent} submittedStuck={group.submittedStuck} />
                                   <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
                                 </div>
                               </td>

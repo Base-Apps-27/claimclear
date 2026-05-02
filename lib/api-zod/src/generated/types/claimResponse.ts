@@ -190,4 +190,6 @@ export interface ClaimResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /** Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel "stuck after submission" badge variant instead of the pre-submit "file today" variant. Only populated by list endpoints. */
+  submittedStuck?: boolean;
 }

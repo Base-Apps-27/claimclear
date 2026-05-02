@@ -28,7 +28,10 @@ import {
 } from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
-import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+import {
+  GROUP_EXPIRING_ACTIONABLE_STATUSES,
+  GROUP_SUBMITTED_STUCK_STATUSES,
+} from "./dashboard";
 
 // A group is only "on the 30-day clock" while its status is one we still
 // owe action on. Once it's `Portal Queued` (operator submitted via the
@@ -49,6 +52,16 @@ const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUS
 // `claims.date` itself a typed DATE column — the recompute helper now
 // reads typed Date values straight off `claims.date`.)
 const earliestServiceDateExpr = sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`;
+
+// "Submitted but unconfirmed" — Task #352. Subset of statuses that
+// represent groups the operator has already pushed through the portal.
+// At the GROUP level only `Portal Queued` qualifies (Processed is
+// claim-only). The per-row `submittedStuck` flag drives the parallel
+// "stuck after submission" badge variant on the Queue and lists; it
+// pairs with `isUrgent` rather than replacing it (stuck rows are also
+// urgent today, but the operator's next action is "chase confirmation"
+// not "file the dispute").
+const GROUP_STUCK_STATUSES = new Set<string>(GROUP_SUBMITTED_STUCK_STATUSES);
 
 const router: IRouter = Router();
 
@@ -327,14 +340,27 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     }
   }
 
-  const groups = groupsRaw.map(({ row, earliestDate }) => ({
-    ...row,
-    earliestDate,
-    effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
-    // Status-aware: only flag as urgent if we still owe action.
-    isUrgent: GROUP_ON_CLOCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
-    legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
-  }));
+  const groups = groupsRaw.map(({ row, earliestDate }) => {
+    const urgent = GROUP_ON_CLOCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today);
+    return {
+      ...row,
+      earliestDate,
+      effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
+      // Status-aware: only flag as urgent if we still owe action.
+      isUrgent: urgent,
+      // Task #352. Same date math as `isUrgent`, narrowed to the
+      // post-submit "stuck" status set so the UI can render the
+      // distinct "stuck after submission" badge variant. Note: at the
+      // GROUP level `isUrgent` and `submittedStuck` are mutually
+      // exclusive because GROUP_ON_CLOCK_STATUSES (pre-submit only)
+      // and GROUP_STUCK_STATUSES (Portal Queued) don't overlap. We
+      // emit both flags so consumers can branch on whichever surface
+      // they need without recomputing the deadline.
+      submittedStuck:
+        GROUP_STUCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
+      legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
+    };
+  });
 
   // `?include=needs_classification` returns the inbox payload alongside
   // the regular list response so the queue page can fetch list +

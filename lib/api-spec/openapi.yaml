@@ -168,7 +168,7 @@ paths:
           description: Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
           schema:
             type: string
-            enum: [soon, urgent]
+            enum: [soon, urgent, stuck]
         - name: macroPhase
           in: query
           description: |
@@ -265,7 +265,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [soon, urgent]
+            enum: [soon, urgent, stuck]
         - name: sort
           in: query
           schema:
@@ -1238,7 +1238,7 @@ paths:
           description: Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
           schema:
             type: string
-            enum: [soon, urgent]
+            enum: [soon, urgent, stuck]
         - name: legSubStatus
           in: query
           description: Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
@@ -1349,7 +1349,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [soon, urgent]
+            enum: [soon, urgent, stuck]
         - name: sort
           in: query
           schema:
@@ -4541,6 +4541,9 @@ components:
         isUrgent:
           type: boolean
           description: "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints."
+        submittedStuck:
+          type: boolean
+          description: "Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints."
       required:
         - id
         - confNumber
@@ -4740,6 +4743,9 @@ components:
         isUrgent:
           type: boolean
           description: "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints."
+        submittedStuck:
+          type: boolean
+          description: "Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don't overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints."
         # Group-level orchestration columns introduced by Task #195. Drive
         # the Aggregate Context, Understanding Readback, Generate Submission
         # Preview, and Re-attest steps in the per-invoice macro flow.
@@ -6741,7 +6747,15 @@ components:
             $ref: "#/components/schemas/ExpiringInvoiceGroup"
         urgentCount:
           type: integer
-          description: "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday)."
+          description: "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). Pre-submit only — i.e. the group's status is in the on-clock actionable set (`New`, `Needs Evidence`, `On Hold`, `Generating Email`). Submitted-but-stuck groups are partitioned into `submittedStuckCount` instead so the dashboard's two tiers add up cleanly."
+        submittedStuckGroups:
+          type: array
+          description: "Task #352. Groups in the post-submit \"stuck\" status set (`Portal Queued`) whose effective filing deadline has already slipped without a payor acknowledgement. Same shape and date math as `expiringGroups`; the only difference is the status filter. Surfaced alongside `expiringGroups` so the dashboard can render the parallel \"stuck after submission\" tier without recomputing the deadline."
+          items:
+            $ref: "#/components/schemas/ExpiringInvoiceGroup"
+        submittedStuckCount:
+          type: integer
+          description: "Task #352. Length of `submittedStuckGroups` — exposed as a top-level count so dashboard hero tiles don't have to derive it from the array. Disjoint from `urgentCount` because the underlying status sets don't overlap."
         recentGroups:
           type: array
           items:
@@ -6795,6 +6809,8 @@ components:
         - amounts
         - expiringGroups
         - urgentCount
+        - submittedStuckGroups
+        - submittedStuckCount
         - recentGroups
         - portalStats
         - portalWorker
@@ -7267,6 +7283,9 @@ components:
         isUrgent:
           type: boolean
           description: "True when the deadline lands on today or the next business day after weekend shifting."
+        submittedStuck:
+          type: boolean
+          description: "Task #352. True when the group has been submitted (Portal Queued) but the effective deadline has slipped. Used on the dashboard's stuck-after-submission list."
       required:
         - id
         - invoiceNumber

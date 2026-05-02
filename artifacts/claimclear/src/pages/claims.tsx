@@ -718,7 +718,7 @@ export default function ClaimsList() {
                             {visibleCols.has("confNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.blue.fg }}>
                                 <div className="flex items-center gap-2">
-                                  <UrgentTodayBadge isUrgent={claim.isUrgent} />
+                                  <UrgentTodayBadge isUrgent={claim.isUrgent} submittedStuck={claim.submittedStuck} />
                                   <Link href={`/claims/${claim.id}`}>{claim.confNumber}</Link>
                                 </div>
                               </td>

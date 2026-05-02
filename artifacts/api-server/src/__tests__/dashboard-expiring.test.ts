@@ -9,7 +9,9 @@ import {
 } from "../lib/dates";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
+  CLAIM_SUBMITTED_STUCK_STATUSES,
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
+  GROUP_SUBMITTED_STUCK_STATUSES,
 } from "../routes/dashboard";
 
 // Helpers ---------------------------------------------------------------
@@ -338,4 +340,111 @@ test("an On Hold group with a today deadline IS urgent at the group level", () =
     true,
     "the filing clock keeps running while paused",
   );
+});
+
+// ============================================================
+// Task #352 — "Submitted but unconfirmed" tier snapshot tests
+// ============================================================
+//
+// These tests lock down the explicit status-set membership rules so
+// future contributors can see at a glance exactly which statuses live
+// in each tier and why, and so any accidental membership change causes
+// a test failure rather than a silent dashboard discrepancy.
+
+// --- Status-set disjointness
+
+test("GROUP_SUBMITTED_STUCK_STATUSES and GROUP_EXPIRING_ACTIONABLE_STATUSES are disjoint (Task #352)", () => {
+  const actionableSet = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUSES);
+  for (const s of GROUP_SUBMITTED_STUCK_STATUSES) {
+    assert.ok(
+      !actionableSet.has(s),
+      `'${s}' must NOT appear in both GROUP_EXPIRING_ACTIONABLE_STATUSES and GROUP_SUBMITTED_STUCK_STATUSES — ` +
+        "the two sets are the 'file now' vs 'chase confirmation' tiers and must be disjoint at the group level",
+    );
+  }
+});
+
+test("CLAIM_SUBMITTED_STUCK_STATUSES is a strict subset of CLAIM_EXPIRING_ACTIONABLE_STATUSES (Task #352)", () => {
+  const actionableSet = new Set(CLAIM_EXPIRING_ACTIONABLE_STATUSES);
+  for (const s of CLAIM_SUBMITTED_STUCK_STATUSES) {
+    assert.ok(
+      actionableSet.has(s),
+      `'${s}' in CLAIM_SUBMITTED_STUCK_STATUSES must also appear in CLAIM_EXPIRING_ACTIONABLE_STATUSES — ` +
+        "stuck claim statuses are a subset of the broader on-clock set",
+    );
+  }
+});
+
+test("GROUP_SUBMITTED_STUCK_STATUSES contains exactly 'Portal Queued' (Task #352)", () => {
+  assert.deepEqual(
+    [...GROUP_SUBMITTED_STUCK_STATUSES].sort(),
+    ["Portal Queued"],
+    "Only 'Portal Queued' can appear at the group level — 'Processed' is claim-only and never lands on invoice_groups.status",
+  );
+});
+
+test("CLAIM_SUBMITTED_STUCK_STATUSES contains exactly 'Portal Queued' and 'Processed' (Task #352)", () => {
+  assert.deepEqual(
+    [...CLAIM_SUBMITTED_STUCK_STATUSES].sort(),
+    ["Portal Queued", "Processed"].sort(),
+    "Both post-submit claim statuses qualify: Portal Queued (submitted, awaiting portal ack) and Processed (leg done, parent not yet packaged)",
+  );
+});
+
+// --- Per-row submittedStuck decision (mirrors routes logic)
+//   group: `GROUP_STUCK_STATUSES.has(status) && isUrgentDeadline(date, now)`
+//   (mutually exclusive with isUrgent because GROUP_ON_CLOCK_STATUSES
+//    and GROUP_SUBMITTED_STUCK_STATUSES don't overlap)
+
+function computeGroupSubmittedStuck(status: string, serviceDate: string, now: Date): boolean {
+  const isStuckStatus = (GROUP_SUBMITTED_STUCK_STATUSES as readonly string[]).includes(status);
+  return isStuckStatus && isUrgentDeadline(serviceDate, now);
+}
+
+test("a Portal Queued group with today deadline IS submittedStuck (Task #352)", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupSubmittedStuck("Portal Queued", sd, FRIDAY),
+    true,
+    "Portal Queued past deadline = submitted but unconfirmed, needs a chase",
+  );
+});
+
+test("a Portal Queued group with a future deadline is NOT submittedStuck (Task #352)", () => {
+  const sd = serviceDateForDeadline(NEXT_MONDAY);
+  assert.equal(
+    computeGroupSubmittedStuck("Portal Queued", sd, FRIDAY),
+    false,
+    "Portal Queued with a healthy deadline is not stuck — the payor still has time to confirm",
+  );
+});
+
+test("a New group with today deadline is NOT submittedStuck (Task #352)", () => {
+  const sd = serviceDateForDeadline(FRIDAY);
+  assert.equal(
+    computeGroupSubmittedStuck("New", sd, FRIDAY),
+    false,
+    "New = pre-submit, goes into isUrgent tier not submittedStuck",
+  );
+});
+
+// --- The two tiers are mutually exclusive at the group level
+
+test("isUrgent and submittedStuck are mutually exclusive at the group level (Task #352)", () => {
+  // All statuses that could ever have a date set:
+  const allGroupStatuses = [
+    ...GROUP_EXPIRING_ACTIONABLE_STATUSES,
+    ...GROUP_SUBMITTED_STUCK_STATUSES,
+    "Awaiting Response", "Resolved", "Denied", "Withdrawn",
+  ] as const;
+  const sd = serviceDateForDeadline(FRIDAY);
+  for (const status of allGroupStatuses) {
+    const urgent = computeGroupIsUrgent(status, sd, FRIDAY);
+    const stuck = computeGroupSubmittedStuck(status, sd, FRIDAY);
+    assert.ok(
+      !(urgent && stuck),
+      `status '${status}' cannot have both isUrgent=true and submittedStuck=true at the group level — ` +
+        "the two status sets are disjoint by construction",
+    );
+  }
 });

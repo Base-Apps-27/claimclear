@@ -94,7 +94,7 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .optional()
     .describe("Filter groups with total amount <= this value"),
   expiring: zod
-    .enum(["soon", "urgent"])
+    .enum(["soon", "urgent", "stuck"])
     .optional()
     .describe(
       'Restrict to actionable groups whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
@@ -325,6 +325,12 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
         ),
+      submittedStuck: zod
+        .boolean()
+        .optional()
+        .describe(
+          'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+        ),
       groupContext: zod
         .string()
         .nullish()
@@ -477,7 +483,7 @@ export const ExportInvoiceGroupsCsvQueryParams = zod.object({
   createdTo: zod.coerce.string().optional(),
   amountMin: zod.coerce.string().optional(),
   amountMax: zod.coerce.string().optional(),
-  expiring: zod.enum(["soon", "urgent"]).optional(),
+  expiring: zod.enum(["soon", "urgent", "stuck"]).optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -731,6 +737,12 @@ export const GetInvoiceGroupResponse = zod
       .optional()
       .describe(
         "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+      ),
+    submittedStuck: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
       ),
     groupContext: zod
       .string()
@@ -1089,6 +1101,12 @@ export const GetInvoiceGroupResponse = zod
               .optional()
               .describe(
                 "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+              ),
+            submittedStuck: zod
+              .boolean()
+              .optional()
+              .describe(
+                'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
               ),
           }),
         )
@@ -1604,6 +1622,12 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -1893,6 +1917,12 @@ export const PackageInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -2177,6 +2207,12 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -2518,6 +2554,12 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -2805,6 +2847,12 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -3089,6 +3137,12 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -3368,6 +3422,12 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -3736,6 +3796,12 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -4039,6 +4105,12 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -4437,6 +4509,12 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -4723,6 +4801,12 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -5017,6 +5101,12 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -5303,6 +5393,12 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -5586,6 +5682,12 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
+    ),
   groupContext: zod
     .string()
     .nullish()
@@ -5868,6 +5970,12 @@ export const StampPreviewGeneratedResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -6171,6 +6279,12 @@ export const CompleteGroupReattestResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()
@@ -6647,7 +6761,7 @@ export const ListClaimsQueryParams = zod.object({
       "Filter claims to a specific client\/member number (exact match).",
     ),
   expiring: zod
-    .enum(["soon", "urgent"])
+    .enum(["soon", "urgent", "stuck"])
     .optional()
     .describe(
       'Restrict to actionable claims whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
@@ -6932,6 +7046,12 @@ export const ListClaimsResponse = zod.object({
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
         ),
+      submittedStuck: zod
+        .boolean()
+        .optional()
+        .describe(
+          'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+        ),
     }),
   ),
   total: zod.number(),
@@ -6969,7 +7089,7 @@ export const ExportClaimsCsvQueryParams = zod.object({
   serviceDateTo: zod.coerce.string().optional(),
   carNumber: zod.coerce.string().optional(),
   clientNumber: zod.coerce.string().optional(),
-  expiring: zod.enum(["soon", "urgent"]).optional(),
+  expiring: zod.enum(["soon", "urgent", "stuck"]).optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -7239,6 +7359,12 @@ export const GetClaimResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -7520,6 +7646,12 @@ export const UpdateClaimResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -7829,6 +7961,12 @@ export const UpdateClaimStatusResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -8155,6 +8293,12 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -8430,6 +8574,12 @@ export const ListAttestationPendingResponse = zod.object({
         .optional()
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
+      submittedStuck: zod
+        .boolean()
+        .optional()
+        .describe(
+          'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
         ),
     }),
   ),
@@ -8743,6 +8893,12 @@ export const AttestClaimResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -9015,6 +9171,12 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -9286,6 +9448,12 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -9638,6 +9806,12 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -9922,6 +10096,12 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -10189,6 +10369,12 @@ export const RemoveLegHoldResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -10452,6 +10638,12 @@ export const ClearLegHoldResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -10724,6 +10916,12 @@ export const ClassifyLegResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -10999,6 +11197,12 @@ export const SopAdvanceLegResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -11285,6 +11489,12 @@ export const ExcludeLegResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -11556,6 +11766,12 @@ export const IncludeLegResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -11846,6 +12062,12 @@ export const MarkLegDuplicateResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -12112,6 +12334,12 @@ export const UnmarkLegDuplicateResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -12380,6 +12608,12 @@ export const ReclassifyLegResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -12748,6 +12982,12 @@ export const SetLegContextResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -13029,6 +13269,12 @@ export const ConcludeLegResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -13304,6 +13550,12 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -13574,6 +13826,12 @@ export const TriageClaimResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -13848,6 +14106,12 @@ export const PostResponseActionResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -14135,6 +14399,12 @@ export const GenerateClaimEmailResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
 });
 
@@ -16076,12 +16346,56 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           "True when the deadline lands on today or the next business day after weekend shifting.",
         ),
+      submittedStuck: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Task #352. True when the group has been submitted (Portal Queued) but the effective deadline has slipped. Used on the dashboard's stuck-after-submission list.",
+        ),
     }),
   ),
   urgentCount: zod
     .number()
     .describe(
-      "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday).",
+      "Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). Pre-submit only — i.e. the group's status is in the on-clock actionable set (`New`, `Needs Evidence`, `On Hold`, `Generating Email`). Submitted-but-stuck groups are partitioned into `submittedStuckCount` instead so the dashboard's two tiers add up cleanly.",
+    ),
+  submittedStuckGroups: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        invoiceNumber: zod.string(),
+        earliestDate: zod.string(),
+        totalAmount: zod.string().nullish(),
+        status: zod.string(),
+        rideCount: zod.number(),
+        daysLeft: zod
+          .number()
+          .describe("Calendar days until the dispute window closes."),
+        effectiveDaysLeft: zod
+          .number()
+          .describe(
+            "Calendar days until the dispute window closes, with weekend deadlines shifted back to the prior Friday.",
+          ),
+        isUrgent: zod
+          .boolean()
+          .describe(
+            "True when the deadline lands on today or the next business day after weekend shifting.",
+          ),
+        submittedStuck: zod
+          .boolean()
+          .optional()
+          .describe(
+            "Task #352. True when the group has been submitted (Portal Queued) but the effective deadline has slipped. Used on the dashboard's stuck-after-submission list.",
+          ),
+      }),
+    )
+    .describe(
+      'Task #352. Groups in the post-submit \"stuck\" status set (`Portal Queued`) whose effective filing deadline has already slipped without a payor acknowledgement. Same shape and date math as `expiringGroups`; the only difference is the status filter. Surfaced alongside `expiringGroups` so the dashboard can render the parallel \"stuck after submission\" tier without recomputing the deadline.',
+    ),
+  submittedStuckCount: zod
+    .number()
+    .describe(
+      "Task #352. Length of `submittedStuckGroups` — exposed as a top-level count so dashboard hero tiles don't have to derive it from the array. Disjoint from `urgentCount` because the underlying status sets don't overlap.",
     ),
   recentGroups: zod.array(
     zod.object({
@@ -16270,6 +16584,12 @@ export const GetDashboardSummaryResponse = zod.object({
         .optional()
         .describe(
           "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+        ),
+      submittedStuck: zod
+        .boolean()
+        .optional()
+        .describe(
+          'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
         ),
       groupContext: zod
         .string()
@@ -18626,6 +18946,12 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
     ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
 });
 
 /**
@@ -18843,6 +19169,12 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .optional()
     .describe(
       "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  submittedStuck: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don\'t overlap). The UI uses this flag to render the parallel \"stuck after submission\" badge variant. Only populated by list endpoints.',
     ),
   groupContext: zod
     .string()

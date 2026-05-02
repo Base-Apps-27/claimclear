@@ -150,6 +150,8 @@ export interface InvoiceGroupResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /** Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don't overlap). The UI uses this flag to render the parallel "stuck after submission" badge variant. Only populated by list endpoints. */
+  submittedStuck?: boolean;
   /**
    * DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.
    * @nullable

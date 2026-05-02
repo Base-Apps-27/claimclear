@@ -26,4 +26,6 @@ export interface ExpiringInvoiceGroup {
   effectiveDaysLeft: number;
   /** True when the deadline lands on today or the next business day after weekend shifting. */
   isUrgent: boolean;
+  /** Task #352. True when the group has been submitted (Portal Queued) but the effective deadline has slipped. Used on the dashboard's stuck-after-submission list. */
+  submittedStuck?: boolean;
 }

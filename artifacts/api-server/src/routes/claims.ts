@@ -24,7 +24,10 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
-import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
+import {
+  CLAIM_EXPIRING_ACTIONABLE_STATUSES,
+  CLAIM_SUBMITTED_STUCK_STATUSES,
+} from "./dashboard";
 
 // A claim is only "on the 30-day clock" while its status is one we still
 // owe action on. Once it's filed (Awaiting Response) or otherwise
@@ -33,6 +36,14 @@ import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 // stuck claims in those states still escalate against the 30-day clock —
 // see the rule in dashboard.ts.
 const CLAIM_ON_CLOCK_STATUSES = new Set<string>(CLAIM_EXPIRING_ACTIONABLE_STATUSES);
+
+// Subset of CLAIM_ON_CLOCK_STATUSES that means "we already submitted
+// this — don't re-file, chase a confirmation". Used to decorate list
+// rows with `submittedStuck` so the UI can render the parallel
+// "stuck after submission" badge variant (Task #352). Pairs with
+// `isUrgent` rather than replacing it: stuck rows are also urgent
+// today, but the operator's next action is different (chase, not file).
+const CLAIM_STUCK_STATUSES = new Set<string>(CLAIM_SUBMITTED_STUCK_STATUSES);
 
 const router: IRouter = Router();
 
@@ -311,12 +322,23 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     .offset(offsetVal);
 
   const today = new Date();
-  const claims = claimsRaw.map(claim => ({
-    ...claim,
-    effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
-    // Status-aware: only flag as urgent if we still owe action.
-    isUrgent: CLAIM_ON_CLOCK_STATUSES.has(claim.status) && isUrgentDeadline(claim.date, today),
-  }));
+  const claims = claimsRaw.map(claim => {
+    const urgent = CLAIM_ON_CLOCK_STATUSES.has(claim.status) && isUrgentDeadline(claim.date, today);
+    return {
+      ...claim,
+      effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
+      // Status-aware: only flag as urgent if we still owe action.
+      isUrgent: urgent,
+      // Task #352. Same date math as `isUrgent`, but narrowed to the
+      // post-submit "stuck" status set so the UI can render the
+      // distinct "stuck after submission" badge variant. By
+      // construction `submittedStuck === true` implies `isUrgent === true`
+      // (stuck rows are a subset of urgent ones); the dashboard's
+      // tier counts still partition the urgent total via the
+      // dashboard summary's `submittedStuckCount`.
+      submittedStuck: urgent && CLAIM_STUCK_STATUSES.has(claim.status),
+    };
+  });
 
   res.json({ claims, total: totalResult.count });
 }));

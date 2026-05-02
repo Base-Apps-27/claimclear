@@ -340,6 +340,8 @@ export interface ClaimResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /** Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel "stuck after submission" badge variant instead of the pre-submit "file today" variant. Only populated by list endpoints. */
+  submittedStuck?: boolean;
 }
 
 export interface ValidTransitionsResponse {
@@ -613,6 +615,8 @@ export interface InvoiceGroupResponse {
   effectiveDaysLeft?: number | null;
   /** True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints. */
   isUrgent?: boolean;
+  /** Task #352. True when the group has been submitted (status is `Portal Queued`) but the effective filing deadline has slipped without an acknowledgement. Mutually exclusive with `isUrgent` at the group level (the pre-submit on-clock set and the post-submit stuck set don't overlap). The UI uses this flag to render the parallel "stuck after submission" badge variant. Only populated by list endpoints. */
+  submittedStuck?: boolean;
   /**
    * DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.
    * @nullable
@@ -2521,6 +2525,8 @@ export interface ExpiringInvoiceGroup {
   effectiveDaysLeft: number;
   /** True when the deadline lands on today or the next business day after weekend shifting. */
   isUrgent: boolean;
+  /** Task #352. True when the group has been submitted (Portal Queued) but the effective deadline has slipped. Used on the dashboard's stuck-after-submission list. */
+  submittedStuck?: boolean;
 }
 
 export interface DashboardSummary {
@@ -2528,8 +2534,12 @@ export interface DashboardSummary {
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
   expiringGroups: ExpiringInvoiceGroup[];
-  /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). */
+  /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). Pre-submit only — i.e. the group's status is in the on-clock actionable set (`New`, `Needs Evidence`, `On Hold`, `Generating Email`). Submitted-but-stuck groups are partitioned into `submittedStuckCount` instead so the dashboard's two tiers add up cleanly. */
   urgentCount: number;
+  /** Task #352. Groups in the post-submit "stuck" status set (`Portal Queued`) whose effective filing deadline has already slipped without a payor acknowledgement. Same shape and date math as `expiringGroups`; the only difference is the status filter. Surfaced alongside `expiringGroups` so the dashboard can render the parallel "stuck after submission" tier without recomputing the deadline. */
+  submittedStuckGroups: ExpiringInvoiceGroup[];
+  /** Task #352. Length of `submittedStuckGroups` — exposed as a top-level count so dashboard hero tiles don't have to derive it from the array. Disjoint from `urgentCount` because the underlying status sets don't overlap. */
+  submittedStuckCount: number;
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   portalWorker: DashboardSummaryPortalWorker;
@@ -3506,6 +3516,7 @@ export type ListInvoiceGroupsExpiring =
 export const ListInvoiceGroupsExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;
 
 export type ListInvoiceGroupsMacroPhase =
@@ -3567,6 +3578,7 @@ export type ExportInvoiceGroupsCsvExpiring =
 export const ExportInvoiceGroupsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;
 
 export type PackageInvoiceGroup409 = {
@@ -3709,6 +3721,7 @@ export type ListClaimsExpiring =
 export const ListClaimsExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;
 
 export type ListClaimsSort =
@@ -3759,6 +3772,7 @@ export type ExportClaimsCsvExpiring =
 export const ExportClaimsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;
 
 export type GetClaimValidTransitions200 = {

@@ -18,4 +18,5 @@ export type ListClaimsExpiring =
 export const ListClaimsExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;

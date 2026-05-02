@@ -70,6 +70,37 @@ export const CLAIM_EXPIRING_ACTIONABLE_STATUSES = [
   "On Hold",
 ] as const;
 
+// "Submitted but unconfirmed" — Task #352. The pre-submit ACTIONABLE
+// sets above answer "what must we file today?". The sets below answer
+// the parallel question: "what did we already file but never got an
+// acknowledgement back on, and is now past the 30-day window?". The
+// two tiers are reconciled side-by-side on the Dashboard, Queue, and
+// per-row badges so the operator can never read "0 to file today" and
+// still see TODAY-style badges scattered across the list — those rows
+// are now the explicit `submittedStuck` tier with their own variant.
+//
+// Why these statuses:
+// - `Portal Queued` (group + claim level): the operator submitted via
+//   the portal but the payor hasn't confirmed receipt. The filing
+//   clock was satisfied at submission, but if the deadline passes
+//   without a confirmation we still want to surface the row — it
+//   means the submission may have failed silently and needs a chase.
+// - `Processed` (claim-only — never lands on `invoice_groups.status`):
+//   the worktree on the leg is done but the parent invoice hasn't
+//   been packaged yet. Same shape as Portal Queued for our purposes.
+//
+// Both sets are strict subsets of the parent ACTIONABLE set above;
+// the per-row `submittedStuck` flag is computed exactly as
+//   `<set>.has(row.status) && effectiveDaysRemaining(date, today) <= 0`
+// so the same date math drives both tiers — only the status filter
+// differs.
+export const GROUP_SUBMITTED_STUCK_STATUSES = ["Portal Queued"] as const;
+
+export const CLAIM_SUBMITTED_STUCK_STATUSES = [
+  "Portal Queued",
+  "Processed",
+] as const;
+
 export function parseDays(raw: unknown, fallback: number, max = 365): number {
   const n = typeof raw === "string" ? parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -229,6 +260,59 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   const urgentCount = expiringGroups.filter(g => g.isUrgent).length;
 
+  // "Stuck after submission" tier (Task #352). Same date math as the
+  // expiring/urgent computation above; the only difference is the
+  // status filter (Portal Queued at the group level — Processed is
+  // claim-only and can't appear here). A group lands in this list
+  // when the operator already submitted via the portal but the
+  // deadline has slipped without an acknowledgement, so the row
+  // needs a chase rather than a fresh filing. Surfaced alongside
+  // `urgentCount` so the dashboard never reads "0 to file today"
+  // while the same data renders TODAY-style badges in lower tiers.
+  const stuckStatusFilter = or(
+    ...GROUP_SUBMITTED_STUCK_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
+  );
+  const stuckGroupsWithDates = await db
+    .select({
+      id: invoiceGroupsTable.id,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
+      totalAmount: invoiceGroupsTable.totalAmount,
+      status: invoiceGroupsTable.status,
+      rideCount: invoiceGroupsTable.rideCount,
+      earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
+    })
+    .from(invoiceGroupsTable)
+    .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(and(stuckStatusFilter, sql`${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`))
+    .groupBy(invoiceGroupsTable.id);
+
+  const submittedStuckGroups = stuckGroupsWithDates
+    .map(g => {
+      const dl = daysRemaining(g.earliestDate);
+      const eff = effectiveDaysRemaining(g.earliestDate, expiringNow);
+      return {
+        id: g.id,
+        invoiceNumber: g.invoiceNumber,
+        earliestDate: g.earliestDate!,
+        totalAmount: g.totalAmount,
+        status: g.status,
+        rideCount: g.rideCount,
+        daysLeft: dl!,
+        effectiveDaysLeft: eff!,
+        // Stuck rows are by definition past the effective deadline —
+        // we still emit the flag so list consumers can short-circuit
+        // if they want to render the deadline pill identically.
+        isUrgent: eff != null && eff <= 0,
+      };
+    })
+    // The defining cut: the row is "stuck" only when the effective
+    // deadline has actually slipped. A Portal Queued group with a
+    // healthy deadline is still working as designed — no escalation.
+    .filter(g => g.effectiveDaysLeft !== null && g.effectiveDaysLeft <= 0)
+    .sort((a, b) => a.effectiveDaysLeft - b.effectiveDaysLeft);
+
+  const submittedStuckCount = submittedStuckGroups.length;
+
   const recentGroups = await db.select().from(invoiceGroupsTable)
     .orderBy(desc(invoiceGroupsTable.updatedAt))
     .limit(10);
@@ -269,6 +353,8 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), totalLost: totalLost.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
     urgentCount,
+    submittedStuckGroups,
+    submittedStuckCount,
     recentGroups,
     portalStats: { pending, submitted, failed, successRate },
     portalWorker: {

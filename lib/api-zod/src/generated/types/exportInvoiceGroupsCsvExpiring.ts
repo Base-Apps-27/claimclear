@@ -18,4 +18,5 @@ export type ExportInvoiceGroupsCsvExpiring =
 export const ExportInvoiceGroupsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
+  stuck: "stuck",
 } as const;
