@@ -49,6 +49,12 @@ import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { legSubStatusLabel as glossarySubStatusLabel } from "@workspace/vocab";
+import {
+  isOfflineReattestNoteValid,
+  canSubmitOfflineReattest,
+  canShowOfflineReattestOverride,
+  buildOfflineReattestPayload,
+} from "@/lib/reattest-offline-modal-helpers";
 import { ClosureActions } from "@/components/closure/closure-actions";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
@@ -221,6 +227,11 @@ function authorInitial(name: string | null | undefined): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
 
+/* Offline re-attest override (Task #333) — pure helpers live in
+   src/lib/reattest-offline-modal-helpers.ts so the right-rail flow can
+   be regression-tested from node:test without dragging the page's
+   hook graph into the test runtime (Task #335). */
+
 /* ============================== Page ================================== */
 
 export function InvoiceGroupDetailV2({ groupId }: Props) {
@@ -290,8 +301,12 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const [offlineErrorMsg, setOfflineErrorMsg] = useState<string | null>(null);
   const [offlineErrorKind, setOfflineErrorKind] = useState<"forbidden" | "validation" | "other" | null>(null);
   const offlineNoteTrim = offlineNote.trim();
-  const offlineNoteValid = offlineNoteTrim.length >= 10;
-  const canSubmitOffline = offlineNoteValid && offlineConfirmed && !completeReattestMutation.isPending;
+  const offlineNoteValid = isOfflineReattestNoteValid(offlineNote);
+  const canSubmitOffline = canSubmitOfflineReattest({
+    note: offlineNote,
+    confirmed: offlineConfirmed,
+    isPending: completeReattestMutation.isPending,
+  });
   function resetOfflineForm() {
     setOfflineNote("");
     setOfflineConfirmed(false);
@@ -1180,7 +1195,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                       Open in Responses Awaiting Review
                       <ChevronRight className="w-3 h-3" />
                     </Link>
-                    {isAdmin && (
+                    {canShowOfflineReattestOverride({
+                      isAdmin,
+                      reattestRequired: !!group.reattestRequired,
+                      reattestCompletedAt: group.reattestCompletedAt,
+                    }) && (
                       <div
                         className="pt-2 mt-1"
                         style={{ borderTop: "1px dashed var(--cc-border)" }}
@@ -1216,7 +1235,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 the submit button stays disabled until the trimmed
                 note hits 10 chars AND the operator ticks the
                 acknowledgement checkbox. */}
-            {isAdmin && group.reattestRequired && !group.reattestCompletedAt && (
+            {canShowOfflineReattestOverride({
+              isAdmin,
+              reattestRequired: !!group.reattestRequired,
+              reattestCompletedAt: group.reattestCompletedAt,
+            }) && (
               <Dialog
                 open={offlineModalOpen}
                 onOpenChange={(next) => {
@@ -1358,7 +1381,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         completeReattestMutation.mutate(
                           {
                             id: groupId,
-                            data: { recordedOffline: true, offlineNote: offlineNoteTrim },
+                            data: buildOfflineReattestPayload(offlineNote),
                           },
                           {
                             onSuccess: () => {
