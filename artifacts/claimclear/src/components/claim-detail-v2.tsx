@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@workspace/replit-auth-web";
+import { useClaimEvents } from "@/hooks/use-claim-events";
 import {
   useGetClaim,
   getGetClaimQueryKey,
@@ -97,6 +99,38 @@ export function ClaimDetailV2({ claimId }: Props) {
   );
   const subStatusTone: Tone = SUB_STATUS_TO_TONE[subStatus] ?? SUB_STATUS_TO_TONE.needs_classification;
   const subStatusLabel = legSubStatusDisplayLabel(subStatus, claim ?? undefined);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // "You finished a thing" microinteraction (Task #315). When this leg's
+  // top-level status flips to `Processed` while the page is mounted —
+  // either because the operator's own SOP-advance mutation just landed,
+  // or because the SSE stream broadcast their action back to this tab —
+  // briefly draw a check inside the status pill. We deliberately suppress
+  // the animation when the change came from a different operator (so a
+  // collaborator's action doesn't feel like the current user's finish).
+  // ─────────────────────────────────────────────────────────────────────
+  const { user } = useAuth();
+  const { lastClaimUpdateBy } = useClaimEvents(claimId);
+  const prevStatusRef = useRef<string | null | undefined>(undefined);
+  const [justProcessed, setJustProcessed] = useState(false);
+  useEffect(() => {
+    const newStatus = claim?.status;
+    if (newStatus === undefined) return; // claim hasn't loaded yet
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = newStatus;
+    // Skip on initial mount and on background refetches that don't
+    // change status — only the actual transition fires the animation.
+    if (prev === undefined) return;
+    if (prev === newStatus) return;
+    if (newStatus !== "Processed") return;
+    // If the most recent SSE event for this claim came from another
+    // operator, this transition isn't "ours" — stay quiet.
+    const lastBy = lastClaimUpdateBy.current?.email ?? null;
+    if (lastBy && user?.email && lastBy !== user.email) return;
+    setJustProcessed(true);
+    const t = setTimeout(() => setJustProcessed(false), 500);
+    return () => clearTimeout(t);
+  }, [claim?.status, user?.email, lastClaimUpdateBy]);
 
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();
@@ -342,7 +376,7 @@ export function ClaimDetailV2({ claimId }: Props) {
               <h1 className="text-base font-bold mono">
                 {claim.confNumber || `CLM-${claim.id}`}
               </h1>
-              <StatusPill tone={subStatusTone}>{subStatusLabel}</StatusPill>
+              <StatusPill tone={subStatusTone} justTransitioned={justProcessed}>{subStatusLabel}</StatusPill>
               {claim.errorTypeName ? (
                 <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                   · {claim.errorTypeName}

@@ -45,15 +45,33 @@ const EVENT_LABELS: Record<string, string> = {
   claim_deleted: "deleted the claim",
 };
 
-export function useClaimEvents(claimId: number | undefined) {
+export interface ClaimEventsHandle {
+  /**
+   * Author of the most recent claim_update SSE event for this claim.
+   * Used by callers (claim-detail-v2) to gate one-shot UI flourishes
+   * on whether the change was triggered by the current operator vs a
+   * collaborator. Stored in a ref so observing it inside a status-
+   * change effect doesn't add a re-render dependency.
+   */
+  lastClaimUpdateBy: { current: { email: string | null; type: string; timestamp: string } | null };
+}
+
+export function useClaimEvents(claimId: number | undefined): ClaimEventsHandle {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const retryCount = useRef(0);
+  const lastClaimUpdateBy = useRef<{ email: string | null; type: string; timestamp: string } | null>(null);
 
   const handleEvent = useCallback(
     (event: MessageEvent) => {
       try {
         const data: ClaimEvent = JSON.parse(event.data);
+
+        lastClaimUpdateBy.current = {
+          email: data.userEmail ?? null,
+          type: data.type,
+          timestamp: data.timestamp,
+        };
 
         queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(data.claimId) });
         queryClient.invalidateQueries({ queryKey: getListClaimNotesQueryKey(data.claimId) });
@@ -123,6 +141,8 @@ export function useClaimEvents(claimId: number | undefined) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [claimId, handleEvent, handlePresenceEvent]);
+
+  return { lastClaimUpdateBy };
 }
 
 interface GroupEvent {
