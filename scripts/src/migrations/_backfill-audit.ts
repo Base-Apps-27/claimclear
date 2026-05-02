@@ -108,6 +108,24 @@ export const BACKFILL_IDS = {
   // reported but never written.
   masBulkCombinedNonIssue: "2026-05-mas-bulk-combined-non-issue",
 
+  // Follow-up to `masBulkCombinedNonIssue` after a second, more complete
+  // MAS pull contradicted the first one in 26 places. Reconciles in two
+  // phases against the new authoritative TSV:
+  //   REVERT — 12 groups whose new MAS verdict is Eligible: from
+  //            Resolved/Non-Issue back to Needs Review/Pending. Gated
+  //            by the prior backfill's audit row so only OUR closures
+  //            are touched. Restores `total_amount` from the leg sum
+  //            and clears `triage_notes`/`triaged_at`/`closure_reason`.
+  //   CLOSE  — 14 groups whose new MAS verdict is Cancelled/Combined
+  //            and that are still in Needs Review: same path as the
+  //            original backfill (transitionGroupStatusAndOutcome to
+  //            Resolved/Non-Issue with closureReason=non_issue).
+  // Audit rows for both phases carry `metadata.backfillId =
+  // 2026-05-mas-bulk-combined-reconcile-pull2`; revert audit rows
+  // also carry `metadata.priorBackfillAuditId` linking back to the
+  // original closure they undid.
+  masBulkCombinedReconcilePull2: "2026-05-mas-bulk-combined-reconcile-pull2",
+
   // Task #351: pre-migration normalizer for the typed-claims-date
   // cutover. Walks `claims.date` (TEXT), normalizes any non-ISO row
   // through `normalizeServiceDate`, and either updates it in place
