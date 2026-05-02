@@ -108,27 +108,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     },
   });
   const responsesAwaitingReview = awaitingReviewCount?.count ?? 0;
-  const masActionCount = awaitingReviewCount?.masActionCount ?? 0;
-  const responsesAwaitingReviewBadges: NavBadge[] = [
-    ...(responsesAwaitingReview > 0
-      ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
-      : []),
-    ...(masActionCount > 0
-      ? [{ count: masActionCount, tone: "blue" as const, label: "MAS action" }]
-      : []),
-  ];
-  // Show both counts side-by-side so the user can read at a glance which
-  // bucket is non-zero — pending (amber: verdicts that still need a decision)
-  // vs queued (blue: parked for the user with portal access). A single total
-  // would lose that split.
-  const attestBadges: NavBadge[] = [
-    ...(pendingAttest > 0
-      ? [{ count: pendingAttest, tone: "amber" as const, label: "Pending re-attestation" }]
-      : []),
-    ...(queuedAttest > 0
-      ? [{ count: queuedAttest, tone: "blue" as const, label: "Queued for review" }]
-      : []),
-  ];
+  // The MAS-action sub-badge was retired alongside the MAS tab on the
+  // Responses Awaiting Review page — MAS work now opens from each
+  // group's detail page via the "I'm re-attesting now" modal, so the
+  // sidebar only carries the one verdict-pending count.
+  const responsesAwaitingReviewBadges: NavBadge[] = responsesAwaitingReview > 0
+    ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
+    : [];
+  // The Attestation Queue is single-bucket now (pending + queued share
+  // one list with per-row state badges), so we collapse the two
+  // sub-badges into a single "to re-attest" pill that mirrors what the
+  // user sees on the page itself.
+  const totalAttest = pendingAttest + queuedAttest;
+  const attestBadges: NavBadge[] = totalAttest > 0
+    ? [{ count: totalAttest, tone: "amber" as const, label: "To re-attest" }]
+    : [];
 
   const adminItems: NavItem[] = [
     { label: "Insights", href: "/insights", icon: BarChart3 },

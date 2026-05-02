@@ -15,8 +15,6 @@ import {
   getGetResponsesAwaitingReviewCountQueryKey,
   getListWithdrawalsQueryKey,
   useRecordLegVerdict,
-  useCompleteLegMasAction,
-  useCompleteGroupReattest,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
@@ -29,10 +27,8 @@ import type {
 } from "@workspace/api-client-react";
 import { outcomeRole } from "@workspace/leg-state";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
-import { MasActionChecklist } from "@/components/mas-action-checklist";
 import { useAiCalibrations } from "@/hooks/use-ai-calibration";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,7 +60,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { useGetAttestationCounts } from "@workspace/api-client-react";
 import {
   CheckCircle,
   AlertTriangle,
@@ -74,8 +69,6 @@ import {
   Inbox,
   ArrowDownWideNarrow,
   ArrowRight,
-  ListChecks,
-  ShieldCheck,
   Send,
   RefreshCw,
   Loader2,
@@ -135,8 +128,6 @@ function readStoredSort(): SortMode {
   return "oldest_response";
 }
 
-type ActiveTab = "verdict-pending" | "mas-action" | "attestation";
-
 export default function ResponsesAwaitingReview() {
   useInvoiceGroupsListEvents();
   const params = useParams<{ id?: string }>();
@@ -144,7 +135,6 @@ export default function ResponsesAwaitingReview() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [sortMode, setSortMode] = useState<SortMode>(() => readStoredSort());
-  const [activeTab, setActiveTab] = useState<ActiveTab>("verdict-pending");
 
   const selectedId = params.id ? parseInt(params.id, 10) || null : null;
 
@@ -162,27 +152,11 @@ export default function ResponsesAwaitingReview() {
     },
   );
 
-  const {
-    data: masData,
-    isLoading: masLoading,
-    isError: masIsError,
-    refetch: refetchMas,
-  } = useListInvoiceGroups(
-    { macroPhase: "mas-action-required", limit: 500 },
-    {
-      query: {
-        queryKey: getListInvoiceGroupsQueryKey({
-          macroPhase: "mas-action-required",
-          limit: 500,
-        }),
-      },
-    },
-  );
-  const masGroups: InvoiceGroupResponse[] = masData?.groups ?? [];
-
-  const { data: attestationCounts } = useGetAttestationCounts();
-  const attestationPending = attestationCounts?.pending ?? 0;
-  const attestationQueued = attestationCounts?.queued ?? 0;
+  // The MAS-action and Attestation tabs were retired — MAS work now
+  // lives inline on the invoice-group detail page (full-width
+  // checklist), and attestation work has its own top-level surface
+  // (`/attestation-queue`) reachable from the sidebar. This page is
+  // single-purpose now: pick verdicts on payor responses.
 
   // Mirror the Queue card's split: only post-classification (errorTypeId set)
   // groups belong in this surface. The Classification Inbox handles the
@@ -362,138 +336,42 @@ export default function ResponsesAwaitingReview() {
         </p>
       </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as ActiveTab)}
-      >
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <TabsList>
-            <TabsTrigger value="verdict-pending" data-testid="tab-verdict-pending">
-              <Eye className="h-4 w-4 mr-1.5" />
-              Verdict pending
-              {groups.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {groups.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="mas-action" data-testid="tab-mas-action">
-              <ListChecks className="h-4 w-4 mr-1.5" />
-              MAS action
-              {masGroups.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {masGroups.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="attestation" data-testid="tab-attestation">
-              <ShieldCheck className="h-4 w-4 mr-1.5" />
-              Attestation
-              {(attestationPending + attestationQueued) > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {attestationPending + attestationQueued}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-          {activeTab === "verdict-pending" && (
-            <div className="flex items-center gap-2">
-              <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
-              <Select value={sortMode} onValueChange={handleSortChange}>
-                <SelectTrigger
-                  className="w-[220px] h-8 text-xs"
-                  data-testid="sort-mode-select"
-                  aria-label="Sort responses awaiting review"
-                >
-                  <SelectValue placeholder="Sort by…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <span className="block">
-                        <span className="font-medium">{opt.label}</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          {opt.help}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+      {groups.length > 0 && (
+        <div className="flex items-center justify-end gap-2">
+          <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
+          <Select value={sortMode} onValueChange={handleSortChange}>
+            <SelectTrigger
+              className="w-[220px] h-8 text-xs"
+              data-testid="sort-mode-select"
+              aria-label="Sort responses awaiting review"
+            >
+              <SelectValue placeholder="Sort by…" />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  <span className="block">
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {opt.help}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <TabsContent value="verdict-pending" className="mt-4">
-          <Workspace
-            isLoading={isLoading}
-            isError={isError}
-            onRetry={() => refetch()}
-            groups={groups}
-            selectedGroup={selectedGroup}
-            onSelect={selectGroup}
-            onAfterVerdict={onAfterVerdict}
-          />
-        </TabsContent>
-        <TabsContent value="mas-action" className="mt-4">
-          <MasActionWorkspace
-            isLoading={masLoading}
-            isError={masIsError}
-            onRetry={() => refetchMas()}
-            groups={masGroups}
-          />
-        </TabsContent>
-        <TabsContent value="attestation" className="mt-4">
-          <AttestationPointerCard
-            pending={attestationPending}
-            queued={attestationQueued}
-          />
-        </TabsContent>
-      </Tabs>
+      )}
+      <Workspace
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={() => refetch()}
+        groups={groups}
+        selectedGroup={selectedGroup}
+        onSelect={selectGroup}
+        onAfterVerdict={onAfterVerdict}
+      />
     </div>
-  );
-}
-
-function AttestationPointerCard({
-  pending,
-  queued,
-}: {
-  pending: number;
-  queued: number;
-}) {
-  const total = pending + queued;
-  return (
-    <Card data-testid="attestation-pointer-card">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4" />
-          Attestation queue
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {total === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing waiting on attestation right now.
-          </p>
-        ) : (
-          <div className="text-sm space-y-1">
-            <p>
-              <span className="font-medium text-foreground">{pending}</span>{" "}
-              <span className="text-muted-foreground">pending re-attestation</span>
-            </p>
-            <p>
-              <span className="font-medium text-foreground">{queued}</span>{" "}
-              <span className="text-muted-foreground">queued for review</span>
-            </p>
-          </div>
-        )}
-        <Button asChild variant="outline" size="sm" data-testid="link-attestation-queue">
-          <Link href="/attestation-queue" className="inline-flex items-center gap-1.5">
-            Open Attestation Queue
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -608,130 +486,6 @@ function Workspace({
         />
       )}
     </div>
-  );
-}
-
-interface MasActionWorkspaceProps {
-  isLoading: boolean;
-  isError: boolean;
-  onRetry: () => void;
-  groups: InvoiceGroupResponse[];
-}
-
-function MasActionWorkspace({
-  isLoading,
-  isError,
-  onRetry,
-  groups,
-}: MasActionWorkspaceProps) {
-  if (isLoading) {
-    return <Skeleton className="h-[420px] w-full" />;
-  }
-  if (isError) {
-    return (
-      <Card>
-        <CardContent className="py-10 text-center space-y-3">
-          <AlertTriangle className="h-6 w-6 mx-auto text-destructive" />
-          <p className="text-sm text-muted-foreground">
-            Couldn't load MAS-action groups. Try again.
-          </p>
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-  if (groups.length === 0) {
-    return (
-      <Card data-testid="mas-action-empty-state">
-        <CardContent className="py-12 text-center space-y-2">
-          <CheckCircle className="h-8 w-8 mx-auto text-emerald-500" />
-          <p className="font-medium">No MAS work owed.</p>
-          <p className="text-sm text-muted-foreground">
-            Every cancellation is stamped and every group is re-attested.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-  return (
-    <div className="space-y-4" data-testid="mas-action-workspace">
-      {groups.map((g) => (
-        <MasActionGroupCard key={g.id} group={g} />
-      ))}
-    </div>
-  );
-}
-
-function MasActionGroupCard({ group }: { group: InvoiceGroupResponse }) {
-  useInvoiceGroupEvents(group.id);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const { data: detail } = useGetInvoiceGroup(group.id);
-  const completeMas = useCompleteLegMasAction();
-  const completeReattest = useCompleteGroupReattest();
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({
-      queryKey: getGetInvoiceGroupQueryKey(group.id),
-    });
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    queryClient.invalidateQueries({
-      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
-    });
-  };
-
-  return (
-    <Card data-testid={`mas-action-group-${group.id}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="space-y-1 min-w-0">
-            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-              <span className="font-mono">#{group.invoiceNumber}</span>
-              <StatusBadge status={group.status} />
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              {group.errorTypeName ?? "Unclassified"} ·{" "}
-              {group.rideCount} ride{group.rideCount !== 1 ? "s" : ""} ·{" "}
-              {formatCurrency(group.totalAmount)}
-            </p>
-          </div>
-          <Link href={`/invoice-groups/${group.id}`}>
-            <Button variant="outline" size="sm" data-testid={`open-full-${group.id}`}>
-              Open full details
-              <ExternalLink className="h-3.5 w-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {detail ? (
-          <MasActionChecklist
-            group={detail as InvoiceGroupDetailResponse}
-            onCompleteLegMasAction={async (claimId, body) => {
-              await completeMas.mutateAsync({ id: claimId, data: body });
-              invalidate();
-              toast({
-                title: "MAS cancellation recorded",
-                duration: 3000,
-              });
-            }}
-            onCompleteGroupReattest={async (body) => {
-              await completeReattest.mutateAsync({ id: group.id, data: body });
-              invalidate();
-              toast({
-                title: "Re-attest confirmed",
-                description: "Group is now awaiting payout.",
-                duration: 3000,
-              });
-            }}
-          />
-        ) : (
-          <Skeleton className="h-32 w-full" />
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

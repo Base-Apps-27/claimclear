@@ -14,7 +14,18 @@ import {
   useCreateInvoiceGroupNote,
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
+  useCompleteLegMasAction,
+  useCompleteGroupReattest,
 } from "@workspace/api-client-react";
+import { MasActionChecklist } from "@/components/mas-action-checklist";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -221,6 +232,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const createNoteMutation = useCreateInvoiceGroupNote();
   const holdMutation = useHoldInvoiceGroup();
   const removeHoldMutation = useRemoveInvoiceGroupHold();
+  // MAS action workflow — the cancel-in-MAS chore + re-attest confirm.
+  // Hooked here so the checklist can live on this page (inside the
+  // re-attest modal) after the standalone "MAS action" tab on
+  // Responses Awaiting Review was retired. invalidateGroup() is the
+  // existing helper defined further down in this component.
+  const completeMasMutation = useCompleteLegMasAction();
+  const completeReattestMutation = useCompleteGroupReattest();
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
   const [newNote, setNewNote] = useState("");
@@ -228,6 +246,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   /* ---- Place-on-hold reason prompt (cc-scope inline) ---- */
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReason, setHoldReason] = useState("");
+
+  /* ---- Re-attest modal (the "I'm re-attesting now" flow). The
+     MAS-cancel checklist + reattest confirm copy lives inside this
+     modal so the operator gets the playbook at the moment they say
+     they're doing the work, instead of as a permanent slab on the
+     page. */
+  const [reattestOpen, setReattestOpen] = useState(false);
 
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId, {
     query: {
@@ -1037,7 +1062,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           {/* RIGHT — rail (4 cols) */}
           <div className="col-span-4 space-y-4">
 
-            {/* MAS reattest card — only when required */}
+            {/* MAS action card — opens the re-attest modal. The modal
+                holds the cancel-in-MAS checklist and the reattest
+                confirm step so the operator gets the playbook only
+                when they say they're doing the work. */}
             {group.reattestRequired && (
               <CcCard
                 title="MAS action"
@@ -1067,20 +1095,57 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     )}
                   </div>
                 ) : (
-                  <div data-testid="group-reattest-pending">
-                    <div className="text-xs mb-2" style={{ color: "var(--cc-muted-fg)" }}>
-                      Re-attestation required before resubmission.
-                    </div>
-                    <Link
-                      href={`/invoice-groups/${groupId}`}
-                      className="cc-btn w-full justify-center text-xs gap-1 inline-flex items-center py-2"
-                      style={{ background: "var(--cc-amber-fg)", color: "white" }}
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Mark MAS reattest complete
-                    </Link>
-                    <div className="text-[11px] mt-1.5 text-center" style={{ color: "var(--cc-muted-fg)" }}>
-                      Opens legacy group page to record completion
-                    </div>
+                  <div data-testid="group-reattest-pending" className="space-y-2">
+                    <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                      Cancel each affected leg in MAS, re-attest with the corrected
+                      info, then confirm here so the dashboard and audit trail line
+                      up.
+                    </p>
+                    <Dialog open={reattestOpen} onOpenChange={setReattestOpen}>
+                      <DialogTrigger asChild>
+                        <button
+                          className="cc-btn w-full justify-center text-xs gap-1 inline-flex items-center py-2"
+                          style={{ background: "var(--cc-amber-fg)", color: "white" }}
+                          data-testid="button-open-reattest-modal"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" /> I'm re-attesting now
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent
+                        className="max-w-2xl max-h-[85vh] overflow-y-auto"
+                        data-testid="reattest-modal"
+                      >
+                        <DialogHeader>
+                          <DialogTitle>Re-attest in MAS</DialogTitle>
+                          <DialogDescription>
+                            Walk through the cancel-and-re-attest steps for this
+                            invoice. Tick each leg as you cancel it in MAS, then
+                            confirm the re-attest at the bottom — that releases the
+                            group for resubmission.
+                          </DialogDescription>
+                        </DialogHeader>
+                        {detail && (
+                          <MasActionChecklist
+                            group={detail}
+                            onCompleteLegMasAction={async (claimId, body) => {
+                              await completeMasMutation.mutateAsync({ id: claimId, data: body });
+                              invalidateGroup();
+                              toast({ title: "MAS cancellation recorded", duration: 3000 });
+                            }}
+                            onCompleteGroupReattest={async (body) => {
+                              await completeReattestMutation.mutateAsync({ id: groupId, data: body });
+                              invalidateGroup();
+                              setReattestOpen(false);
+                              toast({
+                                title: "Re-attest confirmed",
+                                description: "Group is now awaiting payout.",
+                                duration: 3000,
+                              });
+                            }}
+                          />
+                        )}
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 )}
               </CcCard>

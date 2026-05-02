@@ -7,99 +7,112 @@ import type {
 } from "@workspace/api-client-react";
 import { AttestationPrompt } from "@/components/attestation-prompt";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ShieldCheck, Inbox, Check, FileText, Mail, ExternalLink } from "lucide-react";
+import { ShieldCheck, FileText, Mail, ExternalLink } from "lucide-react";
 
-type TabKey = "pending" | "queued" | "completed";
-
-const TAB_META: Record<TabKey, { label: string; icon: typeof ShieldCheck; empty: string }> = {
-  pending: {
-    label: "Pending",
-    icon: ShieldCheck,
-    empty: "Nothing pending. Approved verdicts will land here as they're recorded.",
-  },
-  queued: {
-    label: "Queued",
-    icon: Inbox,
-    empty: "Nothing parked. When a teammate marks a claim 'Park for portal user', it shows up here.",
-  },
-  completed: {
-    label: "Recently completed",
-    icon: Check,
-    empty: "No re-attestations confirmed yet.",
-  },
-};
+type AttestationState = "pending" | "queued";
 
 /**
  * Admin review surface for off-system re-attestation.
  *
- * Layout is master/detail: a list of items on the left (sorted oldest-first
- * by when they entered the queue) and the full review context for the
- * selected item on the right, with a single confirm CTA driven by the
- * shared AttestationPrompt component. The same prompt is rendered on the
+ * Single un-tabbed list (Tasks consolidation). Pending and queued rows
+ * share one workspace because they're both "owed off-system" — the
+ * difference (whether you parked it for a teammate with portal access,
+ * or it's still on you) is shown as a per-row badge instead of a tab.
+ *
+ * Completed history was retired from this surface — it lives on each
+ * claim's detail page in the audit trail.
+ *
+ * Layout is master/detail: list of items on the left (sorted oldest-
+ * first by when they entered the queue) and the full review context
+ * on the right, with a single confirm CTA driven by the shared
+ * AttestationPrompt component. The same prompt is rendered on the
  * claim-detail page, so the action affordance and copy never drift.
  */
 export default function AttestationQueue() {
-  const [tab, setTab] = useState<TabKey>("queued");
-
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Attestation Queue</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Approved verdicts that still need to be re-attested in the payor portal off-system.
-          Pick a claim on the left, open it in the portal, complete the re-attestation, then
-          confirm it here so the dashboard and audit trail line up.
+          Approved verdicts that still need to be re-attested in the payor portal off-system —
+          both the ones still on you and the ones parked for a teammate with portal access.
+          Open each claim in the portal, complete the re-attestation, then confirm it here so
+          the dashboard and audit trail line up.
         </p>
       </div>
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <TabsList>
-          <TabsTrigger value="pending" data-testid="tab-pending">
-            <ShieldCheck className="h-4 w-4 mr-1.5" /> Pending
-          </TabsTrigger>
-          <TabsTrigger value="queued" data-testid="tab-queued">
-            <Inbox className="h-4 w-4 mr-1.5" /> Queued
-          </TabsTrigger>
-          <TabsTrigger value="completed" data-testid="tab-completed">
-            <Check className="h-4 w-4 mr-1.5" /> Completed
-          </TabsTrigger>
-        </TabsList>
-        {(Object.keys(TAB_META) as TabKey[]).map((key) => (
-          <TabsContent key={key} value={key} className="mt-4">
-            <QueueWorkspace state={key} />
-          </TabsContent>
-        ))}
-      </Tabs>
+      <QueueWorkspace />
     </div>
   );
 }
 
-function QueueWorkspace({ state }: { state: TabKey }) {
-  const { data, isLoading } = useListAttestationPending({ state });
+interface MergedRow {
+  state: AttestationState;
+  claim: ClaimResponse;
+  extras: AttestationPendingExtras | null;
+  /** When this row entered the queue — used purely for stable sort. */
+  enteredAt: string | null;
+}
 
-  const claims = useMemo<ClaimResponse[]>(() => data?.claims ?? [], [data]);
-  const extrasMap = (data?.extras ?? {}) as Record<string, AttestationPendingExtras>;
+function QueueWorkspace() {
+  // Fire pending + queued in parallel and merge client-side. The
+  // backend endpoint takes one state at a time, but the user-facing
+  // surface is single-bucket now, so we collapse it here.
+  const pending = useListAttestationPending({ state: "pending" });
+  const queued = useListAttestationPending({ state: "queued" });
+
+  const isLoading = pending.isLoading || queued.isLoading;
+
+  const rows = useMemo<MergedRow[]>(() => {
+    const buildRows = (
+      data: typeof pending.data,
+      state: AttestationState,
+    ): MergedRow[] => {
+      const claims = data?.claims ?? [];
+      const extrasMap = (data?.extras ?? {}) as Record<string, AttestationPendingExtras>;
+      return claims.map((claim) => {
+        const ex = extrasMap[String(claim.id)] ?? null;
+        // For queued rows, attestationQueuedAt marks the moment they
+        // entered this surface. For pending rows the closest analog is
+        // the verdict-recorded timestamp (carried in extras).
+        const enteredAt =
+          state === "queued"
+            ? claim.attestationQueuedAt ?? ex?.verdictRecordedAt ?? null
+            : ex?.verdictRecordedAt ?? null;
+        return { state, claim, extras: ex, enteredAt };
+      });
+    };
+    const merged = [
+      ...buildRows(pending.data, "pending"),
+      ...buildRows(queued.data, "queued"),
+    ];
+    // Oldest first so the longest-waiting work bubbles to the top.
+    merged.sort((a, b) => {
+      const aT = a.enteredAt ? new Date(a.enteredAt).getTime() : 0;
+      const bT = b.enteredAt ? new Date(b.enteredAt).getTime() : 0;
+      return aT - bT;
+    });
+    return merged;
+  }, [pending.data, queued.data]);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  // Keep the right-pane selection in sync with the visible list. If the
-  // selected claim disappears (e.g., it just got attested and the list
-  // re-fetched), fall back to the top of the list so the operator never
-  // stares at an empty pane.
+  // Keep the right-pane selection in sync with the visible list. If
+  // the selected claim disappears (it just got attested and the lists
+  // re-fetched), fall back to the top of the list so the operator
+  // never stares at an empty pane.
   useEffect(() => {
-    if (claims.length === 0) {
+    if (rows.length === 0) {
       setSelectedId(null);
       return;
     }
-    if (selectedId == null || !claims.some((c) => c.id === selectedId)) {
-      setSelectedId(claims[0].id);
+    if (selectedId == null || !rows.some((r) => r.claim.id === selectedId)) {
+      setSelectedId(rows[0].claim.id);
     }
-  }, [claims, selectedId]);
+  }, [rows, selectedId]);
 
   if (isLoading) {
     return (
@@ -110,26 +123,29 @@ function QueueWorkspace({ state }: { state: TabKey }) {
     );
   }
 
-  if (claims.length === 0) {
+  if (rows.length === 0) {
     return (
       <Card>
-        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          {TAB_META[state].empty}
+        <CardContent className="py-10 text-center space-y-2">
+          <ShieldCheck className="h-6 w-6 mx-auto text-emerald-500" />
+          <p className="font-medium text-sm">All caught up.</p>
+          <p className="text-sm text-muted-foreground">
+            Nothing waiting on attestation right now.
+          </p>
         </CardContent>
       </Card>
     );
   }
 
-  const selectedClaim = claims.find((c) => c.id === selectedId) ?? null;
-  const selectedExtras = selectedClaim ? extrasMap[String(selectedClaim.id)] ?? null : null;
+  const selectedRow = rows.find((r) => r.claim.id === selectedId) ?? null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
       <Card className="lg:sticky lg:top-4">
         <ScrollArea className="h-[calc(100vh-220px)] max-h-[640px]">
-          <ul className="divide-y" data-testid={`queue-list-${state}`}>
-            {claims.map((claim) => {
-              const ex = extrasMap[String(claim.id)] ?? null;
+          <ul className="divide-y" data-testid="queue-list">
+            {rows.map((row) => {
+              const { claim, extras, state } = row;
               const isSel = claim.id === selectedId;
               return (
                 <li key={claim.id}>
@@ -142,18 +158,19 @@ function QueueWorkspace({ state }: { state: TabKey }) {
                     }
                     data-testid={`queue-row-${claim.id}`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-sm font-medium">
                         {claim.confNumber}
                       </span>
                       <Badge variant="outline" className="text-[10px]">
                         {claim.outcome}
                       </Badge>
+                      <StateBadge state={state} />
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                       <InvoiceLine claim={claim} />
-                      {ex?.verdictRecordedAt && (
-                        <div>Verdict {formatDateTime(ex.verdictRecordedAt)}</div>
+                      {extras?.verdictRecordedAt && (
+                        <div>Verdict {formatDateTime(extras.verdictRecordedAt)}</div>
                       )}
                       {state === "queued" && claim.attestationQueuedBy && (
                         <div className="truncate">
@@ -161,12 +178,6 @@ function QueueWorkspace({ state }: { state: TabKey }) {
                           {claim.attestationQueuedAt
                             ? ` · ${formatDateTime(claim.attestationQueuedAt)}`
                             : ""}
-                        </div>
-                      )}
-                      {state === "completed" && claim.attestedBy && (
-                        <div className="truncate">
-                          Confirmed by {claim.attestedBy}
-                          {claim.attestedAt ? ` · ${formatDateTime(claim.attestedAt)}` : ""}
                         </div>
                       )}
                       {claim.attestationNote && (
@@ -181,19 +192,53 @@ function QueueWorkspace({ state }: { state: TabKey }) {
         </ScrollArea>
       </Card>
 
-      {selectedClaim && (
-        <ReviewPane claim={selectedClaim} extras={selectedExtras} />
+      {selectedRow && (
+        <ReviewPane
+          claim={selectedRow.claim}
+          extras={selectedRow.extras}
+          state={selectedRow.state}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * Per-row indicator that tells the operator which bucket this claim is
+ * in without forcing a tab choice up front. Pending = on you. Queued =
+ * parked for the teammate with portal access.
+ */
+function StateBadge({ state }: { state: AttestationState }) {
+  if (state === "pending") {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] border-amber-300 bg-amber-50 text-amber-800"
+        data-testid="state-badge-pending"
+      >
+        Owed by you
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px] border-blue-300 bg-blue-50 text-blue-800"
+      data-testid="state-badge-queued"
+    >
+      Parked for portal user
+    </Badge>
   );
 }
 
 function ReviewPane({
   claim,
   extras,
+  state,
 }: {
   claim: ClaimResponse;
   extras: AttestationPendingExtras | null;
+  state: AttestationState;
 }) {
   return (
     <Card data-testid={`review-pane-${claim.id}`}>
@@ -201,9 +246,10 @@ function ReviewPane({
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-mono text-lg font-semibold">{claim.confNumber}</h3>
               <Badge variant="outline">{claim.outcome}</Badge>
+              <StateBadge state={state} />
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               {claim.errorTypeName ?? "Unclassified"}
@@ -239,12 +285,6 @@ function ReviewPane({
               {claim.attestationQueuedAt
                 ? ` · ${formatDateTime(claim.attestationQueuedAt)}`
                 : ""}
-            </Field>
-          )}
-          {claim.attestedBy && (
-            <Field label="Confirmed by">
-              {claim.attestedBy}
-              {claim.attestedAt ? ` · ${formatDateTime(claim.attestedAt)}` : ""}
             </Field>
           )}
         </dl>
