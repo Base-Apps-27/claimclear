@@ -19,33 +19,39 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript, des
 -   **API Codegen:** Orval
 
 **Core Architectural Decisions:**
--   **Monorepo Structure:** Leverages TypeScript composite projects and pnpm workspaces for robust type safety and efficient dependency management across the application.
--   **UI/UX Design:** Employs an Agape brand color scheme (dark navy, blue, orange, gold) with a unique logo, and features densified detail surfaces for optimal information display.
--   **Centralized Error Handling:** Implements robust error handling for asynchronous Express routes to prevent data leakage and ensure system stability.
--   **Database Design:** Uses PostgreSQL with Drizzle ORM, featuring 16 entities for comprehensive claim and user management, optimized with database indexes.
--   **Authentication:** Utilizes session-based authentication supporting general users, administrators, and bot tokens.
--   **Frontend Serving:** The React + Vite frontend is served as static files by the Express API server from a single port.
--   **Claim Workflow & Statuses:** Claims progress through predefined statuses with centralized transition functions for consistent audit logging, timeline notes, and real-time SSE events.
--   **Invoice Grouping:** Claims are grouped by invoice number, serving as the primary unit for dispute resolution, with group-level statuses, outcomes, and evidence tracking.
--   **Response Tracking & Classification:** `portal_responses` tracks incoming responses, using a tiered classification pipeline that prioritizes phrase-signature matching and falls back to Anthropic Claude for AI-powered classification.
--   **State Management:** Utilizes discrete, typed columns for managing `claims` and `invoice_groups` state, ensuring consistent representation.
--   **Portal Submission Readiness Gates:** Enforces ordered readiness gates for operator-initiated submissions, with a system/bot actor path for bypassing some gates.
--   **Decision Trees (SOP Logic):** Integrates a workflow system for SOP logic, evidence collection, branching, and dispute reasons.
--   **Evidence Management:** Supports object storage for evidence files, linked to decision tree nodes and collected for portal submissions.
--   **Real-time Updates:** Server-Sent Events (SSE) provide real-time updates and collision detection.
--   **API Security:** Role-based authentication middleware protects API routes.
--   **Cron Jobs:** Scheduled jobs for processing portal submissions, daily briefs, and payor response scanning.
--   **Portal Worker:** An in-process Playwright bot for MAS Portal interaction, launching a fresh browser for each invocation.
--   **System Health Rollup:** Provides a consolidated view of system health, including connector probes, cron freshness, worker status, and overdue submissions.
--   **Summary Analytics Page:** Offers time-range-aware analytics for activity trends, recovery trends, team productivity, and breakdowns by status/outcome/error types.
--   **Repeat Offenders Aggregation:** Aggregates rejection statistics per driver/member, focusing on dispute-worthy claims.
--   **Deploy-time DB Migrations:** Explicit, idempotent SQL migration runner ensures schema consistency before JS build in production.
--   **Communication Components:** Integrated email thread components for rich HTML rendering, metadata, and a rich text reply composer.
+- **Monorepo Structure:** Uses TypeScript composite projects and pnpm workspaces for type safety and dependency management.
+- **UI/UX Design:** Adheres to an Agape brand color scheme (dark navy, blue, orange, gold) with a distinct logo, and utilizes densified detail surfaces for improved information display.
+- **Centralized Error Handling:** Robust error handling for async Express routes.
+- **Database Design:** PostgreSQL with Drizzle ORM, featuring 16 entities for comprehensive claim and user management, optimized with database indexes.
+- **Authentication:** Session-based authentication supporting general users, admins, and bot tokens.
+- **Frontend Serving:** React + Vite frontend served as static files by the Express API server.
+- **Claim Workflow & Statuses:** Claims progress through predefined statuses with centralized transition functions for consistent audit logging, timeline notes, and real-time SSE events. Invoice grouping forms the primary unit for dispute resolution.
+- **Response Tracking & Classification:** `portal_responses` tracks incoming responses, using a classifier pipeline with phrase-signature matching and Anthropic Claude for AI-powered classification.
+- **Per-Leg/Per-Invoice State Machine:** Manages `claims` and `invoice_groups` state using discrete, typed columns, with derived leg sub-status.
+- **Included-in-Dispute Management:** Explicit transitions and importer defaults manage `claims.included_in_dispute`.
+- **Per-Leg Investigation UI:** Dedicated UI for detailed per-leg investigation, including SOP-advance player and context editor.
+- **Portal Submission Readiness Gates:** Enforces ordered readiness gates for operator-initiated submissions.
+- **Per-Leg Hold:** Allows individual legs within an invoice group to be put on hold for partial submissions.
+- **Post-Response Workflow:** Claims enter a "Needs Review" state after payor response.
+- **Decision Trees (SOP Logic):** Integrated workflow system for SOP logic, evidence collection, branching, and dispute reasons.
+- **Error Type Model:** Simplified model for error types, including a "Submission Path" picker.
+- **Evidence Management:** Supports object storage for evidence files, linked to decision tree nodes and collected for portal submissions.
+- **Real-time Updates:** Server-Sent Events (SSE) provide real-time updates and collision detection.
+- **API Security:** Role-based authentication middleware protects API routes.
+- **Cron Jobs:** Scheduled jobs for processing portal submissions, daily briefs, and payor response scanning.
+- **Portal Worker (on-demand):** In-process Playwright bot for MAS Portal interaction.
+- **System Health Rollup:** Provides a consolidated view of system health.
+- **Header Batch Status Pill:** Persistent UI element displaying live queued-claim count and batch information.
+- **Summary Analytics Page:** Provides time-range-aware analytics, including activity and recovery trends.
+- **Repeat Offenders Aggregation:** Aggregates rejection statistics per driver/member.
+- **Schema Drift Guard:** Automated script to prevent silent divergence between Drizzle schema files and generated SQL migrations.
+- **Deploy-time DB Migrations:** Explicit, idempotent SQL migration runner applied before JS build in production.
+- **Communication Components:** Integrated email thread components for group and leg detail pages, including rich HTML rendering and a Tiptap-powered rich text reply composer.
 
 ## External Dependencies
--   **PostgreSQL:** Primary relational database for all application data.
--   **Anthropic Claude:** Utilized for AI-driven SOP analysis, dispute note generation, and email generation via Replit AI Integrations proxy.
--   **Playwright:** Used for browser automation to interact with the MAS Transportation Provider Support Portal.
--   **Google Cloud Storage (GCS):** Provides object storage for evidence files associated with claims.
--   **Microsoft Outlook (Graph API):** Used for sending daily brief emails and tracking payor responses, with SMTP fallback for resilience.
--   **Replit Auth:** Serves as the OpenID Connect provider for user authentication within the platform.
+- **PostgreSQL:** Primary relational database.
+- **Anthropic Claude:** AI for SOP analysis, dispute note generation, and email generation.
+- **Playwright:** Browser automation for interacting with the MAS Transportation Provider Support Portal.
+- **Google Cloud Storage (GCS):** Object storage for evidence files.
+- **Microsoft Outlook (Graph API):** For sending daily brief emails and tracking payor responses (with SMTP fallback).
+- **Replit Auth:** OpenID Connect for user authentication.

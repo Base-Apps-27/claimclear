@@ -8,12 +8,8 @@ import {
   useGetInvoiceGroup,
   getInvoiceGroup,
   getGetInvoiceGroupQueryKey,
-  useGetInvoiceGroupValidTransitions,
-  getGetInvoiceGroupValidTransitionsQueryKey,
-  useUpdateInvoiceGroupStatus,
   getGetClaimQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
-  getListWithdrawalsQueryKey,
   useRecordLegVerdict,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
@@ -33,7 +29,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +39,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { StatusBadge } from "@/components/status-badge";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
@@ -51,7 +51,7 @@ import {
   getResponseTypeLabel,
   getResponseTypePillClass,
 } from "@/components/queue-response-review-panel";
-import { ClosureActions } from "@/components/closure/closure-actions";
+import { WhatsNextCard } from "@/components/whats-next";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import {
   mapToGroupConversations,
@@ -68,10 +68,8 @@ import {
   ExternalLink,
   Inbox,
   ArrowDownWideNarrow,
-  ArrowRight,
-  Send,
-  RefreshCw,
   Loader2,
+  HelpCircle,
 } from "lucide-react";
 import {
   Select,
@@ -460,7 +458,12 @@ function Workspace({
         Card itself onto the wrapper so the pill scrolls with it.
       */}
       <div className="lg:sticky lg:top-4 space-y-2">
-        <StepPill number={1} label="Pick a response" testId="step-pill-1" />
+        <StepPill
+          number={1}
+          label="Pick a response"
+          testId="step-pill-1"
+          help="Choose the payor reply you want to work on. The list is sorted oldest-first by default so the longest-waiting responses bubble to the top."
+        />
         <Card>
           <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
             <ul className="divide-y" data-testid="awaiting-review-list">
@@ -670,7 +673,12 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
           1-2-3 order. Per Task #262 the previous "Jump to thread"
           banner is intentionally gone — the email is already on screen.
         */}
-        <StepPill number={2} label="Read the reply" testId="step-pill-2" />
+        <StepPill
+          number={2}
+          label="Read the reply"
+          testId="step-pill-2"
+          help="Read the payor's words in full. The AI summary is a hint — never the verdict. Reply in-thread if you need clarification."
+        />
 
         {hasReviewableResponse && hasConversations ? (
           <GroupCommunicationThread
@@ -744,11 +752,17 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
         // so the rail still pins to the viewport on lg+ while keeping the
         // pill flush above its first card.
         <div className="lg:sticky lg:top-4 space-y-2">
-          <StepPill number={3} label="Record the verdict" testId="step-pill-3" />
+          <StepPill
+            number={3}
+            label="Record the verdict"
+            testId="step-pill-3"
+            help="For each leg the payor addressed, mark whether they approved or denied your dispute. Verdicts are per-leg and binary — Approved / Partially Approved roll up the same way."
+          />
           <ActionRail
             group={group}
             detail={detail as InvoiceGroupDetailResponse | undefined}
             allRides={allRides}
+            responses={responses}
             onAfterVerdict={onAfterVerdict}
           />
         </div>
@@ -758,20 +772,28 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
 }
 
 interface StepPillProps {
-  number: 1 | 2 | 3;
+  number: 1 | 2 | 3 | 4;
   label: string;
   testId: string;
+  /** Optional hover/focus tooltip explaining the step in plain English. */
+  help?: string;
 }
 
 /**
  * Small numbered guidance label rendered flush above the first card in
- * each of the three workflow columns ("1. Pick a response",
- * "2. Read the reply", "3. Record the verdict"). Style is intentionally
- * subtle — uppercase tracking, muted accent, no boxed background — so it
- * reads as guidance, not chrome. Mirrors the visual weight of the
- * existing in-rail section labels (e.g. "Continuation").
+ * each of the four workflow columns ("1. Pick a response",
+ * "2. Read the reply", "3. Record the verdict",
+ * "4. Pick the next step"). Style is intentionally subtle — uppercase
+ * tracking, muted accent, no boxed background — so it reads as
+ * guidance, not chrome.
+ *
+ * When `help` is provided we render a small `(?)` icon beside the
+ * label that pops a tooltip on hover or keyboard focus. The icon is a
+ * real `<button>` so it's keyboard-reachable; the icon button uses
+ * the verbatim copy passed in via `help` (no remapping in here — the
+ * call site owns the wording so review is one-stop).
  */
-function StepPill({ number, label, testId }: StepPillProps) {
+function StepPill({ number, label, testId, help }: StepPillProps) {
   return (
     <div
       className="text-[11px] uppercase font-semibold tracking-wide text-muted-foreground flex items-center gap-1.5"
@@ -779,6 +801,26 @@ function StepPill({ number, label, testId }: StepPillProps) {
     >
       <span className="text-primary">{number}.</span>
       <span>{label}</span>
+      {help && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`What does step ${number} mean?`}
+              className="inline-flex items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              data-testid={`${testId}-help`}
+            >
+              <HelpCircle className="h-3 w-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            className="max-w-xs text-xs leading-relaxed normal-case font-normal tracking-normal"
+          >
+            {help}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -787,24 +829,23 @@ interface ActionRailProps {
   group: InvoiceGroupResponse;
   detail: InvoiceGroupDetailResponse | undefined;
   allRides: ClaimResponse[];
+  /** Latest payor responses on the group — feeds the WhatsNextCard's
+   *  metadata derivation (new invoice number, AI denial-reason hint). */
+  responses: PortalResponseItem[];
   onAfterVerdict: (message: string) => void;
 }
 
 /**
- * Right-side action rail. Hosts only the per-leg verdict picker and the
- * continuation/closure actions — the workflow-relevant controls.
+ * Right-side action rail. Hosts the per-leg verdict picker and the
+ * verdict-derived "What's next?" card — the workflow-relevant controls.
  *
- * Per Task #262 the rail no longer renders a top summary card (#invoice
- * + status badge + error type / total / rides field stack +
- * "Open full details" link + Submissions strip). Every datum that card
- * carried is already visible on the master list row to the left, so it
- * was duplicate chrome competing with the verdict pickers for vertical
- * space. A single small "Open full details" link is preserved at the
- * bottom of the rail as an escape hatch for operators who do need the
- * full invoice page (filings audit, attachments, etc.).
+ * Per Task #262 the rail no longer renders a top summary card. Per
+ * Task #322 the legacy `postResponseActions` continuation lane is
+ * gone — re-attest, denial-reason capture, and closure are all driven
+ * by the per-leg verdict mix and live in `WhatsNextCard`.
  *
- * Sticky positioning is applied by the parent wrapper so the step-3
- * pill stays glued to the rail.
+ * Sticky positioning is applied by the parent wrapper so step pills 3
+ * and 4 stay glued to the rail.
  */
 // Task #196 contract: an operator-recordable verdict requires the leg's
 // `sop_outcome` to be in the submitted set. Mirrored on the API side at
@@ -846,6 +887,7 @@ function ActionRail({
   group,
   detail,
   allRides,
+  responses,
   onAfterVerdict,
 }: ActionRailProps) {
   // Real, actionable legs the operator can pick a verdict on. Mirrors
@@ -910,11 +952,27 @@ function ActionRail({
         />
       )}
 
+      {/*
+        Step 4 — verdict-derived "What's next?" card. Pill renders flush
+        above the card so the 1-2-3-4 numbering reads top-to-bottom in
+        the rail just like the columns to its left. Pill only renders
+        when the card is going to render (we already gate on `detail`).
+      */}
       {detail && (
-        <ContinuationAndClosureSection
-          group={group}
-          onAfterVerdict={onAfterVerdict}
-        />
+        <div className="space-y-2" data-testid="whats-next-section">
+          <StepPill
+            number={4}
+            label="Pick the next step"
+            testId="step-pill-4"
+            help="The next-step controls are derived from the verdicts you just recorded — re-attest the approved legs in the portal, capture the payor's reason for any denials, close out, or stamp the group as awaiting another payor reply."
+          />
+          <WhatsNextCard
+            group={group}
+            rides={allRides}
+            responses={responses}
+            onAfterAction={onAfterVerdict}
+          />
+        </div>
       )}
 
       {/*
@@ -1397,190 +1455,6 @@ function ReconcileVerdictDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-interface ContinuationActionDef {
-  key: string;
-  label: string;
-  sub: string;
-  icon: React.ReactNode;
-  toneClass: string;
-  targetStatus: string;
-  reason: string;
-}
-
-interface ContinuationAndClosureSectionProps {
-  group: InvoiceGroupResponse;
-  onAfterVerdict: (message: string) => void;
-}
-
-/**
- * Continuation actions (re-dispute / re-attest / submit new invoice) and
- * closure actions live together in one rail card. Continuation logic is
- * the same as the Queue page panel — reading
- * `validTransitions.postResponseActions` for the legal set, every action
- * routes through `Needs Evidence` until #185 wires per-action endpoints.
- */
-function ContinuationAndClosureSection({
-  group,
-  onAfterVerdict,
-}: ContinuationAndClosureSectionProps) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const updateStatus = useUpdateInvoiceGroupStatus();
-
-  const { data: validTransitions } = useGetInvoiceGroupValidTransitions(group.id);
-  const postResponseActions = (validTransitions?.postResponseActions || []) as string[];
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
-    queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(group.id) });
-    queryClient.invalidateQueries({
-      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(group.id),
-    });
-    queryClient.invalidateQueries({
-      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
-    });
-  };
-
-  const continuationActions: ContinuationActionDef[] = [];
-  if (postResponseActions.includes("re_dispute")) {
-    continuationActions.push({
-      key: "re_dispute",
-      label: "Re-dispute",
-      sub: "Gather more evidence and re-submit",
-      icon: <Send className="h-3.5 w-3.5" />,
-      toneClass: "bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900",
-      targetStatus: "Needs Evidence",
-      reason:
-        "Re-dispute with additional points — returned to evidence gathering after payor response",
-    });
-  }
-  if (postResponseActions.includes("resolve_reattest")) {
-    continuationActions.push({
-      key: "resolve_reattest",
-      label: "Re-attest",
-      sub: "Capture re-attestation; keep the dispute moving",
-      icon: <RefreshCw className="h-3.5 w-3.5" />,
-      toneClass: "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-900",
-      targetStatus: "Needs Evidence",
-      reason:
-        "Resolve via re-attestation — returned to evidence gathering to attach re-attested documentation",
-    });
-  }
-  if (postResponseActions.includes("resolve_new_invoice")) {
-    continuationActions.push({
-      key: "resolve_new_invoice",
-      label: "Submit new invoice",
-      sub: "Set up the new invoice # and re-submit",
-      icon: <CheckCircle className="h-3.5 w-3.5" />,
-      toneClass: "bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-900",
-      targetStatus: "Needs Evidence",
-      reason:
-        "Resolve via new invoice number — returned to evidence gathering for re-issued invoice details",
-    });
-  }
-
-  const handleContinuation = async (action: ContinuationActionDef) => {
-    try {
-      await updateStatus.mutateAsync({
-        id: group.id,
-        data: { status: action.targetStatus, reason: action.reason },
-      });
-      invalidate();
-      onAfterVerdict(`${action.label} — moved to ${action.targetStatus}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Action failed.";
-      toast({
-        title: `Couldn't apply "${action.label}"`,
-        description: msg,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const isPending = updateStatus.isPending;
-
-  return (
-    <div
-      className="rounded-md border bg-card overflow-hidden"
-      data-testid="continuation-and-closure"
-    >
-      <div className="px-4 py-2.5 border-b bg-muted/30">
-        <h3 className="text-sm font-semibold">What's next?</h3>
-        <p className="text-[11px] text-muted-foreground">
-          Continue the dispute or close it out.
-        </p>
-      </div>
-      <div className="p-3 space-y-3">
-        <div className="space-y-1.5" data-testid="verdict-lane-continuation">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
-            Continuation
-          </div>
-          {continuationActions.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">
-              No continuation actions available for this response type.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-1.5">
-              {continuationActions.map((action) => (
-                <Button
-                  key={action.key}
-                  variant="outline"
-                  className={`h-auto py-2 px-3 flex flex-col items-start gap-0.5 ${action.toneClass}`}
-                  disabled={isPending}
-                  onClick={() => handleContinuation(action)}
-                  data-testid={`button-continuation-${action.key}`}
-                >
-                  <span className="flex items-center gap-2 font-semibold text-xs">
-                    {action.icon}
-                    {action.label}
-                  </span>
-                  <span className="text-[11px] font-normal opacity-80 text-left">
-                    {action.sub}
-                  </span>
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Separator />
-
-        <div className="space-y-1.5" data-testid="verdict-lane-closure">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
-            Closure — payor formally denied
-          </div>
-          <ClosureActions
-            target={{ kind: "invoice_group", id: group.id }}
-            outcome={group.outcome}
-            closureReason={group.closureReason}
-            triggers={[
-              {
-                reason: "denied_by_payor",
-                label: "Denied by Payor",
-                sub: "Payor formally denied — close out, no further dispute",
-                icon: <ArrowRight className="h-3.5 w-3.5" />,
-                testId: "button-closure-denied-by-payor",
-              },
-            ]}
-            onAfterSuccess={() => {
-              invalidate();
-              onAfterVerdict(`#${group.invoiceNumber} closed as Denied by Payor`);
-            }}
-          />
-        </div>
-
-        {isPending && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Applying verdict…
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 

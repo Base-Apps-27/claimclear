@@ -214,6 +214,9 @@ importers:
       '@workspace/leg-state':
         specifier: workspace:*
         version: link:../../lib/leg-state
+      '@workspace/payor-denial-reasons':
+        specifier: workspace:*
+        version: link:../../lib/payor-denial-reasons
       '@workspace/vocab':
         specifier: workspace:*
         version: link:../../lib/vocab

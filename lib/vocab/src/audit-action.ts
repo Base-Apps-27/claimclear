@@ -68,6 +68,12 @@ const GROUP_ONLY: Record<string, string> = {
   group_resolved: "Group resolved",
   group_denied: "Group denied",
   mas_reattest_recorded_offline: "MAS re-attest recorded (offline)",
+  // Task #322 — verdict-derived "What's next?" surface on Responses
+  // Awaiting Review. The picker captures a qualitative tag for the
+  // payor's denial reason, and the "I replied — wait for payor again"
+  // button stamps the group as awaiting the next inbound reply.
+  payor_denial_reason_recorded: "Payor denial reason recorded",
+  awaiting_payor_again: "Marked awaiting payor reply",
 };
 
 export const AUDIT_ACTION_LABELS_BY_KIND = {

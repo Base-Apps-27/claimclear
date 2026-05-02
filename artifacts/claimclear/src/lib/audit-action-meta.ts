@@ -124,6 +124,11 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   outbound_sent: meta("outbound_sent", "group", Mail, "text-emerald-600", "communication"),
   bounce_received: meta("bounce_received", "group", MailX, "text-rose-600", "communication"),
   mas_reattest_recorded_offline: meta("mas_reattest_recorded_offline", "group", ShieldCheck, "text-amber-600", "status"),
+  // Task #322 — surface the new verdict-derived "What's next?" actions
+  // in the activity feed with their own tone tokens so reviewers can
+  // skim for them. Both are group-only by design.
+  payor_denial_reason_recorded: meta("payor_denial_reason_recorded", "group", Tag, "text-rose-600", "status"),
+  awaiting_payor_again: meta("awaiting_payor_again", "group", Send, "text-blue-600", "communication"),
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {

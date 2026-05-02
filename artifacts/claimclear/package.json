@@ -91,6 +91,7 @@
     "@uppy/react": "^5.2.0",
     "@workspace/closure-options": "workspace:*",
     "@workspace/leg-state": "workspace:*",
+    "@workspace/payor-denial-reasons": "workspace:*",
     "@workspace/vocab": "workspace:*",
     "canvas-confetti": "^1.9.4",
     "dompurify": "^3.4.0",
