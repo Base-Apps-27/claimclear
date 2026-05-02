@@ -14,6 +14,12 @@ import type {
 import { useQueryClient } from "@tanstack/react-query";
 import { StatusBadge } from "@/components/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -328,7 +334,6 @@ export default function Queue() {
     : null;
 
   const workflowPanelRef = useRef<HTMLDivElement>(null);
-  const triagePanelRef = useRef<HTMLDivElement>(null);
 
   const setSelectedWorkflowId = (id: number | null) => {
     set({ group: id == null ? null : String(id) }, false);
@@ -344,11 +349,11 @@ export default function Queue() {
     });
   };
 
+  // Triage selection drives a modal dialog (see ClassificationInbox +
+  // Dialog below). No scroll-into-view needed — the dialog pops up
+  // centered over the page and the inbox stays put behind it.
   const selectTriage = (id: number) => {
     setSelectedTriageId(id);
-    window.requestAnimationFrame(() => {
-      triagePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
   };
 
   const handleTabChange = (value: string) => {
@@ -739,7 +744,9 @@ export default function Queue() {
       {/* Classification Inbox — collapsible, claim-aware. Defaults
           collapsed because most days nothing imports; expanded state is
           URL-persisted (?inbox=open) so a refresh keeps it open while
-          someone's actively working through it. */}
+          someone's actively working through it. The triage workspace
+          itself opens in a modal dialog (below) so the inbox list stays
+          in place when a row is picked. */}
       <ClassificationInbox
         open={inboxOpen}
         onToggle={() => setInboxOpen(!inboxOpen)}
@@ -748,27 +755,45 @@ export default function Queue() {
         total={inboxTotal}
         selectedId={selectedTriageId}
         onSelect={selectTriage}
-        triagePanelRef={triagePanelRef}
-        triagePanel={
-          selectedTriageId ? (() => {
-            // Re-find the inbox payload row each render so per-claim
-            // mutations show their effect (the row is a derivation of
-            // the embedded inbox payload, which the cache invalidate
-            // refetches under the same query key).
-            const row = inboxGroups.find((g) => g.id === selectedTriageId);
-            if (!row) return null;
-            return (
-              <QueueNeedsReviewPanel
-                inboxGroup={row}
-                onCompleted={(message) => {
-                  setSuccessMessage(message);
-                  invalidate();
-                }}
-              />
-            );
-          })() : null
-        }
       />
+
+      {/* Triage workspace dialog. Open whenever an inbox row is
+          selected; closing it (Esc, overlay, X) clears the selection.
+          We re-find the inbox payload row each render so per-claim
+          mutations show their effect (the row is a derivation of the
+          embedded inbox payload, which the cache invalidate refetches
+          under the same query key). */}
+      <Dialog
+        open={selectedTriageId != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTriageId(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-3xl max-h-[90vh] p-0 gap-0"
+          data-testid="triage-dialog"
+        >
+          <DialogTitle className="sr-only">Classification workspace</DialogTitle>
+          <DialogDescription className="sr-only">
+            Classify or exclude individual claims for the selected invoice group.
+          </DialogDescription>
+          <div className="overflow-y-auto max-h-[90vh] p-6 pt-10">
+            {selectedTriageId != null && (() => {
+              const row = inboxGroups.find((g) => g.id === selectedTriageId);
+              if (!row) return null;
+              return (
+                <QueueNeedsReviewPanel
+                  inboxGroup={row}
+                  onCompleted={(message) => {
+                    setSuccessMessage(message);
+                    invalidate();
+                  }}
+                />
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className={`grid grid-cols-1 gap-6 ${selectedWorkflowId ? "lg:grid-cols-3" : ""}`}>
         <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>
@@ -931,7 +956,9 @@ export default function Queue() {
 // Classification Inbox — claim-aware preview of what's sitting in
 // "Needs Review" without an Error Type yet. Each group expands to show
 // the underlying claims with errorDetails so the operator can see, at a
-// glance, whether anything qualifies before opening triage.
+// glance, whether anything qualifies before opening triage. Picking a
+// row opens the triage workspace in a modal dialog rendered by the
+// parent Queue component, so the inbox itself stays in place.
 interface ClassificationInboxProps {
   open: boolean;
   onToggle: () => void;
@@ -940,8 +967,6 @@ interface ClassificationInboxProps {
   total: number;
   selectedId: number | null;
   onSelect: (id: number) => void;
-  triagePanelRef: React.RefObject<HTMLDivElement | null>;
-  triagePanel: React.ReactNode;
 }
 
 function ClassificationInbox({
@@ -952,8 +977,6 @@ function ClassificationInbox({
   total,
   selectedId,
   onSelect,
-  triagePanelRef,
-  triagePanel,
 }: ClassificationInboxProps) {
   // Empty inbox is the common case — render a subdued, non-expandable
   // strip so the operator's eye skips it. Anything > 0 makes the card
@@ -1034,12 +1057,6 @@ function ClassificationInbox({
           )}
         </CardContent>
       </Card>
-
-      {hasWork && open && triagePanel && (
-        <div ref={triagePanelRef} className="scroll-mt-4">
-          {triagePanel}
-        </div>
-      )}
     </div>
   );
 }
