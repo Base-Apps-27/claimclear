@@ -359,6 +359,11 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
     // be detected as drifted (no diff) but a *group* moved to Needs Review
     // by the auto-classifier wouldn't pull its disputed legs along.
     const SYNCABLE = ["Needs Review", "Portal Queued", "Generating Email", "Awaiting Response", "Ready to Review", "Resolved", "Denied"];
+    // Drizzle interpolates a JS array as a row literal ($1,$2,...) which
+    // Postgres rejects in ANY(). Use ARRAY[$1, $2, ...] instead so each
+    // element is passed as a separate parameter and the whole thing is a
+    // proper text array.
+    const SYNCABLE_SQL = sql.join(SYNCABLE.map((s) => sql`${s}`), sql`, `);
     const drifted = await runWithDbWarmupRetry("Disputed-child sync backfill scan", () => db.execute(sql`
       SELECT c.id            AS claim_id,
              c.conf_number   AS conf_number,
@@ -372,7 +377,7 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
       INNER JOIN invoice_groups ig ON ig.id = c.invoice_group_id
       WHERE c.error_type_id IS NOT NULL
         AND c.status::text != 'On Hold'
-        AND ig.status::text = ANY(${SYNCABLE}::text[])
+        AND ig.status::text = ANY(ARRAY[${SYNCABLE_SQL}])
         AND c.status::text != ig.status::text
     `));
     const rows = (drifted.rows ?? []) as Array<{
