@@ -1,0 +1,1 @@
+ALTER TABLE "claims" ALTER COLUMN "date" SET DATA TYPE date;

@@ -8,6 +8,19 @@ import { normalizeServiceDate } from "../lib/dates";
 
 const router: IRouter = Router();
 
+// Per-row reason for an import rejection. Surfaced verbatim in the
+// import response so the operator can fix the source CSV without
+// guessing which row went wrong. Task #351 added the
+// `invalid_service_date` reason — the typed `claims.date` column would
+// reject the row at INSERT time anyway, so we filter it out up front
+// and report it explicitly instead of letting a 500 abort the whole
+// batch.
+type RejectedRow = {
+  confNumber: string | null;
+  reason: "invalid_service_date";
+  rawDate: string;
+};
+
 router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   const { rows, duplicateAction } = req.body;
   const dupAction = duplicateAction || "skip";
@@ -24,6 +37,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   let groupsCreated = 0;
   let excludedCount = 0;
   const duplicates: string[] = [];
+  const rejected: RejectedRow[] = [];
 
   const seenConfNumbers = new Set<string>();
   const validRows = rows
@@ -37,25 +51,62 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
     })
     .map(row => ({ ...row, confNumber: String(row.confNumber).trim() }));
 
-  const skippedCount = rows.length - validRows.length;
-  skipped += skippedCount;
+  // Second-pass row filter: any row whose `date` is non-empty but
+  // doesn't normalize to ISO is rejected with a structured reason.
+  // Empty / missing dates remain allowed (they land as NULL — the
+  // dashboard renders "—" for those rows). Doing this BEFORE we hit
+  // any insert/update path means a single bad row can no longer 500
+  // the entire batch on the typed `claims.date` column.
+  const acceptedRows: typeof validRows = [];
+  for (const row of validRows) {
+    const rawDate = typeof row.date === "string" ? row.date : (row.date == null ? "" : String(row.date));
+    const trimmed = rawDate.trim();
+    if (trimmed.length === 0) {
+      acceptedRows.push({ ...row, date: null });
+      continue;
+    }
+    const normalized = normalizeServiceDate(trimmed);
+    if (!normalized) {
+      rejected.push({
+        confNumber: row.confNumber,
+        reason: "invalid_service_date",
+        rawDate: trimmed,
+      });
+      continue;
+    }
+    acceptedRows.push({ ...row, date: normalized });
+  }
 
-  if (validRows.length === 0) {
-    res.json({ success: true, created: 0, skipped: rows.length, updated: 0, excludedCount: 0, duplicates: [], total: rows.length, batchId, groupsCreated: 0 });
+  const skippedCount = rows.length - validRows.length;
+  skipped += skippedCount + rejected.length;
+
+  if (acceptedRows.length === 0) {
+    res.json({
+      success: true,
+      created: 0,
+      skipped,
+      updated: 0,
+      excludedCount: 0,
+      duplicates: [],
+      total: rows.length,
+      batchId,
+      groupsCreated: 0,
+      rejected,
+    });
     return;
   }
 
-  const confNumbers = validRows.map(r => r.confNumber);
+  const confNumbers = acceptedRows.map(r => r.confNumber);
   const existingClaims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
     .from(claimsTable)
     .where(inArray(claimsTable.confNumber, confNumbers));
 
   const existingMap = new Map(existingClaims.map(c => [c.confNumber, c.id]));
 
-  const invoiceMap = new Map<string, typeof validRows>();
-  const noInvoiceRows: typeof validRows = [];
+  const invoiceMap = new Map<string, typeof acceptedRows>();
+  const noInvoiceRows: typeof acceptedRows = [];
 
-  for (const row of validRows) {
+  for (const row of acceptedRows) {
     const invoiceNum = parseInvoiceNumber(row.refNumber);
     if (invoiceNum) {
       if (!invoiceMap.has(invoiceNum)) {
@@ -134,15 +185,11 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
 
       if (existingId != null) {
         if (dupAction === "update") {
+          // `row.date` is already normalized to ISO `YYYY-MM-DD` (or
+          // null) by the up-front rejection pass; no per-row guard
+          // needed here. The typed column would reject anything else.
           const updateData: Partial<typeof claimsTable.$inferInsert> = { invoiceGroupId: groupId };
-          // Only persist the date if we can normalize it to ISO. Storing
-          // raw unparseable text would re-poison the read paths (which
-          // cast through ::date) — better to leave the column null than
-          // to crash MIN()/sort/expiring-filter queries on a bad row.
-          if (row.date) {
-            const normalized = normalizeServiceDate(row.date);
-            if (normalized) updateData.date = normalized;
-          }
+          if (row.date !== null) updateData.date = row.date;
           if (row.refNumber) updateData.refNumber = row.refNumber;
           if (row.clientNumber) updateData.clientNumber = row.clientNumber;
           if (row.carNumber) updateData.carNumber = String(row.carNumber);
@@ -161,11 +208,9 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         await db.insert(claimsTable).values({
           invoiceGroupId: groupId,
           confNumber: row.confNumber,
-          // Normalize at write time so all rows land in ISO YYYY-MM-DD.
-          // Unparseable input is stored as NULL (not raw text) so it can't
-          // 500 the read-side queries that cast claims.date through ::date
-          // — operators see "no date" rather than the dashboard going dark.
-          date: row.date ? (normalizeServiceDate(row.date) ?? null) : null,
+          // Already-normalized ISO date (or null) — see up-front
+          // rejection pass for the contract.
+          date: row.date,
           refNumber: row.refNumber || "",
           clientNumber: row.clientNumber || groupClientNumber || "",
           carNumber: String(row.carNumber || ""),
@@ -191,12 +236,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
     if (existingId != null) {
       if (dupAction === "update") {
         const updateData: Partial<typeof claimsTable.$inferInsert> = {};
-        // See grouped-rows branch above: drop unparseable dates rather
-        // than re-poisoning the read paths with raw text.
-        if (row.date) {
-          const normalized = normalizeServiceDate(row.date);
-          if (normalized) updateData.date = normalized;
-        }
+        if (row.date !== null) updateData.date = row.date;
         if (row.refNumber) updateData.refNumber = row.refNumber;
         if (row.clientNumber) updateData.clientNumber = row.clientNumber;
         if (row.carNumber) updateData.carNumber = String(row.carNumber);
@@ -218,9 +258,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
       const hasErrorType = row.errorTypeId != null;
       await db.insert(claimsTable).values({
         confNumber: row.confNumber,
-        // Same write-time normalization as the grouped-rows branch above:
-        // unparseable input lands as NULL so it can't 500 read-side casts.
-        date: row.date ? (normalizeServiceDate(row.date) ?? null) : null,
+        date: row.date,
         refNumber: row.refNumber || "",
         clientNumber: row.clientNumber || "",
         carNumber: String(row.carNumber || ""),
@@ -240,12 +278,12 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
 
   // Record a single human-readable activity row so the dashboard activity
   // feed can show "X imported N claims from job-status report".
-  if (created > 0 || updated > 0 || groupsCreated > 0) {
+  if (created > 0 || updated > 0 || groupsCreated > 0 || rejected.length > 0) {
     await db.insert(auditLogsTable).values({
       claimId: null,
       invoiceGroupId: null,
       action: "claims_imported",
-      details: `Imported ${created} claim${created === 1 ? "" : "s"} (${updated} updated, ${skipped} skipped) across ${groupsCreated} new invoice group${groupsCreated === 1 ? "" : "s"}`,
+      details: `Imported ${created} claim${created === 1 ? "" : "s"} (${updated} updated, ${skipped} skipped${rejected.length > 0 ? `, ${rejected.length} rejected` : ""}) across ${groupsCreated} new invoice group${groupsCreated === 1 ? "" : "s"}`,
       metadata: {
         batchId,
         created,
@@ -255,6 +293,10 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         groupsCreated,
         invoiceGroupCount: invoiceMap.size,
         total: rows.length,
+        rejectedCount: rejected.length,
+        // Cap embedded sample so the audit row stays small even if the
+        // operator uploads a CSV where every row has a busted date.
+        rejectedSample: rejected.slice(0, 25),
       },
       userEmail: req.user?.email ?? null,
       userName: req.user?.displayName ?? null,
@@ -272,6 +314,7 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
     batchId,
     groupsCreated,
     invoiceGroupCount: invoiceMap.size,
+    rejected,
   });
 }));
 

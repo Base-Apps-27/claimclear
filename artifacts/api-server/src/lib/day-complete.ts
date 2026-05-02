@@ -56,11 +56,12 @@ function isGroupConcluded(g: { status: string; outcome: string }): boolean {
 
 /**
  * Returns the calendar day a given invoice group belongs to (MIN of its
- * claims' service-date strings). Returns null if the group has no claims
- * or no claims with a date.
+ * claims' service dates). Returns null if the group has no claims or no
+ * claims with a date.
  *
- * `claims.date` is a text column populated with `YYYY-MM-DD` strings, so
- * lexicographic MIN is equivalent to chronological MIN.
+ * `claims.date` is a typed DATE column (Task #351, migration 0022), so
+ * MIN() yields a date directly — re-emitted as text so the JS callers
+ * receive a YYYY-MM-DD string via postgres' ISO datestyle.
  */
 export async function getInvoiceGroupDay(
   groupId: number,
@@ -69,13 +70,10 @@ export async function getInvoiceGroupDay(
   const ex: DbExecutor = executor ?? db;
   const [row] = await ex
     .select({
-      // Cast text-typed claims.date through ::date so MIN compares
-      // calendar-correctly across mixed historical formats (M/D/YYYY,
-      // M/D/YY, ISO) and re-emit as ISO `YYYY-MM-DD` for the caller.
-      earliest: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
+      earliest: sql<string | null>`MIN(${claimsTable.date})::text`,
     })
     .from(claimsTable)
-    .where(sql`${claimsTable.invoiceGroupId} = ${groupId} AND ${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`);
+    .where(sql`${claimsTable.invoiceGroupId} = ${groupId} AND ${claimsTable.date} IS NOT NULL`);
   return row?.earliest ?? null;
 }
 
@@ -103,14 +101,15 @@ export async function isDayConcluded(
         ${invoiceGroupsTable.id}      AS group_id,
         ${invoiceGroupsTable.status}  AS status,
         ${invoiceGroupsTable.outcome} AS outcome,
-        -- Normalize text-typed date through ::date so MIN compares
-        -- calendar-correctly and the comparison key matches the ISO
-        -- \`day\` argument. See getInvoiceGroupDay for context.
-        to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD') AS earliest_date
+        -- claims.date is a typed DATE column (Task #351, migration
+        -- 0022); MIN() yields a date and ::text formats it as
+        -- YYYY-MM-DD so the comparison key matches the ISO \`day\`
+        -- argument.
+        MIN(${claimsTable.date})::text AS earliest_date
       FROM ${invoiceGroupsTable}
       INNER JOIN ${claimsTable}
         ON ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-      WHERE ${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''
+      WHERE ${claimsTable.date} IS NOT NULL
       GROUP BY ${invoiceGroupsTable.id}
     )
     SELECT

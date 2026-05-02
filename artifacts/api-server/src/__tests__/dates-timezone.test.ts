@@ -210,22 +210,29 @@ test("normalizeServiceDate: returns null for empty / unparseable / impossible da
   }
 });
 
-test("daysRemaining accepts M/D/YYYY and M/D/YY directly", () => {
-  // Production data used to silently fall out of the dashboard's
-  // urgency math because the helpers required strict ISO. After the
-  // dates.ts normalizer + migration 0020 backfill, M/D/YYYY values
-  // must compute the same as their ISO equivalents.
-  const today = new Date("2026-04-02T16:00:00Z"); // Apr 2 noon ET
-  assert.equal(daysRemaining("4/2/2026", today, ET), daysRemaining("2026-04-02", today, ET));
-  assert.equal(daysRemaining("4/28/26", today, ET), daysRemaining("2026-04-28", today, ET));
+test("daysRemaining: helpers now accept ISO only — non-ISO inputs return null", () => {
+  // After Task #351 promoted `claims.date` to a typed DATE column,
+  // every read path returns a strict ISO `YYYY-MM-DD` string (or
+  // null) and the importer rejects unparseable input at write time.
+  // The helpers no longer accept M/D/YYYY / M/D/YY shapes — the
+  // `normalizeServiceDate` path is the importer's tool, not the
+  // deadline helpers'. Anything non-ISO must degrade to null so a
+  // stray test fixture or hand-constructed string can't silently
+  // shift a deadline.
+  const today = new Date("2026-04-02T16:00:00Z");
+  assert.equal(daysRemaining("4/2/2026", today, ET), null);
+  assert.equal(daysRemaining("4/28/26", today, ET), null);
 });
 
-test("isUrgentDeadline flags an Apr 2 service date on May 2 (deadline today, M/D/YYYY input)", () => {
+test("isUrgentDeadline flags an Apr 2 ISO service date on May 2 (deadline today)", () => {
   // The exact bug the user reported: it's May 2 and Apr 2 service
-  // dates have hit their 30-day deadline. The deadline helpers must
-  // treat the historical M/D/YYYY string as urgent, not silently
-  // ignore it.
+  // dates have hit their 30-day deadline. With the typed-date
+  // contract, the column reads back as "2026-04-02" already; the
+  // helper just needs to treat the ISO string as urgent.
   const may2et = new Date("2026-05-02T16:00:00Z"); // May 2 noon ET
-  assert.equal(isUrgentDeadline("4/2/2026", may2et, ET), true);
   assert.equal(isUrgentDeadline("2026-04-02", may2et, ET), true);
+  // Non-ISO input is no longer accepted — the contract is "DB
+  // returns ISO or null", and a stray non-ISO value should never
+  // trip the urgent badge.
+  assert.equal(isUrgentDeadline("4/2/2026", may2et, ET), false);
 });

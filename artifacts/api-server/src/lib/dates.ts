@@ -97,15 +97,23 @@ export function normalizeServiceDate(input: string | null | undefined): string |
 }
 
 /**
- * Backwards-compatible name retained for call sites that historically
- * gated on a strict ISO check. Now accepts any format
- * {@link normalizeServiceDate} can parse — the callers immediately
- * normalize before doing math, so widening this guard simply lets a
- * legitimately parseable non-ISO row through instead of being silently
- * dropped from the dashboard.
+ * Strict ISO YYYY-MM-DD guard used by the deadline helpers. After
+ * Task #351 promoted `claims.date` to a typed DATE column, drizzle's
+ * `mode: "string"` parser returns either a strict YYYY-MM-DD string
+ * or null on every read path — so the helpers no longer accept the
+ * legacy M/D/YYYY shape (the importer rejects unparseable input at
+ * write time and `normalizeServiceDate` only runs there).
+ *
+ * This guard remains so that empty / null / structurally-invalid
+ * strings (e.g. a hand-rolled "2026-02-30" in a test fixture) still
+ * degrade gracefully to "no deadline known" instead of crashing the
+ * dashboard via an Invalid Date.
  */
 function isValidYMD(s: string | null | undefined): s is string {
-  return normalizeServiceDate(s) !== null;
+  if (!s || typeof s !== "string") return false;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return false;
+  return reassembleIfValid(Number(m[1]), Number(m[2]), Number(m[3])) !== null;
 }
 
 function ymdToUtcMillis(parts: { y: number; m: number; d: number }): number {
@@ -168,10 +176,14 @@ export function daysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  const norm = normalizeServiceDate(serviceDate);
-  if (!norm) return null;
+  // Inputs come from the typed `claims.date` column (DATE, drizzle
+  // mode "string") or aggregates over it cast to text — both yield a
+  // strict ISO YYYY-MM-DD or null. The `normalizeServiceDate` round-
+  // trip the helper used to perform is now redundant on those paths;
+  // this guard remains as a safety net for malformed test inputs.
+  if (!isValidYMD(serviceDate)) return null;
   const today = dateKeyInTz(now, tz);
-  const deadline = rawDeadlineKey(norm);
+  const deadline = rawDeadlineKey(serviceDate);
   return diffDaysYMD(deadline, today);
 }
 
@@ -185,10 +197,9 @@ export function effectiveDaysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  const norm = normalizeServiceDate(serviceDate);
-  if (!norm) return null;
+  if (!isValidYMD(serviceDate)) return null;
   const today = dateKeyInTz(now, tz);
-  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(norm));
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
   return diffDaysYMD(deadline, today);
 }
 
@@ -202,10 +213,9 @@ export function isUrgentDeadline(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): boolean {
-  const norm = normalizeServiceDate(serviceDate);
-  if (!norm) return false;
+  if (!isValidYMD(serviceDate)) return false;
   const today = dateKeyInTz(now, tz);
-  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(norm));
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
   // YYYY-MM-DD strings sort lexicographically as dates, so `<=` is a
   // valid calendar comparison here — no Date round-trip required.
   return deadline <= today;

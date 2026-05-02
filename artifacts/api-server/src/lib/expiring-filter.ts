@@ -22,11 +22,9 @@ function maxDaysFor(mode: ExpiringMode): number {
 // Saturday or Sunday, shifted back to the prior Friday so it reflects the day
 // the office can actually file.
 //
-// Callers MUST pass an expression that's already a `date` (or NULL) — the
-// `dateExpr` is referenced four times here and an inline `::date` cast on a
-// non-castable text would 500 the whole query. Use `safeDateCast()` below
-// (or pre-cast in a CTE/subquery) so empty strings degrade to NULL instead
-// of raising "invalid input syntax for type date".
+// `dateExpr` must be an expression of type `date` (or NULL). `claims.date`
+// is now natively `date` (Task #351, migration 0022), so callers can pass
+// the column reference directly — no NULLIF/text-cast wrapper needed.
 function effectiveDeadlineSql(dateExpr: SQL): SQL {
   return sql`(
     CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
@@ -35,15 +33,6 @@ function effectiveDeadlineSql(dateExpr: SQL): SQL {
       ELSE (${dateExpr} + INTERVAL '30 days')::date
     END
   )`;
-}
-
-// Cast text-typed `claims.date` to `date` safely: empty strings become NULL
-// (which `effectiveDeadlineSql` then propagates as NULL through the CASE),
-// so a single bad row can't 500 the dashboard's expiring/urgent filters.
-// Migration 0020 backfilled all rows to ISO; this guard is the safety net
-// for any future stray non-ISO insert. */
-function safeDateCast(textExpr: SQL): SQL {
-  return sql`NULLIF(${textExpr}, '')::date`;
 }
 
 function actionableClaimStatusCondition(): SQL {
@@ -58,10 +47,10 @@ function actionableGroupStatusCondition(): SQL {
 
 export function buildClaimExpiringCondition(mode: ExpiringMode): SQL {
   const max = maxDaysFor(mode);
-  // Route the text-typed claims.date through safeDateCast so empty strings
-  // and any future malformed inserts degrade to NULL (and get filtered out
-  // by the IS NOT NULL guard) instead of 500ing the dashboard.
-  const dateExpr = safeDateCast(sql`${claimsTable.date}`);
+  // claims.date is now a typed DATE column (Task #351, migration 0022)
+  // so the column reference is directly usable as a date expression —
+  // no NULLIF/text-cast safety net required.
+  const dateExpr = sql`${claimsTable.date}`;
   return and(
     sql`${dateExpr} IS NOT NULL`,
     actionableClaimStatusCondition(),
@@ -74,13 +63,12 @@ export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   // Earliest service date across the group's child claims, computed as a
   // correlated subquery so the existing pagination / total-count queries on
   // invoice_groups stay flat (no JOIN that would inflate row counts).
-  // NULLIF(...,'')::date keeps stray empty-string rows from raising
-  // "invalid input syntax for type date" inside MIN().
+  // claims.date is a typed DATE column, so MIN() yields a date directly.
   const earliestDateSubquery = sql`(
-    SELECT MIN(NULLIF(c.date, '')::date)
+    SELECT MIN(c.date)
     FROM claims c
     WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
-      AND c.date IS NOT NULL AND c.date <> ''
+      AND c.date IS NOT NULL
   )`;
   return and(
     actionableGroupStatusCondition(),

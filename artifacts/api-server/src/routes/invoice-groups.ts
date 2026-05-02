@@ -50,18 +50,15 @@ const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUS
 //   2. the API consistently returns ISO regardless of stored format,
 //   3. the JS deadline helpers receive a value they can parse without
 //      relying on the M/D/YYYY normalizer fallback.
-// Empty strings are coerced to NULL so a single bad row doesn't poison
-// the whole group's earliest-date calculation.
-// The IS NOT NULL / <> '' predicates here are defensive (NULLIF already
-// coerces '' → NULL); we keep them so the WHERE plan stays explicit and
-// matches the predicate we'd reach for if a typed `service_date DATE`
-// column ever replaces this cast (see migration 0021 header note).
+// claims.date is now a typed DATE column (Task #351, migration 0022),
+// so MIN() yields a date directly — calendar-correct without any cast
+// dance. ::text formats it as YYYY-MM-DD via postgres' ISO datestyle so
+// the API and the JS deadline helpers receive a string they can parse.
 const earliestServiceDateExpr = sql<string | null>`(
-  SELECT to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')
+  SELECT MIN(${claimsTable.date})::text
   FROM ${claimsTable}
   WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
     AND ${claimsTable.date} IS NOT NULL
-    AND ${claimsTable.date} <> ''
 )`;
 
 const router: IRouter = Router();

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index, check, date, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -45,7 +45,16 @@ export const claimsTable = pgTable("claims", {
   id: serial("id").primaryKey(),
   invoiceGroupId: integer("invoice_group_id").references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
   confNumber: text("conf_number").notNull(),
-  date: text("date"),
+  // Service date (calendar day), typed as DATE so MIN()/sort/filter are
+  // calendar-correct in SQL and the column reads back as a YYYY-MM-DD
+  // string in JS via drizzle's `mode: "string"` parser. The importer is
+  // responsible for normalizing user-supplied date shapes to ISO at
+  // write time (`normalizeServiceDate` in `artifacts/api-server/src/lib
+  // /dates.ts`); rows that fail to normalize are rejected with a
+  // structured per-row reason rather than silently nulled. Migration
+  // 0022 (`0022_typed_claims_date.sql`) converted the column from TEXT
+  // to DATE; migration 0021 backfilled all stored values to ISO first.
+  date: date("date", { mode: "string" }),
   refNumber: text("ref_number"),
   clientNumber: text("client_number"),
   carNumber: text("car_number"),

@@ -72,10 +72,9 @@ function actorFromReq(req: Request) {
 
 const CLAIMS_SORTABLE_COLUMNS = {
   confNumber: claimsTable.confNumber,
-  // Cast text-typed claims.date through ::date so user-requested sorts
-  // (sort=date) are calendar-correct across mixed historical formats.
-  // Lexical text sort would put "10/2/2026" before "4/2/2026".
-  date: sql`NULLIF(${claimsTable.date}, '')::date`,
+  // claims.date is a typed DATE column (Task #351, migration 0022) —
+  // sortable directly, no cast required.
+  date: claimsTable.date,
   clientNumber: claimsTable.clientNumber,
   errorTypeName: claimsTable.errorTypeName,
   claimAmount: sql`${claimsTable.claimAmount}::numeric`,
@@ -162,13 +161,12 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
     conditions.push(lte(sql`${claimsTable.claimAmount}::numeric`, sql`${amountMax}::numeric`));
   }
   if (serviceDateFrom) {
-    // Cast text-typed claims.date through ::date so the comparison is
-    // calendar-correct across mixed historical formats. Lexical gte/lte
-    // on text would mishandle "4/2/2026" vs "4/15/2026".
-    conditions.push(sql`NULLIF(${claimsTable.date}, '')::date >= ${serviceDateFrom}::date`);
+    // claims.date is a typed DATE column (Task #351, migration 0022),
+    // so the comparison is calendar-correct without any cast.
+    conditions.push(sql`${claimsTable.date} >= ${serviceDateFrom}::date`);
   }
   if (serviceDateTo) {
-    conditions.push(sql`NULLIF(${claimsTable.date}, '')::date <= ${serviceDateTo}::date`);
+    conditions.push(sql`${claimsTable.date} <= ${serviceDateTo}::date`);
   }
   if (carNumber && typeof carNumber === "string") {
     conditions.push(eq(claimsTable.carNumber, carNumber));
@@ -289,10 +287,10 @@ function buildClaimsOrderBy(sortCol: string | undefined, sortDir: string | undef
     return [dirFn(col)];
   }
   return [
-    // Cast text-typed claims.date through ::date so the sort is calendar-
-    // correct across mixed historical formats (M/D/YYYY, M/D/YY, ISO).
-    // Lexical text sort would put "10/2/2026" before "4/2/2026".
-    sql`NULLIF(${claimsTable.date}, '')::date ASC NULLS LAST`,
+    // claims.date is a typed DATE column (Task #351, migration 0022) —
+    // ascending sort with NULLS LAST keeps date-less rows out of the
+    // urgent-deadline part of the list.
+    sql`${claimsTable.date} ASC NULLS LAST`,
     desc(claimsTable.createdAt),
   ];
 }

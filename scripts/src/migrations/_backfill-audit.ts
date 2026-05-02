@@ -108,6 +108,18 @@ export const BACKFILL_IDS = {
   // reported but never written.
   masBulkCombinedNonIssue: "2026-05-mas-bulk-combined-non-issue",
 
+  // Task #351: pre-migration normalizer for the typed-claims-date
+  // cutover. Walks `claims.date` (TEXT), normalizes any non-ISO row
+  // through `normalizeServiceDate`, and either updates it in place
+  // (when `--apply`) or reports it (default dry-run) so the migration
+  // 0022 ALTER COLUMN TYPE can land cleanly. Rows that won't normalize
+  // are surfaced in the report so an operator can fix the source CSV
+  // before the schema swap. Writes one `claim_date_normalized` audit
+  // row per stamped claim; the `claims_dates_unparseable` summary row
+  // captures the unparseable cohort so the cutover history is
+  // discoverable later.
+  typedClaimsDate: "2026-05-typed-claims-date",
+
   // Task #299: heal invoice groups that the prior reclassification
   // backfills (Tasks #283/#284) demoted from approval/denial/etc. to
   // acknowledgment but whose group status was left stuck in `Needs
