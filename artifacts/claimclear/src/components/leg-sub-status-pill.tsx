@@ -24,6 +24,10 @@ import {
 // the production status-badge vocabulary exactly.
 const CLASSES: Record<LegSubStatus, string> = {
   excluded: "bg-muted text-muted-foreground border-border",
+  // Sibling-duplicate uses a muted slate tone — visually quiet on the leg
+  // row because the operator should treat duplicates as no-ops; the click-
+  // through link to the primary CLM does the real work.
+  duplicate: "bg-slate-100 text-slate-700 border-slate-300",
   needs_classification: "bg-amber-100 text-amber-800 border-amber-200",
   investigating: "bg-blue-100 text-blue-800 border-blue-200",
   blocked: "bg-orange-100 text-orange-800 border-orange-200",

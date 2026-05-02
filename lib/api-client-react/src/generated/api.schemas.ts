@@ -1028,6 +1028,10 @@ export interface GroupPackagingReadiness {
   /** Legs currently on hold (per-leg hold_reason or sop_outcome=hold). */
   heldLegCount: number;
   totalLegCount: number;
+  /** Sibling-duplicate legs that point at a primary in this group. */
+  duplicateLegCount: number;
+  /** Sibling-duplicate legs whose primary is NOT yet resolved (block the gate). */
+  unresolvedDuplicateLegCount: number;
 }
 
 export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {

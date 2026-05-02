@@ -1264,6 +1264,16 @@ export const GetInvoiceGroupResponse = zod
               "Legs currently on hold (per-leg hold_reason or sop_outcome=hold).",
             ),
           totalLegCount: zod.number(),
+          duplicateLegCount: zod
+            .number()
+            .describe(
+              "Sibling-duplicate legs that point at a primary in this group.",
+            ),
+          unresolvedDuplicateLegCount: zod
+            .number()
+            .describe(
+              "Sibling-duplicate legs whose primary is NOT yet resolved (block the gate).",
+            ),
         })
         .optional()
         .describe(

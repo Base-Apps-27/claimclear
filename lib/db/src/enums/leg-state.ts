@@ -55,4 +55,8 @@ export {
   deriveLegSubStatus,
   LEG_HOLD_REASONS,
   type LegHoldReason,
+  OUTCOME_ROLES,
+  type OutcomeRole,
+  type LegForOutcomeRole,
+  outcomeRole,
 } from "@workspace/leg-state";

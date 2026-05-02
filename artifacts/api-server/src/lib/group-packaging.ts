@@ -30,12 +30,18 @@ export interface GroupReadiness {
   heldLegCount: number;
   /** Total non-orphan legs considered (held legs included in the count). */
   totalLegCount: number;
+  /** Sibling-duplicate legs that point at a primary in this group. */
+  duplicateLegCount: number;
+  /** Sibling-duplicate legs whose primary is NOT yet resolved (block the gate). */
+  unresolvedDuplicateLegCount: number;
 }
 
-type LegInput = Pick<Claim, "sopOutcome" | "holdReason" | "status"> | {
+type LegInput = Pick<Claim, "id" | "sopOutcome" | "holdReason" | "status" | "duplicateOfClaimId"> | {
+  id?: number;
   sopOutcome: string | null;
   holdReason: string | null;
   status?: string | null;
+  duplicateOfClaimId?: number | null;
 };
 
 type GroupInput = Pick<InvoiceGroup, "status"> | { status: string | null };
@@ -67,8 +73,42 @@ export function computeGroupReadiness(
   let processed = 0;
   let excluded = 0;
   let held = 0;
+  let duplicateCount = 0;
+  let unresolvedDuplicateCount = 0;
+
+  // Pre-build an id → leg index so duplicate-resolution can look up its
+  // primary's bucket without a nested loop. Legs without an id field
+  // (e.g. test fixtures) cannot be primaries; they're only counted in
+  // their own bucket.
+  const byId = new Map<number, LegInput>();
+  for (const leg of legs) {
+    if (leg.id != null) byId.set(leg.id, leg);
+  }
+
+  // A primary is "resolved" for the duplicate-gate sense iff it is
+  // processed (include) or excluded (cannot_dispute / non_issue).
+  // Held / unprocessed primaries leave their duplicates unresolved.
+  function primaryIsResolved(primary: LegInput | undefined): boolean {
+    if (!primary) return false;
+    if (isHeld(primary)) return false;
+    if (primary.sopOutcome != null && DISPUTE_OUTCOMES.has(primary.sopOutcome)) return true;
+    if (primary.sopOutcome != null && EXCLUSION_OUTCOMES.has(primary.sopOutcome)) return true;
+    return false;
+  }
 
   for (const leg of legs) {
+    // Sibling duplicates short-circuit before every other bucket — they
+    // have no SOP walk of their own and must not be counted as
+    // unprocessed. Their gate contribution depends entirely on the
+    // primary's bucket, computed above.
+    if (leg.duplicateOfClaimId != null) {
+      duplicateCount += 1;
+      const primary = byId.get(leg.duplicateOfClaimId);
+      if (!primaryIsResolved(primary)) {
+        unresolvedDuplicateCount += 1;
+      }
+      continue;
+    }
     if (isHeld(leg)) {
       held += 1;
       continue;
@@ -92,6 +132,8 @@ export function computeGroupReadiness(
     excludedLegCount: excluded,
     heldLegCount: held,
     totalLegCount: total,
+    duplicateLegCount: duplicateCount,
+    unresolvedDuplicateLegCount: unresolvedDuplicateCount,
   };
 
   // Gate 1: group must be in a packageable status.
@@ -112,9 +154,10 @@ export function computeGroupReadiness(
     };
   }
 
-  // Gate 3: every non-held leg must have a sop_outcome set. Held legs
-  // are tracked separately and intentionally do not block packaging —
-  // they will resume their own flow after the hold is released.
+  // Gate 3: every non-held, non-duplicate leg must have a sop_outcome set.
+  // Held legs are tracked separately and intentionally do not block
+  // packaging. Sibling duplicates inherit their primary's resolution
+  // (handled by Gate 3b) and never appear in `unprocessed`.
   if (unprocessed > 0) {
     const noun = unprocessed === 1 ? "leg" : "legs";
     return {
@@ -124,9 +167,26 @@ export function computeGroupReadiness(
     };
   }
 
+  // Gate 3b: every sibling-duplicate must have a resolved primary.
+  // A duplicate whose primary is mid-walk blocks the gate; the gate
+  // naturally re-locks if the primary is reclassified back into the
+  // unprocessed bucket. (Validation at the mark-duplicate endpoint
+  // enforces same-group + same-error-type, so primaries are always
+  // present in this `legs` list.)
+  if (unresolvedDuplicateCount > 0) {
+    const noun = unresolvedDuplicateCount === 1 ? "duplicate" : "duplicates";
+    return {
+      ready: false,
+      reason: `${unresolvedDuplicateCount} sibling ${noun} ${unresolvedDuplicateCount === 1 ? "is" : "are"} waiting on the primary leg.`,
+      ...baseCounts,
+    };
+  }
+
   // Gate 4: at least one leg must actually be contestable. An invoice
   // composed entirely of excluded/held legs has nothing to package —
-  // the email flow would have no dispute body.
+  // the email flow would have no dispute body. Sibling duplicates do
+  // not contribute to "contestable" because the primary is the one
+  // being disputed; the duplicate just rides along in the $ rollup.
   if (processed === 0) {
     return {
       ready: false,
@@ -165,9 +225,11 @@ export async function loadGroupReadiness(
 
   const legs = await ex
     .select({
+      id: claimsTable.id,
       sopOutcome: claimsTable.sopOutcome,
       holdReason: claimsTable.holdReason,
       status: claimsTable.status,
+      duplicateOfClaimId: claimsTable.duplicateOfClaimId,
     })
     .from(claimsTable)
     .where(eq(claimsTable.invoiceGroupId, groupId));

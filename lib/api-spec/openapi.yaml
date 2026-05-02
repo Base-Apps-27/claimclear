@@ -4537,6 +4537,12 @@ components:
           description: Legs currently on hold (per-leg hold_reason or sop_outcome=hold).
         totalLegCount:
           type: integer
+        duplicateLegCount:
+          type: integer
+          description: Sibling-duplicate legs that point at a primary in this group.
+        unresolvedDuplicateLegCount:
+          type: integer
+          description: Sibling-duplicate legs whose primary is NOT yet resolved (block the gate).
       required:
         - ready
         - reason
@@ -4545,6 +4551,8 @@ components:
         - excludedLegCount
         - heldLegCount
         - totalLegCount
+        - duplicateLegCount
+        - unresolvedDuplicateLegCount
 
     InvoiceGroupsListResponse:
       type: object

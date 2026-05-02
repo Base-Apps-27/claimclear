@@ -22,6 +22,12 @@ function leg(overrides: Partial<LegInput> = {}): LegInput {
   };
 }
 
+// Helper for duplicate-flow tests: gives the leg an id so it can be a
+// primary, and sets the duplicate pointer when `duplicateOf` is supplied.
+function legWithId(id: number, overrides: Partial<LegInput> = {}): LegInput {
+  return { ...leg(overrides), id };
+}
+
 // --- Gate 1: group status -----------------------------------------------
 
 test("non pre-submit group → ready=false with informative reason", () => {
@@ -162,4 +168,119 @@ test("count fields are populated even on the unhappy paths", () => {
   assert.equal(r.excludedLegCount, 1);
   assert.equal(r.heldLegCount, 1);
   assert.equal(r.totalLegCount, 3);
+  assert.equal(r.duplicateLegCount, 0);
+  assert.equal(r.unresolvedDuplicateLegCount, 0);
+});
+
+// --- Sibling-duplicate flow ---------------------------------------------
+
+test("duplicate blocks the gate when its primary is mid-walk", () => {
+  // Primary still needs SOP review → duplicate cannot satisfy the gate
+  // even though everything else (the other two legs) is processed.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: null }), // primary, mid-walk
+      legWithId(2, { sopOutcome: "portal_dispute" }),
+      legWithId(3, { duplicateOfClaimId: 1 }), // sibling pointing at #1
+    ],
+  );
+  // The unprocessed primary trips Gate 3 first — the message must blame
+  // worktree review, not the duplicate.
+  assert.equal(r.ready, false);
+  assert.match(r.reason, /worktree/i);
+  assert.equal(r.unprocessedLegCount, 1, "duplicate must NOT be counted as unprocessed");
+  assert.equal(r.duplicateLegCount, 1);
+  assert.equal(r.unresolvedDuplicateLegCount, 1);
+});
+
+test("duplicate satisfies the gate once its primary reaches a terminal", () => {
+  // Primary is processed → the sibling duplicate inherits its resolution
+  // and the group is ready to package.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: "portal_dispute" }), // primary terminal
+      legWithId(2, { duplicateOfClaimId: 1 }), // sibling
+    ],
+  );
+  assert.equal(r.ready, true);
+  assert.equal(r.reason, "Ready to package");
+  assert.equal(r.processedLegCount, 1);
+  assert.equal(r.duplicateLegCount, 1);
+  assert.equal(r.unresolvedDuplicateLegCount, 0);
+  // Duplicates do NOT inflate `processedLegCount` — only the primary is
+  // counted as contestable; the duplicate just rides along in the rollup.
+});
+
+test("duplicate also satisfies the gate when the primary is excluded", () => {
+  // Edge case: an operator marks a sibling as duplicate, then the primary
+  // gets dropped (cannot_dispute). Per spec the duplicate's gate is iff
+  // primary ∈ {ready, dropped, excluded} so dropped counts. But the gate
+  // still fails Gate 4 because there are zero contestable legs.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: "cannot_dispute" }),
+      legWithId(2, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(r.unresolvedDuplicateLegCount, 0, "duplicate is resolved (primary is excluded)");
+  assert.equal(r.ready, false, "but Gate 4 fails — nothing to dispute");
+  assert.match(r.reason, /contestable/i);
+});
+
+test("gate re-locks if the primary is reclassified back to mid-walk", () => {
+  // Initial state: primary terminal, dup resolved, ready=true.
+  const initial = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: "portal_dispute" }),
+      legWithId(2, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(initial.ready, true);
+
+  // Operator reclassifies the primary back; sopOutcome cleared.
+  const after = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: null }),
+      legWithId(2, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(after.ready, false);
+  assert.equal(after.unresolvedDuplicateLegCount, 1);
+});
+
+test("multiple duplicates pointing at the same primary all resolve together", () => {
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { sopOutcome: "portal_dispute" }),
+      legWithId(2, { duplicateOfClaimId: 1 }),
+      legWithId(3, { duplicateOfClaimId: 1 }),
+      legWithId(4, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(r.ready, true);
+  assert.equal(r.duplicateLegCount, 3);
+  assert.equal(r.unresolvedDuplicateLegCount, 0);
+});
+
+test("duplicate-only reason fires when worktree is otherwise complete", () => {
+  // All non-duplicate legs are processed/excluded but a duplicate's primary
+  // is on hold — Gate 3b should bite and the message must mention
+  // siblings (not worktree review).
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { holdReason: "evidence_pending" }), // primary on hold
+      legWithId(2, { sopOutcome: "portal_dispute" }),
+      legWithId(3, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(r.ready, false);
+  assert.match(r.reason, /sibling|duplicate/i);
+  assert.equal(r.unresolvedDuplicateLegCount, 1);
 });

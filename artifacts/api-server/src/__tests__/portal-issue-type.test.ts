@@ -20,6 +20,7 @@ function makeErrorType(overrides: Partial<ErrorType>): ErrorType {
     disputeInstructions: null,
     useGpsControlDeviation: false,
     useDirectEmail: false,
+    tripOverriding: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

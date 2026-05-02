@@ -910,7 +910,14 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1
 
-  lib/leg-state: {}
+  lib/leg-state:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   lib/object-storage-web:
     dependencies:

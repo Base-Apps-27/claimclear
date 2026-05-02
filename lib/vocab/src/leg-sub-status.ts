@@ -21,6 +21,7 @@ import { LEG_CONCLUSION } from "./leg-conclusion";
 
 export const LEG_SUB_STATUSES = [
   "excluded",
+  "duplicate",
   "needs_classification",
   "investigating",
   "blocked",
@@ -36,6 +37,15 @@ export const LEG_SUB_STATUS: Record<LegSubStatus, GlossaryEntry> = {
     enumValue: "excluded",
     label: "Non-issue",
     description: "Auto-excluded from the dispute — typically a blank sibling marked non-issue when another leg in the group was classified.",
+    domain: "leg_sub_status",
+  },
+  duplicate: {
+    enumValue: "duplicate",
+    // Default label is the short form. Callers with the leg row in hand
+    // should call `legSubStatusDisplayLabel(leg)` to get the
+    // "Sibling duplicate of CLM-X" form with the primary reference.
+    label: "Sibling duplicate",
+    description: "Leg shares a trip-overriding finding with a sibling primary in the same invoice — hidden from work surfaces, satisfies readiness when the primary is terminal, fully counted in the invoice $ rollup.",
     domain: "leg_sub_status",
   },
   needs_classification: {
@@ -84,10 +94,12 @@ export function legSubStatusLabel(s: string): string {
 }
 
 // Reason-aware display label. When the caller has the leg row in hand
-// (so `sopOutcome` is available) we can pick the more specific form for
-// `dropped`. Falls back to the default label for everything else.
+// (so `sopOutcome` and `duplicateOfClaimId` are available) we can pick
+// the more specific form for `dropped` and the primary-aware form for
+// `duplicate`. Falls back to the default label for everything else.
 export interface LegLikeForDisplay {
   sopOutcome?: string | null;
+  duplicateOfClaimId?: number | null;
 }
 
 export function legSubStatusDisplayLabel(
@@ -99,6 +111,9 @@ export function legSubStatusDisplayLabel(
   }
   if (s === "dropped" && leg?.sopOutcome === "non_issue") {
     return LEG_CONCLUSION.non_issue.label;
+  }
+  if (s === "duplicate" && leg?.duplicateOfClaimId != null) {
+    return `Sibling duplicate of CLM-${leg.duplicateOfClaimId}`;
   }
   return LEG_SUB_STATUS[s].label;
 }
