@@ -5,7 +5,7 @@
 //     when multiple groups for the same day flip to a concluded state in
 //     parallel and even when a redundant manual trigger races with the
 //     transition (idempotency via the partial unique index introduced in
-//     migration 0018).
+//     migration 0019).
 //   • An empty calendar day (no invoice groups) NEVER triggers the
 //     celebration.
 //   • Per-group transitions through `transitionGroupStatus`,
@@ -224,6 +224,11 @@ test("transitionGroupStatusAndOutcome (closure path): emits exactly one celebrat
     assert.equal(await countCelebrations(day), 0);
 
     // Now close out B. This should emit the celebration.
+    // "Approved" is not one of the closure-bearing outcomes
+    // (Withdrawn / Non-Issue / Denied), so no `closure` payload or
+    // `closureReason` is required — closure-validation only fires for
+    // those three. We're testing the celebration-emit path, not the
+    // closure-detail path, so the minimal status+outcome flip suffices.
     const result = await transitionGroupStatusAndOutcome({
       groupId: b.group.id,
       newStatus: "Resolved",
@@ -231,8 +236,6 @@ test("transitionGroupStatusAndOutcome (closure path): emits exactly one celebrat
       source: "test",
       reason: "test closure",
       actor: ACTOR,
-      closure: { closureReason: "approved", approvedAmount: "10.00" },
-      ack: true,
     });
     assert.equal(result.success, true);
     assert.equal(await countCelebrations(day), 1);
@@ -251,6 +254,11 @@ test("transitionGroupStatusAndOutcome (Non-Issue closure): triggers celebration 
   const b = await createGroupOnDay({ day, status: "Needs Evidence" });
   try {
     assert.equal(await countCelebrations(day), 0);
+    // Non-Issue closure routes the closure reason at the top level.
+    // The full `NormalizedClosure` payload (closureCategory, narrative,
+    // accountability tags, etc.) is enforced one layer up at the route
+    // boundary (parseClosurePayload), so for this celebration-emit test
+    // we only need the closureReason to satisfy transitionGroupStatusAndOutcome.
     const result = await transitionGroupStatusAndOutcome({
       groupId: b.group.id,
       newStatus: "Resolved",
@@ -258,8 +266,7 @@ test("transitionGroupStatusAndOutcome (Non-Issue closure): triggers celebration 
       source: "test",
       reason: "Non-Issue: nothing to dispute",
       actor: ACTOR,
-      closure: { closureReason: "non_issue" },
-      ack: true,
+      closureReason: "non_issue",
     });
     assert.equal(result.success, true);
     assert.equal(await countCelebrations(day), 1);

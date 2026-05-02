@@ -19,7 +19,7 @@
 // On a successful day-complete detection, we attempt to insert a single
 // `state_events` row with `event_key=day_completed_celebration` and
 // `metadata.date=<ISO date>`. The partial unique index introduced in
-// migration 0018 guarantees at most one row per day across concurrent
+// migration 0019 guarantees at most one row per day across concurrent
 // transitions; if the row already exists the insert is a no-op and the
 // celebration is NOT re-broadcast.
 
