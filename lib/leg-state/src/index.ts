@@ -6,6 +6,7 @@
 
 export const LEG_SUB_STATUSES = [
   "excluded",
+  "duplicate",
   "needs_classification",
   "investigating",
   "blocked",

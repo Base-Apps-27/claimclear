@@ -16,6 +16,13 @@ export const errorTypesTable = pgTable("error_types", {
   disputeInstructions: text("dispute_instructions"),
   useGpsControlDeviation: boolean("use_gps_control_deviation").notNull().default(false),
   useDirectEmail: boolean("use_direct_email").notNull().default(false),
+  // Trip-overriding error types bind every leg of a trip identically — the
+  // finding ("member ineligible on this date", "patient at facility too long")
+  // doesn't change leg-by-leg. When true, the SOP entry on a sibling leg
+  // offers a one-click "Mark as Sibling duplicate of CLM-X" prompt instead
+  // of forcing a redundant SOP walk. Default false; flip on the error-types
+  // admin page for eligibility-family + time-at-facility error types.
+  tripOverriding: boolean("trip_overriding").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

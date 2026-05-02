@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, pgEnum, index, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -101,6 +101,15 @@ export const claimsTable = pgTable("claims", {
   // Per-leg narrative for the writeup, scoped to this leg only. Group-level
   // context lives on `invoice_groups.group_context`.
   perLegContext: text("per_leg_context"),
+  // Sibling-duplicate pointer for trip-overriding error types (eligibility,
+  // time-too-short-at-facility). When set, this leg shares its primary's
+  // SOP finding and is hidden from work surfaces but still counted in the
+  // invoice $ rollup. Distinct from the manual `duplicate_claim` closure
+  // reason in `lib/closure-options`. See `error_types.trip_overriding` for
+  // which error types may carry siblings. Self-FK; SET NULL on primary
+  // delete so a stranded duplicate degrades to needs_classification rather
+  // than disappearing.
+  duplicateOfClaimId: integer("duplicate_of_claim_id").references((): AnyPgColumn => claimsTable.id, { onDelete: "set null" }),
   // MAS Action tracking — the per-leg cancel checklist on the post-response
   // MAS Action phase. Pinned values: cancel | none.
   masActionRequired: text("mas_action_required"),
@@ -151,6 +160,11 @@ export const claimsTable = pgTable("claims", {
   index("claims_date_idx").on(table.date),
   index("claims_created_at_idx").on(table.createdAt),
   index("idx_claims_sop_outcome").on(table.sopOutcome),
+  // Used by the readiness-gate query (find duplicates pointing at a primary)
+  // and by sibling-listing queries on the leg-detail surface.
+  index("idx_claims_duplicate_of_claim_id")
+    .on(table.duplicateOfClaimId)
+    .where(sql`${table.duplicateOfClaimId} IS NOT NULL`),
   // Partial index supporting the MAS worklist query: per group, find the
   // legs whose cancel hasn't been completed yet.
   index("idx_claims_mas_action_pending")
