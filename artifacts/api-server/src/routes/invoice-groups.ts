@@ -52,9 +52,10 @@ const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUS
 //      relying on the M/D/YYYY normalizer fallback.
 // Empty strings are coerced to NULL so a single bad row doesn't poison
 // the whole group's earliest-date calculation.
-// The IS NOT NULL / <> '' predicates here mirror the partial-index
-// predicate on `claims_date_parsed_idx` (migration 0020) so the planner
-// can use that expression index for this MIN() instead of seq-scanning.
+// The IS NOT NULL / <> '' predicates here are defensive (NULLIF already
+// coerces '' → NULL); we keep them so the WHERE plan stays explicit and
+// matches the predicate we'd reach for if a typed `service_date DATE`
+// column ever replaces this cast (see migration 0021 header note).
 const earliestServiceDateExpr = sql<string | null>`(
   SELECT to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')
   FROM ${claimsTable}

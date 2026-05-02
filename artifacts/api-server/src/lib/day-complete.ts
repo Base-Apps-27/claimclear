@@ -179,7 +179,7 @@ export async function tryEmitDayCompletedCelebration(opts: {
       triggeredByUserName: actor.userName,
     };
     // Use the inference clause (columns + WHERE) to match the partial
-    // unique INDEX from migration 0018. Postgres will not accept
+    // unique INDEX from migration 0019. Postgres will not accept
     // `ON CONSTRAINT <index-name>` here because partial unique indexes
     // are indexes, not table constraints — only the inference form
     // resolves them.
