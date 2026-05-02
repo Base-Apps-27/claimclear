@@ -177,6 +177,8 @@ export * from "./healthStatus";
 export * from "./holdInvoiceGroupBody";
 export * from "./importClaimRow";
 export * from "./importClaimsBody";
+export * from "./importRejectedRow";
+export * from "./importRejectedRowReason";
 export * from "./importSummary";
 export * from "./includeLegBody";
 export * from "./invoiceGroupDetailResponse";

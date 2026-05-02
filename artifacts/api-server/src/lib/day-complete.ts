@@ -24,7 +24,7 @@
 // celebration is NOT re-broadcast.
 
 import { sql } from "drizzle-orm";
-import { db, invoiceGroupsTable, claimsTable, stateEventsTable } from "@workspace/db";
+import { db, invoiceGroupsTable, stateEventsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { broadcastSystemEvent } from "./sse";
 import type { DbExecutor } from "./claim-transitions";
@@ -55,13 +55,14 @@ function isGroupConcluded(g: { status: string; outcome: string }): boolean {
 }
 
 /**
- * Returns the calendar day a given invoice group belongs to (MIN of its
- * claims' service dates). Returns null if the group has no claims or no
- * claims with a date.
+ * Returns the calendar day a given invoice group belongs to. Returns
+ * null if the group has no claims or no claims with a date.
  *
- * `claims.date` is a typed DATE column (Task #351, migration 0022), so
- * MIN() yields a date directly — re-emitted as text so the JS callers
- * receive a YYYY-MM-DD string via postgres' ISO datestyle.
+ * Reads the typed, indexed `invoice_groups.service_date` column
+ * directly — the same canonical value used by the dashboard hero / queue
+ * / groups list (Task #350) and maintained on every write path by
+ * `recomputeGroupServiceDate`. `to_char` keeps the wire shape stable as
+ * ISO YYYY-MM-DD for the day-complete celebration matcher. See Task #356.
  */
 export async function getInvoiceGroupDay(
   groupId: number,
@@ -70,47 +71,48 @@ export async function getInvoiceGroupDay(
   const ex: DbExecutor = executor ?? db;
   const [row] = await ex
     .select({
-      earliest: sql<string | null>`MIN(${claimsTable.date})::text`,
+      earliest: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
-    .from(claimsTable)
-    .where(sql`${claimsTable.invoiceGroupId} = ${groupId} AND ${claimsTable.date} IS NOT NULL`);
+    .from(invoiceGroupsTable)
+    .where(sql`${invoiceGroupsTable.id} = ${groupId}`);
   return row?.earliest ?? null;
 }
 
 /**
  * Aggregate query — returns true iff every invoice group dated `day`
- * (via MIN of its claims' service dates) is concluded per the rule above
- * AND at least one such group exists.
+ * is concluded per the rule above AND at least one such group exists.
  *
- * Single round-trip: groups every group's MIN(claims.date) and counts how
- * many of those whose earliest date equals the given day are NOT concluded.
+ * Single round-trip: reads every group's stored `service_date` alongside
+ * its own status/outcome, then counts how many of the rows that map to
+ * `day` are NOT concluded.
  */
 export async function isDayConcluded(
   day: string,
   executor?: DbExecutor,
 ): Promise<boolean> {
   const ex: DbExecutor = executor ?? db;
-  // Two-step CTE — gather every group's earliest claim date alongside its
-  // own status/outcome, then count how many of the rows that map to
-  // `day` are NOT in the concluded set. We deliberately reference the
-  // CTE's own (status, outcome) columns rather than the underlying table
-  // so the alias survives PostgreSQL's name resolution.
+  // Two-step CTE — read every group's stored `service_date` (Task #350)
+  // alongside its own status/outcome, then count how many of the rows
+  // that map to `day` are NOT in the concluded set. Reading the
+  // canonical column instead of recomputing MIN(claims.date) per call
+  // (Task #356) means the day-complete matcher and the dashboard
+  // "must file today" hero can never disagree about which day a group
+  // belongs to. We deliberately reference the CTE's own (status,
+  // outcome) columns rather than the underlying table so the alias
+  // survives PostgreSQL's name resolution.
   const result = await withExecute(ex).execute(sql`
     WITH groups_for_day AS (
       SELECT
         ${invoiceGroupsTable.id}      AS group_id,
         ${invoiceGroupsTable.status}  AS status,
         ${invoiceGroupsTable.outcome} AS outcome,
-        -- claims.date is a typed DATE column (Task #351, migration
-        -- 0022); MIN() yields a date and ::text formats it as
-        -- YYYY-MM-DD so the comparison key matches the ISO \`day\`
-        -- argument.
-        MIN(${claimsTable.date})::text AS earliest_date
+        -- service_date is a real DATE column maintained by
+        -- recomputeGroupServiceDate on every write path; to_char
+        -- formats it as YYYY-MM-DD so the comparison key matches the
+        -- ISO \`day\` argument.
+        to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD') AS earliest_date
       FROM ${invoiceGroupsTable}
-      INNER JOIN ${claimsTable}
-        ON ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-      WHERE ${claimsTable.date} IS NOT NULL
-      GROUP BY ${invoiceGroupsTable.id}
+      WHERE ${invoiceGroupsTable.serviceDate} IS NOT NULL
     )
     SELECT
       COUNT(*) FILTER (WHERE earliest_date = ${day}) AS total,

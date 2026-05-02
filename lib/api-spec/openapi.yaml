@@ -6369,6 +6369,18 @@ components:
           type: integer
         invoiceGroupCount:
           type: integer
+        rejected:
+          type: array
+          description: |
+            Task #354. Per-row reject ledger for the importer's strict
+            validators (currently only `invalid_service_date`, but the
+            shape generalises). One entry per row that the importer
+            refused to insert; the operator sees the same list rendered
+            on the import-complete view so a rejected row never silently
+            disappears. Always present (empty array when nothing was
+            rejected) so clients don't have to defensively `?? []`.
+          items:
+            $ref: "#/components/schemas/ImportRejectedRow"
       required:
         - success
         - created
@@ -6376,6 +6388,37 @@ components:
         - updated
         - total
         - batchId
+        - rejected
+
+    ImportRejectedRow:
+      type: object
+      description: |
+        A single row the importer refused to insert. `confNumber` and
+        `rawDate` are echoed verbatim from the upload so the operator
+        can find the offending row in their source spreadsheet without
+        cross-referencing IDs.
+      properties:
+        confNumber:
+          type: string
+          description: Confirmation number from the source row, exactly as submitted.
+        reason:
+          type: string
+          description: |
+            Stable machine-readable reason code. Currently always
+            `invalid_service_date`; new rejection classes (e.g. duplicate-
+            within-batch, missing-required-field) will be added as
+            additional enum values without breaking existing clients.
+          enum:
+            - invalid_service_date
+        rawDate:
+          type: string
+          description: |
+            The raw date string from the source row that failed validation.
+            Empty string when the source row had no value at all.
+      required:
+        - confNumber
+        - reason
+        - rawDate
 
     LintResult:
       type: object

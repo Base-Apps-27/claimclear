@@ -2313,6 +2313,42 @@ export interface ImportClaimsBody {
   duplicateAction?: string;
 }
 
+/**
+ * Stable machine-readable reason code. Currently always
+`invalid_service_date`; new rejection classes (e.g. duplicate-
+within-batch, missing-required-field) will be added as
+additional enum values without breaking existing clients.
+
+ */
+export type ImportRejectedRowReason =
+  (typeof ImportRejectedRowReason)[keyof typeof ImportRejectedRowReason];
+
+export const ImportRejectedRowReason = {
+  invalid_service_date: "invalid_service_date",
+} as const;
+
+/**
+ * A single row the importer refused to insert. `confNumber` and
+`rawDate` are echoed verbatim from the upload so the operator
+can find the offending row in their source spreadsheet without
+cross-referencing IDs.
+
+ */
+export interface ImportRejectedRow {
+  /** Confirmation number from the source row, exactly as submitted. */
+  confNumber: string;
+  /** Stable machine-readable reason code. Currently always
+`invalid_service_date`; new rejection classes (e.g. duplicate-
+within-batch, missing-required-field) will be added as
+additional enum values without breaking existing clients.
+ */
+  reason: ImportRejectedRowReason;
+  /** The raw date string from the source row that failed validation.
+Empty string when the source row had no value at all.
+ */
+  rawDate: string;
+}
+
 export interface ImportSummary {
   success: boolean;
   created: number;
@@ -2323,6 +2359,15 @@ export interface ImportSummary {
   batchId: string;
   groupsCreated?: number;
   invoiceGroupCount?: number;
+  /** Task #354. Per-row reject ledger for the importer's strict
+validators (currently only `invalid_service_date`, but the
+shape generalises). One entry per row that the importer
+refused to insert; the operator sees the same list rendered
+on the import-complete view so a rejected row never silently
+disappears. Always present (empty array when nothing was
+rejected) so clients don't have to defensively `?? []`.
+ */
+  rejected: ImportRejectedRow[];
 }
 
 export type LintResultSeverity =

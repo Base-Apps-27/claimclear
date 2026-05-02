@@ -15316,6 +15316,33 @@ export const ImportClaimsResponse = zod.object({
   batchId: zod.string(),
   groupsCreated: zod.number().optional(),
   invoiceGroupCount: zod.number().optional(),
+  rejected: zod
+    .array(
+      zod
+        .object({
+          confNumber: zod
+            .string()
+            .describe(
+              "Confirmation number from the source row, exactly as submitted.",
+            ),
+          reason: zod
+            .enum(["invalid_service_date"])
+            .describe(
+              "Stable machine-readable reason code. Currently always\n`invalid_service_date`; new rejection classes (e.g. duplicate-\nwithin-batch, missing-required-field) will be added as\nadditional enum values without breaking existing clients.\n",
+            ),
+          rawDate: zod
+            .string()
+            .describe(
+              "The raw date string from the source row that failed validation.\nEmpty string when the source row had no value at all.\n",
+            ),
+        })
+        .describe(
+          "A single row the importer refused to insert. `confNumber` and\n`rawDate` are echoed verbatim from the upload so the operator\ncan find the offending row in their source spreadsheet without\ncross-referencing IDs.\n",
+        ),
+    )
+    .describe(
+      "Task #354. Per-row reject ledger for the importer's strict\nvalidators (currently only `invalid_service_date`, but the\nshape generalises). One entry per row that the importer\nrefused to insert; the operator sees the same list rendered\non the import-complete view so a rejected row never silently\ndisappears. Always present (empty array when nothing was\nrejected) so clients don't have to defensively `?? []`.\n",
+    ),
 });
 
 /**

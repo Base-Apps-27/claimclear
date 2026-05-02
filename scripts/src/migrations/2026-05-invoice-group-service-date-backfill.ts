@@ -57,15 +57,24 @@ function fmt(v: string | null): string {
 async function loadGroupsWithLegacyValue(): Promise<GroupRow[]> {
   // Single read pass: pull every group plus the value the old correlated
   // subquery would have produced, so we can compare to the helper-side
-  // value in JS without N+1 round trips. The MIN cast mirrors the
-  // pre-cutover SQL exactly so the comparison is apples-to-apples.
+  // value in JS without N+1 round trips.
+  //
+  // Originally this mirrored the pre-cutover legacy SQL exactly:
+  //   to_char(MIN(NULLIF(c.date, '')::date), 'YYYY-MM-DD')
+  // That worked when `claims.date` was TEXT. Task #351 retyped the
+  // column to DATE, so the NULLIF/text-cast wrapper now errors with
+  // `invalid input syntax for type date: ""`. Drop the wrapper — on a
+  // DATE column, `MIN(c.date)` is the apples-to-apples equivalent of
+  // what the old subquery used to produce, and the diff report below
+  // remains meaningful (any disagreement against `recomputeGroupServiceDate`
+  // is still surfaced).
   const r = await pool.query<GroupRow>(`
     SELECT
       g.id,
       g.invoice_number,
       to_char(g.service_date, 'YYYY-MM-DD') AS stored,
       (
-        SELECT to_char(MIN(NULLIF(c.date, '')::date), 'YYYY-MM-DD')
+        SELECT to_char(MIN(c.date), 'YYYY-MM-DD')
         FROM claims c
         WHERE c.invoice_group_id = g.id
       ) AS legacy
@@ -120,8 +129,12 @@ async function main(): Promise<void> {
       // the same way the helper would (via a SAVEPOINT/ROLLBACK
       // wouldn't work cleanly across the pg pool here). Inline the
       // read instead — same MIN semantics as the helper.
+      // claims.date is now a typed DATE column (Task #351); the legacy
+      // NULLIF/text-cast wrapper errors against a DATE input, so the
+      // dry-run peek reads MIN(c.date) directly. Same semantics — MIN
+      // skips NULLs natively.
       const peek = await pool.query<{ next: string | null }>(`
-        SELECT to_char(MIN(NULLIF(c.date, '')::date), 'YYYY-MM-DD') AS next
+        SELECT to_char(MIN(c.date), 'YYYY-MM-DD') AS next
         FROM claims c
         WHERE c.invoice_group_id = $1
       `, [g.id]);

@@ -236,15 +236,17 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       totalAmount: invoiceGroupsTable.totalAmount,
       status: invoiceGroupsTable.status,
       rideCount: invoiceGroupsTable.rideCount,
-      // claims.date is a typed DATE column (Task #351, migration 0022);
-      // MIN() yields a date directly. ::text formats as YYYY-MM-DD via
-      // postgres' ISO datestyle for the JS deadline helpers.
-      earliestDate: sql<string | null>`MIN(${claimsTable.date})::text`,
+      // Read the typed, indexed `invoice_groups.service_date` column
+      // (Task #350) so this query agrees with the Queue / Groups list /
+      // urgent-snapshot — all of which now read the same canonical
+      // value maintained by `recomputeGroupServiceDate` on every write
+      // path. `to_char` keeps the wire shape stable as ISO YYYY-MM-DD
+      // for the JS deadline helpers, regardless of how the `pg` driver
+      // serializes `date` columns. See Task #356.
+      earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
-    .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
-    .groupBy(invoiceGroupsTable.id);
+    .where(and(expiringStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
 
   const expiringNow = new Date();
   const expiringGroups = openGroupsWithDates
@@ -288,12 +290,17 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       totalAmount: invoiceGroupsTable.totalAmount,
       status: invoiceGroupsTable.status,
       rideCount: invoiceGroupsTable.rideCount,
-      earliestDate: sql<string | null>`to_char(MIN(NULLIF(${claimsTable.date}, '')::date), 'YYYY-MM-DD')`,
+      // Same canonical read as the open-groups query above (Task #356):
+      // the indexed `invoice_groups.service_date` column, written by
+      // `recomputeGroupServiceDate` on every write path. Stuck rows are
+      // by definition past the effective deadline, so the deadline math
+      // downstream uses the exact same input the dashboard hero / queue
+      // / groups list use — no chance of a "stuck here, not stuck
+      // there" disagreement.
+      earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
-    .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(and(stuckStatusFilter, sql`${claimsTable.date} IS NOT NULL AND ${claimsTable.date} <> ''`))
-    .groupBy(invoiceGroupsTable.id);
+    .where(and(stuckStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
 
   const submittedStuckGroups = stuckGroupsWithDates
     .map(g => {
@@ -867,12 +874,15 @@ router.get("/dashboard/urgent-today/transitions", asyncHandler(async (_req, res)
           clientNumber: invoiceGroupsTable.clientNumber,
           status: invoiceGroupsTable.status,
           totalAmount: invoiceGroupsTable.totalAmount,
-          earliestDate: sql<string | null>`MIN(${claimsTable.date})::text`,
+          // Direct read of the canonical service_date column (Task
+          // #356). The IDs come from `computeUrgentSnapshot()` which
+          // already filters on `isNotNull(serviceDate)`, so every row
+          // here is guaranteed to have a non-null value — no JOIN, no
+          // GROUP BY, no MIN().
+          earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
         })
         .from(invoiceGroupsTable)
-        .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-        .where(inArray(invoiceGroupsTable.id, snap.urgentGroupIds))
-        .groupBy(invoiceGroupsTable.id);
+        .where(inArray(invoiceGroupsTable.id, snap.urgentGroupIds));
 
   // ET-anchored today window for audit_logs. We can't use a SQL
   // expression keyed on the host process's TZ (the db is UTC); convert
@@ -972,12 +982,14 @@ router.get("/dashboard/urgent-today/transitions", asyncHandler(async (_req, res)
           id: invoiceGroupsTable.id,
           invoiceNumber: invoiceGroupsTable.invoiceNumber,
           clientNumber: invoiceGroupsTable.clientNumber,
-          earliestDate: sql<string | null>`MIN(${claimsTable.date})::text`,
+          // Same canonical service_date read as everywhere else
+          // (Task #356) — `effectiveDaysRemaining` below decides
+          // whether the parent group was urgent today, and it must
+          // reach the same verdict the dashboard hero / queue did.
+          earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
         })
         .from(invoiceGroupsTable)
-        .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-        .where(inArray(invoiceGroupsTable.id, ids))
-        .groupBy(invoiceGroupsTable.id, invoiceGroupsTable.invoiceNumber, invoiceGroupsTable.clientNumber);
+        .where(inArray(invoiceGroupsTable.id, ids));
       for (const g of groups) {
         groupMeta.set(g.id, {
           invoiceNumber: g.invoiceNumber,

@@ -1352,12 +1352,61 @@ function ConfirmStep({
           title="Import complete"
           icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
         >
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
             <ResultTile label="Created" value={result.created} tone="green" />
             <ResultTile label="Updated" value={result.updated} tone="blue" />
             <ResultTile label="Skipped" value={result.skipped} tone="amber" />
+            {/* Task #354 — surface the per-row reject ledger as a first-
+                class tile so an operator can see at a glance that some
+                rows didn't land. The detailed list renders below. The
+                tile is rendered unconditionally (even at zero) so the
+                column count stays stable across imports — operators
+                rely on the tile-row layout to scan the result quickly. */}
+            <ResultTile
+              label="Rejected"
+              value={result.rejected.length}
+              tone={result.rejected.length > 0 ? "red" : "muted"}
+            />
             <ResultTile label="Total rows" value={result.total} tone="muted" />
           </div>
+
+          {/* Task #354 — per-row reject ledger. Pre-audit, rows that
+              failed strict validation (currently only `invalid_service_date`)
+              were silently rolled into `skipped`, so an operator had no
+              way to see which conf numbers fell out or why. The server
+              now returns the full list in `result.rejected`; render it
+              here so the operator can find the offending rows in their
+              source spreadsheet without cross-referencing the audit log. */}
+          {result.rejected.length > 0 && (
+            <div
+              className="rounded-md border px-3 py-2 mt-3 text-sm space-y-2"
+              style={{ background: TONE_STYLE.red.bg, borderColor: TONE_STYLE.red.border, color: TONE_STYLE.red.fg }}
+            >
+              <p className="font-medium">
+                {result.rejected.length} row{result.rejected.length !== 1 ? "s" : ""} could not be imported.
+              </p>
+              <p className="text-xs opacity-90">
+                These rows were not added to your tracker. Fix the source
+                spreadsheet (most often a service date that is missing or
+                in an unrecognized format) and re-import just those rows.
+              </p>
+              <ul className="text-xs space-y-1 max-h-48 overflow-y-auto pr-1">
+                {result.rejected.map((r, i) => (
+                  <li key={`${r.confNumber}-${i}`} className="flex flex-wrap gap-x-2 gap-y-0.5">
+                    <code className="font-mono bg-white/40 px-1 rounded">{r.confNumber}</code>
+                    <span>
+                      {r.reason === "invalid_service_date"
+                        ? "invalid service date"
+                        : r.reason}
+                    </span>
+                    <span className="opacity-80">
+                      raw: <code className="font-mono">{r.rawDate === "" ? "(blank)" : r.rawDate}</code>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {result.created > 0 && (
             <div

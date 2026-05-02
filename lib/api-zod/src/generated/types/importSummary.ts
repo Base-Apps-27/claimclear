@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ImportRejectedRow } from "./importRejectedRow";
 
 export interface ImportSummary {
   success: boolean;
@@ -22,4 +23,13 @@ export interface ImportSummary {
   batchId: string;
   groupsCreated?: number;
   invoiceGroupCount?: number;
+  /** Task #354. Per-row reject ledger for the importer's strict
+validators (currently only `invalid_service_date`, but the
+shape generalises). One entry per row that the importer
+refused to insert; the operator sees the same list rendered
+on the import-complete view so a rejected row never silently
+disappears. Always present (empty array when nothing was
+rejected) so clients don't have to defensively `?? []`.
+ */
+  rejected: ImportRejectedRow[];
 }
