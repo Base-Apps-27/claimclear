@@ -71,3 +71,9 @@ id = "Q8xqebXxRuLq7YjSaMTwK"
 uri = "file://exports/pending-classify-blank-sample.csv"
 type = "table"
 title = "Pending-Classify Blank-Error Sample (20 groups / 41 legs)"
+
+[[outputs]]
+id = "WUGacjcWRGrolw0Aq9Hx3"
+uri = "file://exports/pending-classify-blank-invoices.csv"
+type = "table"
+title = "All Invoice Numbers Needing Classification (95 groups)"
