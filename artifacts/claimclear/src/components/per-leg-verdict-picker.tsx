@@ -16,19 +16,25 @@ import { formatDateTime } from "@/lib/format";
 
 export type VerdictOutcome = RecordVerdictBodyOutcome;
 
-const OUTCOMES: VerdictOutcome[] = ["Approved", "Denied", "Partial"];
+// Per-leg verdicts are binary. A leg either had the payor agree with us
+// (Approved) or stand by their denial (Denied) — there is no per-leg
+// "Partial". Partial only makes sense at the invoice level (some legs
+// approved, others denied) and that mix is already represented by the
+// per-leg verdicts together. The backend `RecordVerdictBodyOutcome`
+// type still accepts "Partial" for legacy rows recorded under the old
+// UI; we just no longer offer it as a fresh pick.
+const OUTCOMES = ["Approved", "Denied"] as const satisfies readonly VerdictOutcome[];
+type PickableOutcome = (typeof OUTCOMES)[number];
 
 // Matches the soft-fill verdict-button voice established by
 // response-actions-card.tsx (bg-X-50 hover:bg-X-100 border-X-300 text-X-900).
 // Selected state deepens the same family without flipping to a loud strong-fill,
 // so picker buttons read consistently with post-response action buttons.
-const OUTCOME_TONE: Record<VerdictOutcome, string> = {
+const OUTCOME_TONE: Record<PickableOutcome, string> = {
   Approved:
     "hover:bg-green-50 hover:border-green-300 hover:text-green-900 data-[selected=true]:bg-green-100 data-[selected=true]:border-green-400 data-[selected=true]:text-green-900",
   Denied:
     "hover:bg-red-50 hover:border-red-300 hover:text-red-900 data-[selected=true]:bg-red-100 data-[selected=true]:border-red-400 data-[selected=true]:text-red-900",
-  Partial:
-    "hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 data-[selected=true]:bg-amber-100 data-[selected=true]:border-amber-400 data-[selected=true]:text-amber-900",
 };
 
 const CALIBRATION_MIN_CONFIRMATIONS = 5;
@@ -111,7 +117,7 @@ export function PerLegVerdictPicker({
     mountAt.current = Date.now();
   }, []);
 
-  const [picked, setPicked] = useState<VerdictOutcome | null>(null);
+  const [picked, setPicked] = useState<PickableOutcome | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -215,7 +221,7 @@ export function PerLegVerdictPicker({
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">
             Pick an outcome
           </Label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {OUTCOMES.map((o) => (
               <Button
                 key={o}

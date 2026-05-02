@@ -8,9 +8,10 @@
 // operator immediately understands why no per-leg pick is available.
 //
 // We also pin the inverse: a non-duplicate leg renders the normal
-// verdict-picker UI (Approved / Denied / Partial buttons), proving the
-// duplicate branch is gated on `outcomeRole(claim) === "duplicate"`
-// and not an accidental short-circuit for all legs.
+// verdict-picker UI (Approved / Denied buttons — per-leg verdicts are
+// binary), proving the duplicate branch is gated on
+// `outcomeRole(claim) === "duplicate"` and not an accidental
+// short-circuit for all legs.
 
 import * as React from "react";
 import { test } from "node:test";
@@ -93,8 +94,8 @@ test("picker degrades gracefully when the primary leg isn't visible", () => {
 
 test("picker renders the normal verdict UI for a non-duplicate leg", () => {
   // Inverse guard: the duplicate branch must NOT short-circuit the
-  // happy path. A regular leg should still see Approved/Denied/Partial
-  // buttons.
+  // happy path. A regular leg should still see Approved/Denied
+  // buttons (per-leg verdicts are binary).
   const normal = fixtureLeg({
     id: 11,
     confNumber: "CLM-11",

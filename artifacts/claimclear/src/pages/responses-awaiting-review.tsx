@@ -1097,7 +1097,8 @@ function ActionRail({
   // Real, actionable legs the operator can pick a verdict on. Mirrors
   // the predicate from invoice-group-detail-v2 plus the API-side
   // `sop_outcome ∈ {portal_dispute, dispute}` gate so the picker never
-  // shows Approved/Denied/Partial buttons the API will reject (Task #301).
+  // shows Approved/Denied buttons the API will reject (Task #301).
+  // Per-leg "Partial" was retired — verdicts are binary at the leg level.
   // Auto-excluded legs (per #232) and `Processed` legs (per #231) flow
   // through naturally — excluded legs render below as a read-only summary
   // and Processed legs stay in the picker stack.
@@ -1402,10 +1403,13 @@ function DuplicateLegsRailSection({
 // that opens a confirm dialog and posts the verdict with the
 // `reconcile: true` flag set.
 
-const RECONCILE_OUTCOMES: Array<"Approved" | "Denied" | "Partial"> = [
+// Per-leg verdicts are binary — a leg either approved or denied. Mixed
+// outcomes across an invoice come from per-leg verdicts in aggregate,
+// not from a per-leg "Partial" pick. Kept in lockstep with the modern
+// PerLegVerdictPicker (see components/per-leg-verdict-picker.tsx).
+const RECONCILE_OUTCOMES: Array<"Approved" | "Denied"> = [
   "Approved",
   "Denied",
-  "Partial",
 ];
 
 interface PreGroupReconcileRailSectionProps {
@@ -1489,9 +1493,7 @@ function ReconcileVerdictDialog({
 }: ReconcileVerdictDialogProps) {
   const queryClient = useQueryClient();
   const recordVerdict = useRecordLegVerdict();
-  const [picked, setPicked] = useState<"Approved" | "Denied" | "Partial" | null>(
-    null,
-  );
+  const [picked, setPicked] = useState<"Approved" | "Denied" | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
