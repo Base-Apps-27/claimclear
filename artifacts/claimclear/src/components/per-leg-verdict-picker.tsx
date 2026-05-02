@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +63,16 @@ export interface PerLegVerdictPickerProps {
    */
   onSelect: (outcome: VerdictOutcome) => Promise<void>;
   /**
+   * Clear the operator's draft pick (Task #344). Wired by the page to
+   * `DELETE /claims/:id/verdict/draft`, which hard-deletes every
+   * `operator_draft` row for the leg without touching any
+   * `operator_confirmed` / `ai_suggested` rows. Optional — when
+   * omitted, clicking the lit pill falls back to the legacy no-op
+   * behavior (forward-only contract preserved for callers that
+   * haven't opted in yet).
+   */
+  onClear?: () => Promise<void>;
+  /**
    * The primary leg this one rides along with, when `claim` is a Sibling
    * Duplicate (`outcomeRole(claim) === "duplicate"`). Used to render a
    * read-only "verdict follows the primary" card that names the primary's
@@ -72,6 +82,40 @@ export interface PerLegVerdictPickerProps {
    * notice rather than throwing. Ignored for non-duplicate legs.
    */
   primaryClaim?: ClaimResponse | null;
+}
+
+// Pure gate for whether clicking a lit pill should walk the
+// clear-draft path. Exported so it can be exercised from the
+// renderToStaticMarkup-style picker tests as a data assertion (the
+// project doesn't run jsdom, so we can't simulate the full click
+// → setPicked → useEffect resync round trip in tests). The component
+// uses this helper for the exact same predicate.
+//
+// Returns true ONLY when:
+//   1. The pill in question is currently lit (`picked === outcome`).
+//   2. There's an actual `operator_draft` row on file. Without one,
+//      DELETE /verdict/draft would be a server-side no-op
+//      (`clearedCount: 0`) and the optimistic `setPicked(null)` in
+//      the click handler would visually unset a pill that's actually
+//      backed by an `operator_confirmed` row the server won't touch.
+//   3. The draft's outcome matches the lit pill's outcome. Belt-and-
+//      suspenders: under newer-wins this is always the case when both
+//      a draft and a confirmed verdict exist (the draft seeds the
+//      pill), but spelling it out keeps the gate honest if the seed
+//      rule changes.
+//   4. The page wired the `onClear` callback. Legacy callers that
+//      didn't opt in keep the original forward-only no-op contract.
+export function canClearDraftPick(args: {
+  picked: PickableOutcome | null;
+  outcome: PickableOutcome;
+  latestDraft: ClaimVerdictResponse | null | undefined;
+  hasOnClear: boolean;
+}): boolean {
+  const { picked, outcome, latestDraft, hasOnClear } = args;
+  if (!hasOnClear) return false;
+  if (picked !== outcome) return false;
+  if (!latestDraft) return false;
+  return latestDraft.outcome === outcome;
 }
 
 // Pick the seed outcome for the lit-up pill on mount. Drafts win when
@@ -123,6 +167,7 @@ export function PerLegVerdictPicker({
   latestDraft,
   calibration,
   onSelect,
+  onClear,
   primaryClaim,
 }: PerLegVerdictPickerProps) {
   // Sibling-duplicate guard (Task #309). The action rail filters
@@ -183,15 +228,26 @@ export function PerLegVerdictPicker({
   );
 
   const [picked, setPicked] = useState<PickableOutcome | null>(seed);
-  // Re-sync when the seed changes (e.g. after invalidation post-draft
-  // save, or when the operator switches groups in the queue).
-  const lastSeedRef = useRef<PickableOutcome | null>(seed);
+  // Re-sync whenever the upstream seed *inputs* change identity — NOT
+  // just when the computed outcome value differs. The two are not
+  // equivalent: after a clear-draft round-trip on a leg that ALSO has
+  // an `operator_confirmed` row with the same outcome (e.g. draft
+  // Approved on top of confirmed Approved), the new seed value
+  // ("Approved") matches the old seed value ("Approved"), but the
+  // optimistic `setPicked(null)` from the clear path would otherwise
+  // strand the picker unlit. Watching the row identities (id +
+  // createdAt of both latestDraft and latestVerdict) re-syncs the
+  // picker to server truth whenever ANY of those rows turn over,
+  // which is exactly when an invalidation has landed.
   useEffect(() => {
-    if (lastSeedRef.current !== seed) {
-      lastSeedRef.current = seed;
-      setPicked(seed);
-    }
-  }, [seed]);
+    setPicked(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    latestDraft?.id,
+    latestDraft?.createdAt,
+    latestVerdict?.id,
+    latestVerdict?.createdAt,
+  ]);
 
   // We track which outcome is currently in flight so the spinner
   // lands on the right pill and we can keep the OTHER pill clickable
@@ -200,14 +256,53 @@ export function PerLegVerdictPicker({
   const [submittingOutcome, setSubmittingOutcome] = useState<PickableOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Click contract (Task #343 §3): clicking the *already-selected* pill
-  // is a no-op. Selections in this UI are forward-only — clearing a
-  // selection isn't a real intent (the operator either picks the OTHER
-  // pill or leaves the existing pick in place). Documenting here so
-  // future readers don't "fix" it into a toggle-off.
+  // Click contract:
+  //   - Click an *unselected* pill → save a draft (POST /verdict).
+  //   - Click the *already-selected* pill → clear the draft (Task #344,
+  //     wired to DELETE /verdict/draft via the optional `onClear`
+  //     callback). Operators asked for this so a wrong pick can be
+  //     unset without first having to confirm the opposite verdict.
+  //   - When `onClear` is NOT wired (legacy callers), clicking the lit
+  //     pill is still a forward-only no-op so the contract stays
+  //     backwards-compatible. The wired path on Responses Awaiting
+  //     Review always passes `onClear`.
   const handlePick = async (outcome: PickableOutcome) => {
     if (submittingOutcome != null) return;
-    if (picked === outcome) return;
+    if (picked === outcome) {
+      // Clear path is only walked when `canClearDraftPick` says yes
+      // (lit pill, draft on file, matching outcome, onClear wired).
+      // Same predicate as the data-clearable DOM flag so the visual
+      // affordance and the actual behavior can never drift apart.
+      if (
+        !canClearDraftPick({
+          picked,
+          outcome,
+          latestDraft,
+          hasOnClear: !!onClear,
+        }) ||
+        !onClear
+      ) {
+        return;
+      }
+      setError(null);
+      setSubmittingOutcome(outcome);
+      // Optimistic: unset the pill immediately so the click feels
+      // instant. Roll back on failure. The reseed effect above will
+      // re-light the pill (e.g. from a still-present `operator_confirmed`
+      // row with the same outcome) once invalidation lands and the
+      // row identities turn over.
+      const previous = picked;
+      setPicked(null);
+      try {
+        await onClear();
+      } catch (e) {
+        setPicked(previous);
+        setError(toFriendlyVerdictError(e));
+      } finally {
+        setSubmittingOutcome(null);
+      }
+      return;
+    }
     setError(null);
     setSubmittingOutcome(outcome);
     // Optimistic: light up the new pill immediately so the click feels
@@ -281,24 +376,51 @@ export function PerLegVerdictPicker({
             Pick an outcome
           </Label>
           <div className="grid grid-cols-2 gap-2">
-            {OUTCOMES.map((o) => (
-              <Button
-                key={o}
-                type="button"
-                variant="outline"
-                size="sm"
-                data-selected={picked === o}
-                disabled={submittingOutcome != null && submittingOutcome !== o}
-                onClick={() => handlePick(o)}
-                className={OUTCOME_TONE[o]}
-                data-testid={`button-pick-${o.toLowerCase()}-${claim.id}`}
-              >
-                {submittingOutcome === o && (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                )}
-                {o}
-              </Button>
-            ))}
+            {OUTCOMES.map((o) => {
+              // Tooltip hint surfaces the toggle-off affordance on the
+              // lit pill so it's discoverable without changing the
+              // visual weight. The other pill keeps its plain "save
+              // draft" hint.
+              const isSelected = picked === o;
+              // Single source of truth for the clear-affordance gate
+              // (see `canClearDraftPick` for the full contract). The
+              // picker DOM (data-clearable + tooltip) and the click
+              // handler both branch off this same predicate so the
+              // visual affordance and the actual behavior can never
+              // drift apart.
+              const canClear = canClearDraftPick({
+                picked,
+                outcome: o,
+                latestDraft,
+                hasOnClear: !!onClear,
+              });
+              const title = canClear
+                ? `Clear ${o} pick`
+                : isSelected
+                  ? `${o} (already selected)`
+                  : `Save ${o} as draft`;
+              return (
+                <Button
+                  key={o}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-selected={isSelected}
+                  data-clearable={canClear ? "true" : "false"}
+                  disabled={submittingOutcome != null && submittingOutcome !== o}
+                  onClick={() => handlePick(o)}
+                  className={OUTCOME_TONE[o]}
+                  title={title}
+                  aria-label={title}
+                  data-testid={`button-pick-${o.toLowerCase()}-${claim.id}`}
+                >
+                  {submittingOutcome === o && (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  )}
+                  {o}
+                </Button>
+              );
+            })}
           </div>
         </div>
 

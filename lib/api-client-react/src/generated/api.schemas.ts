@@ -1765,6 +1765,18 @@ traceable in audit and observability.
 }
 
 /**
+ * Result payload for `DELETE /claims/{id}/verdict/draft` (Task #344).
+Reports how many `operator_draft` rows were hard-deleted in the
+same call. The endpoint is idempotent — calling it on a leg with
+no drafts returns `clearedCount: 0` without error.
+
+ */
+export interface ClearLegVerdictDraftResponse {
+  /** Number of `operator_draft` rows hard-deleted in this call. */
+  clearedCount: number;
+}
+
+/**
  * Result payload for `POST /invoice-groups/{id}/promote-verdict-drafts`.
 Reports how many leg drafts were promoted in the same transaction
 plus the leg ids that were touched (handy for cache invalidation

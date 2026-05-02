@@ -11,6 +11,7 @@ import {
   getGetClaimQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
   useRecordLegVerdict,
+  useClearLegVerdictDraft,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
@@ -1043,6 +1044,7 @@ function PerLegVerdictRailSection({
 }: PerLegVerdictRailSectionProps) {
   const queryClient = useQueryClient();
   const recordVerdict = useRecordLegVerdict();
+  const clearVerdictDraft = useClearLegVerdictDraft();
   const { calibrationByErrorType } = useAiCalibrations(
     actionableRides.map((r) => r.errorTypeId),
   );
@@ -1126,6 +1128,20 @@ function PerLegVerdictRailSection({
                   queryKey: getGetClaimQueryKey(claim.id),
                 });
                 onAfterVerdict(`Selection saved for #${claim.confNumber}.`);
+              }}
+              onClear={async () => {
+                // Task #344: clicking the lit pill clears the draft.
+                // Same invalidation set as `onSelect` because the
+                // change is also draft-only (no group transition, no
+                // master-list re-count) — Step 4 hasn't been touched.
+                await clearVerdictDraft.mutateAsync({ id: claim.id });
+                queryClient.invalidateQueries({
+                  queryKey: getGetInvoiceGroupQueryKey(groupId),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: getGetClaimQueryKey(claim.id),
+                });
+                onAfterVerdict(`Selection cleared for #${claim.confNumber}.`);
               }}
             />
           ))

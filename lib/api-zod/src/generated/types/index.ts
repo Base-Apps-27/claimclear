@@ -78,6 +78,7 @@ export * from "./classifierStatsTotals";
 export * from "./classifierStatsVerdictCounts";
 export * from "./classifierVerdictBin";
 export * from "./classifyLegBody";
+export * from "./clearLegVerdictDraftResponse";
 export * from "./closurePersonRef";
 export * from "./closureReviewBody";
 export * from "./closureReviewBodyClosureReviewState";

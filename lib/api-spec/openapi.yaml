@@ -2110,6 +2110,52 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /claims/{id}/verdict/draft:
+    delete:
+      operationId: clearLegVerdictDraft
+      tags: [claims]
+      summary: Clear the operator's draft verdict pick for a leg (Task #344)
+      description: |
+        Hard-deletes every `operator_draft` row for the leg so the
+        per-leg picker on Responses Awaiting Review can render with no
+        pill lit. Wired to the picker's "click the lit pill to clear"
+        affordance — operators who pick Approved/Denied by mistake can
+        unset the draft without having to confirm the opposite verdict
+        first.
+
+        Append-only-ness is preserved for terminal verdict rows
+        (`operator_confirmed`, `ai_suggested`) — those are never touched
+        by this endpoint. Drafts are explicitly transient state with no
+        downstream effects (no MAS, no attestation, no denormalized
+        cache write), so hard-delete is safe.
+
+        Source-state contract: the leg's parent invoice group must be
+        in the `response-pending` macro phase. Once Step 4 has been
+        committed (drafts promoted to `operator_confirmed` and the
+        group has moved on), there's no longer a draft to clear and
+        the gate refuses the call. The endpoint is idempotent — if
+        there are no drafts to clear, it returns `clearedCount: 0`
+        without error.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Draft cleared (or no drafts existed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClearLegVerdictDraftResponse"
+        "409":
+          description: Source-state contract violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /claims/{id}/per-leg-context:
     post:
       operationId: setLegContext
@@ -5579,6 +5625,19 @@ components:
             non-empty `note`. The audit + state event for this row carry
             `metadata.reason = "legacy_reconciliation"` so the bypass is
             traceable in audit and observability.
+
+    ClearLegVerdictDraftResponse:
+      type: object
+      required: [clearedCount]
+      description: |
+        Result payload for `DELETE /claims/{id}/verdict/draft` (Task #344).
+        Reports how many `operator_draft` rows were hard-deleted in the
+        same call. The endpoint is idempotent — calling it on a leg with
+        no drafts returns `clearedCount: 0` without error.
+      properties:
+        clearedCount:
+          type: integer
+          description: Number of `operator_draft` rows hard-deleted in this call.
 
     PromoteVerdictDraftsResponse:
       type: object

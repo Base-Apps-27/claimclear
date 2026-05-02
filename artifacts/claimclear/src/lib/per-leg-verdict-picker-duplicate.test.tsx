@@ -1,7 +1,8 @@
-// Task #309 / Task #343 — picker behavior on Sibling Duplicate legs
-// and the new draft-saving toggle UI.
+// Task #309 / Task #343 / Task #344 — picker behavior on Sibling
+// Duplicate legs, the draft-saving toggle UI, and the click-the-lit-
+// pill clear affordance.
 //
-// Two things are pinned here:
+// Three things are pinned here:
 //
 //  1. Sibling-duplicate guard (Task #309). The action rail filters
 //     duplicates out of `actionableRides`, so under normal data flow
@@ -18,12 +19,22 @@
 //     on top of the pills. The lit-up state is seeded from the latest
 //     draft (or older confirmed verdict) so the selection survives
 //     refresh + navigation.
+//
+//  3. Click-the-lit-pill clear (Task #344). When the page wires an
+//     `onClear` callback, clicking the *already-selected* pill calls
+//     it (DELETE /verdict/draft) so operators can unset a wrong pick
+//     without first having to confirm the opposite verdict. Without
+//     `onClear` wired, the click stays a forward-only no-op so legacy
+//     callers don't accidentally toggle off.
 
 import * as React from "react";
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PerLegVerdictPicker } from "../components/per-leg-verdict-picker";
+import {
+  PerLegVerdictPicker,
+  canClearDraftPick,
+} from "../components/per-leg-verdict-picker";
 import type { ClaimResponse, ClaimVerdictResponse } from "@workspace/api-client-react";
 
 void React;
@@ -45,6 +56,27 @@ function assertNotSelected(html: string, testId: string) {
     html,
     new RegExp(
       `(data-selected="false"[^>]*data-testid="${testId}"|data-testid="${testId}"[^>]*data-selected="false")`,
+    ),
+  );
+}
+
+// Same in-either-order helpers for the Task #344 `data-clearable` flag.
+// The lit pill stamps `data-clearable="true"` when (and only when) the
+// page wired an `onClear` callback — that's the visual + machine
+// contract the click-the-lit-pill clear path is gated on.
+function assertClearable(html: string, testId: string) {
+  assert.match(
+    html,
+    new RegExp(
+      `(data-clearable="true"[^>]*data-testid="${testId}"|data-testid="${testId}"[^>]*data-clearable="true")`,
+    ),
+  );
+}
+function assertNotClearable(html: string, testId: string) {
+  assert.match(
+    html,
+    new RegExp(
+      `(data-clearable="false"[^>]*data-testid="${testId}"|data-testid="${testId}"[^>]*data-clearable="false")`,
     ),
   );
 }
@@ -284,6 +316,242 @@ test("picker still seeds from latestVerdict when its source is operator_confirme
   );
   assertSelected(html, "button-pick-denied-25");
   assertNotSelected(html, "button-pick-approved-25");
+});
+
+// ─── Task #344 — click-the-lit-pill clear affordance ───────────────────
+
+// Pure-helper coverage for the gate that the picker DOM (data-clearable
+// + tooltip) and the click handler both branch off. Pinning the gate
+// here gives the post-clear-resync paths the reviewer flagged a
+// dependable contract: if the gate is honest, the click handler can
+// never reach `setPicked(null)` on a leg that isn't actually backed by
+// an `operator_draft` row, so the UI/backend divergence scenario the
+// reviewer described becomes structurally unreachable.
+
+test("canClearDraftPick: lit pill + draft + matching outcome + onClear → true", () => {
+  const draft = fixtureVerdict("Approved", "operator_draft");
+  assert.equal(
+    canClearDraftPick({
+      picked: "Approved",
+      outcome: "Approved",
+      latestDraft: draft,
+      hasOnClear: true,
+    }),
+    true,
+  );
+});
+
+test("canClearDraftPick: confirmed-only (no draft) is NOT clearable even when lit + onClear wired", () => {
+  // The reviewer-flagged regression. A pill lit purely from an
+  // `operator_confirmed` row MUST NOT advertise the affordance —
+  // DELETE /verdict/draft would be a server-side no-op
+  // (clearedCount: 0) and the optimistic `setPicked(null)` would
+  // visually unset a pill backed by an append-only row the server
+  // won't touch.
+  assert.equal(
+    canClearDraftPick({
+      picked: "Approved",
+      outcome: "Approved",
+      latestDraft: null,
+      hasOnClear: true,
+    }),
+    false,
+  );
+});
+
+test("canClearDraftPick: draft outcome must match the pill outcome (no cross-pill clearable lighting)", () => {
+  // Confirmed-Approved + draft-Denied combo. Under newer-wins the
+  // picker would already be lighting up Denied as `picked`, so this
+  // is a belt-and-suspenders guard against future seed-rule churn.
+  // The Approved pill is NOT clearable because the draft on file is
+  // a Denied draft.
+  const denyDraft = fixtureVerdict("Denied", "operator_draft");
+  assert.equal(
+    canClearDraftPick({
+      picked: "Approved",
+      outcome: "Approved",
+      latestDraft: denyDraft,
+      hasOnClear: true,
+    }),
+    false,
+  );
+});
+
+test("canClearDraftPick: unselected pill is never clearable (clicking it saves a draft instead)", () => {
+  const draft = fixtureVerdict("Approved", "operator_draft");
+  assert.equal(
+    canClearDraftPick({
+      picked: "Approved",
+      outcome: "Denied",
+      latestDraft: draft,
+      hasOnClear: true,
+    }),
+    false,
+  );
+});
+
+test("canClearDraftPick: omitted onClear ⇒ false (legacy forward-only callers preserved)", () => {
+  const draft = fixtureVerdict("Approved", "operator_draft");
+  assert.equal(
+    canClearDraftPick({
+      picked: "Approved",
+      outcome: "Approved",
+      latestDraft: draft,
+      hasOnClear: false,
+    }),
+    false,
+  );
+});
+
+test("Task #344: lit pill stamps data-clearable=\"true\" when onClear is wired", () => {
+  // The page on Responses Awaiting Review wires an `onClear` callback
+  // that calls DELETE /claims/:id/verdict/draft. Whenever a draft is
+  // already on file (Approved here), the lit pill MUST advertise the
+  // clear affordance so a click on it routes to the clear path
+  // instead of the legacy no-op. The unselected pill is NEVER
+  // clearable — it would save a draft on first click.
+  const draft = fixtureVerdict("Approved", "operator_draft");
+  const leg = fixtureLeg({
+    id: 30,
+    confNumber: "CLM-30",
+    latestDraft: draft,
+  });
+  const html = renderToStaticMarkup(
+    <PerLegVerdictPicker
+      claim={leg}
+      latestDraft={draft}
+      onSelect={async () => {}}
+      onClear={async () => {}}
+    />,
+  );
+  assertSelected(html, "button-pick-approved-30");
+  assertClearable(html, "button-pick-approved-30");
+  // The unselected pill is never clearable — clicking it saves a draft.
+  assertNotSelected(html, "button-pick-denied-30");
+  assertNotClearable(html, "button-pick-denied-30");
+  // Tooltip / aria-label surface the affordance so it's discoverable.
+  assert.match(html, /Clear Approved pick/);
+});
+
+test("Task #344: confirmed-only selection (no draft on file) is NOT clearable even with onClear wired", () => {
+  // Reviewer-flagged regression: a leg can be lit up purely from an
+  // `operator_confirmed` row when no draft exists on top (e.g. a
+  // mixed group where one leg was confirmed under the old behavior
+  // and the group hasn't moved past response-pending). The clear
+  // affordance MUST NOT advertise here — DELETE /verdict/draft would
+  // be a no-op (clearedCount: 0) and an optimistic `setPicked(null)`
+  // would visually unset a pill that's actually backed by an
+  // append-only confirmed row the server won't touch.
+  const confirmed = fixtureVerdict("Approved", "operator_confirmed");
+  const leg = fixtureLeg({
+    id: 33,
+    confNumber: "CLM-33",
+    latestVerdict: confirmed,
+    latestDraft: null,
+  });
+  const html = renderToStaticMarkup(
+    <PerLegVerdictPicker
+      claim={leg}
+      latestVerdict={confirmed}
+      latestDraft={null}
+      onSelect={async () => {}}
+      onClear={async () => {}}
+    />,
+  );
+  // Pill IS lit (the operator_confirmed row seeds the selection).
+  assertSelected(html, "button-pick-approved-33");
+  // …but the clear affordance MUST NOT light up.
+  assertNotClearable(html, "button-pick-approved-33");
+  // Tooltip falls back to the legacy "(already selected)" hint, NOT
+  // the new "Clear …" affordance.
+  assert.match(html, /Approved \(already selected\)/);
+  assert.equal(html.includes("Clear Approved pick"), false);
+});
+
+test("Task #344: draft+confirmed same outcome → draft is the clearable one (mirrors what server clears)", () => {
+  // When both a draft Approved and a confirmed Approved exist for
+  // the same leg, the picker prefers the draft (Task #343 newer-wins
+  // rule). The clear affordance lines up with what the DELETE
+  // endpoint actually removes — the draft row — so the pill on the
+  // outcome that matches `latestDraft.outcome` is the clearable one.
+  const draft = fixtureVerdict("Approved", "operator_draft");
+  const confirmed = fixtureVerdict("Approved", "operator_confirmed");
+  const leg = fixtureLeg({
+    id: 34,
+    confNumber: "CLM-34",
+    latestVerdict: confirmed,
+    latestDraft: draft,
+  });
+  const html = renderToStaticMarkup(
+    <PerLegVerdictPicker
+      claim={leg}
+      latestVerdict={confirmed}
+      latestDraft={draft}
+      onSelect={async () => {}}
+      onClear={async () => {}}
+    />,
+  );
+  assertSelected(html, "button-pick-approved-34");
+  assertClearable(html, "button-pick-approved-34");
+  assert.match(html, /Clear Approved pick/);
+});
+
+test("Task #344: lit pill is NOT clearable when onClear is omitted (legacy no-op contract preserved)", () => {
+  // Backwards-compatibility guard: callers that don't opt into the
+  // clear path get the original forward-only behavior. The lit pill
+  // still renders selected, but data-clearable=\"false\" so a click
+  // short-circuits without calling either callback.
+  const draft = fixtureVerdict("Denied", "operator_draft");
+  const leg = fixtureLeg({
+    id: 31,
+    confNumber: "CLM-31",
+    latestDraft: draft,
+  });
+  const html = renderToStaticMarkup(
+    <PerLegVerdictPicker
+      claim={leg}
+      latestDraft={draft}
+      onSelect={async () => {}}
+      // intentionally no onClear
+    />,
+  );
+  assertSelected(html, "button-pick-denied-31");
+  assertNotClearable(html, "button-pick-denied-31");
+  // The legacy "(already selected)" hint stays in place.
+  assert.match(html, /Denied \(already selected\)/);
+  // No "Clear …" tooltip leaks into the DOM when the affordance is
+  // not wired.
+  assert.equal(html.includes("Clear Denied pick"), false);
+});
+
+test("Task #344: with no draft on file, neither pill is clearable even when onClear is wired", () => {
+  // Belt-and-suspenders: data-clearable=\"true\" is gated on
+  // `picked === outcome`, NOT just on `onClear` being wired. A fresh
+  // group with no draft and only an AI suggestion (which doesn't
+  // seed the pill) MUST render both pills as not-selected and
+  // not-clearable so the first click on either one saves a draft
+  // rather than no-opping or clearing.
+  const aiSuggested = fixtureVerdict("Approved", "ai_suggested");
+  const leg = fixtureLeg({
+    id: 32,
+    confNumber: "CLM-32",
+    latestVerdict: aiSuggested,
+    latestDraft: null,
+  });
+  const html = renderToStaticMarkup(
+    <PerLegVerdictPicker
+      claim={leg}
+      latestVerdict={aiSuggested}
+      latestSuggestion={aiSuggested}
+      latestDraft={null}
+      onSelect={async () => {}}
+      onClear={async () => {}}
+    />,
+  );
+  assertNotSelected(html, "button-pick-approved-32");
+  assertNotSelected(html, "button-pick-denied-32");
+  assertNotClearable(html, "button-pick-approved-32");
+  assertNotClearable(html, "button-pick-denied-32");
 });
 
 test("picker prefers a draft over an AI-suggested latestVerdict (newer-wins is moot when AI is the only alternative)", () => {

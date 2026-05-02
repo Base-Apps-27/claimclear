@@ -605,6 +605,185 @@ test("POST /claims/:id/verdict { reconcile: true } refuses without an operator n
   }
 });
 
+// --- Task #344: DELETE /claims/:id/verdict/draft ----------------------
+
+test("DELETE /claims/:id/verdict/draft hard-deletes operator_draft rows and writes a clear audit + state event", async () => {
+  // Happy path: operator picks Approved (draft saved), then clicks the
+  // lit pill to clear it. The endpoint MUST hard-delete the draft row,
+  // emit `leg.verdict_draft_cleared` + `leg_verdict_draft_cleared`, and
+  // return `clearedCount: 1`.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const draftRes = await fetchJson(`/api/claims/${claim.id}/verdict`, {
+      method: "POST",
+      body: { source: "operator_draft", outcome: "Approved" },
+    });
+    assert.equal(draftRes.status, 200);
+
+    const clearRes = await fetchJson(
+      `/api/claims/${claim.id}/verdict/draft`,
+      { method: "DELETE" },
+    );
+    assert.equal(
+      clearRes.status,
+      200,
+      `expected 200, got ${clearRes.status} (${JSON.stringify(clearRes.json)})`,
+    );
+    assert.equal(clearRes.json.clearedCount, 1);
+
+    // Draft row is gone — drafts are explicitly transient state, so
+    // hard-delete is the contract.
+    const remaining = await db
+      .select()
+      .from(claimVerdictTable)
+      .where(eq(claimVerdictTable.claimId, claim.id));
+    assert.equal(remaining.length, 0);
+
+    // Audit + state-event vocabulary pinned so observability stays
+    // consistent.
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(and(
+        eq(auditLogsTable.claimId, claim.id),
+        eq(auditLogsTable.action, "leg_verdict_draft_cleared"),
+      ));
+    assert.equal(audits.length, 1, "audit row must be written on a non-empty clear");
+    const events = await db
+      .select()
+      .from(stateEventsTable)
+      .where(and(
+        eq(stateEventsTable.claimId, claim.id),
+        eq(stateEventsTable.eventKey, "leg.verdict_draft_cleared"),
+      ));
+    assert.equal(events.length, 1, "state event must be emitted on a non-empty clear");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("DELETE /claims/:id/verdict/draft is idempotent — returns clearedCount=0 with no audit row", async () => {
+  // Calling clear on a leg with no draft (e.g. operator double-clicks
+  // or the page racing optimistic state) MUST NOT 404 or 409. It
+  // returns `clearedCount: 0` and skips the audit + state-event write
+  // so the audit log stays clean.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(
+      `/api/claims/${claim.id}/verdict/draft`,
+      { method: "DELETE" },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.json.clearedCount, 0);
+
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(and(
+        eq(auditLogsTable.claimId, claim.id),
+        eq(auditLogsTable.action, "leg_verdict_draft_cleared"),
+      ));
+    assert.equal(audits.length, 0, "no audit row should be written on a no-op clear");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("DELETE /claims/:id/verdict/draft does NOT touch operator_confirmed or ai_suggested rows", async () => {
+  // Append-only-ness is preserved for terminal rows. We seed an
+  // operator_confirmed verdict, then a draft on top, then call clear.
+  // Only the draft row should be deleted.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Needs Review",
+  });
+  try {
+    // Insert a terminal operator_confirmed row directly so we don't
+    // re-trigger the MAS / attestation side effects of the POST path.
+    // (The endpoint under test is supposed to leave this row alone
+    // regardless of how it got there.)
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id,
+      source: "operator_confirmed",
+      outcome: "Approved",
+    });
+    // And a draft on top.
+    await db.insert(claimVerdictTable).values({
+      claimId: claim.id,
+      source: "operator_draft",
+      outcome: "Denied",
+    });
+
+    const res = await fetchJson(
+      `/api/claims/${claim.id}/verdict/draft`,
+      { method: "DELETE" },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.json.clearedCount, 1);
+
+    const remaining = await db
+      .select()
+      .from(claimVerdictTable)
+      .where(eq(claimVerdictTable.claimId, claim.id));
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].source, "operator_confirmed");
+    assert.equal(remaining[0].outcome, "Approved");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("DELETE /claims/:id/verdict/draft 409s when the parent group is past response-pending", async () => {
+  // Mirror of POST /verdict's macro-phase gate. Once Step 4 has been
+  // committed and the group has moved on, there's no longer a draft
+  // to clear and we refuse the call so a stale tab can't reach back
+  // and mutate a sealed group.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Resolved" });
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    invoiceGroupId: group.id,
+    status: "Resolved",
+  });
+  try {
+    const res = await fetchJson(
+      `/api/claims/${claim.id}/verdict/draft`,
+      { method: "DELETE" },
+    );
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "response-pending");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
 // --- /mas-action/complete ----------------------------------------------
 
 test("POST /claims/:id/mas-action/complete stamps completion when mas_action_required=cancel", async () => {

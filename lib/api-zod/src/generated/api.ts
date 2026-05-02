@@ -12438,6 +12438,44 @@ export const RecordLegVerdictResponse = zod.object({
 });
 
 /**
+ * Hard-deletes every `operator_draft` row for the leg so the
+per-leg picker on Responses Awaiting Review can render with no
+pill lit. Wired to the picker's "click the lit pill to clear"
+affordance — operators who pick Approved/Denied by mistake can
+unset the draft without having to confirm the opposite verdict
+first.
+
+Append-only-ness is preserved for terminal verdict rows
+(`operator_confirmed`, `ai_suggested`) — those are never touched
+by this endpoint. Drafts are explicitly transient state with no
+downstream effects (no MAS, no attestation, no denormalized
+cache write), so hard-delete is safe.
+
+Source-state contract: the leg's parent invoice group must be
+in the `response-pending` macro phase. Once Step 4 has been
+committed (drafts promoted to `operator_confirmed` and the
+group has moved on), there's no longer a draft to clear and
+the gate refuses the call. The endpoint is idempotent — if
+there are no drafts to clear, it returns `clearedCount: 0`
+without error.
+
+ * @summary Clear the operator's draft verdict pick for a leg (Task
+ */
+export const ClearLegVerdictDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ClearLegVerdictDraftResponse = zod
+  .object({
+    clearedCount: zod
+      .number()
+      .describe("Number of `operator_draft` rows hard-deleted in this call."),
+  })
+  .describe(
+    "Result payload for `DELETE \/claims\/{id}\/verdict\/draft` (Task #344).\nReports how many `operator_draft` rows were hard-deleted in the\nsame call. The endpoint is idempotent — calling it on a leg with\nno drafts returns `clearedCount: 0` without error.\n",
+  );
+
+/**
  * UI-supporting endpoint. Source-state contract: the leg's parent invoice
 group must be in `pre-submit` (the per-leg context only matters before
 the submission preview is generated). Stores `claims.per_leg_context`

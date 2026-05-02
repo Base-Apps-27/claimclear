@@ -54,6 +54,7 @@ import type {
   ClaimsListResponse,
   ClassifierStatsResponse,
   ClassifyLegBody,
+  ClearLegVerdictDraftResponse,
   ClosureReviewBody,
   CompleteMasActionBody,
   CompleteReattestBody,
@@ -5670,6 +5671,115 @@ export const useRecordLegVerdict = <
   TContext
 > => {
   return useMutation(getRecordLegVerdictMutationOptions(options));
+};
+
+/**
+ * Hard-deletes every `operator_draft` row for the leg so the
+per-leg picker on Responses Awaiting Review can render with no
+pill lit. Wired to the picker's "click the lit pill to clear"
+affordance — operators who pick Approved/Denied by mistake can
+unset the draft without having to confirm the opposite verdict
+first.
+
+Append-only-ness is preserved for terminal verdict rows
+(`operator_confirmed`, `ai_suggested`) — those are never touched
+by this endpoint. Drafts are explicitly transient state with no
+downstream effects (no MAS, no attestation, no denormalized
+cache write), so hard-delete is safe.
+
+Source-state contract: the leg's parent invoice group must be
+in the `response-pending` macro phase. Once Step 4 has been
+committed (drafts promoted to `operator_confirmed` and the
+group has moved on), there's no longer a draft to clear and
+the gate refuses the call. The endpoint is idempotent — if
+there are no drafts to clear, it returns `clearedCount: 0`
+without error.
+
+ * @summary Clear the operator's draft verdict pick for a leg (Task
+ */
+export const getClearLegVerdictDraftUrl = (id: number) => {
+  return `/api/claims/${id}/verdict/draft`;
+};
+
+export const clearLegVerdictDraft = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClearLegVerdictDraftResponse> => {
+  return customFetch<ClearLegVerdictDraftResponse>(
+    getClearLegVerdictDraftUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getClearLegVerdictDraftMutationOptions = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearLegVerdictDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clearLegVerdictDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["clearLegVerdictDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearLegVerdictDraft>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return clearLegVerdictDraft(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClearLegVerdictDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clearLegVerdictDraft>>
+>;
+
+export type ClearLegVerdictDraftMutationError =
+  ErrorType<StateConflictResponse>;
+
+/**
+ * @summary Clear the operator's draft verdict pick for a leg (Task
+ */
+export const useClearLegVerdictDraft = <
+  TError = ErrorType<StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearLegVerdictDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clearLegVerdictDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getClearLegVerdictDraftMutationOptions(options));
 };
 
 /**

@@ -2584,6 +2584,87 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
   res.json(verdictRow);
 }));
 
+// DELETE /claims/:id/verdict/draft — Task #344. Hard-deletes every
+// `operator_draft` row for the leg so the per-leg picker on Responses
+// Awaiting Review can render with no pill lit. This is the "click the
+// lit pill to clear" affordance: operators who pick Approved/Denied
+// by mistake can unset the draft without having to confirm the
+// opposite verdict first.
+//
+// Append-only-ness is preserved for terminal verdict rows
+// (`operator_confirmed`, `ai_suggested`) — those are NEVER touched
+// here. Drafts are explicitly transient state with no downstream
+// effects (no MAS, no attestation, no denormalized cache write), so
+// hard-delete is safe.
+//
+// Idempotent: when there are no drafts to clear, returns
+// `clearedCount: 0` without error.
+router.delete("/claims/:id/verdict/draft", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null) {
+    res.status(409).json({
+      error: "Leg has no parent invoice group; verdicts are group-scoped",
+      expectedState: "response-pending",
+      actualState: "no_group",
+    });
+    return;
+  }
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (!group) {
+    res.status(409).json({ error: "Parent invoice group missing" });
+    return;
+  }
+
+  // Same group-aware macro phase gate as POST /verdict — once Step 4
+  // has been committed (drafts promoted, group moved on), there's no
+  // longer a draft to clear and we refuse the call.
+  const macroPhase = getGroupMacroPhase(group);
+  if (macroPhase !== "response-pending") {
+    res.status(409).json({
+      error: "Group is not in the response-pending phase",
+      expectedState: "response-pending",
+      actualState: macroPhase,
+    });
+    return;
+  }
+
+  const deleted = await db
+    .delete(claimVerdictTable)
+    .where(and(
+      eq(claimVerdictTable.claimId, id),
+      eq(claimVerdictTable.source, "operator_draft"),
+    ))
+    .returning({ id: claimVerdictTable.id });
+
+  // Audit + state-event are only worth writing when something actually
+  // changed — keeps the audit log clean for the idempotent no-op case.
+  if (deleted.length > 0) {
+    await createAuditLog(
+      id,
+      "leg_verdict_draft_cleared",
+      `Cleared ${deleted.length} draft verdict row(s) for ${leg.confNumber}`,
+      req,
+      { clearedCount: deleted.length },
+    );
+    await emitStateEvent({
+      eventKey: "leg.verdict_draft_cleared",
+      claimId: id,
+      invoiceGroupId: leg.invoiceGroupId,
+      actorUserId: req.user?.email ?? null,
+      durationMs: null,
+      metadata: { clearedCount: deleted.length },
+    });
+    emitClaimEvent(id, "verdict_draft_cleared", req);
+  }
+
+  res.json({ clearedCount: deleted.length });
+}));
+
 // POST /claims/:id/mas-action/complete — operator stamps that they
 // completed the MAS cancel for this leg. Source-state contract:
 // `mas_action_required = 'cancel'` AND `mas_action_completed_at IS NULL`.
