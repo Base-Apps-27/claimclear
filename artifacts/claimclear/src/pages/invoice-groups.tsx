@@ -19,6 +19,7 @@ import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
 import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
+import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
@@ -149,9 +150,10 @@ export default function InvoiceGroupsList() {
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [showBulkAssign, setShowBulkAssign] = useState(false);
-  const [bulkErrorTypeId, setBulkErrorTypeId] = useState("");
   const [bulkAssignSuccess, setBulkAssignSuccess] = useState("");
+  // External "open the picker" trigger from the right-rail action; the
+  // BulkAssignErrorTypeAction component is otherwise self-managing.
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(getInitialVisibleCols);
   const [density, setDensity] = useState<Density>(getInitialDensity);
@@ -211,22 +213,6 @@ export default function InvoiceGroupsList() {
     });
   };
 
-  const handleBulkAssign = async () => {
-    if (!bulkErrorTypeId || selectedIds.size === 0) return;
-    const et = errorTypes.find(t => String(t.id) === bulkErrorTypeId);
-    if (!et) return;
-    try {
-      const res = await bulkAssign.mutateAsync({
-        data: { groupIds: Array.from(selectedIds), errorTypeId: String(et.id), errorTypeName: et.name }
-      });
-      setBulkAssignSuccess(`Updated ${res.updated} group${res.updated !== 1 ? "s" : ""}`);
-      setSelectedIds(new Set());
-      setShowBulkAssign(false);
-      setBulkErrorTypeId("");
-      queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-      setTimeout(() => setBulkAssignSuccess(""), 3000);
-    } catch {}
-  };
 
   const handleSort = (key: string, dir: "asc" | "desc" | "") => {
     set({ sort: key || null, dir: dir || null, page: null }, false);
@@ -902,48 +888,28 @@ export default function InvoiceGroupsList() {
             meta={someSelected ? `${selectedIds.size} selected` : undefined}
           >
             {someSelected ? (
-              <Recommended
+              <BulkAssignErrorTypeAction
+                selectedCount={selectedIds.size}
+                errorTypes={errorTypes}
                 tone="purple"
-                title={`Apply error type to ${selectedIds.size}`}
+                entityNoun="group"
                 body="Tag every selected group with the same error classification so the bot files them under one rule."
-                cta={
-                  showBulkAssign ? (
-                    <div className="space-y-2">
-                      <Select value={bulkErrorTypeId} onValueChange={setBulkErrorTypeId}>
-                        <SelectTrigger className="h-9 text-sm bg-background">
-                          <SelectValue placeholder="Select error type..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {errorTypes.map(et => (
-                            <SelectItem key={et.id} value={String(et.id)}>{et.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="flex gap-2">
-                        <ToneButton
-                          tone="purple"
-                          onClick={handleBulkAssign}
-                          disabled={!bulkErrorTypeId || bulkAssign.isPending}
-                          testId="button-bulk-assign-apply"
-                        >
-                          {bulkAssign.isPending ? <><Loader2 className="h-3 w-3 animate-spin" /> Applying…</> : "Apply"}
-                        </ToneButton>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="bg-background/40"
-                          onClick={() => { setShowBulkAssign(false); setBulkErrorTypeId(""); }}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <ToneButton tone="purple" onClick={() => setShowBulkAssign(true)} testId="button-bulk-assign-open">
-                      <Tag className="w-4 h-4" /> Apply error type to {selectedIds.size}
-                    </ToneButton>
-                  )
-                }
+                isPending={bulkAssign.isPending}
+                open={showBulkAssign}
+                onOpenChange={setShowBulkAssign}
+                onApply={async (errorTypeId, errorType) => {
+                  const res = await bulkAssign.mutateAsync({
+                    data: {
+                      groupIds: Array.from(selectedIds),
+                      errorTypeId: String(errorType.id),
+                      errorTypeName: errorType.name,
+                    },
+                  });
+                  setBulkAssignSuccess(`Updated ${res.updated} group${res.updated !== 1 ? "s" : ""}`);
+                  setSelectedIds(new Set());
+                  queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                  setTimeout(() => setBulkAssignSuccess(""), 3000);
+                }}
               />
             ) : (
               <Recommended

@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ReattestModal } from "./reattest-modal";
 import { useMarkAwaitingPayorAgain } from "@workspace/api-client-react";
+import { useAuth } from "@workspace/replit-auth-web";
 import { useToast } from "@/hooks/use-toast";
 import {
   Tooltip,
@@ -89,6 +90,7 @@ export function WhatsNextCard({
   const closureLauncher = useClosureLauncher();
   const markWaiting = useMarkAwaitingPayorAgain();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const derivation = useMemo<VerdictDerivation>(
     () => deriveVerdictMix(rides),
@@ -323,6 +325,7 @@ export function WhatsNextCard({
         group={group}
         approvedLegs={derivation.approvedLegs}
         deniedLegs={derivation.deniedLegs}
+        canRecordOffline={user?.role === "admin"}
         promoteDrafts={async () => {
           // Re-attest (Attest now / Queue for later) commits Step 4 by
           // first promoting every draft on the group to

@@ -33,7 +33,13 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
+  Edit3,
 } from "lucide-react";
+import {
+  isOfflineReattestNoteValid,
+  canSubmitOfflineReattest,
+  buildOfflineReattestPayload,
+} from "@/lib/reattest-offline-modal-helpers";
 import {
   buildReattestChecklist,
   renderChecklistAsText,
@@ -57,6 +63,14 @@ interface Props {
   promoteDrafts: () => Promise<void>;
   /** Run after either path's submit succeeds. */
   onAfterAction: (message: string) => void;
+  /**
+   * Admin-only: gates the "I already attested this offline" pick option.
+   * Server enforces admin too (POST .../reattest/complete with
+   * `recordedOffline=true` is admin-gated in mas-reattest-offline.test.ts);
+   * the UI just hides the option for non-admins so they don't see a
+   * pick they can't use.
+   */
+  canRecordOffline?: boolean;
 }
 
 /**
@@ -91,6 +105,7 @@ export function ReattestModal({
   deniedLegs,
   promoteDrafts,
   onAfterAction,
+  canRecordOffline = false,
 }: Props) {
   const { toast } = useToast();
   const completeReattest = useCompleteGroupReattest();
@@ -106,11 +121,17 @@ export function ReattestModal({
     [checklist],
   );
 
-  const [mode, setMode] = useState<"pick" | "now" | "queue">("pick");
+  const [mode, setMode] = useState<"pick" | "now" | "queue" | "offline">("pick");
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [reattestNote, setReattestNote] = useState("");
   const [queueNote, setQueueNote] = useState("");
   const [confirmQueueOpen, setConfirmQueueOpen] = useState(false);
+  // Offline-override path: same destination as the `now`/`queue` modes
+  // (re-attest stamp lands, group drops off review), but the operator
+  // is *recording* an attestation that already happened in the portal
+  // out-of-band. Server requires admin role + a >=10-char trimmed note.
+  const [offlineNote, setOfflineNote] = useState("");
+  const [offlineConfirmed, setOfflineConfirmed] = useState(false);
 
   // Reset to the picker every time the modal is reopened so the operator
   // always lands on the question, never on a stale sub-view.
@@ -121,6 +142,8 @@ export function ReattestModal({
       setReattestNote("");
       setQueueNote("");
       setConfirmQueueOpen(false);
+      setOfflineNote("");
+      setOfflineConfirmed(false);
     }
   }, [open]);
 
@@ -218,9 +241,59 @@ export function ReattestModal({
     }
   };
 
+  const handleRecordOffline = async () => {
+    if (
+      !canSubmitOfflineReattest({
+        note: offlineNote,
+        confirmed: offlineConfirmed,
+        isPending: busy,
+      })
+    ) {
+      return;
+    }
+    // Same step-4 commit pattern as the "now" / "queue" paths: drafts
+    // get promoted to operator_confirmed atomically before the
+    // re-attest stamp lands so a later retry can't double-commit.
+    setPromoting(true);
+    try {
+      await promoteDrafts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not commit selections.";
+      toast({
+        title: "Couldn't save selections",
+        description: msg,
+        variant: "destructive",
+      });
+      setPromoting(false);
+      return;
+    }
+    setPromoting(false);
+    try {
+      await completeReattest.mutateAsync({
+        id: group.id,
+        data: buildOfflineReattestPayload(offlineNote),
+      });
+      // Same as the "now" path: drop the row off Responses Awaiting
+      // Review while the (offline-recorded) re-attest propagates.
+      await markWaiting.mutateAsync({ id: group.id, data: {} });
+      onAfterAction(
+        "Recorded as already re-attested (offline) — group is awaiting payor again.",
+      );
+      close();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not record.";
+      toast({
+        title: "Offline re-attest failed",
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
   const headerTitle = (() => {
     if (mode === "now") return "Re-attest now";
     if (mode === "queue") return "Queue for re-attest later";
+    if (mode === "offline") return "Already attested? Record it";
     return "Re-attest in the payor portal";
   })();
 
@@ -230,6 +303,9 @@ export function ReattestModal({
     }
     if (mode === "queue") {
       return `Park this for someone with portal access. ${approvedLegs.length} leg${approvedLegs.length === 1 ? "" : "s"} will be added to the Attestation Queue with the walkthrough below.`;
+    }
+    if (mode === "offline") {
+      return "Logs that you already re-attested in the portal out-of-band. Recorded as an admin override on the audit trail.";
     }
     return `The payor approved ${approvedLegs.length === 1 ? "1 leg" : `${approvedLegs.length} legs`}. Pick how you want to handle the re-attestation.`;
   })();
@@ -283,6 +359,15 @@ export function ReattestModal({
               disabled={approvedLegs.length === 0}
               testId="reattest-pick-queue"
             />
+            {canRecordOffline && (
+              <PickButton
+                icon={<Edit3 className="h-5 w-5" />}
+                title="I already attested this offline"
+                subtitle="Log that you already completed the re-attestation in the portal. Admin-only override; lands on the audit trail."
+                onClick={() => setMode("offline")}
+                testId="reattest-pick-offline"
+              />
+            )}
             <div className="flex justify-end pt-1">
               <Button
                 type="button"
@@ -396,6 +481,85 @@ export function ReattestModal({
               >
                 {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                 Queue for attestation
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Mode 4: Offline re-attest override ────────────────── */}
+        {mode === "offline" && (
+          <div className="space-y-4 pt-2" data-testid="reattest-mode-offline">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">
+                Why are you recording this offline?
+              </Label>
+              <Textarea
+                value={offlineNote}
+                onChange={(e) => setOfflineNote(e.target.value)}
+                placeholder="e.g. Re-attested directly in the MAS portal on 4/29 — confirmation #12345."
+                rows={4}
+                className="text-sm"
+                data-testid="reattest-offline-note"
+              />
+              <div className="flex items-center justify-between text-[11px]">
+                <span
+                  style={{
+                    color: isOfflineReattestNoteValid(offlineNote)
+                      ? "var(--cc-muted-fg)"
+                      : "var(--cc-amber-fg)",
+                  }}
+                >
+                  {isOfflineReattestNoteValid(offlineNote)
+                    ? "Note looks good."
+                    : `Need ${Math.max(0, 10 - offlineNote.trim().length)} more characters.`}
+                </span>
+                <span className="font-mono text-muted-foreground">
+                  {offlineNote.trim().length}/10
+                </span>
+              </div>
+            </div>
+            <label
+              htmlFor="reattest-offline-confirm"
+              className="flex items-start gap-2 rounded-md border bg-amber-50 px-3 py-2 text-xs cursor-pointer"
+              data-testid="reattest-offline-confirm-label"
+            >
+              <Checkbox
+                id="reattest-offline-confirm"
+                checked={offlineConfirmed}
+                onCheckedChange={(v) => setOfflineConfirmed(v === true)}
+                className="mt-0.5"
+                data-testid="reattest-offline-confirm"
+              />
+              <span className="leading-snug">
+                I confirm the re-attestation already happened in the portal.
+                This will be recorded as an admin override on the audit trail
+                and the group will drop off Responses Awaiting Review.
+              </span>
+            </label>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={close}
+                disabled={busy}
+                data-testid="reattest-offline-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRecordOffline}
+                disabled={
+                  !canSubmitOfflineReattest({
+                    note: offlineNote,
+                    confirmed: offlineConfirmed,
+                    isPending: busy,
+                  })
+                }
+                data-testid="reattest-offline-submit"
+              >
+                {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                Record as already re-attested
               </Button>
             </div>
           </div>
