@@ -111,7 +111,7 @@ function KpiTile({
   );
 }
 
-type HeroTone = "red" | "blue" | "amber";
+type HeroTone = "red" | "blue" | "amber" | "neutral";
 
 interface HeroCardProps {
   tone: HeroTone;
@@ -149,11 +149,19 @@ function heroToneVars(tone: HeroTone): {
       accent: "hsl(var(--primary))",
     };
   }
+  if (tone === "amber") {
+    return {
+      bg: "hsl(var(--cc-amber-bg))",
+      border: "hsl(var(--cc-amber-border))",
+      fg: "hsl(var(--cc-amber-fg))",
+      accent: "hsl(var(--cc-amber-fg))",
+    };
+  }
   return {
-    bg: "hsl(var(--cc-amber-bg))",
-    border: "hsl(var(--cc-amber-border))",
-    fg: "hsl(var(--cc-amber-fg))",
-    accent: "hsl(var(--cc-amber-fg))",
+    bg: "hsl(var(--muted))",
+    border: "hsl(var(--border))",
+    fg: "hsl(var(--muted-foreground))",
+    accent: "hsl(var(--foreground))",
   };
 }
 
@@ -525,7 +533,7 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <HeroCard
-            tone="red"
+            tone={fileTodayCount === 0 ? "neutral" : "red"}
             icon={<AlertTriangle className="w-4 h-4" />}
             eyebrow="File today"
             count={fileTodayCount}
@@ -566,7 +574,7 @@ export default function Dashboard() {
           />
 
           <HeroCard
-            tone="blue"
+            tone={!responsesLoading && responsesCount === 0 ? "neutral" : "blue"}
             icon={<Mail className="w-4 h-4" />}
             eyebrow="Responses to review"
             count={responsesCount}
@@ -602,7 +610,7 @@ export default function Dashboard() {
           />
 
           <HeroCard
-            tone="amber"
+            tone={!reattestLoading && reattestCount === 0 ? "neutral" : "amber"}
             icon={<Stamp className="w-4 h-4" />}
             eyebrow="MAS reattest pending"
             count={reattestCount}
