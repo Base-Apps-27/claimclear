@@ -61,14 +61,52 @@ export interface LegacyTreeNode {
 // editor matches what the operator will see at runtime.
 import { LEG_CONCLUSION } from "@workspace/vocab";
 
+// Read-compat is forever (Task #309 / Guard #2): the keys
+// `portal_dispute` and `dispute` MUST keep resolving to a string so that
+// legacy trees stored with those outcome types continue to render
+// without crashing anywhere downstream. The label for `portal_dispute`
+// has been relabeled to "Ready" — the runtime label maps to the new
+// vocabulary while preserving the key for back-compat.
 export const OUTCOME_LABELS: Record<OutcomeType, string> = {
-  portal_dispute: "Submit Portal Dispute",
+  portal_dispute: "Ready",
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
   cannot_dispute: `${LEG_CONCLUSION.cannot_dispute.label} (Withdraw)`,
   non_issue: LEG_CONCLUSION.non_issue.label,
 };
+
+// The set of outcome types that NEW tree options are allowed to author.
+// Per Task #309: channel (portal vs email) is owned by the error_type
+// template, not the tree, so authors no longer pick between
+// `portal_dispute` and `dispute` — they pick the role-level vocabulary.
+// Keep this as the single source of truth for the editor's allowlist;
+// inlining this list in JSX in two places is the kind of drift that
+// silently re-introduces legacy values later (Guard #3).
+export const OUTCOME_AUTHOR_OPTIONS: ReadonlyArray<OutcomeType> = [
+  "portal_dispute", // labeled "Ready" — the include role
+  "hold",
+  "cannot_dispute",
+  "non_issue",
+  "internal",
+];
+
+// Legacy outcome types — values that pre-date the new vocabulary
+// decision (Task #309) where channel ownership moved off the tree and
+// onto the error_type template. Kept readable forever for back-compat
+// (`OUTCOME_LABELS` still resolves both keys, runtime renders both
+// without crashing). The editor uses this set to hide values from the
+// new-author dropdown and tag any legacy value with "(legacy)" when
+// editing an existing node that still stores one. Note: `portal_dispute`
+// is *also* a legacy enum value, but it's been repurposed as the
+// storage key for the new "Ready" (include) author option (relabeled
+// in `OUTCOME_LABELS` above), so it intentionally does NOT live in
+// this hidden-from-author set — flagging it as legacy would orphan the
+// new "Ready" option since there's no other OutcomeType variant for
+// the include role and Guard #9 forbids adding one.
+export const LEGACY_OUTCOME_TYPES: ReadonlySet<OutcomeType> = new Set([
+  "dispute",
+]);
 
 export const OUTCOME_COLORS: Record<OutcomeType, { bg: string; text: string; border: string }> = {
   portal_dispute: { bg: "bg-green-50", text: "text-green-700", border: "border-green-300" },

@@ -7,6 +7,8 @@ import {
   type EvidenceReq,
   OUTCOME_LABELS,
   OUTCOME_COLORS,
+  OUTCOME_AUTHOR_OPTIONS,
+  LEGACY_OUTCOME_TYPES,
   generateNodeId,
   createEmptyTree,
   getMaxDepth,
@@ -55,6 +57,21 @@ const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
   dispute: Mail,
   cannot_dispute: XCircle,
   non_issue: FileX,
+};
+
+// Per-author-option visual metadata for the editor's outcome dropdown.
+// Tinted icons are author-time chrome only — runtime label/color comes
+// from `OUTCOME_LABELS` / `OUTCOME_COLORS`. Keeping this co-located
+// with the dropdown JSX (rather than inlining tone classes per item)
+// makes it trivial to add a new author option later: extend
+// `OUTCOME_AUTHOR_OPTIONS` and add an entry here.
+const OUTCOME_AUTHOR_META: Record<OutcomeType, { icon: typeof Send; iconClass: string }> = {
+  portal_dispute: { icon: Send, iconClass: "text-green-600" },
+  dispute: { icon: Mail, iconClass: "text-blue-600" },
+  internal: { icon: Ban, iconClass: "text-red-600" },
+  hold: { icon: PauseCircle, iconClass: "text-amber-600" },
+  cannot_dispute: { icon: XCircle, iconClass: "text-orange-600" },
+  non_issue: { icon: FileX, iconClass: "text-slate-600" },
 };
 
 interface TreeEditorProps {
@@ -265,7 +282,7 @@ function FlowNode({
       ...tree,
       nodes: newNodes.map(n =>
         n.id === nodeId
-          ? { ...n, options: n.options.map((o, i) => i === optIdx ? { ...o, childId: undefined, outcomeType: "portal_dispute" as OutcomeType, outcomeLabel: "Submit Portal Dispute" } : o) }
+          ? { ...n, options: n.options.map((o, i) => i === optIdx ? { ...o, childId: undefined, outcomeType: "portal_dispute" as OutcomeType, outcomeLabel: OUTCOME_LABELS["portal_dispute"] } : o) }
           : n
       ),
     });
@@ -517,24 +534,40 @@ function OptionPill({
                 <SelectItem value="sub_question">
                   <span className="flex items-center gap-1.5"><GitBranch className="h-3 w-3" />Ask sub-question</span>
                 </SelectItem>
-                <SelectItem value="portal_dispute">
-                  <span className="flex items-center gap-1.5"><Send className="h-3 w-3 text-green-600" />Portal Dispute</span>
-                </SelectItem>
-                <SelectItem value="dispute">
-                  <span className="flex items-center gap-1.5"><Mail className="h-3 w-3 text-blue-600" />Email Dispute</span>
-                </SelectItem>
-                <SelectItem value="internal">
-                  <span className="flex items-center gap-1.5"><Ban className="h-3 w-3 text-red-600" />Resolve Internally</span>
-                </SelectItem>
-                <SelectItem value="hold">
-                  <span className="flex items-center gap-1.5"><PauseCircle className="h-3 w-3 text-amber-600" />Place on Hold</span>
-                </SelectItem>
-                <SelectItem value="cannot_dispute">
-                  <span className="flex items-center gap-1.5"><XCircle className="h-3 w-3 text-orange-600" />Cannot Dispute (Withdraw)</span>
-                </SelectItem>
-                <SelectItem value="non_issue">
-                  <span className="flex items-center gap-1.5"><FileX className="h-3 w-3 text-slate-600" />Non-Issue</span>
-                </SelectItem>
+                {OUTCOME_AUTHOR_OPTIONS.map((ot) => {
+                  const meta = OUTCOME_AUTHOR_META[ot];
+                  const Icon = meta.icon;
+                  return (
+                    <SelectItem key={ot} value={ot} data-testid={`option-outcome-${ot}`}>
+                      <span className="flex items-center gap-1.5"><Icon className={`h-3 w-3 ${meta.iconClass}`} />{OUTCOME_LABELS[ot]}</span>
+                    </SelectItem>
+                  );
+                })}
+                {/*
+                  Legacy compat (Task #309): when this option already
+                  stores a legacy `outcomeType`, surface it tagged
+                  "(legacy)" so the editor can display the current value.
+                  Once the operator switches to a non-legacy value, this
+                  item disappears on the next render — that's the
+                  "switch away, never into" rule from the task spec.
+                */}
+                {opt.outcomeType && LEGACY_OUTCOME_TYPES.has(opt.outcomeType) && (() => {
+                  const meta = OUTCOME_AUTHOR_META[opt.outcomeType] ?? OUTCOME_AUTHOR_META.portal_dispute;
+                  const Icon = meta.icon;
+                  return (
+                    <SelectItem
+                      key={`legacy-${opt.outcomeType}`}
+                      value={opt.outcomeType}
+                      data-testid={`option-outcome-legacy-${opt.outcomeType}`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Icon className={`h-3 w-3 ${meta.iconClass}`} />
+                        {OUTCOME_LABELS[opt.outcomeType]}
+                        <span className="text-[10px] text-muted-foreground ml-1">(legacy)</span>
+                      </span>
+                    </SelectItem>
+                  );
+                })()}
               </SelectContent>
             </Select>
           </div>

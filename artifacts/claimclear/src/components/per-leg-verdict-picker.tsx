@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, Link2 } from "lucide-react";
 import type {
   AiCalibrationResponse,
   ClaimResponse,
   ClaimVerdictResponse,
   RecordVerdictBodyOutcome,
 } from "@workspace/api-client-react";
+import { outcomeRole } from "@workspace/leg-state";
 import { formatDateTime } from "@/lib/format";
 
 export type VerdictOutcome = RecordVerdictBodyOutcome;
@@ -42,6 +43,16 @@ export interface PerLegVerdictPickerProps {
     note: string | undefined,
     inspectionTimeMs: number,
   ) => Promise<void>;
+  /**
+   * The primary leg this one rides along with, when `claim` is a Sibling
+   * Duplicate (`outcomeRole(claim) === "duplicate"`). Used to render a
+   * read-only "verdict follows the primary" card that names the primary's
+   * confNumber and shows its current verdict, if any. Optional because
+   * the picker may be invoked without the primary visible (different
+   * group, paged-out, etc.) — when omitted we fall back to a generic
+   * notice rather than throwing. Ignored for non-duplicate legs.
+   */
+  primaryClaim?: ClaimResponse | null;
 }
 
 export function PerLegVerdictPicker({
@@ -50,7 +61,51 @@ export function PerLegVerdictPicker({
   latestVerdict,
   calibration,
   onConfirm,
+  primaryClaim,
 }: PerLegVerdictPickerProps) {
+  // Sibling-duplicate guard (Task #309). The action rail filters
+  // duplicates out of `actionableRides`, so under normal data flow the
+  // picker never sees one. This branch is the defense-in-depth safety
+  // net: if a caller passes a duplicate leg anyway (test harness, ad
+  // hoc preview, future reuse), render a muted read-only card instead
+  // of the verdict buttons. Picker MUST NOT throw — duplicates derive
+  // their verdict from the primary, never from a per-leg pick.
+  if (outcomeRole(claim) === "duplicate") {
+    const primaryRef = primaryClaim?.confNumber
+      ? `#${primaryClaim.confNumber}`
+      : claim.duplicateOfClaimId != null
+        ? `claim ${claim.duplicateOfClaimId}`
+        : "the primary leg";
+    const primaryVerdict = primaryClaim?.latestVerdict?.outcome ?? null;
+    return (
+      <Card
+        className="bg-muted/40 border-dashed"
+        data-testid={`per-leg-verdict-duplicate-${claim.id}`}
+      >
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2 flex-wrap text-muted-foreground">
+            <Link2 className="h-4 w-4" />
+            <span className="font-mono">#{claim.confNumber}</span>
+            <Badge variant="outline" className="text-[10px]">
+              Sibling duplicate
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground space-y-1">
+          <p>
+            Verdict follows the primary leg ({primaryRef}). No per-leg pick is
+            recorded here.
+          </p>
+          {primaryVerdict && (
+            <p data-testid={`duplicate-primary-verdict-${claim.id}`}>
+              Primary verdict: <span className="font-medium">{primaryVerdict}</span>
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   const mountAt = useRef<number>(Date.now());
   useEffect(() => {
     mountAt.current = Date.now();

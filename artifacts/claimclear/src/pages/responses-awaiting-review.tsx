@@ -27,6 +27,7 @@ import type {
   InvoiceGroupResponse,
   PortalResponseItem,
 } from "@workspace/api-client-react";
+import { outcomeRole } from "@workspace/leg-state";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
 import { useAiCalibrations } from "@/hooks/use-ai-calibration";
@@ -1058,6 +1059,12 @@ interface ActionRailProps {
 const SUBMITTED_SOP_OUTCOMES = new Set<string>(["portal_dispute", "dispute"]);
 
 function isLegReadyForActionablePicker(r: ClaimResponse): boolean {
+  // Sibling duplicates derive their verdict from the primary leg
+  // (Task #309) — they MUST NEVER appear in the per-leg picker stack.
+  // Use `outcomeRole` as the single source of truth for "is duplicate"
+  // so this filter can't drift from the leg-state classifier the rest
+  // of the app already trusts.
+  if (outcomeRole(r) === "duplicate") return false;
   return (
     r.includedInDispute !== false &&
     !!r.errorTypeId &&
@@ -1111,6 +1118,16 @@ function ActionRail({
     () => allRides.filter((r) => r.includedInDispute === false),
     [allRides],
   );
+  // Task #309: Sibling-duplicate legs are filtered out of
+  // `actionableRides` (no per-leg pick — the verdict follows the
+  // primary). Collect them here so the rail can show a small
+  // muted section that makes the relationship visible. `outcomeRole`
+  // is the single source of truth for "is duplicate" — the action
+  // rail filter and this memo MUST agree.
+  const duplicateRides = useMemo(
+    () => allRides.filter((r) => outcomeRole(r) === "duplicate"),
+    [allRides],
+  );
 
   return (
     <div className="space-y-3" data-testid="action-rail">
@@ -1120,6 +1137,13 @@ function ActionRail({
           excludedRides={excludedRides}
           onAfterVerdict={onAfterVerdict}
           groupId={group.id}
+        />
+      )}
+
+      {detail && duplicateRides.length > 0 && (
+        <DuplicateLegsRailSection
+          duplicateRides={duplicateRides}
+          allRides={allRides}
         />
       )}
 
@@ -1258,6 +1282,113 @@ function PerLegVerdictRailSection({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Task #309 — Sibling-Duplicate rail section ──────────────────────────
+//
+// Companion section to PerLegVerdictRailSection. Sibling Duplicates
+// have their per-leg pick suppressed (the verdict follows the primary
+// leg in the same invoice group), so they're filtered out of
+// `actionableRides`. We surface them in their own muted section so the
+// operator can SEE that the leg exists, knows it's a duplicate, and
+// knows which primary leg it rides along with — without offering a
+// pick that would be rejected at the API.
+//
+// Primary lookup is done by id within `allRides`; if the primary isn't
+// in the same group's rides (e.g. paged out, different group view),
+// we degrade gracefully to a generic "primary not visible here" line
+// rather than throwing or hiding the duplicate entirely.
+
+interface DuplicateLegsRailSectionProps {
+  duplicateRides: ClaimResponse[];
+  allRides: ClaimResponse[];
+}
+
+function DuplicateLegsRailSection({
+  duplicateRides,
+  allRides,
+}: DuplicateLegsRailSectionProps) {
+  const ridesById = useMemo(() => {
+    const map = new Map<number, ClaimResponse>();
+    for (const r of allRides) map.set(r.id, r);
+    return map;
+  }, [allRides]);
+
+  return (
+    <div
+      className="rounded-md border bg-card overflow-hidden"
+      data-testid="duplicate-legs-rail"
+    >
+      <div className="px-4 py-2.5 border-b bg-muted/30">
+        <h3 className="text-sm font-semibold">
+          Duplicates — verdict follows the primary
+        </h3>
+        <p className="text-[11px] text-muted-foreground">
+          These legs share the primary leg's outcome and don't get a
+          separate pick.
+        </p>
+      </div>
+      <ul className="p-3 space-y-1.5 text-xs">
+        {duplicateRides.map((leg) => {
+          const primary =
+            leg.duplicateOfClaimId != null
+              ? ridesById.get(leg.duplicateOfClaimId)
+              : undefined;
+          const primaryVerdict = primary?.latestVerdict?.outcome ?? null;
+          // Click-through: when the primary is in the same rail view,
+          // make its CLM ref a button that scrolls the primary's
+          // picker (or its "verdict recorded" card) into view. The
+          // PerLegVerdictPicker stamps both states with a stable
+          // `per-leg-verdict-{picker|confirmed}-<id>` testid, which
+          // we use as a query selector. Falls back to a no-op if the
+          // primary isn't currently mounted in the DOM.
+          const scrollToPrimary = primary
+            ? () => {
+                if (typeof document === "undefined") return;
+                const el =
+                  document.querySelector(
+                    `[data-testid="per-leg-verdict-picker-${primary.id}"]`,
+                  ) ??
+                  document.querySelector(
+                    `[data-testid="per-leg-verdict-confirmed-${primary.id}"]`,
+                  );
+                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            : null;
+          return (
+            <li
+              key={leg.id}
+              className="flex items-start gap-2 text-muted-foreground"
+              data-testid={`duplicate-leg-${leg.id}`}
+            >
+              <span className="font-mono shrink-0">#{leg.confNumber}</span>
+              <span>
+                duplicate of{" "}
+                {primary ? (
+                  <button
+                    type="button"
+                    onClick={scrollToPrimary ?? undefined}
+                    className="font-mono underline-offset-2 hover:underline hover:text-foreground"
+                    data-testid={`duplicate-leg-${leg.id}-primary-link`}
+                  >
+                    #{primary.confNumber}
+                  </button>
+                ) : (
+                  <span className="italic">primary not visible here</span>
+                )}
+                {primaryVerdict && (
+                  <>
+                    {" — primary verdict: "}
+                    <span className="font-medium">{primaryVerdict}</span>
+                  </>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
