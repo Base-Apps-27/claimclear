@@ -12,10 +12,25 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
+/**
+ * `operator_draft` (Task #343) records a non-terminal selection
+from the per-leg picker on Responses Awaiting Review. Drafts
+are append-only and the latest draft per leg wins. Drafts
+DO NOT trigger MAS derivation, the attestation gate, or
+`refreshGroupDerivedFields` — those side effects only fire
+when Step 4 is committed via
+`POST /invoice-groups/{id}/promote-verdict-drafts` (which
+atomically inserts an `operator_confirmed` row per leg).
+Drafts also bypass `note`/`confidence`/`reasoning`/
+`inspectionTimeMs` enrichment — those are operator-confirmed
+concepts only.
+
+ */
 export type RecordVerdictBodySource =
   (typeof RecordVerdictBodySource)[keyof typeof RecordVerdictBodySource];
 
 export const RecordVerdictBodySource = {
   ai_suggested: "ai_suggested",
   operator_confirmed: "operator_confirmed",
+  operator_draft: "operator_draft",
 } as const;

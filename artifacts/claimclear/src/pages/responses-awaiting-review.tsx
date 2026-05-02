@@ -304,17 +304,22 @@ export default function ResponsesAwaitingReview() {
     }
   }, [selectedId, groups, navigate]);
 
-  // Re-fetch the master list and the nav badge after every verdict so the
-  // operator's view never lags the action they just took.
+  // Task #343: under the new draft-saving picker, picking a verdict in
+  // Step 3 does NOT move the group out of `response-pending`, so the
+  // master list + nav badge can't change as a result of a per-leg
+  // selection. Refetching them used to cause the row to vanish (and
+  // the auto-navigate-to-next-group `useEffect` to fire) the moment
+  // the operator clicked a single pill — exactly the bug Task #343 is
+  // here to fix. We still toast, but we leave list/count invalidation
+  // to the Step 4 commit path (re-attest / queue / closure), which is
+  // where the group genuinely leaves the queue. The picker itself
+  // invalidates the per-group + per-claim detail queries so the lit-up
+  // pill state stays consistent.
   const onAfterVerdict = (message: string) => {
     toast({
-      title: "Verdict applied",
+      title: "Selection saved",
       description: message,
-      duration: 3500,
-    });
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    queryClient.invalidateQueries({
-      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+      duration: 2500,
     });
   };
 
@@ -1071,35 +1076,38 @@ function PerLegVerdictRailSection({
               key={claim.id}
               claim={claim}
               latestVerdict={claim.latestVerdict ?? null}
+              latestDraft={claim.latestDraft ?? null}
               latestSuggestion={claim.latestAiSuggestion ?? null}
               calibration={
                 claim.errorTypeId
                   ? calibrationByErrorType.get(claim.errorTypeId)
                   : undefined
               }
-              onConfirm={async (outcome, note, inspectionTimeMs) => {
+              onSelect={async (outcome) => {
+                // Task #343: Step 3 saves a draft only — no MAS, no
+                // attestation, no group transition. Step 4 commit
+                // (re-attest / queue / closure) is what later promotes
+                // the drafts to `operator_confirmed` atomically.
                 await recordVerdict.mutateAsync({
                   id: claim.id,
                   data: {
-                    source: "operator_confirmed",
+                    source: "operator_draft",
                     outcome,
-                    note,
-                    inspectionTimeMs,
                   },
                 });
+                // Only invalidate what's needed to reflect the lit-up
+                // state. The master list + Responses-Awaiting-Review
+                // count are deliberately NOT touched here — drafts
+                // don't move the group out of `response-pending`, so
+                // re-fetching them would either no-op or, worse, race
+                // with the auto-navigate effect on the page.
                 queryClient.invalidateQueries({
                   queryKey: getGetInvoiceGroupQueryKey(groupId),
                 });
                 queryClient.invalidateQueries({
                   queryKey: getGetClaimQueryKey(claim.id),
                 });
-                queryClient.invalidateQueries({
-                  queryKey: getListInvoiceGroupsQueryKey(),
-                });
-                queryClient.invalidateQueries({
-                  queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
-                });
-                onAfterVerdict(`Verdict recorded for #${claim.confNumber}.`);
+                onAfterVerdict(`Selection saved for #${claim.confNumber}.`);
               }}
             />
           ))

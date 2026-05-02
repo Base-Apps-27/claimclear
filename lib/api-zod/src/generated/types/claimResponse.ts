@@ -179,6 +179,8 @@ export interface ClaimResponse {
   latestVerdict?: ClaimVerdictResponse | null;
   /** Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint. */
   latestAiSuggestion?: ClaimVerdictResponse | null;
+  /** Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint. */
+  latestDraft?: ClaimVerdictResponse | null;
   createdAt?: string;
   updatedAt?: string;
   /**

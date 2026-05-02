@@ -259,6 +259,7 @@ export * from "./presenceResponse";
 export * from "./presenceViewer";
 export * from "./processResponseBody";
 export * from "./processResponseBodyResponseType";
+export * from "./promoteVerdictDraftsResponse";
 export * from "./reassignResponseBody";
 export * from "./recordPayorDenialReasonRequest";
 export * from "./recordPortalResponse200";

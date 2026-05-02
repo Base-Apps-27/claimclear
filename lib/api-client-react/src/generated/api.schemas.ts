@@ -329,6 +329,8 @@ export interface ClaimResponse {
   latestVerdict?: ClaimVerdictResponse | null;
   /** Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint. */
   latestAiSuggestion?: ClaimVerdictResponse | null;
+  /** Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint. */
+  latestDraft?: ClaimVerdictResponse | null;
   createdAt?: string;
   updatedAt?: string;
   /**
@@ -1684,12 +1686,27 @@ export interface SopAdvanceBody {
   answer: string;
 }
 
+/**
+ * `operator_draft` (Task #343) records a non-terminal selection
+from the per-leg picker on Responses Awaiting Review. Drafts
+are append-only and the latest draft per leg wins. Drafts
+DO NOT trigger MAS derivation, the attestation gate, or
+`refreshGroupDerivedFields` — those side effects only fire
+when Step 4 is committed via
+`POST /invoice-groups/{id}/promote-verdict-drafts` (which
+atomically inserts an `operator_confirmed` row per leg).
+Drafts also bypass `note`/`confidence`/`reasoning`/
+`inspectionTimeMs` enrichment — those are operator-confirmed
+concepts only.
+
+ */
 export type RecordVerdictBodySource =
   (typeof RecordVerdictBodySource)[keyof typeof RecordVerdictBodySource];
 
 export const RecordVerdictBodySource = {
   ai_suggested: "ai_suggested",
   operator_confirmed: "operator_confirmed",
+  operator_draft: "operator_draft",
 } as const;
 
 export type RecordVerdictBodyOutcome =
@@ -1702,6 +1719,18 @@ export const RecordVerdictBodyOutcome = {
 } as const;
 
 export interface RecordVerdictBody {
+  /** `operator_draft` (Task #343) records a non-terminal selection
+from the per-leg picker on Responses Awaiting Review. Drafts
+are append-only and the latest draft per leg wins. Drafts
+DO NOT trigger MAS derivation, the attestation gate, or
+`refreshGroupDerivedFields` — those side effects only fire
+when Step 4 is committed via
+`POST /invoice-groups/{id}/promote-verdict-drafts` (which
+atomically inserts an `operator_confirmed` row per leg).
+Drafts also bypass `note`/`confidence`/`reasoning`/
+`inspectionTimeMs` enrichment — those are operator-confirmed
+concepts only.
+ */
   source: RecordVerdictBodySource;
   outcome: RecordVerdictBodyOutcome;
   /** @nullable */
@@ -1733,6 +1762,20 @@ non-empty `note`. The audit + state event for this row carry
 traceable in audit and observability.
  */
   reconcile?: boolean;
+}
+
+/**
+ * Result payload for `POST /invoice-groups/{id}/promote-verdict-drafts`.
+Reports how many leg drafts were promoted in the same transaction
+plus the leg ids that were touched (handy for cache invalidation
+on the client).
+
+ */
+export interface PromoteVerdictDraftsResponse {
+  /** Number of `operator_draft` rows promoted to `operator_confirmed` in this call. */
+  promotedCount: number;
+  /** Ids of the legs whose draft selection was just confirmed. */
+  promotedClaimIds: number[];
 }
 
 export type ExcludeLegBodyReason =

@@ -15,6 +15,18 @@ import type { RecordVerdictBodyOutcome } from "./recordVerdictBodyOutcome";
 import type { RecordVerdictBodySource } from "./recordVerdictBodySource";
 
 export interface RecordVerdictBody {
+  /** `operator_draft` (Task #343) records a non-terminal selection
+from the per-leg picker on Responses Awaiting Review. Drafts
+are append-only and the latest draft per leg wins. Drafts
+DO NOT trigger MAS derivation, the attestation gate, or
+`refreshGroupDerivedFields` — those side effects only fire
+when Step 4 is committed via
+`POST /invoice-groups/{id}/promote-verdict-drafts` (which
+atomically inserts an `operator_confirmed` row per leg).
+Drafts also bypass `note`/`confidence`/`reasoning`/
+`inspectionTimeMs` enrichment — those are operator-confirmed
+concepts only.
+ */
   source: RecordVerdictBodySource;
   outcome: RecordVerdictBodyOutcome;
   /** @nullable */

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, Loader2, Sparkles, Link2 } from "lucide-react";
+import { Loader2, Sparkles, Link2 } from "lucide-react";
 import type {
   AiCalibrationResponse,
   ClaimResponse,
@@ -12,7 +11,6 @@ import type {
   RecordVerdictBodyOutcome,
 } from "@workspace/api-client-react";
 import { outcomeRole } from "@workspace/leg-state";
-import { formatDateTime } from "@/lib/format";
 
 export type VerdictOutcome = RecordVerdictBodyOutcome;
 
@@ -42,13 +40,28 @@ const CALIBRATION_MIN_CONFIRMATIONS = 5;
 export interface PerLegVerdictPickerProps {
   claim: ClaimResponse;
   latestSuggestion?: ClaimVerdictResponse | null;
+  /**
+   * Latest *terminal* verdict on the leg (`operator_confirmed` or — only
+   * for legacy rows — `ai_suggested`). Used to seed the lit-up pill when
+   * the leg already has a confirmed verdict on file (e.g. mixed group
+   * where one leg was confirmed under the old behavior and the group
+   * hasn't moved out of `response-pending` yet).
+   */
   latestVerdict?: ClaimVerdictResponse | null;
+  /**
+   * Latest `operator_draft` row on the leg (Task #343). When present
+   * AND newer than `latestVerdict`, this is what lights up the pill on
+   * mount so selections survive refresh + navigation.
+   */
+  latestDraft?: ClaimVerdictResponse | null;
   calibration?: AiCalibrationResponse;
-  onConfirm: (
-    outcome: VerdictOutcome,
-    note: string | undefined,
-    inspectionTimeMs: number,
-  ) => Promise<void>;
+  /**
+   * Save the operator's selection as a draft. Wired by the page to
+   * `POST /claims/:id/verdict` with `source: "operator_draft"`.
+   * Step 4 commit (re-attest / queue / closure) is what later
+   * promotes drafts to `operator_confirmed` atomically.
+   */
+  onSelect: (outcome: VerdictOutcome) => Promise<void>;
   /**
    * The primary leg this one rides along with, when `claim` is a Sibling
    * Duplicate (`outcomeRole(claim) === "duplicate"`). Used to render a
@@ -61,12 +74,55 @@ export interface PerLegVerdictPickerProps {
   primaryClaim?: ClaimResponse | null;
 }
 
+// Pick the seed outcome for the lit-up pill on mount. Drafts win when
+// they're newer than (or in the absence of) a confirmed verdict; an
+// older confirmed verdict is preserved when no draft exists.
+//
+// IMPORTANT: `latestVerdict` from the backend is the newest *non-draft*
+// row, which means it can be an `ai_suggested` row when the operator
+// hasn't picked anything yet. AI suggestions MUST NOT seed the pill
+// — Step 3 is an explicit operator selection. If we lit up the AI's
+// suggestion as the picked pill, an operator who agrees with the AI
+// would have no way to record a draft (clicking the already-selected
+// pill is a no-op by design). So we ignore `latestVerdict` unless its
+// source is `operator_confirmed`.
+//
+// Drafts (`operator_draft`) are always operator-authored, so we trust
+// them as a seed regardless of source check. Only pickable outcomes
+// (Approved / Denied) light up — legacy "Partial" rows are ignored
+// for highlight purposes since the picker doesn't offer that pill.
+function seedSelectionFrom(
+  draft: ClaimVerdictResponse | null | undefined,
+  confirmed: ClaimVerdictResponse | null | undefined,
+): PickableOutcome | null {
+  // Only operator_confirmed rows count as a real prior selection. An
+  // `ai_suggested` row is a hint, never a pick.
+  const operatorConfirmed =
+    confirmed && confirmed.source === "operator_confirmed" ? confirmed : null;
+  let chosen: ClaimVerdictResponse | null = null;
+  if (draft && operatorConfirmed) {
+    chosen =
+      new Date(draft.createdAt).getTime() >=
+      new Date(operatorConfirmed.createdAt).getTime()
+        ? draft
+        : operatorConfirmed;
+  } else {
+    chosen = draft ?? operatorConfirmed ?? null;
+  }
+  if (!chosen) return null;
+  if (chosen.outcome === "Approved" || chosen.outcome === "Denied") {
+    return chosen.outcome;
+  }
+  return null;
+}
+
 export function PerLegVerdictPicker({
   claim,
   latestSuggestion,
   latestVerdict,
+  latestDraft,
   calibration,
-  onConfirm,
+  onSelect,
   primaryClaim,
 }: PerLegVerdictPickerProps) {
   // Sibling-duplicate guard (Task #309). The action rail filters
@@ -112,31 +168,59 @@ export function PerLegVerdictPicker({
     );
   }
 
-  const mountAt = useRef<number>(Date.now());
-  useEffect(() => {
-    mountAt.current = Date.now();
-  }, []);
+  // Mount-time seed. We only re-seed when the inbound row identities
+  // change (id + createdAt of the latest draft / latest verdict) so an
+  // optimistic refetch that returns the same selection doesn't clobber
+  // an in-flight click.
+  const seed = useMemo(
+    () => seedSelectionFrom(latestDraft ?? null, latestVerdict ?? null),
+    [
+      latestDraft?.id,
+      latestDraft?.createdAt,
+      latestVerdict?.id,
+      latestVerdict?.createdAt,
+    ],
+  );
 
-  const [picked, setPicked] = useState<PickableOutcome | null>(null);
-  const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [picked, setPicked] = useState<PickableOutcome | null>(seed);
+  // Re-sync when the seed changes (e.g. after invalidation post-draft
+  // save, or when the operator switches groups in the queue).
+  const lastSeedRef = useRef<PickableOutcome | null>(seed);
+  useEffect(() => {
+    if (lastSeedRef.current !== seed) {
+      lastSeedRef.current = seed;
+      setPicked(seed);
+    }
+  }, [seed]);
+
+  // We track which outcome is currently in flight so the spinner
+  // lands on the right pill and we can keep the OTHER pill clickable
+  // (changing your mind mid-save still works once the previous save
+  // settles).
+  const [submittingOutcome, setSubmittingOutcome] = useState<PickableOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isConfirmed =
-    latestVerdict?.source === "operator_confirmed" &&
-    typeof latestVerdict?.outcome === "string";
-
-  const handleConfirm = async () => {
-    if (!picked || submitting) return;
+  // Click contract (Task #343 §3): clicking the *already-selected* pill
+  // is a no-op. Selections in this UI are forward-only — clearing a
+  // selection isn't a real intent (the operator either picks the OTHER
+  // pill or leaves the existing pick in place). Documenting here so
+  // future readers don't "fix" it into a toggle-off.
+  const handlePick = async (outcome: PickableOutcome) => {
+    if (submittingOutcome != null) return;
+    if (picked === outcome) return;
     setError(null);
-    setSubmitting(true);
+    setSubmittingOutcome(outcome);
+    // Optimistic: light up the new pill immediately so the click feels
+    // instant. Roll back on failure.
+    const previous = picked;
+    setPicked(outcome);
     try {
-      const elapsed = Math.max(0, Date.now() - mountAt.current);
-      await onConfirm(picked, note.trim() || undefined, elapsed);
+      await onSelect(outcome);
     } catch (e) {
+      setPicked(previous);
       setError(toFriendlyVerdictError(e));
     } finally {
-      setSubmitting(false);
+      setSubmittingOutcome(null);
     }
   };
 
@@ -144,31 +228,6 @@ export function PerLegVerdictPicker({
     () => renderCalibrationLine(claim.errorTypeId, calibration),
     [claim.errorTypeId, calibration],
   );
-
-  if (isConfirmed && latestVerdict) {
-    return (
-      <Card data-testid={`per-leg-verdict-confirmed-${claim.id}`}>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-            Verdict recorded — {latestVerdict.outcome}
-            <Badge variant="outline" className="ml-auto font-mono text-xs">
-              #{claim.confNumber}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground space-y-1">
-          <div>
-            {latestVerdict.createdBy ? `${latestVerdict.createdBy} · ` : ""}
-            {formatDateTime(latestVerdict.createdAt)}
-          </div>
-          {latestVerdict.note && (
-            <div className="italic whitespace-pre-wrap">{latestVerdict.note}</div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card data-testid={`per-leg-verdict-picker-${claim.id}`}>
@@ -229,33 +288,18 @@ export function PerLegVerdictPicker({
                 variant="outline"
                 size="sm"
                 data-selected={picked === o}
-                disabled={submitting}
-                onClick={() => setPicked(o)}
+                disabled={submittingOutcome != null && submittingOutcome !== o}
+                onClick={() => handlePick(o)}
                 className={OUTCOME_TONE[o]}
                 data-testid={`button-pick-${o.toLowerCase()}-${claim.id}`}
               >
+                {submittingOutcome === o && (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                )}
                 {o}
               </Button>
             ))}
           </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label
-            htmlFor={`verdict-note-${claim.id}`}
-            className="text-xs text-muted-foreground"
-          >
-            Note (optional)
-          </Label>
-          <Textarea
-            id={`verdict-note-${claim.id}`}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            disabled={submitting}
-            rows={2}
-            placeholder="Anything the next reviewer should know."
-            data-testid={`input-note-${claim.id}`}
-          />
         </div>
 
         {error && (
@@ -266,19 +310,6 @@ export function PerLegVerdictPicker({
             {error}
           </p>
         )}
-
-        <div className="flex items-center justify-end">
-          <Button
-            type="button"
-            size="sm"
-            disabled={!picked || submitting}
-            onClick={handleConfirm}
-            data-testid={`button-confirm-verdict-${claim.id}`}
-          >
-            {submitting && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-            Confirm verdict
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

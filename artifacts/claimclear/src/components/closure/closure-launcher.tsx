@@ -26,6 +26,16 @@ export type ClosureLauncherArgs = {
   target: ClosureLauncherTarget;
   reason: ClosureReasonKey;
   prefill?: { category?: string; rootCause?: string };
+  /**
+   * Optional pre-flight callback that runs at the start of the dialog's
+   * Submit handler, AFTER the operator has confirmed the closure form
+   * but BEFORE the closure mutation fires. Used by Task #343 Step 4
+   * to promote per-leg verdict drafts in the same operator gesture as
+   * closure. If it rejects, the dialog stays open with the error and
+   * the closure mutation does not run, so a cancel-after-open never
+   * triggers the pre-flight side effect.
+   */
+  beforeSubmit?: () => Promise<void>;
   /** Fires after the dialog has successfully recorded the closure. The
    *  dialog itself handles query invalidations; use this for caller-local
    *  side effects (e.g. recording the chosen step in the tree player). */
@@ -65,6 +75,7 @@ export function useClosureLauncher(): ClosureLauncher {
       target={args?.target ?? { kind: "claim", id: 0 }}
       reason={args?.reason ?? "non_issue"}
       prefill={args?.prefill}
+      beforeSubmit={args?.beforeSubmit}
       onSuccess={() => {
         const cur = argsRef.current;
         argsRef.current = null;

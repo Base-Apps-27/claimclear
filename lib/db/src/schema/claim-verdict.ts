@@ -50,7 +50,7 @@ export const claimVerdictTable = pgTable(
     // `lib/db/src/enums/leg-state.ts` (VERDICT_SOURCE / VERDICT_OUTCOMES).
     check(
       "claim_verdict_source_chk",
-      sql`${table.source} IN ('ai_suggested','operator_confirmed')`,
+      sql`${table.source} IN ('ai_suggested','operator_confirmed','operator_draft')`,
     ),
     check(
       "claim_verdict_outcome_chk",

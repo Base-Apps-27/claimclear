@@ -93,6 +93,16 @@ export type ClosureIntakeDialogProps = {
     category?: string;
     rootCause?: string;
   };
+  /**
+   * Optional pre-flight callback that runs at the start of `handleSubmit`,
+   * AFTER the operator has confirmed the closure form but BEFORE the
+   * closure mutation fires. Used by Task #343 Step 4 to promote per-leg
+   * verdict drafts so promotion + closure happen in the same operator
+   * gesture (open dialog → fill form → submit). If `beforeSubmit` rejects,
+   * the dialog stays open with the error displayed and the closure
+   * mutation is NOT run, so a cancel-after-open never promotes drafts.
+   */
+  beforeSubmit?: () => Promise<void>;
   onSuccess?: () => void;
 };
 
@@ -178,6 +188,7 @@ export function ClosureIntakeDialog({
   target,
   reason,
   prefill,
+  beforeSubmit,
   onSuccess,
 }: ClosureIntakeDialogProps) {
   const queryClient = useQueryClient();
@@ -325,6 +336,25 @@ export function ClosureIntakeDialog({
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitError(null);
+
+    // Pre-flight (Task #343): caller-supplied work that MUST succeed
+    // before we run the actual closure mutation. Today this is used by
+    // the Step 4 close-out path to promote per-leg verdict drafts to
+    // operator_confirmed in the same operator gesture as closure. We
+    // run it here (inside handleSubmit) rather than at dialog-open
+    // time so a cancel-after-open never promotes anything. If it
+    // throws, the dialog stays open with the error and the closure
+    // mutation does not run.
+    if (beforeSubmit) {
+      try {
+        await beforeSubmit();
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : "Couldn't save your selections.";
+        setSubmitError(msg);
+        return;
+      }
+    }
 
     const accountabilityTags = tags as UpdateClaimOutcomeBodyClosureAccountabilityTagsItem[];
     const closureCategory = category;

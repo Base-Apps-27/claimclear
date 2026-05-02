@@ -134,6 +134,13 @@
       "when": 1777720099105,
       "tag": "0018_fair_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777728206894,
+      "tag": "0019_dark_sleeper",
+      "breakpoints": true
     }
   ]
 }

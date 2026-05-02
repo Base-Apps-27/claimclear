@@ -139,6 +139,7 @@ import type {
   PresenceResourceType,
   PresenceResponse,
   ProcessResponseBody,
+  PromoteVerdictDraftsResponse,
   ReassignResponseBody,
   RecordPayorDenialReasonRequest,
   RecordPortalResponse200,
@@ -1882,6 +1883,126 @@ export const useMarkAwaitingPayorAgain = <
   TContext
 > => {
   return useMutation(getMarkAwaitingPayorAgainMutationOptions(options));
+};
+
+/**
+ * Task #343 Step 4 commit primitive. For each leg in the group whose
+latest verdict is an `operator_draft`, inserts a fresh
+`operator_confirmed` row carrying the same outcome inside a
+single DB transaction. Then runs the same per-leg side effects
+the `/claims/:id/verdict` endpoint runs for `operator_confirmed`:
+denormalized-cache refresh, MAS derivation, attestation gate
+engagement. Finally calls `refreshGroupDerivedFields` once for
+the parent group.
+
+Source-state contract: the parent group must be in the
+`response-pending` macro phase IF there are drafts to promote.
+Legs whose latest verdict is already `operator_confirmed` (or
+whose only verdict is `ai_suggested`) are skipped — only
+un-promoted drafts are committed.
+
+Drafts attached to legs that the picker filters out
+(excluded via `sop_outcome` ∈ {cannot_dispute, non_issue} or
+sibling duplicates that follow another leg) ARE still
+promoted. The picker UI prevents drafts from landing on those
+legs in the first place, but if one somehow exists this
+endpoint records it against the leg history rather than
+silently stranding it.
+
+Idempotent in the sense that a re-run with no fresh drafts
+returns `promotedCount=0` and is a no-op — even when the
+group has since left `response-pending` (the no-op short-circuit
+runs BEFORE the phase guard, so retries after a downstream
+failure are safe). Callers (the re-attest modal, the closure
+flow, the queue-for-attestation button) call this as part of
+their own commit handler so promoted verdicts land alongside
+the next-step action in a single operator gesture.
+
+ * @summary Atomically promote every leg's draft selection to operator_confirmed (Step 4 commit)
+ */
+export const getPromoteVerdictDraftsUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/promote-verdict-drafts`;
+};
+
+export const promoteVerdictDrafts = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PromoteVerdictDraftsResponse> => {
+  return customFetch<PromoteVerdictDraftsResponse>(
+    getPromoteVerdictDraftsUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getPromoteVerdictDraftsMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof promoteVerdictDrafts>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof promoteVerdictDrafts>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["promoteVerdictDrafts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof promoteVerdictDrafts>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return promoteVerdictDrafts(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PromoteVerdictDraftsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof promoteVerdictDrafts>>
+>;
+
+export type PromoteVerdictDraftsMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Atomically promote every leg's draft selection to operator_confirmed (Step 4 commit)
+ */
+export const usePromoteVerdictDrafts = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof promoteVerdictDrafts>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof promoteVerdictDrafts>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPromoteVerdictDraftsMutationOptions(options));
 };
 
 /**

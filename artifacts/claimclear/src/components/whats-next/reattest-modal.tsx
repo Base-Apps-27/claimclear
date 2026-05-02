@@ -31,6 +31,17 @@ interface Props {
   group: InvoiceGroupResponse;
   /** Approved-verdict legs that still need re-attestation in the portal. */
   approvedLegs: readonly ClaimResponse[];
+  /**
+   * Step 4 commit (Task #343). Promotes every per-leg `operator_draft`
+   * on the group to `operator_confirmed` in one transaction, *before*
+   * either tab fires its downstream action. The modal awaits this on
+   * every submit so the group only leaves `response-pending` once Step
+   * 4 actually commits — and so a draft-only group never reaches the
+   * Attestation Queue with stale verdict state. The hook is idempotent
+   * (no fresh drafts → no-op), so it's safe to call on already-confirmed
+   * groups too.
+   */
+  promoteDrafts: () => Promise<void>;
   /** Run after either tab's submit succeeds. */
   onAfterAction: (message: string) => void;
 }
@@ -60,6 +71,7 @@ export function ReattestModal({
   onOpenChange,
   group,
   approvedLegs,
+  promoteDrafts,
   onAfterAction,
 }: Props) {
   const { toast } = useToast();
@@ -101,11 +113,38 @@ export function ReattestModal({
     onOpenChange(false);
   };
 
+  // Local pending flag covers the promoteDrafts() pre-step too, since
+  // it runs ahead of the existing mutation hooks and isn't reflected
+  // in any of their `.isPending` flags.
+  const [promoting, setPromoting] = useState(false);
   const busy =
-    completeReattest.isPending || queueAttestation.isPending || markWaiting.isPending;
+    promoting ||
+    completeReattest.isPending ||
+    queueAttestation.isPending ||
+    markWaiting.isPending;
 
   const handleReattestNow = async () => {
     if (!allChecked) return;
+    setPromoting(true);
+    try {
+      // 0. Step 4 commit: promote every per-leg draft on the group to
+      //    `operator_confirmed` atomically before stamping the
+      //    re-attest. If this throws (409 because the group already
+      //    moved out of `response-pending`, network blip, etc.) we
+      //    surface the failure and DO NOT continue — the operator's
+      //    selections stay as drafts and the group stays in queue.
+      await promoteDrafts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not commit selections.";
+      toast({
+        title: "Couldn't save selections",
+        description: msg,
+        variant: "destructive",
+      });
+      setPromoting(false);
+      return;
+    }
+    setPromoting(false);
     try {
       // 1. Stamp the group as re-attested. The note carries the
       //    operator's optional commentary (the checklist itself is
@@ -136,6 +175,26 @@ export function ReattestModal({
     const fullNote = trimmed
       ? `${renderedChecklistText}\n\n— ${trimmed}`
       : renderedChecklistText;
+    setPromoting(true);
+    try {
+      // 0. Step 4 commit: promote drafts BEFORE the per-leg
+      //    attestation fan-out so every queued leg lands on the
+      //    Attestation Queue page with its verdict already confirmed.
+      //    Without this, a draft-only leg would queue with a stale
+      //    "no verdict" state and the queue page would refuse to
+      //    surface it.
+      await promoteDrafts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not commit selections.";
+      toast({
+        title: "Couldn't save selections",
+        description: msg,
+        variant: "destructive",
+      });
+      setPromoting(false);
+      return;
+    }
+    setPromoting(false);
     try {
       // Fan out one queue request per approved leg so each claim
       // shows up on the Attestation Queue page with the full

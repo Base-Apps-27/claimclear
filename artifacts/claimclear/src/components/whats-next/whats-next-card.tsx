@@ -6,13 +6,15 @@ import {
   getGetResponsesAwaitingReviewCountQueryKey,
   getListWithdrawalsQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  usePromoteVerdictDrafts,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   InvoiceGroupResponse,
   PortalResponseItem,
 } from "@workspace/api-client-react";
-import { ClosureActions } from "@/components/closure/closure-actions";
+import { useClosureLauncher } from "@/components/closure/closure-launcher";
+import { ActionRow } from "@/components/actions-rail";
 import {
   deriveVerdictMix,
   pickSuggestedNewInvoiceNumber,
@@ -21,9 +23,8 @@ import {
   type VerdictDerivation,
 } from "@/lib/whats-next-derivation";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import { ReattestModal } from "./reattest-modal";
-import { PayorDenialReasonPicker } from "./payor-denial-reason-picker";
 import { AwaitingPayorAgainButton } from "./awaiting-payor-again-button";
 import { NewInvoiceNumberBadge } from "./new-invoice-number-badge";
 
@@ -35,33 +36,40 @@ interface Props {
 }
 
 /**
- * The verdict-derived "What's next?" card on Responses Awaiting Review
- * (Task #322). Replaces the legacy `postResponseActions` lane that
- * routed every continuation choice through "Needs Evidence".
+ * The "Step 4" card on Responses Awaiting Review. The verdict picker
+ * above writes drafts as the operator clicks; this card unlocks once
+ * every actionable leg has a draft (or confirmed) selection on file
+ * and surfaces the right Step 4 commit affordances based on the
+ * resulting mix.
  *
- * Affordances are derived from the per-leg verdict mix:
+ * Per Task #343 the offered actions are pinned to the two real states
+ * the user described:
  *
- *   - **all_approved** → Re-attest CTA (modal w/ two tabs) +
- *     "I replied — wait for payor again" button.
+ *   - **any leg Approved** (`all_approved` or `mixed`) → **Re-attest**
+ *     modal (Attest now / Queue for attestation later). Closure is NOT
+ *     offered here — the operator can still close out from the leg
+ *     detail page if they need to, but the Step 4 card stays focused
+ *     on the re-attest path.
  *
- *   - **all_denied** → Payor-denial-reason picker + Closure (Denied
- *     by payor) + "I replied — wait for payor again" button.
+ *   - **all legs Denied** (`all_denied`) → **Close out (Denied by
+ *     Payor)** trigger only. The payor-denial-reason picker is no
+ *     longer rendered here — the closure intake dialog itself collects
+ *     all the closure detail fields, and the Step 4 contract is "pick
+ *     the next step", not "fill out a form".
  *
- *   - **mixed** → Both flows side-by-side. Re-attest covers the
- *     approved legs; the denial-reason picker + closure covers the
- *     denied legs. Closure is gated on every leg having a verdict —
- *     until then we surface a hint instead.
+ *   - **no_verdicts_yet** → A muted nudge to make a selection on each
+ *     leg first.
  *
- *   - **no_verdicts_yet** → A muted nudge to record a verdict first.
- *     The CTAs only render once at least one operator-confirmed
- *     verdict is on file so the operator never gets a misleading
- *     "next step" while the rail above still has work to do.
- *
- * Closure remains a separate, explicit terminal step — never folded
- * into the re-attest flow — to keep the audit trail clean.
+ * Step 4 commit: every CTA on this card promotes the per-leg drafts to
+ * `operator_confirmed` in one transaction *before* invoking the
+ * downstream action (re-attest stamp / per-leg queue / closure
+ * dialog), so the group only leaves `response-pending` once Step 4 is
+ * actually committed.
  */
 export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props) {
   const queryClient = useQueryClient();
+  const promoteDrafts = usePromoteVerdictDrafts();
+  const closureLauncher = useClosureLauncher();
 
   const derivation = useMemo<VerdictDerivation>(
     () => deriveVerdictMix(rides),
@@ -71,10 +79,15 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
     () => pickSuggestedNewInvoiceNumber(responses),
     [responses],
   );
-  const suggestedDenialReason = useMemo(
+  // Kept for the heads-up nudge in the no-verdicts-yet state — the
+  // payor-denial-reason picker itself is no longer rendered here per
+  // the Task #343 Step 4 contract (the closure intake dialog owns
+  // that field).
+  const _suggestedDenialReason = useMemo(
     () => pickSuggestedPayorDenialReason(responses),
     [responses],
   );
+  void _suggestedDenialReason;
 
   const [reattestOpen, setReattestOpen] = useState(false);
 
@@ -92,11 +105,48 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
 
   const showReattest =
     derivation.mix === "all_approved" || derivation.mix === "mixed";
-  const showDenialFlow =
-    derivation.mix === "all_denied" || derivation.mix === "mixed";
-  const closureGateOpen = derivation.allLegsHaveVerdict;
-  const showAwaitingPayorAgain =
-    derivation.mix !== "no_verdicts_yet" && !isAwaitingPayorAgain(group);
+  const showCloseOut = derivation.mix === "all_denied";
+  const showAwaitingPayorAgain = !isAwaitingPayorAgain(group);
+
+  // Step 4 close-out commit. Open the closure intake dialog and hand
+  // the launcher a `beforeSubmit` hook that promotes per-leg drafts to
+  // operator_confirmed when (and ONLY when) the operator actually
+  // submits the closure form. Critically:
+  //
+  //   • Opening the dialog does NOT promote drafts — a cancel-after-
+  //     open must leave the group in `response-pending` so it stays
+  //     in the Review queue.
+  //
+  //   • Promotion happens inside the closure dialog's submit handler,
+  //     after the form is validated and the operator clicks Submit,
+  //     but before the closure mutation runs. If promote fails, the
+  //     closure mutation does NOT run and the dialog surfaces the
+  //     error inline.
+  //
+  //   • If promote succeeds but the closure mutation later fails,
+  //     drafts are now confirmed but the group hasn't transitioned
+  //     out of `response-pending`. The promote endpoint is idempotent
+  //     (no fresh drafts → no-op return) so the user's retry is safe;
+  //     the backend ordering of "scan-then-phase-guard" makes this
+  //     explicit.
+  const openCloseOut = () => {
+    closureLauncher.open({
+      target: { kind: "group", id: group.id },
+      reason: "denied_by_payor",
+      beforeSubmit: async () => {
+        await promoteDrafts.mutateAsync({ id: group.id });
+        // Refetch so the closure mutation that follows sees the
+        // post-promotion verdict state.
+        queryClient.invalidateQueries({
+          queryKey: getGetInvoiceGroupQueryKey(group.id),
+        });
+      },
+      onSuccess: () => {
+        invalidate();
+        onAfterAction(`#${group.invoiceNumber} closed as Denied by Payor`);
+      },
+    });
+  };
 
   return (
     <div
@@ -133,7 +183,19 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
           </p>
         )}
 
-        {showReattest && (
+        {derivation.mix === "mixed" && !derivation.allLegsHaveVerdict && (
+          <p
+            className="text-xs text-muted-foreground italic"
+            data-testid="whats-next-partial"
+          >
+            {derivation.pendingCount} leg
+            {derivation.pendingCount === 1 ? "" : "s"} still need
+            {derivation.pendingCount === 1 ? "s" : ""} a selection — make
+            a pick on every leg above to unlock next steps.
+          </p>
+        )}
+
+        {showReattest && derivation.allLegsHaveVerdict && (
           <div className="space-y-1.5" data-testid="whats-next-lane-reattest">
             <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
               {derivation.mix === "mixed"
@@ -160,50 +222,20 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
           </div>
         )}
 
-        {showDenialFlow && (
-          <>
-            <PayorDenialReasonPicker
-              group={group}
-              suggestedCode={suggestedDenialReason}
-              onAfterSave={invalidate}
-            />
-
-            <div className="space-y-1.5" data-testid="whats-next-lane-closure">
-              <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
-                Closure — payor formally denied
-              </div>
-              {!closureGateOpen ? (
-                <p
-                  className="text-[11px] text-muted-foreground italic"
-                  data-testid="whats-next-closure-gated"
-                >
-                  Record a verdict on every leg before closing — keeps the
-                  closure decision auditable.
-                </p>
-              ) : (
-                <ClosureActions
-                  target={{ kind: "invoice_group", id: group.id }}
-                  outcome={group.outcome}
-                  closureReason={group.closureReason}
-                  triggers={[
-                    {
-                      reason: "denied_by_payor",
-                      label: "Denied by Payor",
-                      sub: "Payor formally denied — close out, no further dispute",
-                      icon: <ArrowRight className="h-3.5 w-3.5" />,
-                      testId: "button-closure-denied-by-payor",
-                    },
-                  ]}
-                  onAfterSuccess={() => {
-                    invalidate();
-                    onAfterAction(
-                      `#${group.invoiceNumber} closed as Denied by Payor`,
-                    );
-                  }}
-                />
-              )}
+        {showCloseOut && (
+          <div className="space-y-1.5" data-testid="whats-next-lane-closure">
+            <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
+              Closure — payor formally denied
             </div>
-          </>
+            <ActionRow
+              icon={<ArrowRight className="h-3.5 w-3.5" />}
+              label="Close out (Denied by Payor)"
+              sub="Payor formally denied — close out, no further dispute"
+              disabled={promoteDrafts.isPending}
+              onClick={openCloseOut}
+              testId="button-closure-denied-by-payor"
+            />
+          </div>
         )}
 
         {derivation.mix === "all_approved" && (
@@ -239,11 +271,25 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
         onOpenChange={setReattestOpen}
         group={group}
         approvedLegs={derivation.approvedLegs}
+        promoteDrafts={async () => {
+          // Re-attest (Attest now / Queue for later) commits Step 4 by
+          // first promoting every draft on the group to
+          // `operator_confirmed`, then running the existing
+          // re-attest/queue path. The modal awaits this hook before
+          // either tab's submit so promotion and the downstream action
+          // succeed or fail together.
+          await promoteDrafts.mutateAsync({ id: group.id });
+          queryClient.invalidateQueries({
+            queryKey: getGetInvoiceGroupQueryKey(group.id),
+          });
+        }}
         onAfterAction={(msg) => {
           invalidate();
           onAfterAction(msg);
         }}
       />
+
+      {closureLauncher.dialog}
     </div>
   );
 }
@@ -253,8 +299,8 @@ function VerdictMixSummary({ d }: { d: VerdictDerivation }) {
   if (d.mix === "no_verdicts_yet") {
     return (
       <>
-        {d.total} leg{d.total === 1 ? "" : "s"} awaiting a verdict — record
-        them above first.
+        {d.total} leg{d.total === 1 ? "" : "s"} awaiting a selection — make a
+        pick above to unlock the next step.
       </>
     );
   }
@@ -269,8 +315,8 @@ function VerdictMixSummary({ d }: { d: VerdictDerivation }) {
   if (d.mix === "all_denied") {
     return (
       <>
-        All {d.total} leg{d.total === 1 ? "" : "s"} denied — capture the
-        payor's reason, then close out or push back.
+        All {d.total} leg{d.total === 1 ? "" : "s"} denied — close out as
+        Denied by Payor when ready.
       </>
     );
   }

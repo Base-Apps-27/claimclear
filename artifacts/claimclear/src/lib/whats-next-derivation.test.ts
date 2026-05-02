@@ -20,7 +20,8 @@ function leg(opts: {
   id: number;
   isDuplicate?: boolean;
   includedInDispute?: boolean;
-  verdict?: { outcome: string; source: string } | null;
+  verdict?: { outcome: string; source: string; createdAt?: string } | null;
+  draft?: { outcome: string; createdAt?: string } | null;
 }): ClaimResponse {
   // `outcomeRole()` reads `duplicateOfClaimId` + `sopOutcome` to
   // classify the leg. We feed the predicate directly rather than
@@ -39,7 +40,16 @@ function leg(opts: {
           claimId: opts.id,
           source: opts.verdict.source,
           outcome: opts.verdict.outcome,
-          createdAt: new Date().toISOString(),
+          createdAt: opts.verdict.createdAt ?? new Date().toISOString(),
+        } as ClaimVerdictResponse)
+      : null,
+    latestDraft: opts.draft
+      ? ({
+          id: 2,
+          claimId: opts.id,
+          source: "operator_draft",
+          outcome: opts.draft.outcome,
+          createdAt: opts.draft.createdAt ?? new Date().toISOString(),
         } as ClaimVerdictResponse)
       : null,
   };
@@ -106,6 +116,97 @@ test("deriveVerdictMix — AI-only verdicts don't count as confirmed", () => {
     leg({ id: 1, verdict: { outcome: "Approved", source: "ai_suggested" } }),
   ]);
   assert.equal(d.mix, "no_verdicts_yet");
+  assert.equal(d.pendingCount, 1);
+});
+
+// ─── Task #343: drafts count toward the Step 4 unlock ────────────────
+
+test("deriveVerdictMix — operator_draft counts as a selection (Approved)", () => {
+  const d = deriveVerdictMix([
+    leg({ id: 1, draft: { outcome: "Approved" } }),
+    leg({ id: 2, draft: { outcome: "Approved" } }),
+  ]);
+  assert.equal(d.mix, "all_approved");
+  assert.equal(d.approvedCount, 2);
+  assert.equal(d.pendingCount, 0);
+  assert.equal(d.allLegsHaveVerdict, true);
+});
+
+test("deriveVerdictMix — operator_draft counts as a selection (Denied)", () => {
+  const d = deriveVerdictMix([
+    leg({ id: 1, draft: { outcome: "Denied" } }),
+    leg({ id: 2, draft: { outcome: "Denied" } }),
+  ]);
+  assert.equal(d.mix, "all_denied");
+  assert.equal(d.deniedCount, 2);
+  assert.equal(d.allLegsHaveVerdict, true);
+});
+
+test("deriveVerdictMix — mixed drafts → mixed", () => {
+  const d = deriveVerdictMix([
+    leg({ id: 1, draft: { outcome: "Approved" } }),
+    leg({ id: 2, draft: { outcome: "Denied" } }),
+  ]);
+  assert.equal(d.mix, "mixed");
+  assert.equal(d.approvedCount, 1);
+  assert.equal(d.deniedCount, 1);
+  assert.equal(d.allLegsHaveVerdict, true);
+});
+
+test("deriveVerdictMix — drafts and confirmed verdicts both unlock Step 4", () => {
+  // Mixed-history group: one leg has only a draft, the other only a
+  // confirmed verdict. Both count → allLegsHaveVerdict is true and
+  // the mix reflects the combined outcomes.
+  const d = deriveVerdictMix([
+    leg({ id: 1, draft: { outcome: "Approved" } }),
+    leg({ id: 2, verdict: { outcome: "Approved", source: "operator_confirmed" } }),
+  ]);
+  assert.equal(d.mix, "all_approved");
+  assert.equal(d.approvedCount, 2);
+  assert.equal(d.allLegsHaveVerdict, true);
+});
+
+test("deriveVerdictMix — newer draft wins over older confirmed verdict", () => {
+  // Operator confirmed Approved, then re-drafted Denied later. The
+  // newer draft is what counts toward the mix.
+  const d = deriveVerdictMix([
+    leg({
+      id: 1,
+      verdict: {
+        outcome: "Approved",
+        source: "operator_confirmed",
+        createdAt: "2026-05-01T10:00:00Z",
+      },
+      draft: { outcome: "Denied", createdAt: "2026-05-02T10:00:00Z" },
+    }),
+  ]);
+  assert.equal(d.mix, "all_denied");
+  assert.equal(d.deniedCount, 1);
+  assert.equal(d.approvedCount, 0);
+});
+
+test("deriveVerdictMix — older draft loses to newer confirmed verdict", () => {
+  const d = deriveVerdictMix([
+    leg({
+      id: 1,
+      draft: { outcome: "Approved", createdAt: "2026-05-01T10:00:00Z" },
+      verdict: {
+        outcome: "Denied",
+        source: "operator_confirmed",
+        createdAt: "2026-05-02T10:00:00Z",
+      },
+    }),
+  ]);
+  assert.equal(d.mix, "all_denied");
+});
+
+test("deriveVerdictMix — partial coverage (some drafts, some pending) → mixed/no-unlock", () => {
+  const d = deriveVerdictMix([
+    leg({ id: 1, draft: { outcome: "Approved" } }),
+    leg({ id: 2 }),
+  ]);
+  assert.equal(d.mix, "mixed");
+  assert.equal(d.allLegsHaveVerdict, false);
   assert.equal(d.pendingCount, 1);
 });
 

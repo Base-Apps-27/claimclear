@@ -6,11 +6,12 @@ import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
 import { computeGroupReadiness, loadGroupReadiness } from "../lib/group-packaging";
-import { refreshGroupDerivedFields, getGroupMacroPhase } from "../lib/denormalized-cache";
+import { refreshGroupDerivedFields, getGroupMacroPhase, refreshClaimDenormalizedCache } from "../lib/denormalized-cache";
 import { getMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
+import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { asyncHandler } from "../lib/asyncHandler";
-import { broadcastGroupEvent } from "../lib/sse";
+import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
 import {
   transitionGroupStatus,
   transitionGroupOutcome,
@@ -579,7 +580,25 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     .orderBy(desc(claimsTable.createdAt));
 
   const rideIds = rides.map((r) => r.id);
-  const verdictMap = new Map<number, { latest: typeof claimVerdictTable.$inferSelect | null; latestAi: typeof claimVerdictTable.$inferSelect | null }>();
+  // Per-leg verdict slots used by the picker on Responses Awaiting Review.
+  //
+  // - `latest`     — newest *terminal* row (`ai_suggested` or
+  //                  `operator_confirmed`). Drives the historical "AI
+  //                  suggested X / you confirmed Y" rendering and the
+  //                  Step-3 "already confirmed" pill state. Drafts are
+  //                  excluded so a draft never overwrites a real
+  //                  confirmation in the UI.
+  // - `latestAi`   — newest `ai_suggested` row, used to label the
+  //                  AI-prefilled pill.
+  // - `latestDraft`— newest `operator_draft` row (Task #343). Lights
+  //                  up the picker pill before Step 4 commits and is
+  //                  what drives the actionable-leg counter that
+  //                  unlocks Step 4.
+  const verdictMap = new Map<number, {
+    latest: typeof claimVerdictTable.$inferSelect | null;
+    latestAi: typeof claimVerdictTable.$inferSelect | null;
+    latestDraft: typeof claimVerdictTable.$inferSelect | null;
+  }>();
   if (rideIds.length > 0) {
     const allVerdicts = await db
       .select()
@@ -587,9 +606,10 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
       .where(inArray(claimVerdictTable.claimId, rideIds))
       .orderBy(desc(claimVerdictTable.createdAt));
     for (const v of allVerdicts) {
-      const slot = verdictMap.get(v.claimId) ?? { latest: null, latestAi: null };
-      if (slot.latest === null) slot.latest = v;
+      const slot = verdictMap.get(v.claimId) ?? { latest: null, latestAi: null, latestDraft: null };
+      if (slot.latest === null && v.source !== "operator_draft") slot.latest = v;
       if (slot.latestAi === null && v.source === "ai_suggested") slot.latestAi = v;
+      if (slot.latestDraft === null && v.source === "operator_draft") slot.latestDraft = v;
       verdictMap.set(v.claimId, slot);
     }
   }
@@ -599,6 +619,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
       ...r,
       latestVerdict: slot?.latest ?? null,
       latestAiSuggestion: slot?.latestAi ?? null,
+      latestDraft: slot?.latestDraft ?? null,
     };
   });
 
@@ -1899,6 +1920,195 @@ router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, 
   emitGroupEvent(id, "draft_reviewed", req);
   res.json(updated);
 }));
+
+// POST /invoice-groups/:id/promote-verdict-drafts — Task #343 Step 4
+// commit primitive. For each leg whose latest verdict is an
+// `operator_draft`, insert a fresh `operator_confirmed` row carrying
+// the same outcome inside a single DB transaction. Then run the same
+// per-leg side effects the `/claims/:id/verdict` route runs for
+// `operator_confirmed` (denormalized cache refresh, MAS derivation,
+// attestation gate) and finally call `refreshGroupDerivedFields` once
+// for the parent.
+//
+// Source-state contract: the parent group MUST be in the
+// `response-pending` macro phase. Outside that phase Step 4 isn't
+// reachable in the UI, and promoting drafts could collide with
+// already-attested or closed state. Returns 409 with the canonical
+// {expectedState, actualState} payload otherwise.
+//
+// Drafts attached to legs that are filtered out of the actionable
+// picker (excluded via `sop_outcome` ∈ {cannot_dispute, non_issue} or
+// duplicates that follow another leg) are still promoted — they're
+// recorded against the leg history just like any other operator
+// confirmation. The picker UI prevents drafts from landing on those
+// legs in the first place, but if a draft somehow exists we don't
+// want to silently strand it.
+//
+// Idempotent: a re-run with no fresh drafts returns
+// `promotedCount: 0, promotedClaimIds: []` and is a no-op.
+router.post("/invoice-groups/:id/promote-verdict-drafts", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  // Pick the latest verdict per leg in a single roundtrip. We sort by
+  // (claimId asc, createdAt desc) so the first row per leg in our scan
+  // is the latest. Only legs whose latest row is an `operator_draft`
+  // get promoted; legs whose latest is already `operator_confirmed`
+  // (or whose only row is `ai_suggested`) are skipped.
+  //
+  // Note: we scan for drafts BEFORE enforcing the phase guard so that
+  // a re-run with no drafts left to promote always succeeds as a
+  // no-op. This matters for the Step 4 commit retry path: if the
+  // first attempt succeeded at promotion but failed at the downstream
+  // re-attest/closure call, the group's phase may have already moved
+  // past `response-pending`. The user's retry must still be able to
+  // call this endpoint without hitting a 409 — there's nothing left
+  // to promote, so there's nothing to guard against.
+  const legs = await db
+    .select({ id: claimsTable.id })
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, id));
+  const legIds = legs.map((l) => l.id);
+  if (legIds.length === 0) {
+    res.json({ promotedCount: 0, promotedClaimIds: [] });
+    return;
+  }
+
+  const allVerdicts = await db
+    .select()
+    .from(claimVerdictTable)
+    .where(inArray(claimVerdictTable.claimId, legIds))
+    .orderBy(asc(claimVerdictTable.claimId), desc(claimVerdictTable.createdAt));
+
+  const draftsToPromote: Array<{ claimId: number; outcome: string }> = [];
+  let lastClaimId: number | null = null;
+  for (const v of allVerdicts) {
+    if (v.claimId === lastClaimId) continue;
+    lastClaimId = v.claimId;
+    if (v.source === "operator_draft") {
+      draftsToPromote.push({ claimId: v.claimId, outcome: v.outcome });
+    }
+  }
+
+  if (draftsToPromote.length === 0) {
+    res.json({ promotedCount: 0, promotedClaimIds: [] });
+    return;
+  }
+
+  // Phase guard only applies when there's actual work to do. A group
+  // outside `response-pending` should never have fresh drafts (the
+  // picker UI is gated on phase), but if one somehow exists it's
+  // safer to refuse than to collide with already-attested or closed
+  // state.
+  const phase = getGroupMacroPhase(group);
+  if (phase !== "response-pending") {
+    res.status(409).json({
+      error: "Group is not in the response-pending phase",
+      expectedState: "response-pending",
+      actualState: phase,
+    });
+    return;
+  }
+
+  // Atomic insert of every promotion row. Side effects (MAS, attestation,
+  // cache refresh) run after the transaction commits so they observe the
+  // confirmed verdicts. Doing them inside the txn would still be correct,
+  // but each helper opens its own connection-bound queries; keeping them
+  // outside the txn matches the pattern already used by
+  // `/claims/:id/verdict`.
+  const promotedClaimIds: number[] = [];
+  await db.transaction(async (tx) => {
+    for (const d of draftsToPromote) {
+      await tx.insert(claimVerdictTable).values({
+        claimId: d.claimId,
+        source: "operator_confirmed",
+        outcome: d.outcome,
+        note: null,
+        confidence: null,
+        reasoning: null,
+        createdBy: req.user?.email ?? null,
+        inspectionTimeMs: null,
+      });
+      promotedClaimIds.push(d.claimId);
+    }
+  });
+
+  // Per-leg side effects mirror the `operator_confirmed` arm of
+  // `/claims/:id/verdict`. Re-load the leg between cache-refresh and
+  // attestation-delta so the gate sees the post-refresh outcome.
+  for (const d of draftsToPromote) {
+    const [legBefore] = await db.select().from(claimsTable).where(eq(claimsTable.id, d.claimId));
+    if (!legBefore) continue;
+    await refreshClaimDenormalizedCache(d.claimId);
+    await applyMasDerivationsForLeg(d.claimId, d.outcome);
+    const [legAfter] = await db.select().from(claimsTable).where(eq(claimsTable.id, d.claimId));
+    if (legAfter) {
+      const attDelta = computeAttestationDelta(legBefore.outcome, legAfter.outcome, group);
+      if (Object.keys(attDelta).length > 0) {
+        await db.update(claimsTable).set(attDelta).where(eq(claimsTable.id, d.claimId));
+      }
+    }
+
+    await createAuditLog(
+      d.claimId,
+      "leg_verdict_confirmed",
+      `Verdict ${d.outcome} (operator_confirmed, promoted_from_draft)`,
+      req,
+      { source: "operator_confirmed", outcome: d.outcome, reason: "promoted_from_draft" },
+    );
+    await emitStateEvent({
+      eventKey: "leg.verdict_confirmed",
+      claimId: d.claimId,
+      invoiceGroupId: id,
+      actorUserId: req.user?.email ?? null,
+      metadata: { source: "operator_confirmed", outcome: d.outcome, reason: "promoted_from_draft" },
+    });
+    broadcastClaimEvent({
+      type: "verdict_recorded",
+      claimId: d.claimId,
+      userName: req.user?.displayName ?? null,
+      userEmail: req.user?.email ?? null,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  await refreshGroupDerivedFields(id);
+  await createGroupAuditLog(
+    id,
+    "group_verdict_drafts_promoted",
+    `Promoted ${promotedClaimIds.length} draft verdict${promotedClaimIds.length === 1 ? "" : "s"} to operator_confirmed`,
+    req,
+    { promotedClaimIds, promotedCount: promotedClaimIds.length },
+  );
+  emitGroupEvent(id, "verdict_drafts_promoted", req);
+
+  res.json({ promotedCount: promotedClaimIds.length, promotedClaimIds });
+}));
+
+// Helper: same shape as createGroupAuditLog but writes against a leg
+// (so the audit row threads through the per-claim activity feed). The
+// route above needs both flavours — claim-level for each promotion +
+// group-level for the umbrella event — so we declare the leg helper
+// next to the only caller that needs it.
+async function createAuditLog(
+  claimId: number,
+  action: string,
+  details: string,
+  req: Request,
+  metadata?: Record<string, unknown>,
+) {
+  await db.insert(auditLogsTable).values({
+    claimId,
+    action,
+    details,
+    metadata: metadata ?? null,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
+}
 
 // POST /invoice-groups/:id/reattest/complete — stamps the group's MAS
 // re-attest as complete and engages the attestation gate. Pre: phase

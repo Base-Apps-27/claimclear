@@ -2410,8 +2410,14 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
   // so the audit row carries a human-supplied reason.
   const reconcile = req.body?.reconcile === true;
 
-  if (source !== "ai_suggested" && source !== "operator_confirmed") {
-    res.status(400).json({ error: "source must be ai_suggested or operator_confirmed" });
+  if (
+    source !== "ai_suggested" &&
+    source !== "operator_confirmed" &&
+    source !== "operator_draft"
+  ) {
+    res.status(400).json({
+      error: "source must be ai_suggested, operator_confirmed, or operator_draft",
+    });
     return;
   }
   if (!(VERDICT_OUTCOMES as readonly string[]).includes(outcome)) {
@@ -2429,6 +2435,10 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
       return;
     }
   }
+  // Task #343: drafts are operator-only and don't carry the calibration
+  // payload an AI suggestion does. Strip those fields out so we never
+  // accidentally persist confidence/reasoning/inspection on a draft row.
+  const isDraft = source === "operator_draft";
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2486,12 +2496,15 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
   const [verdictRow] = await db.insert(claimVerdictTable).values({
     claimId: id,
     source,
+    // Drafts deliberately drop note/confidence/reasoning/inspection fields
+    // — the picker no longer collects them and they're calibration-only
+    // signals that don't apply to a non-terminal selection.
     outcome,
-    note,
-    confidence: confidence != null ? String(confidence) : null,
-    reasoning,
+    note: isDraft ? null : note,
+    confidence: !isDraft && confidence != null ? String(confidence) : null,
+    reasoning: isDraft ? null : reasoning,
     createdBy: req.user?.email ?? null,
-    inspectionTimeMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
+    inspectionTimeMs: !isDraft && inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
   }).returning();
 
   // Audit + state-event metadata carries `reason: "legacy_reconciliation"`
@@ -2508,9 +2521,24 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     auditMetadata.reason = "legacy_reconciliation";
     eventMetadata.reason = "legacy_reconciliation";
   }
+  // Action / event keys per source. Drafts are append-only like the
+  // others but get their own vocabulary so the audit trail makes the
+  // non-terminal nature obvious.
+  const auditAction =
+    source === "ai_suggested"
+      ? "leg_verdict_suggested"
+      : source === "operator_draft"
+        ? "leg_verdict_drafted"
+        : "leg_verdict_confirmed";
+  const eventKey =
+    source === "ai_suggested"
+      ? "leg.verdict_suggested"
+      : source === "operator_draft"
+        ? "leg.verdict_drafted"
+        : "leg.verdict_confirmed";
   await createAuditLog(
     id,
-    source === "ai_suggested" ? "leg_verdict_suggested" : "leg_verdict_confirmed",
+    auditAction,
     reconcile
       ? `Verdict ${outcome} (${source}, legacy_reconciliation)`
       : `Verdict ${outcome} (${source})`,
@@ -2518,19 +2546,24 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     auditMetadata,
   );
   await emitStateEvent({
-    eventKey: source === "ai_suggested" ? "leg.verdict_suggested" : "leg.verdict_confirmed",
+    eventKey,
     claimId: id,
     invoiceGroupId: leg.invoiceGroupId,
     actorUserId: req.user?.email ?? null,
-    durationMs: inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
+    durationMs: !isDraft && inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
     metadata: eventMetadata,
   });
 
-  // Cache refresh runs unconditionally — the denormalized
-  // `claims.outcome` tracks the latest claim_verdict row regardless of
-  // source. Operator-only side effects (MAS derivation, attestation
+  // Cache refresh runs for the two terminal sources only. Drafts MUST
+  // NOT touch the denormalized `claims.outcome` — that column is what
+  // moves the group out of `response-pending`, and Step 4 hasn't been
+  // committed yet. (See `refreshClaimDenormalizedCache` for the matching
+  // server-side filter that ignores draft rows when picking the latest
+  // verdict.)  Operator-only side effects (MAS derivation, attestation
   // gate, group derivations) follow.
-  await refreshClaimDenormalizedCache(id);
+  if (!isDraft) {
+    await refreshClaimDenormalizedCache(id);
+  }
 
   if (source === "operator_confirmed") {
     await applyMasDerivationsForLeg(id, outcome);
@@ -2546,7 +2579,7 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     }
     await refreshGroupDerivedFields(leg.invoiceGroupId);
   }
-  emitClaimEvent(id, "verdict_recorded", req);
+  emitClaimEvent(id, isDraft ? "verdict_drafted" : "verdict_recorded", req);
 
   res.json(verdictRow);
 }));

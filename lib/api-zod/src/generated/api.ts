@@ -1056,6 +1056,26 @@ export const GetInvoiceGroupResponse = zod
               .describe(
                 "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
               ),
+            latestDraft: zod
+              .union([
+                zod.object({
+                  id: zod.number(),
+                  claimId: zod.number(),
+                  source: zod.string(),
+                  outcome: zod.string(),
+                  note: zod.string().nullish(),
+                  confidence: zod.string().nullish(),
+                  reasoning: zod.string().nullish(),
+                  createdAt: zod.coerce.date(),
+                  createdBy: zod.string().nullish(),
+                  inspectionTimeMs: zod.number().nullish(),
+                }),
+                zod.null(),
+              ])
+              .optional()
+              .describe(
+                "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+              ),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
             effectiveDaysLeft: zod
@@ -4107,6 +4127,60 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
 });
 
 /**
+ * Task #343 Step 4 commit primitive. For each leg in the group whose
+latest verdict is an `operator_draft`, inserts a fresh
+`operator_confirmed` row carrying the same outcome inside a
+single DB transaction. Then runs the same per-leg side effects
+the `/claims/:id/verdict` endpoint runs for `operator_confirmed`:
+denormalized-cache refresh, MAS derivation, attestation gate
+engagement. Finally calls `refreshGroupDerivedFields` once for
+the parent group.
+
+Source-state contract: the parent group must be in the
+`response-pending` macro phase IF there are drafts to promote.
+Legs whose latest verdict is already `operator_confirmed` (or
+whose only verdict is `ai_suggested`) are skipped — only
+un-promoted drafts are committed.
+
+Drafts attached to legs that the picker filters out
+(excluded via `sop_outcome` ∈ {cannot_dispute, non_issue} or
+sibling duplicates that follow another leg) ARE still
+promoted. The picker UI prevents drafts from landing on those
+legs in the first place, but if one somehow exists this
+endpoint records it against the leg history rather than
+silently stranding it.
+
+Idempotent in the sense that a re-run with no fresh drafts
+returns `promotedCount=0` and is a no-op — even when the
+group has since left `response-pending` (the no-op short-circuit
+runs BEFORE the phase guard, so retries after a downstream
+failure are safe). Callers (the re-attest modal, the closure
+flow, the queue-for-attestation button) call this as part of
+their own commit handler so promoted verdicts land alongside
+the next-step action in a single operator gesture.
+
+ * @summary Atomically promote every leg's draft selection to operator_confirmed (Step 4 commit)
+ */
+export const PromoteVerdictDraftsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PromoteVerdictDraftsResponse = zod
+  .object({
+    promotedCount: zod
+      .number()
+      .describe(
+        "Number of `operator_draft` rows promoted to `operator_confirmed` in this call.",
+      ),
+    promotedClaimIds: zod
+      .array(zod.number())
+      .describe("Ids of the legs whose draft selection was just confirmed."),
+  })
+  .describe(
+    "Result payload for `POST \/invoice-groups\/{id}\/promote-verdict-drafts`.\nReports how many leg drafts were promoted in the same transaction\nplus the leg ids that were touched (handy for cache invalidation\non the client).\n",
+  );
+
+/**
  * @summary List evidence collected for an invoice group
  */
 export const ListInvoiceGroupEvidenceParams = zod.object({
@@ -6824,6 +6898,26 @@ export const ListClaimsResponse = zod.object({
         .describe(
           "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
         ),
+      latestDraft: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+        ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
       effectiveDaysLeft: zod
@@ -7112,6 +7206,26 @@ export const GetClaimResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -7372,6 +7486,26 @@ export const UpdateClaimResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -7661,6 +7795,26 @@ export const UpdateClaimStatusResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -7967,6 +8121,26 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -8222,6 +8396,26 @@ export const ListAttestationPendingResponse = zod.object({
         .optional()
         .describe(
           "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+        ),
+      latestDraft: zod
+        .union([
+          zod.object({
+            id: zod.number(),
+            claimId: zod.number(),
+            source: zod.string(),
+            outcome: zod.string(),
+            note: zod.string().nullish(),
+            confidence: zod.string().nullish(),
+            reasoning: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            createdBy: zod.string().nullish(),
+            inspectionTimeMs: zod.number().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
         ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
@@ -8515,6 +8709,26 @@ export const AttestClaimResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -8767,6 +8981,26 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -9018,6 +9252,26 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -9350,6 +9604,26 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -9614,6 +9888,26 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -9861,6 +10155,26 @@ export const RemoveLegHoldResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -10104,6 +10418,26 @@ export const ClearLegHoldResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -10356,6 +10690,26 @@ export const ClassifyLegResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -10611,6 +10965,26 @@ export const SopAdvanceLegResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -10877,6 +11251,26 @@ export const ExcludeLegResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -11128,6 +11522,26 @@ export const IncludeLegResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -11398,6 +11812,26 @@ export const MarkLegDuplicateResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -11644,6 +12078,26 @@ export const UnmarkLegDuplicateResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -11893,6 +12347,26 @@ export const ReclassifyLegResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -11923,7 +12397,11 @@ export const RecordLegVerdictParams = zod.object({
 });
 
 export const RecordLegVerdictBody = zod.object({
-  source: zod.enum(["ai_suggested", "operator_confirmed"]),
+  source: zod
+    .enum(["ai_suggested", "operator_confirmed", "operator_draft"])
+    .describe(
+      "`operator_draft` (Task #343) records a non-terminal selection\nfrom the per-leg picker on Responses Awaiting Review. Drafts\nare append-only and the latest draft per leg wins. Drafts\nDO NOT trigger MAS derivation, the attestation gate, or\n`refreshGroupDerivedFields` — those side effects only fire\nwhen Step 4 is committed via\n`POST \/invoice-groups\/{id}\/promote-verdict-drafts` (which\natomically inserts an `operator_confirmed` row per leg).\nDrafts also bypass `note`\/`confidence`\/`reasoning`\/\n`inspectionTimeMs` enrichment — those are operator-confirmed\nconcepts only.\n",
+    ),
   outcome: zod.enum(["Approved", "Denied", "Partial"]),
   note: zod.string().nullish(),
   confidence: zod
@@ -12198,6 +12676,26 @@ export const SetLegContextResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -12459,6 +12957,26 @@ export const ConcludeLegResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -12714,6 +13232,26 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
     ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   effectiveDaysLeft: zod
@@ -12964,6 +13502,26 @@ export const TriageClaimResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -13218,6 +13776,26 @@ export const PostResponseActionResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -13485,6 +14063,26 @@ export const GenerateClaimEmailResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -17955,6 +18553,26 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .optional()
     .describe(
       "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+    ),
+  latestDraft: zod
+    .union([
+      zod.object({
+        id: zod.number(),
+        claimId: zod.number(),
+        source: zod.string(),
+        outcome: zod.string(),
+        note: zod.string().nullish(),
+        confidence: zod.string().nullish(),
+        reasoning: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        createdBy: zod.string().nullish(),
+        inspectionTimeMs: zod.number().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),

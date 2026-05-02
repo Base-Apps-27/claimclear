@@ -37,7 +37,17 @@ export type LegExclusionReason = typeof LEG_EXCLUSION_REASONS[number];
 export const MAS_ACTION_REQUIRED = ["cancel", "none"] as const;
 export type MasActionRequired = typeof MAS_ACTION_REQUIRED[number];
 
-export const VERDICT_SOURCE = ["ai_suggested", "operator_confirmed"] as const;
+export const VERDICT_SOURCE = [
+  "ai_suggested",
+  "operator_confirmed",
+  // Task #343: a non-terminal selection saved as the operator picks
+  // verdicts in Step 3 of the Responses Awaiting Review flow. Drafts
+  // are append-only like the other sources; the latest draft per leg
+  // wins. They DO NOT trigger MAS/attestation/group-derivation side
+  // effects — those only fire when Step 4 is committed and drafts are
+  // promoted to `operator_confirmed` in one transaction.
+  "operator_draft",
+] as const;
 export type VerdictSource = typeof VERDICT_SOURCE[number];
 
 export const VERDICT_OUTCOMES = ["Approved", "Denied", "Partial"] as const;

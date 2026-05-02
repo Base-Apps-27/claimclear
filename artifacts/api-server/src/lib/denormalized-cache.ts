@@ -3,7 +3,7 @@
 // columns; every contracts endpoint that mutates a leg or group calls
 // the matching helper at the end so the read caches cannot drift.
 
-import { eq, desc, and, isNotNull, isNull } from "drizzle-orm";
+import { eq, desc, and, isNotNull, isNull, ne } from "drizzle-orm";
 import {
   db,
   claimsTable,
@@ -138,14 +138,21 @@ export async function refreshClaimDenormalizedCache(
   const [leg] = await ex.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!leg) return null;
 
-  // Latest verdict (any source). Per spec the denormalized cache
-  // tracks the single most recent claim_verdict row regardless of
-  // source. AI suggestions may transiently move the cached value
-  // until an operator confirmation lands; this matches the contract.
+  // Latest verdict from a *terminal* source (`ai_suggested` or
+  // `operator_confirmed`). Task #343 added `operator_draft` as a
+  // non-terminal selection that must NOT move the denormalized
+  // outcome — otherwise the parent group would advance out of
+  // `response-pending` the moment the operator clicks a draft pill.
+  // Drafts are promoted in the matching `operator_confirmed` row
+  // by `POST /invoice-groups/{id}/promote-verdict-drafts` (which
+  // calls this helper again, so the cache stays accurate).
   const [latestVerdict] = await ex
     .select({ outcome: claimVerdictTable.outcome })
     .from(claimVerdictTable)
-    .where(eq(claimVerdictTable.claimId, claimId))
+    .where(and(
+      eq(claimVerdictTable.claimId, claimId),
+      ne(claimVerdictTable.source, "operator_draft"),
+    ))
     .orderBy(desc(claimVerdictTable.createdAt))
     .limit(1);
 

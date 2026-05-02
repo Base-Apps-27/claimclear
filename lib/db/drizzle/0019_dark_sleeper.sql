@@ -1,0 +1,2 @@
+ALTER TABLE "claim_verdict" DROP CONSTRAINT "claim_verdict_source_chk";--> statement-breakpoint
+ALTER TABLE "claim_verdict" ADD CONSTRAINT "claim_verdict_source_chk" CHECK ("claim_verdict"."source" IN ('ai_suggested','operator_confirmed','operator_draft'));
