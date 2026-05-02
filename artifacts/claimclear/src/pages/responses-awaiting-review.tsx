@@ -598,7 +598,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: detail } = useGetInvoiceGroup(group.id);
+  const { data: detail, isPending: detailPending } = useGetInvoiceGroup(group.id);
 
   const responses: PortalResponseItem[] = detail?.responses ?? [];
   const allRides: ClaimResponse[] = detail?.rides ?? [];
@@ -606,7 +606,8 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   // Real group email thread (Task #240). Swap-in for the prior mock — same
   // data layer feeds the full invoice-group detail page, so reviewers see
   // identical conversations on either screen.
-  const { data: emailThread } = useGetInvoiceGroupEmailThread(group.id);
+  const { data: emailThread, isPending: emailThreadPending } =
+    useGetInvoiceGroupEmailThread(group.id);
   const legIdToLabel = useMemo(() => {
     const map = new Map<number, string>();
     for (const r of allRides) {
@@ -680,7 +681,16 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
           help="Read the payor's words in full. The AI summary is a hint — never the verdict. Reply in-thread if you need clarification."
         />
 
-        {hasReviewableResponse && hasConversations ? (
+        {detailPending || (hasReviewableResponse && emailThreadPending) ? (
+          <Card data-testid="thread-loading-state">
+            <CardContent className="py-10">
+              <Skeleton className="h-6 w-1/3 mb-4" />
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-5/6 mb-2" />
+              <Skeleton className="h-4 w-2/3" />
+            </CardContent>
+          </Card>
+        ) : hasReviewableResponse && hasConversations ? (
           <GroupCommunicationThread
             conversations={conversations}
             groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
