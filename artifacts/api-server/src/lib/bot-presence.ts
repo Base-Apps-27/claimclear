@@ -42,4 +42,7 @@ function purgeStaleProcesses(): void {
   }
 }
 
-setInterval(purgeStaleProcesses, 5 * 60 * 1000);
+// `unref()` so this housekeeping timer never keeps the Node event loop alive
+// on its own. In production the HTTP server holds the loop; in tests that
+// only import this module transitively, the runner can exit cleanly.
+setInterval(purgeStaleProcesses, 5 * 60 * 1000).unref();

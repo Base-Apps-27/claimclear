@@ -12,6 +12,7 @@ import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
+import { buildPromptLegInputs, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
 
 // NOTE: Confirming a draft, queueing a submission, or retrying a failed
 // submission only moves the row to status="pending". The Playwright worker is
@@ -38,7 +39,7 @@ async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSe
 
 const router: IRouter = Router();
 
-interface GroupContext {
+export interface GroupContext {
   group: typeof invoiceGroupsTable.$inferSelect;
   rides: (typeof claimsTable.$inferSelect)[];
   primaryClaim: typeof claimsTable.$inferSelect;
@@ -145,7 +146,7 @@ function resolveGpsBreadcrumbs(issueType: string, settingsDefault: string): stri
   return isGps ? "Yes" : "";
 }
 
-interface PortalSettings {
+export interface PortalSettings {
   providerName: string;
   contactEmail: string;
   contactPhone: string;
@@ -254,13 +255,23 @@ function buildSnapshot(ctx: GroupContext): SubmissionSnapshot {
   };
 }
 
-async function generatePortalDescription(
-  ctx: GroupContext,
-  errorType: typeof errorTypesTable.$inferSelect | null,
-  disputeReason: string,
-  settings: PortalSettings,
-  specialCircumstances?: string | null,
-): Promise<string> {
+/**
+ * Pure prompt-assembly for the portal/email write-up. Extracted so the
+ * deterministic prompt-shape tests in `__tests__/prompt-leg-inputs.test.ts`
+ * can assert on the assembled prompt without invoking the LLM. The
+ * `promptLegInputs` argument MUST come from `buildPromptLegInputs` — never
+ * read the per-leg-context column or the duplicate-of-claim pointer column
+ * directly here (the helper is the single source of truth for both).
+ */
+export function buildPortalDescriptionPrompt(opts: {
+  ctx: GroupContext;
+  errorType: typeof errorTypesTable.$inferSelect | null;
+  disputeReason: string;
+  settings: PortalSettings;
+  promptLegInputs: PromptLegInputsResult;
+  specialCircumstances?: string | null;
+}): { prompt: string; systemPrompt: string } {
+  const { ctx, errorType, disputeReason, settings, promptLegInputs, specialCircumstances } = opts;
   const { group, rides } = ctx;
   const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || settings.defaultDisputeInstructions;
   const snap = buildSnapshot(ctx);
@@ -269,7 +280,7 @@ async function generatePortalDescription(
   // both portal paths, the same text lands in a plain-text portal field.
   const isDirectEmail = errorType?.useDirectEmail === true;
 
-  const ridesBlock = rides.map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"} | Amount: $${r.claimAmount || "0.00"}`).join("\n");
+  const ridesBlock = promptLegInputs.ridesBlock;
 
   const groupHeader = `This dispute is filed at the invoice level and covers ${rides.length} ride${rides.length === 1 ? "" : "s"} on a single invoice.
 
@@ -334,6 +345,63 @@ Return ONLY the note text, no JSON wrapping.`;
   const systemPrompt = isDirectEmail
     ? "You are a professional NEMT claims dispute specialist. Write the body of a dispute email on behalf of a transportation provider — without the greeting or sign-off (those are added automatically). Each message should sound natural — vary sentence structure and word choice so no two messages are identical. Avoid boilerplate or robotic language. Return only the body text."
     : "You are a professional NEMT claims dispute specialist. Write clear, factual portal submission notes on behalf of a transportation provider. Each note should sound natural — vary sentence structure and word choice so no two notes are identical. Avoid boilerplate or robotic language. Return only the note text.";
+
+  return { prompt, systemPrompt };
+}
+
+/**
+ * Pure prompt-assembly for the AI readback preflight. Extracted so the
+ * deterministic prompt-shape tests can assert on the assembled prompt
+ * without invoking the LLM. Per Task #307 §"Done looks like", the readback
+ * sees the same per-leg findings the full draft will see — but only when
+ * there is something to say (parity guard: byte-equivalent to the legacy
+ * prompt when no leg has per-leg context and no sibling-duplicate pointers
+ * exist).
+ */
+export function buildReadbackPrompt(opts: {
+  ctx: GroupContext;
+  errorType: typeof errorTypesTable.$inferSelect | null;
+  reason: string;
+  specialCircumstances: string;
+  promptLegInputs: PromptLegInputsResult;
+}): { prompt: string; systemPrompt: string } {
+  const { ctx, errorType, reason, specialCircumstances, promptLegInputs } = opts;
+  const headline = `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`;
+  const guidance = errorType?.guidance ? `\nSOP guidance for this error type: ${errorType.guidance}` : "";
+  const treeLine = reason ? `\nDecision-tree outcome: ${reason}` : "";
+  const trimmedSpecial = specialCircumstances.trim();
+  const specialLine = trimmedSpecial
+    ? `\nOperator-supplied special circumstances (this may fundamentally change the framing — let it lead):\n${trimmedSpecial}`
+    : "\nOperator-supplied special circumstances: (none)";
+  // Parity guard: only inject the per-leg findings block when the operator
+  // actually captured per-leg context or sibling-duplicate pointers exist
+  // on the group. Otherwise the prompt is byte-identical to the legacy.
+  const perLegBlock = (promptLegInputs.hasPerLegContext || promptLegInputs.siblingDuplicateCount > 0)
+    ? `\nPer-leg findings the operator captured during the SOP walk (lead with these where they reshape the surface read of the error type):\n${promptLegInputs.ridesBlock}`
+    : "";
+
+  const prompt = `You are previewing your understanding of an NEMT claim dispute before drafting the full write-up. Do NOT write the dispute. In 2 to 4 plain-language sentences, restate — in your own words — what the dispute is actually about, given the inputs below. Lead with the core ask, then the key reason. If the operator's special circumstances change the framing from a surface read of the error type, reflect that explicitly in the readback so the operator can spot any misunderstanding.
+
+${headline}${guidance}${treeLine}${perLegBlock}${specialLine}
+
+Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no preamble like "Here is my understanding".`;
+
+  const systemPrompt = "You restate the operator's pending NEMT claim dispute in 2–4 sentences so they can verify the AI is on the same page before you draft the full write-up. Be concrete, specific to the inputs, and never invent facts.";
+
+  return { prompt, systemPrompt };
+}
+
+async function generatePortalDescription(
+  ctx: GroupContext,
+  errorType: typeof errorTypesTable.$inferSelect | null,
+  disputeReason: string,
+  settings: PortalSettings,
+  promptLegInputs: PromptLegInputsResult,
+  specialCircumstances?: string | null,
+): Promise<string> {
+  const { prompt, systemPrompt } = buildPortalDescriptionPrompt({
+    ctx, errorType, disputeReason, settings, promptLegInputs, specialCircumstances,
+  });
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
@@ -510,25 +578,17 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   const reason = (disputeReason || "").trim();
   const trimmedSpecial = (specialCircumstances || "").trim();
 
-  const headline = `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`;
-
-  const guidance = errorType?.guidance ? `\nSOP guidance for this error type: ${errorType.guidance}` : "";
-  const treeLine = reason ? `\nDecision-tree outcome: ${reason}` : "";
-  const specialLine = trimmedSpecial
-    ? `\nOperator-supplied special circumstances (this may fundamentally change the framing — let it lead):\n${trimmedSpecial}`
-    : "\nOperator-supplied special circumstances: (none)";
-
-  const prompt = `You are previewing your understanding of an NEMT claim dispute before drafting the full write-up. Do NOT write the dispute. In 2 to 4 plain-language sentences, restate — in your own words — what the dispute is actually about, given the inputs below. Lead with the core ask, then the key reason. If the operator's special circumstances change the framing from a surface read of the error type, reflect that explicitly in the readback so the operator can spot any misunderstanding.
-
-${headline}${guidance}${treeLine}${specialLine}
-
-Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no preamble like "Here is my understanding".`;
+  // Pre-compute prompt-leg inputs (Task #307 guard #10): the readback sees
+  // the same per-leg findings the full draft will see so the operator's
+  // verification step can't be silently shorn of new context.
+  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
+  const { prompt, systemPrompt } = buildReadbackPrompt({ ctx, errorType, reason, specialCircumstances: trimmedSpecial, promptLegInputs });
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 400,
     messages: [{ role: "user", content: prompt }],
-    system: "You restate the operator's pending NEMT claim dispute in 2–4 sentences so they can verify the AI is on the same page before you draft the full write-up. Be concrete, specific to the inputs, and never invent facts.",
+    system: systemPrompt,
   });
   const textBlock = message.content.find((b: { type: string }) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
@@ -548,6 +608,9 @@ Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no pre
       hasSpecialCircumstances: trimmedSpecial.length > 0,
       specialCircumstancesLength: trimmedSpecial.length,
       readbackLength: readback.length,
+      hasPerLegContext: promptLegInputs.hasPerLegContext,
+      perLegContextLegCount: promptLegInputs.perLegContextLegCount,
+      siblingDuplicateCount: promptLegInputs.siblingDuplicateCount,
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
@@ -616,9 +679,13 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const issueType = determineIssueType(errorType);
   const snap = buildSnapshot(ctx);
 
+  // Build prompt-leg inputs OUTSIDE the try/catch so an inconsistent group
+  // surfaces loud (Task #307 guard #10) — the LLM-error fallback below must
+  // not mask data-shape problems.
+  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, trimmedSpecial || null);
+    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
   } catch (err) {
     logger.warn({ err }, "AI portal description generation failed, using fallback");
     generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
@@ -842,9 +909,12 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     return;
   }
   const savedSpecial = (existing.specialCircumstances || "").trim();
+  // Pre-compute prompt-leg inputs (Task #307 guard #10): data inconsistency
+  // surfaces loud, while LLM API errors still fall back to the template.
+  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
   let generatedDescription = "";
   try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, savedSpecial || null);
+    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, promptLegInputs, savedSpecial || null);
   } catch (err) {
     logger.warn({ err }, "AI portal description regeneration failed, using fallback");
     generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "", savedSpecial || null);
@@ -1115,8 +1185,12 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
 
   let generatedDescription = descriptionHtml || "";
   if (!generatedDescription && reason) {
+    // Pre-compute prompt-leg inputs OUTSIDE the try/catch (Task #307 guard
+    // #10): inconsistent group data surfaces loud rather than being masked
+    // by the template fallback below.
+    const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
     try {
-      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, trimmedSpecial || null);
+      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
     } catch (err) {
       logger.warn({ err }, "AI portal description generation failed, using fallback");
       generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);

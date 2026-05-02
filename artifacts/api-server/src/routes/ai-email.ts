@@ -6,6 +6,11 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastPresenceEvent } from "../lib/sse";
 import { registerBotProcess, unregisterBotProcess } from "../lib/bot-presence";
+import {
+  buildPromptLegInputs,
+  loadGroupLegsForClaim,
+  type PromptLegInputsResult,
+} from "../lib/prompt-leg-inputs";
 
 const router: IRouter = Router();
 
@@ -41,13 +46,29 @@ async function getDefaultDisputeInstructions(): Promise<string> {
   return row?.value || "";
 }
 
-async function generateWithLLM(
-  claim: typeof claimsTable.$inferSelect,
-  errorType: typeof errorTypesTable.$inferSelect | null,
-  disputeReason: string,
-): Promise<{ subject: string; body: string }> {
-  const defaultInstructions = await getDefaultDisputeInstructions();
-  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
+/**
+ * Pure prompt-assembly for the per-claim dispute email. Extracted so the
+ * deterministic prompt-shape tests can assert on the assembled prompt
+ * without invoking the LLM. The `promptLegInputs` argument MUST come from
+ * `buildPromptLegInputs` — never read the per-leg-context column or the
+ * duplicate-of-claim pointer column directly here (the helper is the single
+ * source of truth for both).
+ */
+export function buildPerClaimEmailPrompt(opts: {
+  claim: typeof claimsTable.$inferSelect;
+  errorType: typeof errorTypesTable.$inferSelect | null;
+  disputeReason: string;
+  instructions: string;
+  promptLegInputs: PromptLegInputsResult;
+}): { prompt: string; systemPrompt: string } {
+  const { claim, errorType, disputeReason, instructions, promptLegInputs } = opts;
+  const annotationLines = promptLegInputs.perClaimAnnotationLines.get(claim.id) ?? [];
+  // Insert per-leg / sibling-duplicate bullets directly into the bulleted
+  // "Claim details" section. When the claim has neither per-leg context nor
+  // any sibling-duplicate relationship this string is empty and the prompt
+  // is byte-equivalent to the legacy version (Task #307 parity guard).
+  const annotationBlock = annotationLines.length > 0 ? `\n${annotationLines.join("\n")}` : "";
+
   const prompt = `Write a professional dispute email for a rejected NEMT (Non-Emergency Medical Transportation) claim.
 
 Claim details:
@@ -57,8 +78,7 @@ Claim details:
 - Car/vehicle number: ${claim.carNumber || "N/A"}
 - Claim amount: $${claim.claimAmount || "0.00"}
 - Error cited: ${claim.errorDetails || "N/A"}
-- Error type: ${claim.errorTypeName || "Unknown"}
-${errorType?.description ? `- Error description: ${errorType.description}` : ""}
+- Error type: ${claim.errorTypeName || "Unknown"}${errorType?.description ? `\n- Error description: ${errorType.description}` : ""}${annotationBlock}
 
 Reason for dispute (from workflow decision): ${disputeReason}
 
@@ -78,6 +98,21 @@ Write a professional, concise dispute email addressed to "MAS Support Team". The
 Respond with JSON in this exact format:
 {"subject": "email subject line", "body": "full email body text"}`;
 
+  const systemPrompt = "You are a professional NEMT claims dispute specialist writing on behalf of a transportation provider. Write clear, factual, and persuasive dispute emails. Each email should read naturally — vary sentence structure, word choice, and phrasing so no two emails sound identical. Avoid boilerplate or robotic language. Always respond with valid JSON containing subject and body fields.";
+
+  return { prompt, systemPrompt };
+}
+
+async function generateWithLLM(
+  claim: typeof claimsTable.$inferSelect,
+  errorType: typeof errorTypesTable.$inferSelect | null,
+  disputeReason: string,
+  promptLegInputs: PromptLegInputsResult,
+): Promise<{ subject: string; body: string }> {
+  const defaultInstructions = await getDefaultDisputeInstructions();
+  const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
+  const { prompt, systemPrompt } = buildPerClaimEmailPrompt({ claim, errorType, disputeReason, instructions, promptLegInputs });
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
@@ -87,7 +122,7 @@ Respond with JSON in this exact format:
         content: prompt,
       },
     ],
-    system: "You are a professional NEMT claims dispute specialist writing on behalf of a transportation provider. Write clear, factual, and persuasive dispute emails. Each email should read naturally — vary sentence structure, word choice, and phrasing so no two emails sound identical. Avoid boilerplate or robotic language. Always respond with valid JSON containing subject and body fields.",
+    system: systemPrompt,
   });
 
   const textBlock = message.content.find((b: any) => b.type === "text");
@@ -123,6 +158,12 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
     }
   }
 
+  // Build prompt-leg inputs OUTSIDE the LLM try/catch (Task #307 guard #10).
+  // Data-shape inconsistency must surface loud — the template fallback below
+  // exists only for LLM/JSON parse failures, not for prompt-build failures.
+  const { claim: claimRow, groupLegs } = await loadGroupLegsForClaim(claim.id);
+  const promptLegInputs = buildPromptLegInputs({ legs: [claimRow], groupLegs });
+
   registerBotProcess("email_generation", id);
   broadcastPresenceEvent({
     type: "bot_started",
@@ -139,7 +180,7 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
     let generationMethod = "llm";
 
     try {
-      const result = await generateWithLLM(claim, errorType, disputeReason);
+      const result = await generateWithLLM(claim, errorType, disputeReason, promptLegInputs);
       subject = result.subject;
       body = result.body;
     } catch {
