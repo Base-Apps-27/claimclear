@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ErrorTypeResponseDecisionTree } from "./errorTypeResponseDecisionTree";
-import type { ErrorTypeResponseDisputeReasonsLibrary } from "./errorTypeResponseDisputeReasonsLibrary";
-import type { ErrorTypeResponseEvidenceRequirements } from "./errorTypeResponseEvidenceRequirements";
+import type { ErrorTypeResponseDecisionTree } from './errorTypeResponseDecisionTree';
+import type { ErrorTypeResponseDisputeReasonsLibrary } from './errorTypeResponseDisputeReasonsLibrary';
+import type { ErrorTypeResponseEvidenceRequirements } from './errorTypeResponseEvidenceRequirements';
 
 export interface ErrorTypeResponse {
   id: number;

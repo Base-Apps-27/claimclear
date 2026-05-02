@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { EmailThreadMessageBodyFormat } from "./emailThreadMessageBodyFormat";
-import type { EmailThreadMessageDirection } from "./emailThreadMessageDirection";
-import type { EmailThreadMessageResponseType } from "./emailThreadMessageResponseType";
+import type { EmailThreadMessageBodyFormat } from './emailThreadMessageBodyFormat';
+import type { EmailThreadMessageDirection } from './emailThreadMessageDirection';
+import type { EmailThreadMessageResponseType } from './emailThreadMessageResponseType';
 
 export interface EmailThreadMessage {
   id: string;

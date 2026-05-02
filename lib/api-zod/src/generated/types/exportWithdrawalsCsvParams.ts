@@ -11,20 +11,20 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ExportWithdrawalsCsvDir } from "./exportWithdrawalsCsvDir";
-import type { ExportWithdrawalsCsvHideAddressed } from "./exportWithdrawalsCsvHideAddressed";
-import type { ExportWithdrawalsCsvSort } from "./exportWithdrawalsCsvSort";
+import type { ExportWithdrawalsCsvDir } from './exportWithdrawalsCsvDir';
+import type { ExportWithdrawalsCsvHideAddressed } from './exportWithdrawalsCsvHideAddressed';
+import type { ExportWithdrawalsCsvSort } from './exportWithdrawalsCsvSort';
 
 export type ExportWithdrawalsCsvParams = {
-  search?: string;
-  reason?: string;
-  hideAddressed?: ExportWithdrawalsCsvHideAddressed;
-  closedFrom?: string;
-  closedTo?: string;
-  /**
-   * Comma-separated user ids — only export rows whose closer matches one of these users
-   */
-  closedBy?: string;
-  sort?: ExportWithdrawalsCsvSort;
-  dir?: ExportWithdrawalsCsvDir;
+search?: string;
+reason?: string;
+hideAddressed?: ExportWithdrawalsCsvHideAddressed;
+closedFrom?: string;
+closedTo?: string;
+/**
+ * Comma-separated user ids — only export rows whose closer matches one of these users
+ */
+closedBy?: string;
+sort?: ExportWithdrawalsCsvSort;
+dir?: ExportWithdrawalsCsvDir;
 };

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { DashboardTimeseriesPointsItem } from "./dashboardTimeseriesPointsItem";
+import type { DashboardTimeseriesPointsItem } from './dashboardTimeseriesPointsItem';
 
 export interface DashboardTimeseries {
   days: number;

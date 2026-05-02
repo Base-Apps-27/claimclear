@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListAttestationPendingState =
-  (typeof ListAttestationPendingState)[keyof typeof ListAttestationPendingState];
+export type ListAttestationPendingState = typeof ListAttestationPendingState[keyof typeof ListAttestationPendingState];
+
 
 export const ListAttestationPendingState = {
-  pending: "pending",
-  queued: "queued",
-  completed: "completed",
+  pending: 'pending',
+  queued: 'queued',
+  completed: 'completed',
 } as const;

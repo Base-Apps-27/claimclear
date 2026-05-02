@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { NeedsClassificationInboxClaim } from "./needsClassificationInboxClaim";
+import type { NeedsClassificationInboxClaim } from './needsClassificationInboxClaim';
 
 export interface NeedsClassificationInboxGroup {
   id: number;

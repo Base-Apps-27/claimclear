@@ -20,12 +20,12 @@ understanding readback / preview generation) instead.
 - resolved: the underlying claim/group is closed
 
  */
-export type EmailThreadConversationStatus =
-  (typeof EmailThreadConversationStatus)[keyof typeof EmailThreadConversationStatus];
+export type EmailThreadConversationStatus = typeof EmailThreadConversationStatus[keyof typeof EmailThreadConversationStatus];
+
 
 export const EmailThreadConversationStatus = {
-  awaiting_their_reply: "awaiting_their_reply",
-  needs_review: "needs_review",
-  acknowledged_pending: "acknowledged_pending",
-  resolved: "resolved",
+  awaiting_their_reply: 'awaiting_their_reply',
+  needs_review: 'needs_review',
+  acknowledged_pending: 'acknowledged_pending',
+  resolved: 'resolved',
 } as const;

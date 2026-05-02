@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { EmailThreadConversationStatus } from "./emailThreadConversationStatus";
-import type { EmailThreadMessage } from "./emailThreadMessage";
+import type { EmailThreadConversationStatus } from './emailThreadConversationStatus';
+import type { EmailThreadMessage } from './emailThreadMessage';
 
 export interface EmailThreadConversation {
   conversationId: string;

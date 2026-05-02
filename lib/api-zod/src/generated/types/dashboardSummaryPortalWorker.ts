@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { WorkerRunSummary } from "./workerRunSummary";
+import type { WorkerRunSummary } from './workerRunSummary';
 
 export type DashboardSummaryPortalWorker = {
   lastRun: WorkerRunSummary | null;

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ImportClaimRow } from "./importClaimRow";
+import type { ImportClaimRow } from './importClaimRow';
 
 export interface ImportClaimsBody {
   rows: ImportClaimRow[];

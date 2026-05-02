@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { DashboardUserProductivityUsersItem } from "./dashboardUserProductivityUsersItem";
+import type { DashboardUserProductivityUsersItem } from './dashboardUserProductivityUsersItem';
 
 export interface DashboardUserProductivity {
   days: number;

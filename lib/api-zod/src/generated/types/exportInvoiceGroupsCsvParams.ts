@@ -11,23 +11,23 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ExportInvoiceGroupsCsvExpiring } from "./exportInvoiceGroupsCsvExpiring";
+import type { ExportInvoiceGroupsCsvExpiring } from './exportInvoiceGroupsCsvExpiring';
 
 export type ExportInvoiceGroupsCsvParams = {
-  status?: string;
-  outcome?: string;
-  search?: string;
-  errorDetails?: string;
-  errorTypeId?: string;
-  createdFrom?: string;
-  createdTo?: string;
-  amountMin?: string;
-  amountMax?: string;
-  expiring?: ExportInvoiceGroupsCsvExpiring;
-  sort?: string;
-  dir?: string;
-  /**
-   * Comma-separated list of column keys to include in export
-   */
-  columns?: string;
+status?: string;
+outcome?: string;
+search?: string;
+errorDetails?: string;
+errorTypeId?: string;
+createdFrom?: string;
+createdTo?: string;
+amountMin?: string;
+amountMax?: string;
+expiring?: ExportInvoiceGroupsCsvExpiring;
+sort?: string;
+dir?: string;
+/**
+ * Comma-separated list of column keys to include in export
+ */
+columns?: string;
 };
