@@ -14,7 +14,6 @@ import type {
   PortalResponseItem,
 } from "@workspace/api-client-react";
 import { useClosureLauncher } from "@/components/closure/closure-launcher";
-import { ActionRow } from "@/components/actions-rail";
 import {
   deriveVerdictMix,
   pickSuggestedNewInvoiceNumber,
@@ -23,9 +22,22 @@ import {
   type VerdictDerivation,
 } from "@/lib/whats-next-derivation";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import {
+  ShieldCheck,
+  Send,
+  XCircle,
+  CheckCircle2,
+  ChevronRight,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ReattestModal } from "./reattest-modal";
-import { AwaitingPayorAgainButton } from "./awaiting-payor-again-button";
+import { useMarkAwaitingPayorAgain } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { NewInvoiceNumberBadge } from "./new-invoice-number-badge";
 
 interface Props {
@@ -34,48 +46,49 @@ interface Props {
   responses: readonly PortalResponseItem[];
   /**
    * True if the operator has sent at least one outbound reply on this
-   * group's email thread. Gates the "I replied — wait for payor again"
-   * button so it can't be clicked before any reply was actually sent.
+   * group's email thread. Gates the "Reply — wait for payor again"
+   * option so it can't be picked before any reply was actually sent.
    */
   hasOperatorReply: boolean;
   onAfterAction: (message: string) => void;
 }
 
 /**
- * The "Step 4" card on Responses Awaiting Review. The verdict picker
- * above writes drafts as the operator clicks; this card unlocks once
- * every actionable leg has a draft (or confirmed) selection on file
- * and surfaces the right Step 4 commit affordances based on the
- * resulting mix.
+ * Step 4 — the **conclusion** of the response-review flow. Once every
+ * actionable leg has a verdict on file the card visibly "wakes up" and
+ * presents the operator's three real choices as a single, sibling list:
  *
- * Per Task #343 the offered actions are pinned to the two real states
- * the user described:
+ *   • **Re-attest** — applies whenever any leg was approved. Opens the
+ *     Re-attest modal which itself asks "now or queue for later?".
+ *   • **Reply — wait for payor again** — applies whenever the row hasn't
+ *     already been stamped as awaiting payor. Disabled until the
+ *     operator has actually sent an outbound reply on the email thread.
+ *   • **Close out (Denied by Payor)** — applies whenever every leg was
+ *     denied. Opens the closure intake dialog.
  *
- *   - **any leg Approved** (`all_approved` or `mixed`) → **Re-attest**
- *     modal (Attest now / Queue for attestation later). Closure is NOT
- *     offered here — the operator can still close out from the leg
- *     detail page if they need to, but the Step 4 card stays focused
- *     on the re-attest path.
+ * These three options are presented as identically-styled "OptionRow"
+ * buttons so the visual hierarchy reads "pick one of these" rather
+ * than the previous mishmash of a yellow box, a small text-style link,
+ * and a footer button.
  *
- *   - **all legs Denied** (`all_denied`) → **Close out (Denied by
- *     Payor)** trigger only. The payor-denial-reason picker is no
- *     longer rendered here — the closure intake dialog itself collects
- *     all the closure detail fields, and the Step 4 contract is "pick
- *     the next step", not "fill out a form".
- *
- *   - **no_verdicts_yet** → A muted nudge to make a selection on each
- *     leg first.
- *
- * Step 4 commit: every CTA on this card promotes the per-leg drafts to
- * `operator_confirmed` in one transaction *before* invoking the
- * downstream action (re-attest stamp / per-leg queue / closure
- * dialog), so the group only leaves `response-pending` once Step 4 is
- * actually committed.
+ * Step 4 commit semantics are unchanged from prior tasks: every CTA on
+ * this card promotes the per-leg drafts to `operator_confirmed` in one
+ * transaction *before* invoking the downstream action (re-attest stamp
+ * / per-leg queue / closure dialog), so the group only leaves
+ * `response-pending` once Step 4 is actually committed.
  */
-export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAfterAction }: Props) {
+export function WhatsNextCard({
+  group,
+  rides,
+  responses,
+  hasOperatorReply,
+  onAfterAction,
+}: Props) {
   const queryClient = useQueryClient();
   const promoteDrafts = usePromoteVerdictDrafts();
   const closureLauncher = useClosureLauncher();
+  const markWaiting = useMarkAwaitingPayorAgain();
+  const { toast } = useToast();
 
   const derivation = useMemo<VerdictDerivation>(
     () => deriveVerdictMix(rides),
@@ -154,17 +167,73 @@ export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAft
     });
   };
 
+  const handleAwaitingPayorAgain = async () => {
+    try {
+      await markWaiting.mutateAsync({ id: group.id, data: {} });
+      invalidate();
+      toast({
+        title: "Awaiting payor",
+        description: "We'll bring this back when the payor responds.",
+      });
+      onAfterAction(`#${group.invoiceNumber} marked awaiting payor again.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not stamp.";
+      toast({
+        title: "Couldn't update",
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // The card only enters its "decision time" visual state once every
+  // actionable leg has a verdict on file. Before that we render a quiet
+  // placeholder so the operator's eye isn't pulled here prematurely.
+  const decisionReady =
+    derivation.allLegsHaveVerdict &&
+    (showReattest || showCloseOut || showAwaitingPayorAgain);
+
   return (
     <div
-      className="rounded-md border bg-card overflow-hidden"
+      className={cn(
+        "rounded-md border overflow-hidden transition-colors",
+        decisionReady
+          ? "border-blue-300 bg-card shadow-sm ring-1 ring-blue-200"
+          : "border-border bg-card",
+      )}
       data-testid="whats-next-card"
+      data-decision-ready={decisionReady ? "true" : "false"}
     >
-      <div className="px-4 py-2.5 border-b bg-muted/30">
+      <div
+        className={cn(
+          "px-4 py-3 border-b",
+          decisionReady
+            ? "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200"
+            : "bg-muted/30",
+        )}
+      >
         <div className="flex items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold">What's next?</h3>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              {decisionReady && (
+                <CheckCircle2 className="h-4 w-4 text-blue-700 flex-shrink-0" />
+              )}
+              <h3
+                className={cn(
+                  "text-sm font-semibold truncate",
+                  decisionReady ? "text-blue-900" : "",
+                )}
+              >
+                {decisionReady
+                  ? "How do you want to move forward?"
+                  : "What's next?"}
+              </h3>
+            </div>
             <p
-              className="text-[11px] text-muted-foreground"
+              className={cn(
+                "text-[11px] mt-0.5",
+                decisionReady ? "text-blue-900/80" : "text-muted-foreground",
+              )}
               data-testid="whats-next-mix-summary"
             >
               <VerdictMixSummary d={derivation} />
@@ -178,14 +247,14 @@ export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAft
         )}
       </div>
 
-      <div className="p-3 space-y-3">
+      <div className="p-3 space-y-2">
         {derivation.mix === "no_verdicts_yet" && (
           <p
             className="text-xs text-muted-foreground italic"
             data-testid="whats-next-empty"
           >
-            Record a verdict on each leg above first — next steps unlock
-            once the verdicts are in.
+            Record a verdict on each leg above first — your options here
+            unlock once the verdicts are in.
           </p>
         )}
 
@@ -197,61 +266,47 @@ export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAft
             {derivation.pendingCount} leg
             {derivation.pendingCount === 1 ? "" : "s"} still need
             {derivation.pendingCount === 1 ? "s" : ""} a selection — make
-            a pick on every leg above to unlock next steps.
+            a pick on every leg above to unlock your options.
           </p>
         )}
 
-        {showReattest && derivation.allLegsHaveVerdict && (
-          <div className="space-y-1.5" data-testid="whats-next-lane-reattest">
-            <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
-              {derivation.mix === "mixed"
-                ? `Approved leg${derivation.approvedCount === 1 ? "" : "s"} (${derivation.approvedCount}) — re-attest in the portal`
-                : "Re-attest in the payor portal"}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full h-auto py-2 px-3 flex flex-col items-start gap-0.5 bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900"
-              onClick={() => setReattestOpen(true)}
-              data-testid="button-open-reattest"
-            >
-              <span className="flex items-center gap-2 font-semibold text-xs">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Re-attest
-              </span>
-              <span className="text-[11px] font-normal opacity-80 text-left">
-                Walk through the portal steps now, or queue them for someone
-                with portal access.
-              </span>
-            </Button>
-          </div>
-        )}
+        {decisionReady && (
+          <>
+            {showReattest && (
+              <OptionRow
+                tone="amber"
+                icon={<ShieldCheck className="h-4 w-4" />}
+                title="Re-attest"
+                description={
+                  derivation.mix === "mixed"
+                    ? `${derivation.approvedCount} approved leg${derivation.approvedCount === 1 ? "" : "s"} need re-attestation in the portal.`
+                    : "Re-attest the corrected info in the payor portal."
+                }
+                onClick={() => setReattestOpen(true)}
+                testId="button-open-reattest"
+              />
+            )}
 
-        {showCloseOut && (
-          <div className="space-y-1.5" data-testid="whats-next-lane-closure">
-            <div className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground">
-              Closure — payor formally denied
-            </div>
-            <ActionRow
-              icon={<ArrowRight className="h-3.5 w-3.5" />}
-              label="Close out (Denied by Payor)"
-              sub="Payor formally denied — close out, no further dispute"
-              disabled={promoteDrafts.isPending}
-              onClick={openCloseOut}
-              testId="button-closure-denied-by-payor"
-            />
-          </div>
-        )}
+            {showCloseOut && (
+              <OptionRow
+                tone="rose"
+                icon={<XCircle className="h-4 w-4" />}
+                title="Cancel altogether"
+                description="Payor formally denied — close this out as Denied by Payor."
+                onClick={openCloseOut}
+                disabled={promoteDrafts.isPending}
+                testId="button-closure-denied-by-payor"
+              />
+            )}
 
-        {derivation.mix === "all_approved" && (
-          <p
-            className="text-[11px] text-muted-foreground italic"
-            data-testid="whats-next-no-denial-needed"
-          >
-            No denied legs on this response — only the re-attest step
-            remains.
-          </p>
+            {showAwaitingPayorAgain && (
+              <ReplyOptionRow
+                hasOperatorReply={hasOperatorReply}
+                onClick={handleAwaitingPayorAgain}
+                disabled={markWaiting.isPending}
+              />
+            )}
+          </>
         )}
 
         {derivation.mix === "no_verdicts_yet" && newInvoiceNumber && (
@@ -259,21 +314,6 @@ export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAft
             Heads up: the payor cited a new invoice number above. Record
             the per-leg verdicts to surface the right next-step controls.
           </p>
-        )}
-
-        {showAwaitingPayorAgain && (
-          <div className="pt-1">
-            <AwaitingPayorAgainButton
-              group={group}
-              onAfterStamp={invalidate}
-              hasOperatorReply={hasOperatorReply}
-            />
-            <p className="mt-1 text-[10px] text-muted-foreground text-center">
-              {hasOperatorReply
-                ? "Use this when you've already sent a reply and want this row to come back when the payor responds."
-                : "Send a reply to the payor in the email thread above to unlock this."}
-            </p>
-          </div>
         )}
       </div>
 
@@ -306,6 +346,116 @@ export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAft
   );
 }
 
+/**
+ * Shared visual atom for the three Step-4 options. All three render
+ * the same shape so the card reads as a single "pick one" list. The
+ * `tone` prop tints the leading icon and hover state, but every row is
+ * the same height, padding, and typography.
+ */
+interface OptionRowProps {
+  tone: "amber" | "blue" | "rose";
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+  disabled?: boolean;
+  testId?: string;
+}
+
+function OptionRow({
+  tone,
+  icon,
+  title,
+  description,
+  onClick,
+  disabled,
+  testId,
+}: OptionRowProps) {
+  const toneClasses = {
+    amber:
+      "border-amber-300 hover:bg-amber-50 [&_[data-icon-bg]]:bg-amber-100 [&_[data-icon-bg]]:text-amber-700",
+    blue:
+      "border-blue-300 hover:bg-blue-50 [&_[data-icon-bg]]:bg-blue-100 [&_[data-icon-bg]]:text-blue-700",
+    rose:
+      "border-rose-300 hover:bg-rose-50 [&_[data-icon-bg]]:bg-rose-100 [&_[data-icon-bg]]:text-rose-700",
+  }[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "w-full flex items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
+        toneClasses,
+      )}
+      data-testid={testId}
+    >
+      <span
+        data-icon-bg
+        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+      >
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="block text-[11px] text-muted-foreground leading-snug">
+          {description}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+    </button>
+  );
+}
+
+/**
+ * The Reply option carries an extra gate (operator must have actually
+ * sent an outbound reply on the thread) plus a tooltip explaining the
+ * gate, so it gets its own thin wrapper around `OptionRow` rather than
+ * a fourth disabled-state branch on every caller.
+ */
+function ReplyOptionRow({
+  hasOperatorReply,
+  onClick,
+  disabled,
+}: {
+  hasOperatorReply: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const row = (
+    <OptionRow
+      tone="blue"
+      icon={<Send className="h-4 w-4" />}
+      title="I replied — wait for payor"
+      description={
+        hasOperatorReply
+          ? "Drop this off the queue until the payor replies again."
+          : "Send a reply on the email thread above to unlock this."
+      }
+      onClick={onClick}
+      disabled={disabled || !hasOperatorReply}
+      testId="button-awaiting-payor-again"
+    />
+  );
+  if (!hasOperatorReply) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="block w-full" tabIndex={0}>
+            {row}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          Send a reply to the payor in the email thread above first —
+          this unlocks once your reply has been sent.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return row;
+}
+
 function VerdictMixSummary({ d }: { d: VerdictDerivation }) {
   if (d.total === 0) return <>No actionable legs on this response.</>;
   if (d.mix === "no_verdicts_yet") {
@@ -319,23 +469,23 @@ function VerdictMixSummary({ d }: { d: VerdictDerivation }) {
   if (d.mix === "all_approved") {
     return (
       <>
-        All {d.total} leg{d.total === 1 ? "" : "s"} approved — only the
-        re-attest step remains.
+        All {d.total} leg{d.total === 1 ? "" : "s"} approved — pick how to
+        wrap up.
       </>
     );
   }
   if (d.mix === "all_denied") {
     return (
       <>
-        All {d.total} leg{d.total === 1 ? "" : "s"} denied — close out as
-        Denied by Payor when ready.
+        All {d.total} leg{d.total === 1 ? "" : "s"} denied — pick how to
+        wrap up.
       </>
     );
   }
   return (
     <>
       {d.approvedCount} approved · {d.deniedCount} denied
-      {d.pendingCount > 0 ? ` · ${d.pendingCount} still pending` : ""}.
+      {d.pendingCount > 0 ? ` · ${d.pendingCount} still pending` : " — pick how to wrap up."}
     </>
   );
 }
