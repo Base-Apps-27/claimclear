@@ -33,6 +33,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
+import { PromptContextBadge } from "@/components/prompt-context-badge";
 
 const RESOLVED_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set(["ready", "dropped", "excluded"]);
 
@@ -309,7 +310,13 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
     <>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Understanding readback</h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold">Understanding readback</h3>
+              {/* Surface what the AI prompt sees on top of the dispute
+                   reason: per-leg findings + sibling-duplicate rollups
+                   (Task #311). Hidden when neither counter is non-zero. */}
+              <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
+            </div>
             <div className="flex items-center gap-2">
               {readbackConfirmed && (
                 <Badge variant="secondary" className="text-[10px]">
@@ -459,7 +466,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 edited but unreviewed draft cannot accidentally ship. */}
             <div className="space-y-3" data-testid="draft-review-step">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2 flex-wrap">
                   Review &amp; edit dispute write-up
                   {draftReviewed && (
                     <Badge variant="secondary" className="text-[10px]">
@@ -469,6 +476,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                         : ""}
                     </Badge>
                   )}
+                  {/* Mirror the badge above the draft so reviewers know
+                       which legs/duplicates shaped the AI write-up
+                       without scrolling back up to the readback section
+                       (Task #311). */}
+                  <PromptContextBadge legs={rides} testId="badge-prompt-context-draft" />
                 </h3>
                 <div className="flex items-center gap-2">
                   <Button

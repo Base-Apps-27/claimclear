@@ -10,6 +10,7 @@ import {
   type ActionCategory,
 } from "@/lib/audit-action-meta";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { summarizePreflightMetadata } from "@/lib/prompt-context-counters";
 
 type ActivityAuditLog = {
   id: number;
@@ -196,6 +197,15 @@ export function ActivityFeed({
                   item.log.action === "closure_review_updated"
                     ? readReviewBlock(item.log.metadata)
                     : null;
+                // Preflight per-leg-context audit counters (Task #311):
+                // surface what extra context the AI prompt actually saw
+                // when the operator ran the readback so reviewers can
+                // tell at a glance whether per-leg findings or sibling
+                // duplicate rollups influenced the AI's understanding.
+                const preflight =
+                  item.log.action === "portal_understanding_preflight"
+                    ? summarizePreflightMetadata(item.log.metadata)
+                    : null;
                 const driverNames = closure ? namesList(closure.closureDrivers) : "";
                 const dispatcherNames = closure ? namesList(closure.closureDispatchers) : "";
                 const reasonLabel = closure?.closureReason
@@ -302,6 +312,19 @@ export function ActivityFeed({
                               <span className="text-foreground">{closure.closureCommunicatedTo}</span>
                             </div>
                           )}
+                        </div>
+                      )}
+                      {preflight && (
+                        <div
+                          className="mt-1.5 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs space-y-1 dark:border-violet-900 dark:bg-violet-950/40"
+                          data-testid={`activity-preflight-context-${item.id}`}
+                        >
+                          <div className="font-semibold text-violet-700 dark:text-violet-300">
+                            AI prompt context
+                          </div>
+                          <p className="text-violet-900 dark:text-violet-200">
+                            {preflight.text}.
+                          </p>
                         </div>
                       )}
                       {review && (review.closureCommunicatedTo || review.closureReviewNotes) && (
