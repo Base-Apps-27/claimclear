@@ -452,6 +452,35 @@ export const InvoiceGroupResponseMacroPhase = {
 } as const;
 
 /**
+ * Labeled empty-state classifier for the Service Date column
+(Task #353). Drives the `<ServiceDateCell />` component on
+the list, group detail, and dashboard hero rows.
+  * `has_date` — `earliestDate` is non-null; render the date
+  * `no_claims` — no children attached
+  * `no_dated_claims` — children exist, every `date` is blank
+  * `parse_failed` — dated children but none parse (legacy
+    shape; effectively unreachable since `claims.date` was
+    promoted to a typed DATE column)
+  * `all_dated_legs_excluded` — every dated leg is excluded
+    or marked sibling-duplicate
+Populated by the list endpoint and the detail endpoint; null
+on payload shapes that don't compute it (e.g. PATCH echoes).
+
+ * @nullable
+ */
+export type InvoiceGroupResponseServiceDateReason =
+  | (typeof InvoiceGroupResponseServiceDateReason)[keyof typeof InvoiceGroupResponseServiceDateReason]
+  | null;
+
+export const InvoiceGroupResponseServiceDateReason = {
+  has_date: "has_date",
+  no_claims: "no_claims",
+  no_dated_claims: "no_dated_claims",
+  parse_failed: "parse_failed",
+  all_dated_legs_excluded: "all_dated_legs_excluded",
+} as const;
+
+/**
  * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
  * @nullable
  */
@@ -608,6 +637,24 @@ export interface InvoiceGroupResponse {
    * @nullable
    */
   earliestDate?: string | null;
+  /**
+   * Labeled empty-state classifier for the Service Date column
+(Task #353). Drives the `<ServiceDateCell />` component on
+the list, group detail, and dashboard hero rows.
+  * `has_date` — `earliestDate` is non-null; render the date
+  * `no_claims` — no children attached
+  * `no_dated_claims` — children exist, every `date` is blank
+  * `parse_failed` — dated children but none parse (legacy
+    shape; effectively unreachable since `claims.date` was
+    promoted to a typed DATE column)
+  * `all_dated_legs_excluded` — every dated leg is excluded
+    or marked sibling-duplicate
+Populated by the list endpoint and the detail endpoint; null
+on payload shapes that don't compute it (e.g. PATCH echoes).
+
+   * @nullable
+   */
+  serviceDateReason?: InvoiceGroupResponseServiceDateReason;
   /**
    * Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.
    * @nullable
@@ -3481,6 +3528,27 @@ re-attestation, or both. Drives the new MAS Action surfaces.
  */
   macroPhase?: ListInvoiceGroupsMacroPhase;
   /**
+ * Restrict to groups whose `service_date` is null — i.e. the
+Service Date column would render an empty state. Pairs with
+`missingServiceDateReason` to drill into a specific reason.
+See Task #353 (`<ServiceDateCell />` and the
+`serviceDateReason` enum on every list row).
+
+ */
+  missingServiceDate?: boolean;
+  /**
+ * Sub-facet for `missingServiceDate=true`. Filters to groups in
+the named empty-state branch:
+  * `no_claims` — no children attached at all
+  * `no_dated_claims` — children exist, every `date` is blank
+  * `parse_failed` — children have date strings but none parse
+  * `all_dated_legs_excluded` — every dated leg is excluded
+    or sibling-duplicate
+Implies `missingServiceDate=true` (no need to send both).
+
+ */
+  missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
+  /**
    * Column to sort by
    */
   sort?: ListInvoiceGroupsSort;
@@ -3530,6 +3598,16 @@ export const ListInvoiceGroupsMacroPhase = {
   "awaiting-payout": "awaiting-payout",
   closed: "closed",
   "on-hold": "on-hold",
+} as const;
+
+export type ListInvoiceGroupsMissingServiceDateReason =
+  (typeof ListInvoiceGroupsMissingServiceDateReason)[keyof typeof ListInvoiceGroupsMissingServiceDateReason];
+
+export const ListInvoiceGroupsMissingServiceDateReason = {
+  no_claims: "no_claims",
+  no_dated_claims: "no_dated_claims",
+  parse_failed: "parse_failed",
+  all_dated_legs_excluded: "all_dated_legs_excluded",
 } as const;
 
 export type ListInvoiceGroupsSort =

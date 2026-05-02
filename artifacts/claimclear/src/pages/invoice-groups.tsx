@@ -8,7 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link, useLocation } from "wouter";
-import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, ListTodo, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, DollarSign, Clock } from "lucide-react";
+import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, ListTodo, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock } from "lucide-react";
+import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -126,6 +127,17 @@ export default function InvoiceGroupsList() {
   const filterExpiringRaw = get("expiring");
   const filterExpiring: "" | "soon" | "urgent" =
     filterExpiringRaw === "soon" || filterExpiringRaw === "urgent" ? filterExpiringRaw : "";
+  // "Missing service date" facet (Task #353). The boolean lights the
+  // facet up; the optional reason narrows to a specific empty-state
+  // branch (no_claims, no_dated_claims, parse_failed, all_dated_legs_excluded).
+  const filterMissingServiceDate = get("missingServiceDate") === "true";
+  const filterMissingReasonRaw = get("missingServiceDateReason");
+  const MISSING_REASONS = ["no_claims", "no_dated_claims", "parse_failed", "all_dated_legs_excluded"] as const;
+  type MissingReason = typeof MISSING_REASONS[number];
+  const filterMissingReason: MissingReason | "" =
+    (MISSING_REASONS as readonly string[]).includes(filterMissingReasonRaw)
+      ? (filterMissingReasonRaw as MissingReason)
+      : "";
 
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
@@ -156,6 +168,8 @@ export default function InvoiceGroupsList() {
     amountMin: filterAmountMin || undefined,
     amountMax: filterAmountMax || undefined,
     expiring: (filterExpiring || undefined) as ListInvoiceGroupsParams["expiring"],
+    missingServiceDate: (filterMissingServiceDate || filterMissingReason ? true : undefined) as ListInvoiceGroupsParams["missingServiceDate"],
+    missingServiceDateReason: (filterMissingReason || undefined) as ListInvoiceGroupsParams["missingServiceDateReason"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     limit: pageSize,
@@ -218,10 +232,10 @@ export default function InvoiceGroupsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -253,8 +267,22 @@ export default function InvoiceGroupsList() {
       const label = filterExpiring === "urgent" ? "Must file today" : "Expiring soon (≤ 10 days)";
       result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
     }
+    if (filterMissingServiceDate || filterMissingReason) {
+      const reasonLabel: Record<MissingReason | "", string> = {
+        "": "Missing service date",
+        no_claims: "Missing service date · No claims attached",
+        no_dated_claims: "Missing service date · No dated claims",
+        parse_failed: "Missing service date · Couldn't read dates",
+        all_dated_legs_excluded: "Missing service date · All dated legs excluded",
+      };
+      result.push({
+        key: "missingServiceDate",
+        label: reasonLabel[filterMissingReason],
+        onRemove: () => set({ missingServiceDate: null, missingServiceDateReason: null, page: null }, false),
+      });
+    }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, errorTypes, activeTab]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -296,10 +324,11 @@ export default function InvoiceGroupsList() {
   const createdDateCount = filterCreatedFrom || filterCreatedTo ? 1 : 0;
   const amountCount = filterAmountMin || filterAmountMax ? 1 : 0;
   const deadlineCount = filterExpiring ? 1 : 0;
+  const missingServiceDateCount = (filterMissingServiceDate || filterMissingReason) ? 1 : 0;
 
   const totalAppliedFilters =
     statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
-    createdDateCount + amountCount + deadlineCount;
+    createdDateCount + amountCount + deadlineCount + missingServiceDateCount;
 
   const filterCategories: FacetedFilterCategory[] = useMemo(() => [
     {
@@ -401,6 +430,50 @@ export default function InvoiceGroupsList() {
         />
       ),
     },
+    // "Missing service date" facet (Task #353). The first option is a
+    // catch-all (`true`) so an operator can sweep up every empty-state
+    // group; the per-reason options narrow to a specific branch.
+    // Single-select because the sub-reason filter implies the boolean,
+    // and stacking two would be confusing in the chip strip.
+    {
+      id: "missingServiceDate",
+      label: "Missing Service Date",
+      icon: CalendarOff,
+      appliedCount: missingServiceDateCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Missing service date"
+          exclusive
+          options={[
+            { id: "any", label: "Any reason" },
+            { id: "no_claims", label: "No claims attached" },
+            { id: "no_dated_claims", label: "No dated claims" },
+            { id: "parse_failed", label: "Couldn't read claim dates" },
+            { id: "all_dated_legs_excluded", label: "All dated legs excluded" },
+          ]}
+          selected={
+            filterMissingReason
+              ? [filterMissingReason]
+              : filterMissingServiceDate
+                ? ["any"]
+                : []
+          }
+          onToggle={(id, next) => {
+            if (!next) {
+              set({ missingServiceDate: null, missingServiceDateReason: null, page: null }, false);
+              return;
+            }
+            if (id === "any") {
+              set({ missingServiceDate: "true", missingServiceDateReason: null, page: null }, false);
+            } else {
+              set({ missingServiceDate: "true", missingServiceDateReason: id, page: null }, false);
+            }
+          }}
+          testIdPrefix="facet-missingServiceDate"
+          hint="Replaces the bare em-dash with a labeled empty state; pick a reason to drill in."
+        />
+      ),
+    },
     {
       id: "createdDate",
       label: "Created Date",
@@ -452,10 +525,11 @@ export default function InvoiceGroupsList() {
     },
   ], [
     statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
-    createdDateCount, amountCount, deadlineCount,
+    createdDateCount, amountCount, deadlineCount, missingServiceDateCount,
     statusOptions, outcomeOptions, errorTypeOptions,
     filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
     filterExpiring,
+    filterMissingServiceDate, filterMissingReason,
     filterCreatedFrom, filterCreatedTo,
     filterAmountMin, filterAmountMax,
     set,
@@ -555,7 +629,7 @@ export default function InvoiceGroupsList() {
           <Card>
             <FilterChipStrip
               chips={chips}
-              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, page: null }, false); }}
+              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, page: null }, false); }}
             />
 
             <CardContent className="p-0">
@@ -697,8 +771,13 @@ export default function InvoiceGroupsList() {
                               </td>
                             )}
                             {visibleCols.has("serviceDate") && (
-                              <td className={`px-4 ${tdPy} whitespace-nowrap tabular-nums text-xs ${group.isUrgent ? "font-semibold" : "text-muted-foreground"}`}>
-                                {group.earliestDate ? formatDate(group.earliestDate) : '—'}
+                              <td className={`px-4 ${tdPy}`}>
+                                <ServiceDateCell
+                                  groupId={group.id}
+                                  earliestDate={group.earliestDate}
+                                  reason={group.serviceDateReason as ServiceDateReason | null | undefined}
+                                  isUrgent={group.isUrgent}
+                                />
                               </td>
                             )}
                             {visibleCols.has("rideCount") && (

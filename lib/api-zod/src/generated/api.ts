@@ -113,6 +113,23 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Filter groups by server-derived macro phase. `mas-action-required`\nreturns groups that owe per-leg MAS cancellations, group-level\nre-attestation, or both. Drives the new MAS Action surfaces.\n",
     ),
+  missingServiceDate: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Restrict to groups whose `service_date` is null — i.e. the\nService Date column would render an empty state. Pairs with\n`missingServiceDateReason` to drill into a specific reason.\nSee Task #353 (`<ServiceDateCell \/>` and the\n`serviceDateReason` enum on every list row).\n",
+    ),
+  missingServiceDateReason: zod
+    .enum([
+      "no_claims",
+      "no_dated_claims",
+      "parse_failed",
+      "all_dated_legs_excluded",
+    ])
+    .optional()
+    .describe(
+      "Sub-facet for `missingServiceDate=true`. Filters to groups in\nthe named empty-state branch:\n  \* `no_claims` — no children attached at all\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — children have date strings but none parse\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or sibling-duplicate\nImplies `missingServiceDate=true` (no need to send both).\n",
+    ),
   sort: zod
     .enum([
       "invoiceNumber",
@@ -312,6 +329,19 @@ export const ListInvoiceGroupsResponse = zod.object({
         .nullish()
         .describe(
           "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+        ),
+      serviceDateReason: zod
+        .union([
+          zod.literal("has_date"),
+          zod.literal("no_claims"),
+          zod.literal("no_dated_claims"),
+          zod.literal("parse_failed"),
+          zod.literal("all_dated_legs_excluded"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
         ),
       effectiveDaysLeft: zod
         .number()
@@ -725,6 +755,19 @@ export const GetInvoiceGroupResponse = zod
       .nullish()
       .describe(
         "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+      ),
+    serviceDateReason: zod
+      .union([
+        zod.literal("has_date"),
+        zod.literal("no_claims"),
+        zod.literal("no_dated_claims"),
+        zod.literal("parse_failed"),
+        zod.literal("all_dated_legs_excluded"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
       ),
     effectiveDaysLeft: zod
       .number()
@@ -1610,6 +1653,19 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -1905,6 +1961,19 @@ export const PackageInvoiceGroupResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -2195,6 +2264,19 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -2542,6 +2624,19 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -2835,6 +2930,19 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -3125,6 +3233,19 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -3410,6 +3531,19 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -3784,6 +3918,19 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -4093,6 +4240,19 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -4497,6 +4657,19 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -4789,6 +4962,19 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -5089,6 +5275,19 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -5381,6 +5580,19 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -5670,6 +5882,19 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
     ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+    ),
   effectiveDaysLeft: zod
     .number()
     .nullish()
@@ -5958,6 +6183,19 @@ export const StampPreviewGeneratedResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -6267,6 +6505,19 @@ export const CompleteGroupReattestResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()
@@ -16573,6 +16824,19 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
         ),
+      serviceDateReason: zod
+        .union([
+          zod.literal("has_date"),
+          zod.literal("no_claims"),
+          zod.literal("no_dated_claims"),
+          zod.literal("parse_failed"),
+          zod.literal("all_dated_legs_excluded"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
+        ),
       effectiveDaysLeft: zod
         .number()
         .nullish()
@@ -19157,6 +19421,19 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .nullish()
     .describe(
       "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  serviceDateReason: zod
+    .union([
+      zod.literal("has_date"),
+      zod.literal("no_claims"),
+      zod.literal("no_dated_claims"),
+      zod.literal("parse_failed"),
+      zod.literal("all_dated_legs_excluded"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Labeled empty-state classifier for the Service Date column\n(Task #353). Drives the `<ServiceDateCell \/>` component on\nthe list, group detail, and dashboard hero rows.\n  \* `has_date` — `earliestDate` is non-null; render the date\n  \* `no_claims` — no children attached\n  \* `no_dated_claims` — children exist, every `date` is blank\n  \* `parse_failed` — dated children but none parse (legacy\n    shape; effectively unreachable since `claims.date` was\n    promoted to a typed DATE column)\n  \* `all_dated_legs_excluded` — every dated leg is excluded\n    or marked sibling-duplicate\nPopulated by the list endpoint and the detail endpoint; null\non payload shapes that don't compute it (e.g. PATCH echoes).\n",
     ),
   effectiveDaysLeft: zod
     .number()

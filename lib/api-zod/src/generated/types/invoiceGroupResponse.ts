@@ -19,6 +19,7 @@ import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEv
 import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
+import type { InvoiceGroupResponseServiceDateReason } from "./invoiceGroupResponseServiceDateReason";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
 import type { PayorDenialReasonCode } from "./payorDenialReasonCode";
 
@@ -143,6 +144,24 @@ export interface InvoiceGroupResponse {
    * @nullable
    */
   earliestDate?: string | null;
+  /**
+   * Labeled empty-state classifier for the Service Date column
+(Task #353). Drives the `<ServiceDateCell />` component on
+the list, group detail, and dashboard hero rows.
+  * `has_date` — `earliestDate` is non-null; render the date
+  * `no_claims` — no children attached
+  * `no_dated_claims` — children exist, every `date` is blank
+  * `parse_failed` — dated children but none parse (legacy
+    shape; effectively unreachable since `claims.date` was
+    promoted to a typed DATE column)
+  * `all_dated_legs_excluded` — every dated leg is excluded
+    or marked sibling-duplicate
+Populated by the list endpoint and the detail endpoint; null
+on payload shapes that don't compute it (e.g. PATCH echoes).
+
+   * @nullable
+   */
+  serviceDateReason?: InvoiceGroupResponseServiceDateReason;
   /**
    * Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.
    * @nullable

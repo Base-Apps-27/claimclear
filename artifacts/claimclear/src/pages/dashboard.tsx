@@ -35,7 +35,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
 function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
@@ -576,7 +577,13 @@ export default function Dashboard() {
                 primary={g.invoiceNumber}
                 sub={
                   <>
-                    {formatDate(g.earliestDate)} · {g.status}
+                    <ServiceDateCell
+                      groupId={g.id}
+                      earliestDate={g.earliestDate}
+                      reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                      isUrgent={g.isUrgent}
+                    />{" · "}
+                    {g.status}
                   </>
                 }
                 right={formatCurrency(g.totalAmount)}
@@ -649,7 +656,13 @@ export default function Dashboard() {
                 primary={g.invoiceNumber}
                 sub={
                   <>
-                    {formatDate(g.earliestDate)} · {g.status}
+                    <ServiceDateCell
+                      groupId={g.id}
+                      earliestDate={g.earliestDate}
+                      reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                      isUrgent={g.isUrgent}
+                    />{" · "}
+                    {g.status}
                   </>
                 }
                 right={formatCurrency(g.totalAmount)}
@@ -685,7 +698,13 @@ export default function Dashboard() {
                 primary={g.invoiceNumber}
                 sub={
                   <>
-                    {formatDate(g.earliestDate)} · {g.status}
+                    <ServiceDateCell
+                      groupId={g.id}
+                      earliestDate={g.earliestDate}
+                      reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                      isUrgent={g.isUrgent}
+                    />{" · "}
+                    {g.status}
                   </>
                 }
                 right={formatCurrency(g.totalAmount)}

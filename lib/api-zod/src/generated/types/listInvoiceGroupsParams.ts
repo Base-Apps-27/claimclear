@@ -15,6 +15,7 @@ import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
 import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
 import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
 import type { ListInvoiceGroupsMacroPhase } from "./listInvoiceGroupsMacroPhase";
+import type { ListInvoiceGroupsMissingServiceDateReason } from "./listInvoiceGroupsMissingServiceDateReason";
 import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
 
 export type ListInvoiceGroupsParams = {
@@ -62,6 +63,27 @@ re-attestation, or both. Drives the new MAS Action surfaces.
 
  */
   macroPhase?: ListInvoiceGroupsMacroPhase;
+  /**
+ * Restrict to groups whose `service_date` is null — i.e. the
+Service Date column would render an empty state. Pairs with
+`missingServiceDateReason` to drill into a specific reason.
+See Task #353 (`<ServiceDateCell />` and the
+`serviceDateReason` enum on every list row).
+
+ */
+  missingServiceDate?: boolean;
+  /**
+ * Sub-facet for `missingServiceDate=true`. Filters to groups in
+the named empty-state branch:
+  * `no_claims` — no children attached at all
+  * `no_dated_claims` — children exist, every `date` is blank
+  * `parse_failed` — children have date strings but none parse
+  * `all_dated_legs_excluded` — every dated leg is excluded
+    or sibling-duplicate
+Implies `missingServiceDate=true` (no need to send both).
+
+ */
+  missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
   /**
    * Column to sort by
    */

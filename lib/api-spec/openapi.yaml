@@ -178,6 +178,30 @@ paths:
           schema:
             type: string
             enum: [pre-submit, in-flight, response-pending, mas-action-required, awaiting-payout, closed, on-hold]
+        - name: missingServiceDate
+          in: query
+          description: |
+            Restrict to groups whose `service_date` is null — i.e. the
+            Service Date column would render an empty state. Pairs with
+            `missingServiceDateReason` to drill into a specific reason.
+            See Task #353 (`<ServiceDateCell />` and the
+            `serviceDateReason` enum on every list row).
+          schema:
+            type: boolean
+        - name: missingServiceDateReason
+          in: query
+          description: |
+            Sub-facet for `missingServiceDate=true`. Filters to groups in
+            the named empty-state branch:
+              * `no_claims` — no children attached at all
+              * `no_dated_claims` — children exist, every `date` is blank
+              * `parse_failed` — children have date strings but none parse
+              * `all_dated_legs_excluded` — every dated leg is excluded
+                or sibling-duplicate
+            Implies `missingServiceDate=true` (no need to send both).
+          schema:
+            type: string
+            enum: [no_claims, no_dated_claims, parse_failed, all_dated_legs_excluded]
         - name: sort
           in: query
           description: Column to sort by
@@ -4737,6 +4761,23 @@ components:
         earliestDate:
           type: ["string", "null"]
           description: "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints."
+        serviceDateReason:
+          type: ["string", "null"]
+          enum: [has_date, no_claims, no_dated_claims, parse_failed, all_dated_legs_excluded, null]
+          description: |
+            Labeled empty-state classifier for the Service Date column
+            (Task #353). Drives the `<ServiceDateCell />` component on
+            the list, group detail, and dashboard hero rows.
+              * `has_date` — `earliestDate` is non-null; render the date
+              * `no_claims` — no children attached
+              * `no_dated_claims` — children exist, every `date` is blank
+              * `parse_failed` — dated children but none parse (legacy
+                shape; effectively unreachable since `claims.date` was
+                promoted to a typed DATE column)
+              * `all_dated_legs_excluded` — every dated leg is excluded
+                or marked sibling-duplicate
+            Populated by the list endpoint and the detail endpoint; null
+            on payload shapes that don't compute it (e.g. PATCH echoes).
         effectiveDaysLeft:
           type: ["integer", "null"]
           description: "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints."

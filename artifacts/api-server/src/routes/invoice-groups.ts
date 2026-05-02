@@ -32,6 +32,12 @@ import {
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
 } from "./dashboard";
+import {
+  classifyGroupServiceDateReason,
+  GROUP_SERVICE_DATE_REASONS,
+  type GroupServiceDateReason,
+  type ServiceDateReasonLeg,
+} from "../lib/group-no-date-reason";
 
 // A group is only "on the 30-day clock" while its status is one we still
 // owe action on. Once it's `Portal Queued` (operator submitted via the
@@ -192,7 +198,94 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     if (phaseCondition) conditions.push(phaseCondition);
   }
 
+  // Missing-service-date facet (Task #353). The sub-reason filter
+  // implies the boolean filter, so passing only `missingServiceDateReason`
+  // is enough — this matches the contract documented on the openapi
+  // spec and keeps the URL short for deep-linkable filter chips.
+  const missingReasonRaw = typeof query.missingServiceDateReason === "string"
+    ? query.missingServiceDateReason
+    : "";
+  const missingReason = missingReasonRaw && missingReasonRaw !== "has_date"
+    && (GROUP_SERVICE_DATE_REASONS as readonly string[]).includes(missingReasonRaw)
+    ? (missingReasonRaw as Exclude<GroupServiceDateReason, "has_date">)
+    : null;
+  const missingFlag = String(query.missingServiceDate ?? "").toLowerCase() === "true";
+  if (missingReason || missingFlag) {
+    conditions.push(buildMissingServiceDateCondition(missingReason));
+  }
+
   return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+// SQL builder for the "Missing service date" facet. The base predicate
+// is `service_date IS NULL`; the optional sub-reason narrows further
+// using EXISTS subqueries against `claims` so the work stays in the
+// database (no JS-side post-filter that would break pagination + counts).
+//
+// Keep these SQL fragments aligned with the JS classifier in
+// `lib/group-no-date-reason.ts`:
+//   - parse_failed is effectively unreachable now that `claims.date`
+//     is a typed DATE column (NULL == no date; non-null always parses)
+//     so we treat it as the empty set in SQL.
+//   - all_dated_legs_excluded uses `is distinct from false` so an
+//     unset `included_in_dispute` (which the schema defaults to true)
+//     and an explicit `true` are both treated as "active".
+function buildMissingServiceDateCondition(
+  reason: Exclude<GroupServiceDateReason, "has_date"> | null,
+): SQL {
+  const baseNull = isNull(invoiceGroupsTable.serviceDate);
+
+  if (reason === "no_claims") {
+    return and(
+      baseNull,
+      sql`not exists (
+        select 1 from claims c
+        where c.invoice_group_id = ${invoiceGroupsTable.id}
+      )`,
+    ) as SQL;
+  }
+
+  if (reason === "no_dated_claims") {
+    return and(
+      baseNull,
+      sql`exists (
+        select 1 from claims c
+        where c.invoice_group_id = ${invoiceGroupsTable.id}
+      )`,
+      sql`not exists (
+        select 1 from claims c
+        where c.invoice_group_id = ${invoiceGroupsTable.id}
+          and c.date is not null
+      )`,
+    ) as SQL;
+  }
+
+  if (reason === "all_dated_legs_excluded") {
+    return and(
+      baseNull,
+      sql`exists (
+        select 1 from claims c
+        where c.invoice_group_id = ${invoiceGroupsTable.id}
+          and c.date is not null
+      )`,
+      sql`not exists (
+        select 1 from claims c
+        where c.invoice_group_id = ${invoiceGroupsTable.id}
+          and c.date is not null
+          and c.included_in_dispute is distinct from false
+          and c.duplicate_of_claim_id is null
+      )`,
+    ) as SQL;
+  }
+
+  if (reason === "parse_failed") {
+    // Unreachable in the typed-DATE world (see comment above). Match
+    // the empty set so the filter renders no rows rather than silently
+    // collapsing to "everything missing".
+    return and(baseNull, sql`false`) as SQL;
+  }
+
+  return baseNull;
 }
 
 const STATUS_BY_PHASE = {
@@ -314,12 +407,17 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
 
   // Per-row leg-sub-status breakdown so the listing page can render the
   // tiny inline counters without a follow-up round trip per row. We fetch
-  // only the four columns deriveLegSubStatus reads, then tally in JS.
+  // only the columns deriveLegSubStatus reads PLUS `date`, which the
+  // service-date-reason classifier (Task #353) needs to label the empty
+  // state when `service_date` came back null. One leg fetch, two
+  // derivations — keeps the list endpoint at the same round-trip count.
   const legSubStatusByGroup = new Map<number, Record<string, number>>();
+  const reasonLegsByGroup = new Map<number, ServiceDateReasonLeg[]>();
   if (groupIds.length > 0) {
     const legs = await db
       .select({
         invoiceGroupId: claimsTable.invoiceGroupId,
+        date: claimsTable.date,
         includedInDispute: claimsTable.includedInDispute,
         errorTypeId: claimsTable.errorTypeId,
         holdReason: claimsTable.holdReason,
@@ -337,6 +435,14 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       const bucket = legSubStatusByGroup.get(leg.invoiceGroupId) ?? {};
       bucket[sub] = (bucket[sub] ?? 0) + 1;
       legSubStatusByGroup.set(leg.invoiceGroupId, bucket);
+
+      const reasonBucket = reasonLegsByGroup.get(leg.invoiceGroupId) ?? [];
+      reasonBucket.push({
+        date: typeof leg.date === "string" ? leg.date : leg.date == null ? null : String(leg.date),
+        includedInDispute: leg.includedInDispute,
+        duplicateOfClaimId: leg.duplicateOfClaimId,
+      });
+      reasonLegsByGroup.set(leg.invoiceGroupId, reasonBucket);
     }
   }
 
@@ -359,6 +465,10 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       submittedStuck:
         GROUP_STUCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
       legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
+      serviceDateReason: classifyGroupServiceDateReason(
+        earliestDate,
+        reasonLegsByGroup.get(row.id) ?? [],
+      ),
     };
   });
 
@@ -681,6 +791,27 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     }
   }
 
+  // Service-date reason (Task #353) — surfaced on the detail payload
+  // so the header strip in `<InvoiceGroupDetailV2 />` can render the
+  // same labeled empty state the list cell shows. The classifier reads
+  // the rides array we already loaded, so no extra round trip. The
+  // helper short-circuits to `has_date` when `service_date` is set.
+  const dbServiceDate = (group as { serviceDate?: string | Date | null }).serviceDate ?? null;
+  const serviceDateIso =
+    dbServiceDate instanceof Date
+      ? dbServiceDate.toISOString().slice(0, 10)
+      : typeof dbServiceDate === "string"
+        ? dbServiceDate.slice(0, 10)
+        : null;
+  const serviceDateReason: GroupServiceDateReason = classifyGroupServiceDateReason(
+    serviceDateIso,
+    rides.map((r) => ({
+      date: typeof r.date === "string" ? r.date : r.date == null ? null : String(r.date),
+      includedInDispute: r.includedInDispute,
+      duplicateOfClaimId: r.duplicateOfClaimId,
+    })),
+  );
+
   res.json({
     ...group,
     rides: ridesWithVerdicts,
@@ -692,6 +823,8 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     macroPhase,
     packagingReadiness,
     useDirectEmail,
+    earliestDate: serviceDateIso,
+    serviceDateReason,
   });
 }));
 

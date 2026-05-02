@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
 import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
@@ -621,6 +622,19 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     ? ` · ${inDisputeCount} of ${allRides.length} legs in dispute`
                     : null}
                 </div>
+                {/* Service-date strip (Task #353). Re-uses the same enum
+                    the list cell consumes so the empty-state language is
+                    identical across surfaces. Hidden when no group id is
+                    available (defensive — the header always has one). */}
+                {group.id != null ? (
+                  <div className="mt-1.5">
+                    <ServiceDateBanner
+                      groupId={group.id as number}
+                      earliestDate={(group as { earliestDate?: string | null }).earliestDate ?? null}
+                      reason={(group as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
