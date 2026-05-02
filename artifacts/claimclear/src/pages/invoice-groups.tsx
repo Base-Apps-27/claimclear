@@ -139,6 +139,13 @@ export default function InvoiceGroupsList() {
       ? (filterMissingReasonRaw as MissingReason)
       : "";
 
+  // `?importBatch=<id>` is the link payload from the Import flow's
+  // post-upload right rail ("View invoice groups"). Scopes the list to
+  // just the groups the user created in their most recent import so
+  // they can see what they just brought in instead of getting dumped
+  // into the global list.
+  const filterImportBatch = get("importBatch") || "";
+
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -172,6 +179,7 @@ export default function InvoiceGroupsList() {
     missingServiceDateReason: (filterMissingReason || undefined) as ListInvoiceGroupsParams["missingServiceDateReason"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
+    importBatch: filterImportBatch || undefined,
     limit: pageSize,
     offset: (page - 1) * pageSize,
   };
@@ -239,6 +247,16 @@ export default function InvoiceGroupsList() {
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
+    if (filterImportBatch) {
+      // Short, friendly label — the full batch ID is a long ULID and
+      // dumping it into the chip just creates noise. The user knows
+      // they just imported; they need a way to clear, not the raw id.
+      result.push({
+        key: "importBatch",
+        label: "From most recent import",
+        onRemove: () => set({ importBatch: null, page: null }, false),
+      });
+    }
     if (search) {
       result.push({ key: "q", label: `Search: "${search}"`, onRemove: () => set({ q: null }, false) });
     }

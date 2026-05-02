@@ -397,9 +397,7 @@ export default function Insights() {
                 <Truck className="w-3.5 h-3.5" />Drivers / vehicles
                 <span className="text-[10px] font-normal normal-case opacity-80">(by car #)</span>
               </div>
-              <Link href="/claims?sort=createdAt&dir=desc" className="text-[11px] text-primary hover:underline">
-                Browse claims →
-              </Link>
+
             </div>
             <div
               className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground"
@@ -478,9 +476,7 @@ export default function Insights() {
                 <UserCircle2 className="w-3.5 h-3.5" />Members
                 <span className="text-[10px] font-normal normal-case opacity-80">(by client #)</span>
               </div>
-              <Link href="/claims?sort=createdAt&dir=desc" className="text-[11px] text-primary hover:underline">
-                Browse claims →
-              </Link>
+
             </div>
             <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground">
               <span style={{ minWidth: 100 }}>Member</span>

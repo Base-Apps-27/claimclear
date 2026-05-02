@@ -733,12 +733,14 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Activity className="w-4 h-4" /> Recent activity
           </div>
-          <Link
-            href="/admin/users/activity"
-            className="text-xs text-primary hover:underline"
-          >
-            See all →
-          </Link>
+          {user?.role === "admin" ? (
+            <Link
+              href="/admin/users/activity"
+              className="text-xs text-primary hover:underline"
+            >
+              See all →
+            </Link>
+          ) : null}
         </div>
         <div data-testid="recent-activity-list">
           {!activity ? (

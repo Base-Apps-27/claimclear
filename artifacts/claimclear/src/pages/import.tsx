@@ -1994,7 +1994,13 @@ function ConfirmRail({
           icon={<Layers className="w-3.5 h-3.5" />}
           label="View invoice groups"
           sub="See how rides were grouped"
-          onClick={() => navigate("/invoice-groups")}
+          onClick={() =>
+            navigate(
+              result?.batchId
+                ? `/invoice-groups?importBatch=${encodeURIComponent(result.batchId)}`
+                : "/invoice-groups",
+            )
+          }
           testId="rail-action-view-groups"
         />
       </ActionGroup>
