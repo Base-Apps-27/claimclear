@@ -24,4 +24,9 @@ export interface ValidTransitionsResponse {
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims. */
   hasResponse?: boolean;
+  /**
+   * Echo of `invoice_groups.awaiting_payor_again_at`. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button is enabled (button is disabled when this timestamp is newer than the latest inbound response's `received_at`).
+   * @nullable
+   */
+  awaitingPayorAgainAt?: Date | null;
 }

@@ -599,6 +599,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/ValidTransitionsResponse"
 
+  /invoice-groups/{id}/payor-denial-reason:
+    post:
+      operationId: recordPayorDenialReason
+      tags: [invoice-groups]
+      summary: Record the payor's denial reason for the most recent response
+      description: |
+        Captures the operator's classification of *why the payor denied/pushed
+        back on our dispute*, while reviewing an inbound response on the
+        Responses Awaiting Review page (Task #321).
+
+        This is a lightweight per-response signal — it does NOT close the
+        group, does NOT change `status`/`outcome`, and is intentionally
+        separate from the `closure_*` fields. The group must be in
+        `Needs Review` and have at least one inbound `portal_response`;
+        otherwise responds 409.
+
+        Re-recording the same reason is allowed and just bumps the
+        `payorDenialReasonAt` timestamp.
+
+        Writes an audit log with action `payor_denial_reason_recorded`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordPayorDenialReasonRequest"
+      responses:
+        "200":
+          description: Payor denial reason recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "400":
+          description: Bad request — invalid code, or `payor_other` chosen with no note
+        "404":
+          description: Invoice group not found
+        "409":
+          description: Group is not in `Needs Review` or has no inbound response yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
+  /invoice-groups/{id}/awaiting-payor-again:
+    post:
+      operationId: markAwaitingPayorAgain
+      tags: [invoice-groups]
+      summary: Flip the group off the Responses Awaiting Review list (waiting for payor again)
+      description: |
+        Sets `invoice_groups.awaiting_payor_again_at = now()` so the row
+        disappears from the Responses Awaiting Review list (Task #321).
+        Does NOT change `status`/`outcome`. The list query auto-re-includes
+        the row when a newer inbound response arrives
+        (`received_at > awaiting_payor_again_at`).
+
+        Same 409 contract as the payor-denial-reason endpoint: requires
+        `Needs Review` + ≥1 inbound response.
+
+        Writes an audit log with action `awaiting_payor_again`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkAwaitingPayorAgainRequest"
+      responses:
+        "200":
+          description: Awaiting-payor-again marker set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupResponse"
+        "404":
+          description: Invoice group not found
+        "409":
+          description: Group is not in `Needs Review` or has no inbound response yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /invoice-groups/{id}/evidence:
     get:
       operationId: listInvoiceGroupEvidence
@@ -1317,6 +1411,10 @@ paths:
                   hasResponse:
                     type: boolean
                     description: "True if a portal/email response exists for this claim."
+                  awaitingPayorAgainAt:
+                    type: ["string", "null"]
+                    format: date-time
+                    description: "Echo of `invoice_groups.awaiting_payor_again_at` for the claim's group. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button should be enabled. Always present on group endpoints; on claim endpoints it falls back to the parent group's value when joinable."
 
   /claims/{id}/status:
     patch:
@@ -4333,6 +4431,10 @@ components:
         hasResponse:
           type: boolean
           description: "True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims."
+        awaitingPayorAgainAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Echo of `invoice_groups.awaiting_payor_again_at`. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button is enabled (button is disabled when this timestamp is newer than the latest inbound response's `received_at`)."
       required:
         - validStatuses
         - validOutcomes
@@ -4439,6 +4541,30 @@ components:
           type: ["object", "null"]
         payorEmail:
           type: ["string", "null"]
+        # Lightweight payor-denial-reason signal (Task #321). Recorded by
+        # the operator on the Responses Awaiting Review page when reviewing
+        # a payor reply. Separate from the heavy `closure_*` columns above —
+        # this is NOT a closure decision. The code is enforced by the API
+        # against the union from `@workspace/payor-denial-reasons`; the DB
+        # column is `text`.
+        payorDenialReason:
+          oneOf:
+            - $ref: "#/components/schemas/PayorDenialReasonCode"
+            - type: "null"
+          description: "Last-recorded payor denial reason code, or null when none has been captured yet."
+        payorDenialReasonNote:
+          type: ["string", "null"]
+          description: "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise."
+        payorDenialReasonAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Stamped each time the operator records (or re-records) a payor denial reason."
+        payorDenialReasonBy:
+          type: ["string", "null"]
+        awaitingPayorAgainAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`/`outcome`."
         importBatch:
           type: ["string", "null"]
         reattestRequired:
@@ -4930,6 +5056,53 @@ components:
           type: ["string", "null"]
       required:
         - name
+
+    PayorDenialReasonCode:
+      type: string
+      description: |
+        Stable machine code for the lightweight payor-denial-reason signal
+        captured on the Responses Awaiting Review page (Task #321). Mirrored
+        in the `@workspace/payor-denial-reasons` package — kept in lockstep
+        by `payor-denial-reason.parity.ts` on the server. Distinct from
+        `closureReason`; this is NOT a closure decision.
+      enum:
+        - payor_rejected_gps
+        - payor_rejected_signature
+        - payor_reclassified_error
+        - payor_cited_benefit_rule
+        - payor_cited_timely_filing
+        - payor_no_clear_reason
+        - payor_other
+
+    RecordPayorDenialReasonRequest:
+      type: object
+      required: [reason]
+      description: |
+        Body for `POST /invoice-groups/{id}/payor-denial-reason`. `note` is
+        required (and must be non-whitespace) when `reason === "payor_other"`;
+        ignored otherwise on the API contract level (still persisted as the
+        free-text note for any reason).
+      properties:
+        reason:
+          $ref: "#/components/schemas/PayorDenialReasonCode"
+        note:
+          type: ["string", "null"]
+          description: Required when `reason === "payor_other"`.
+
+    MarkAwaitingPayorAgainRequest:
+      type: object
+      description: |
+        Body for `POST /invoice-groups/{id}/awaiting-payor-again`. The
+        optional `note` is a free-text reason ("operator clicked because the
+        ticket was reopened on MAS") persisted into the audit row's metadata
+        and surfaced in the timeline next to the flip stamp.
+      properties:
+        note:
+          type: ["string", "null"]
+          description: |
+            Optional operator note explaining why the row is being flipped
+            back to awaiting-payor-again. Trimmed server-side; whitespace-only
+            strings collapse to null and are not persisted.
 
     ClosureReviewBody:
       type: object

@@ -81,7 +81,12 @@ import {
 } from "../lib/inbound-email-classifier";
 import { claimsTable } from "@workspace/db";
 
-const CLASSIFIER_VERSION = "llm-first-v1";
+// Bumped to v2 in Task #321 when the inbound classifier output gained
+// `newInvoiceNumber` + `suggestedPayorDenialReason`. Re-running the
+// backfill against rows stamped v1 will now re-fetch the AI verdict and
+// stamp the new fields so older Responses Awaiting Review rows benefit
+// from the same hints freshly-arrived rows do.
+const CLASSIFIER_VERSION = "llm-first-v2";
 const BACKFILL_SOURCE = "llm_first_classifier_backfill";
 
 // Mirror of `STATUS_BY_PHASE["response-pending"]` in routes/invoice-groups.ts
@@ -378,12 +383,22 @@ async function applyRelabel(
     previousClassifierSource: c.classifierSource,
     previousClassifierConfidence: c.classifierConfidence,
     previousAiSummary: c.aiSummary,
+    // Task #321: persist the new AI hints alongside the existing fields so
+    // Responses Awaiting Review can pre-fill its operator pickers without
+    // a separate fetch. Use the verdict's AI result when present; abstain
+    // rows leave both null. Existing values (if any) are preserved on the
+    // row via the `...oldMetadata` spread above and only overwritten when
+    // the fresh verdict actually has a value to write.
+    newInvoiceNumber: verdict.aiResult?.newInvoiceNumber ?? (oldMetadata as Record<string, unknown>).newInvoiceNumber ?? null,
+    suggestedPayorDenialReason: verdict.aiResult?.suggestedPayorDenialReason ?? (oldMetadata as Record<string, unknown>).suggestedPayorDenialReason ?? null,
     backfillVerdict: {
       newResponseType: verdict.newResponseType,
       classifierSource: verdict.classifierSource,
       phraseSignature: verdict.phraseSignatureId,
       phraseSignatureMatches: verdict.phraseSignatureMatches,
       aiConfidence: verdict.aiResult?.confidence ?? null,
+      newInvoiceNumber: verdict.aiResult?.newInvoiceNumber ?? null,
+      suggestedPayorDenialReason: verdict.aiResult?.suggestedPayorDenialReason ?? null,
     },
   };
 

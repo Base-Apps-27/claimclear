@@ -21,6 +21,10 @@ import {
   SYSTEM_CONTROLLED_GROUP_STATUSES,
 } from "../lib/group-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
+import {
+  isPayorDenialReasonCode,
+  PAYOR_DENIAL_REASON_CODES,
+} from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
@@ -229,10 +233,24 @@ function buildMacroPhaseCondition(phase: string): SQL | undefined {
         sql`exists (
           select 1 from portal_responses pr
           where pr.invoice_group_id = ${invoiceGroupsTable.id}
-            and pr.response_type in (
+            and pr."responseType" in (
               'approval', 'denial', 'partial_approval', 'info_request', 'other'
             )
         )`,
+        // Task #321 — "I replied — wait for payor again": hide groups whose
+        // operator clicked the wait-for-payor flip when the latest inbound
+        // response is older than that flip. The list re-includes the row
+        // automatically once a newer response arrives (received_at
+        // newer than awaiting_payor_again_at), so this is a self-resetting
+        // suppression rather than a sticky archive.
+        or(
+          isNull(invoiceGroupsTable.awaitingPayorAgainAt),
+          sql`exists (
+            select 1 from portal_responses pr
+            where pr.invoice_group_id = ${invoiceGroupsTable.id}
+              and pr.received_at > ${invoiceGroupsTable.awaitingPayorAgainAt}
+          )`,
+        )!,
       );
     }
     return statusCondition;
@@ -1081,7 +1099,164 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
     postResponseActions,
     latestResponseType,
     hasResponse,
+    // Task #321: surfaced so the Responses Awaiting Review UI can decide
+    // whether the "I replied — wait for payor again" button should be
+    // enabled (button is disabled when this stamp is newer than the
+    // latest inbound response's received_at — i.e. the group has already
+    // been flipped off the list).
+    awaitingPayorAgainAt: group.awaitingPayorAgainAt
+      ? group.awaitingPayorAgainAt.toISOString()
+      : null,
   });
+}));
+
+// ---------------------------------------------------------------------------
+// Task #321 — Responses Awaiting Review: per-group payor-denial-reason
+// signal + "I replied — wait for payor again" flip.
+//
+// Both endpoints share the same source-state contract (Needs Review +
+// at least one inbound response). They do NOT change `status`/`outcome`
+// — they only stamp the new lightweight columns and emit an audit row.
+// See lib/payor-denial-reasons for the rationale on keeping the
+// denial-reason vocabulary separate from the heavyweight `closure_*`
+// columns.
+// ---------------------------------------------------------------------------
+
+router.post("/invoice-groups/:id/payor-denial-reason", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { reason, note } = (req.body ?? {}) as { reason?: unknown; note?: unknown };
+
+  if (typeof reason !== "string" || !isPayorDenialReasonCode(reason)) {
+    res.status(400).json({
+      error: `Invalid reason. Expected one of: ${PAYOR_DENIAL_REASON_CODES.join(", ")}.`,
+    });
+    return;
+  }
+
+  const noteValue = typeof note === "string" ? note : note == null ? null : null;
+  if (reason === "payor_other" && (!noteValue || noteValue.trim().length === 0)) {
+    res.status(400).json({
+      error: `\`note\` is required (and must be non-empty) when \`reason\` is "payor_other".`,
+    });
+    return;
+  }
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  if (group.status !== "Needs Review") {
+    res.status(409).json({
+      error: "Payor denial reason can only be recorded while the group is awaiting review.",
+      expectedState: "status=Needs Review",
+      actualState: `status=${group.status}`,
+    });
+    return;
+  }
+
+  const hasResponse = await groupHasResponse(id);
+  if (!hasResponse) {
+    res.status(409).json({
+      error: "Payor denial reason can only be recorded after at least one payor response has arrived.",
+      expectedState: "at least one inbound portal_responses row for the group",
+      actualState: "no inbound responses on file",
+    });
+    return;
+  }
+
+  const actor = actorFromReq(req);
+  const now = new Date();
+  const noteForDb = noteValue && noteValue.trim().length > 0 ? noteValue.trim() : null;
+  const actorLabel = actor.userName || actor.userEmail || null;
+
+  const [updated] = await db.update(invoiceGroupsTable)
+    .set({
+      payorDenialReason: reason,
+      payorDenialReasonNote: noteForDb,
+      payorDenialReasonAt: now,
+      payorDenialReasonBy: actorLabel,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: id,
+    action: "payor_denial_reason_recorded",
+    details: `Payor denial reason recorded: ${reason}${noteForDb ? ` (note: ${noteForDb})` : ""}`,
+    metadata: {
+      reason,
+      note: noteForDb,
+      previousReason: group.payorDenialReason ?? null,
+      previousNote: group.payorDenialReasonNote ?? null,
+    },
+    ...actor,
+  });
+
+  emitGroupEvent(id, "group_payor_denial_reason_recorded", req);
+  res.json(updated);
+}));
+
+router.post("/invoice-groups/:id/awaiting-payor-again", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  // Optional operator note. Non-string / null collapses to null. Trim,
+  // then drop pure-whitespace so the audit row only carries content
+  // worth surfacing back to the operator on the timeline.
+  const rawNote = (req.body ?? {}) as { note?: unknown };
+  const noteForDb = (() => {
+    if (typeof rawNote.note !== "string") return null;
+    const trimmed = rawNote.note.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  })();
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  if (group.status !== "Needs Review") {
+    res.status(409).json({
+      error: "Group can only be flipped back to awaiting-payor-again while it is in Needs Review.",
+      expectedState: "status=Needs Review",
+      actualState: `status=${group.status}`,
+    });
+    return;
+  }
+
+  const hasResponse = await groupHasResponse(id);
+  if (!hasResponse) {
+    res.status(409).json({
+      error: "Group cannot be flipped back to awaiting-payor-again before any payor response has arrived.",
+      expectedState: "at least one inbound portal_responses row for the group",
+      actualState: "no inbound responses on file",
+    });
+    return;
+  }
+
+  const now = new Date();
+  const [updated] = await db.update(invoiceGroupsTable)
+    .set({ awaitingPayorAgainAt: now })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: id,
+    action: "awaiting_payor_again",
+    details: noteForDb
+      ? `Operator marked the group as awaiting the payor again — hidden from Responses Awaiting Review until a newer response arrives. Note: ${noteForDb}`
+      : `Operator marked the group as awaiting the payor again — hidden from Responses Awaiting Review until a newer response arrives.`,
+    metadata: {
+      previousAwaitingPayorAgainAt: group.awaitingPayorAgainAt
+        ? group.awaitingPayorAgainAt.toISOString()
+        : null,
+      newAwaitingPayorAgainAt: now.toISOString(),
+      note: noteForDb,
+    },
+    ...actorFromReq(req),
+  });
+
+  emitGroupEvent(id, "group_awaiting_payor_again", req);
+  res.json(updated);
 }));
 
 router.get("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
@@ -1304,7 +1479,7 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
       sql`exists (
         select 1 from portal_responses pr
         where pr.invoice_group_id = ${invoiceGroupsTable.id}
-          and pr.response_type in (
+          and pr."responseType" in (
             'approval', 'denial', 'partial_approval', 'info_request', 'other'
           )
       )`,

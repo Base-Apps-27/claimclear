@@ -99,6 +99,9 @@ importers:
       '@workspace/leg-state':
         specifier: workspace:*
         version: link:../../lib/leg-state
+      '@workspace/payor-denial-reasons':
+        specifier: workspace:*
+        version: link:../../lib/payor-denial-reasons
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -854,6 +857,10 @@ importers:
         version: 5.90.21(react@19.1.0)
 
   lib/api-spec:
+    dependencies:
+      '@workspace/payor-denial-reasons':
+        specifier: workspace:*
+        version: link:../payor-denial-reasons
     devDependencies:
       orval:
         specifier: ^8.5.2
@@ -937,6 +944,8 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.14
+
+  lib/payor-denial-reasons: {}
 
   lib/replit-auth-web:
     dependencies:

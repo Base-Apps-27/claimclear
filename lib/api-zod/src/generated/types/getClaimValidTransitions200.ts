@@ -25,4 +25,9 @@ export type GetClaimValidTransitions200 = {
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this claim. */
   hasResponse?: boolean;
+  /**
+   * Echo of `invoice_groups.awaiting_payor_again_at` for the claim's group. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button should be enabled. Always present on group endpoints; on claim endpoints it falls back to the parent group's value when joinable.
+   * @nullable
+   */
+  awaitingPayorAgainAt?: Date | null;
 };

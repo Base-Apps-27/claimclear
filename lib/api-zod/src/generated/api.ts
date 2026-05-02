@@ -236,6 +236,46 @@ export const ListInvoiceGroupsResponse = zod.object({
       evidenceNotes: zod.string().nullish(),
       evidenceChecklist: zod.object({}).passthrough().nullish(),
       payorEmail: zod.string().nullish(),
+      payorDenialReason: zod
+        .union([
+          zod
+            .enum([
+              "payor_rejected_gps",
+              "payor_rejected_signature",
+              "payor_reclassified_error",
+              "payor_cited_benefit_rule",
+              "payor_cited_timely_filing",
+              "payor_no_clear_reason",
+              "payor_other",
+            ])
+            .describe(
+              "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Last-recorded payor denial reason code, or null when none has been captured yet.",
+        ),
+      payorDenialReasonNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+        ),
+      payorDenialReasonAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamped each time the operator records (or re-records) a payor denial reason.",
+        ),
+      payorDenialReasonBy: zod.string().nullish(),
+      awaitingPayorAgainAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+        ),
       importBatch: zod.string().nullish(),
       reattestRequired: zod
         .boolean()
@@ -603,6 +643,46 @@ export const GetInvoiceGroupResponse = zod
     evidenceNotes: zod.string().nullish(),
     evidenceChecklist: zod.object({}).passthrough().nullish(),
     payorEmail: zod.string().nullish(),
+    payorDenialReason: zod
+      .union([
+        zod
+          .enum([
+            "payor_rejected_gps",
+            "payor_rejected_signature",
+            "payor_reclassified_error",
+            "payor_cited_benefit_rule",
+            "payor_cited_timely_filing",
+            "payor_no_clear_reason",
+            "payor_other",
+          ])
+          .describe(
+            "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Last-recorded payor denial reason code, or null when none has been captured yet.",
+      ),
+    payorDenialReasonNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+      ),
+    payorDenialReasonAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Stamped each time the operator records (or re-records) a payor denial reason.",
+      ),
+    payorDenialReasonBy: zod.string().nullish(),
+    awaitingPayorAgainAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+      ),
     importBatch: zod.string().nullish(),
     reattestRequired: zod
       .boolean()
@@ -1415,6 +1495,46 @@ export const UpdateInvoiceGroupResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -1664,6 +1784,46 @@ export const PackageInvoiceGroupResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -1909,6 +2069,46 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -2209,6 +2409,46 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -2456,6 +2696,46 @@ export const TriageInvoiceGroupResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -2700,6 +2980,46 @@ export const HoldInvoiceGroupResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -2940,6 +3260,46 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -3115,6 +3475,635 @@ export const GetInvoiceGroupValidTransitionsResponse = zod.object({
     .describe(
       "True if a portal\/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims.",
     ),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Echo of `invoice_groups.awaiting_payor_again_at`. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button is enabled (button is disabled when this timestamp is newer than the latest inbound response's `received_at`).",
+    ),
+});
+
+/**
+ * Captures the operator's classification of *why the payor denied/pushed
+back on our dispute*, while reviewing an inbound response on the
+Responses Awaiting Review page (Task #321).
+
+This is a lightweight per-response signal — it does NOT close the
+group, does NOT change `status`/`outcome`, and is intentionally
+separate from the `closure_*` fields. The group must be in
+`Needs Review` and have at least one inbound `portal_response`;
+otherwise responds 409.
+
+Re-recording the same reason is allowed and just bumps the
+`payorDenialReasonAt` timestamp.
+
+Writes an audit log with action `payor_denial_reason_recorded`.
+
+ * @summary Record the payor's denial reason for the most recent response
+ */
+export const RecordPayorDenialReasonParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RecordPayorDenialReasonBody = zod
+  .object({
+    reason: zod
+      .enum([
+        "payor_rejected_gps",
+        "payor_rejected_signature",
+        "payor_reclassified_error",
+        "payor_cited_benefit_rule",
+        "payor_cited_timely_filing",
+        "payor_no_clear_reason",
+        "payor_other",
+      ])
+      .describe(
+        "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+      ),
+    note: zod
+      .string()
+      .nullish()
+      .describe('Required when `reason === \"payor_other\"`.'),
+  })
+  .describe(
+    'Body for `POST \/invoice-groups\/{id}\/payor-denial-reason`. `note` is\nrequired (and must be non-whitespace) when `reason === \"payor_other\"`;\nignored otherwise on the API contract level (still persisted as the\nfree-text note for any reason).\n',
+  );
+
+export const RecordPayorDenialReasonResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+});
+
+/**
+ * Sets `invoice_groups.awaiting_payor_again_at = now()` so the row
+disappears from the Responses Awaiting Review list (Task #321).
+Does NOT change `status`/`outcome`. The list query auto-re-includes
+the row when a newer inbound response arrives
+(`received_at > awaiting_payor_again_at`).
+
+Same 409 contract as the payor-denial-reason endpoint: requires
+`Needs Review` + ≥1 inbound response.
+
+Writes an audit log with action `awaiting_payor_again`.
+
+ * @summary Flip the group off the Responses Awaiting Review list (waiting for payor again)
+ */
+export const MarkAwaitingPayorAgainParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkAwaitingPayorAgainBody = zod
+  .object({
+    note: zod
+      .string()
+      .nullish()
+      .describe(
+        "Optional operator note explaining why the row is being flipped\nback to awaiting-payor-again. Trimmed server-side; whitespace-only\nstrings collapse to null and are not persisted.\n",
+      ),
+  })
+  .describe(
+    'Body for `POST \/invoice-groups\/{id}\/awaiting-payor-again`. The\noptional `note` is a free-text reason (\"operator clicked because the\nticket was reopened on MAS\") persisted into the audit row\'s metadata\nand surfaced in the timeline next to the flip stamp.\n',
+  );
+
+export const MarkAwaitingPayorAgainResponse = zod.object({
+  id: zod.number(),
+  invoiceNumber: zod.string(),
+  clientNumber: zod.string().nullish(),
+  errorDetails: zod.string().nullish(),
+  errorTypeId: zod.string().nullish(),
+  errorTypeName: zod.string().nullish(),
+  status: zod.enum([
+    "New",
+    "Needs Review",
+    "Needs Evidence",
+    "Processed",
+    "Portal Queued",
+    "Generating Email",
+    "Ready to Review",
+    "Awaiting Response",
+    "On Hold",
+    "Resolved",
+    "Denied",
+  ]),
+  outcome: zod.enum([
+    "Pending",
+    "Approved",
+    "Denied",
+    "Partially Approved",
+    "Non-Issue",
+    "Withdrawn",
+  ]),
+  closureReason: zod
+    .union([
+      zod.literal("denied_by_payor"),
+      zod.literal("cannot_dispute"),
+      zod.literal("non_issue"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureCategory: zod.string().nullish(),
+  closureCategoryOther: zod.string().nullish(),
+  closureRootCause: zod.string().nullish(),
+  closureRootCauseOther: zod.string().nullish(),
+  closureNarrative: zod.string().nullish(),
+  closureAccountabilityTags: zod.array(zod.string()).nullish(),
+  closureAccountabilityOther: zod.string().nullish(),
+  closureDrivers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureDispatchers: zod
+    .array(
+      zod
+        .object({
+          name: zod.string(),
+          id: zod.string().nullish(),
+        })
+        .describe(
+          "A person referenced from a structured closure (driver\/dispatcher).",
+        ),
+    )
+    .nullish(),
+  closureCommunicatedTo: zod.string().nullish(),
+  closureReviewState: zod
+    .union([
+      zod.literal("pending"),
+      zod.literal("acknowledged"),
+      zod.literal("needs_revisit"),
+      zod.literal("resolved"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  closureAddressedAt: zod.string().nullish(),
+  closureAddressedBy: zod.string().nullish(),
+  closureAddressedByEmail: zod.string().nullish(),
+  closureReviewNotes: zod.string().nullish(),
+  approvedAmount: zod.string().nullish(),
+  rideCount: zod.number(),
+  totalAmount: zod.string().nullish(),
+  holdReason: zod.string().nullish(),
+  holdPendingFrom: zod.string().nullish(),
+  holdPlacedAt: zod.string().nullish(),
+  triageNotes: zod.string().nullish(),
+  triagedAt: zod.string().nullish(),
+  disputeEmailSent: zod.boolean(),
+  disputeEmailSentAt: zod.string().nullish(),
+  generatedEmailSubject: zod.string().nullish(),
+  generatedEmailBody: zod.string().nullish(),
+  generatedEmailAt: zod.string().nullish(),
+  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceNotes: zod.string().nullish(),
+  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
+  importBatch: zod.string().nullish(),
+  reattestRequired: zod
+    .boolean()
+    .describe(
+      "True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection.",
+    ),
+  reattestCompletedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp the operator confirmed the group-level re-attestation. Once set, the group transitions to `awaiting-payout`.",
+    ),
+  reattestCompletedBy: zod.string().nullish(),
+  reattestNote: zod.string().nullish(),
+  macroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+  earliestDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "Earliest service date across the group's claims (MIN). Drives the filing deadline. Only populated by list endpoints.",
+    ),
+  effectiveDaysLeft: zod
+    .number()
+    .nullish()
+    .describe(
+      "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+    ),
+  isUrgent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+    ),
+  groupContext: zod
+    .string()
+    .nullish()
+    .describe(
+      "DEPRECATED (Task #265). Legacy operator-authored narrative for the entire invoice group. New writes go to per-leg context + the editable AI draft below; field kept for one release for read-back compatibility.",
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Channel hint joined from the assigned errorType. True → submit via direct email; false\/null → submit via portal. Drives the Submit button label and routing in the Queue submission preview.",
+    ),
+  draftSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited subject line of the dispute write-up surfaced in the Submission preview pane. Sent as the portal\/email subject on submit.",
+    ),
+  draftDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator-edited HTML body of the dispute write-up surfaced in the Submission preview pane. Sent as the portal description \/ email body on submit.",
+    ),
+  aiBaselineSubject: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated subject captured at draft regeneration. Used to detect operator edits.",
+    ),
+  aiBaselineDescriptionHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftEditedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator saves an edit to the dispute draft.",
+    ),
+  draftEditedBy: zod.string().nullish(),
+  draftReviewedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
+    ),
+  draftReviewedBy: zod.string().nullish(),
+  understandingReadback: zod
+    .string()
+    .nullish()
+    .describe(
+      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+    ),
+  understandingReadbackAt: zod.coerce.date().nullish(),
+  understandingReadbackBy: zod.string().nullish(),
+  previewGeneratedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamp of when the operator generated the dispute submission preview. Gates the transition to in-flight.",
+    ),
+  previewGeneratedBy: zod.string().nullish(),
+  legSubStatusCounts: zod
+    .object({
+      excluded: zod.number().optional(),
+      needs_classification: zod.number().optional(),
+      investigating: zod.number().optional(),
+      blocked: zod.number().optional(),
+      ready: zod.number().optional(),
+      dropped: zod.number().optional(),
+      duplicate: zod
+        .number()
+        .optional()
+        .describe(
+          "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error).",
+        ),
+    })
+    .nullish()
+    .describe(
+      "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
 });
 
 /**
@@ -3285,6 +4274,46 @@ export const SetGroupContextResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -3532,6 +4561,46 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -3785,6 +4854,46 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -4031,6 +5140,46 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -4274,6 +5423,46 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -4517,6 +5706,46 @@ export const StampPreviewGeneratedResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -4768,6 +5997,46 @@ export const CompleteGroupReattestResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()
@@ -6141,6 +7410,12 @@ export const GetClaimValidTransitionsResponse = zod.object({
     .boolean()
     .optional()
     .describe("True if a portal\/email response exists for this claim."),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Echo of `invoice_groups.awaiting_payor_again_at` for the claim's group. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button should be enabled. Always present on group endpoints; on claim endpoints it falls back to the parent group's value when joinable.",
+    ),
 });
 
 /**
@@ -14259,6 +15534,46 @@ export const GetDashboardSummaryResponse = zod.object({
       evidenceNotes: zod.string().nullish(),
       evidenceChecklist: zod.object({}).passthrough().nullish(),
       payorEmail: zod.string().nullish(),
+      payorDenialReason: zod
+        .union([
+          zod
+            .enum([
+              "payor_rejected_gps",
+              "payor_rejected_signature",
+              "payor_reclassified_error",
+              "payor_cited_benefit_rule",
+              "payor_cited_timely_filing",
+              "payor_no_clear_reason",
+              "payor_other",
+            ])
+            .describe(
+              "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Last-recorded payor denial reason code, or null when none has been captured yet.",
+        ),
+      payorDenialReasonNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+        ),
+      payorDenialReasonAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Stamped each time the operator records (or re-records) a payor denial reason.",
+        ),
+      payorDenialReasonBy: zod.string().nullish(),
+      awaitingPayorAgainAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+        ),
       importBatch: zod.string().nullish(),
       reattestRequired: zod
         .boolean()
@@ -16692,6 +18007,46 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   evidenceNotes: zod.string().nullish(),
   evidenceChecklist: zod.object({}).passthrough().nullish(),
   payorEmail: zod.string().nullish(),
+  payorDenialReason: zod
+    .union([
+      zod
+        .enum([
+          "payor_rejected_gps",
+          "payor_rejected_signature",
+          "payor_reclassified_error",
+          "payor_cited_benefit_rule",
+          "payor_cited_timely_filing",
+          "payor_no_clear_reason",
+          "payor_other",
+        ])
+        .describe(
+          "Stable machine code for the lightweight payor-denial-reason signal\ncaptured on the Responses Awaiting Review page (Task #321). Mirrored\nin the `@workspace\/payor-denial-reasons` package — kept in lockstep\nby `payor-denial-reason.parity.ts` on the server. Distinct from\n`closureReason`; this is NOT a closure decision.\n",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Last-recorded payor denial reason code, or null when none has been captured yet.",
+    ),
+  payorDenialReasonNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.",
+    ),
+  payorDenialReasonAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Stamped each time the operator records (or re-records) a payor denial reason.",
+    ),
+  payorDenialReasonBy: zod.string().nullish(),
+  awaitingPayorAgainAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`\/`outcome`.",
+    ),
   importBatch: zod.string().nullish(),
   reattestRequired: zod
     .boolean()

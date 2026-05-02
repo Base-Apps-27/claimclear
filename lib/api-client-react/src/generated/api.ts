@@ -119,6 +119,7 @@ import type {
   ListWithdrawalsParams,
   LookupMappingsBody,
   LookupMappingsResponse,
+  MarkAwaitingPayorAgainRequest,
   MarkLegDuplicateBody,
   MyProcessedTodayCount,
   NeedsClassificationInboxResponse,
@@ -137,6 +138,7 @@ import type {
   PresenceResponse,
   ProcessResponseBody,
   ReassignResponseBody,
+  RecordPayorDenialReasonRequest,
   RecordPortalResponse200,
   RecordPortalResponseBody,
   RecordVerdictBody,
@@ -1675,6 +1677,210 @@ export function useGetInvoiceGroupValidTransitions<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Captures the operator's classification of *why the payor denied/pushed
+back on our dispute*, while reviewing an inbound response on the
+Responses Awaiting Review page (Task #321).
+
+This is a lightweight per-response signal — it does NOT close the
+group, does NOT change `status`/`outcome`, and is intentionally
+separate from the `closure_*` fields. The group must be in
+`Needs Review` and have at least one inbound `portal_response`;
+otherwise responds 409.
+
+Re-recording the same reason is allowed and just bumps the
+`payorDenialReasonAt` timestamp.
+
+Writes an audit log with action `payor_denial_reason_recorded`.
+
+ * @summary Record the payor's denial reason for the most recent response
+ */
+export const getRecordPayorDenialReasonUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/payor-denial-reason`;
+};
+
+export const recordPayorDenialReason = async (
+  id: number,
+  recordPayorDenialReasonRequest: RecordPayorDenialReasonRequest,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getRecordPayorDenialReasonUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(recordPayorDenialReasonRequest),
+  });
+};
+
+export const getRecordPayorDenialReasonMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordPayorDenialReason>>,
+    TError,
+    { id: number; data: BodyType<RecordPayorDenialReasonRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordPayorDenialReason>>,
+  TError,
+  { id: number; data: BodyType<RecordPayorDenialReasonRequest> },
+  TContext
+> => {
+  const mutationKey = ["recordPayorDenialReason"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordPayorDenialReason>>,
+    { id: number; data: BodyType<RecordPayorDenialReasonRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return recordPayorDenialReason(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordPayorDenialReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordPayorDenialReason>>
+>;
+export type RecordPayorDenialReasonMutationBody =
+  BodyType<RecordPayorDenialReasonRequest>;
+export type RecordPayorDenialReasonMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Record the payor's denial reason for the most recent response
+ */
+export const useRecordPayorDenialReason = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordPayorDenialReason>>,
+    TError,
+    { id: number; data: BodyType<RecordPayorDenialReasonRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordPayorDenialReason>>,
+  TError,
+  { id: number; data: BodyType<RecordPayorDenialReasonRequest> },
+  TContext
+> => {
+  return useMutation(getRecordPayorDenialReasonMutationOptions(options));
+};
+
+/**
+ * Sets `invoice_groups.awaiting_payor_again_at = now()` so the row
+disappears from the Responses Awaiting Review list (Task #321).
+Does NOT change `status`/`outcome`. The list query auto-re-includes
+the row when a newer inbound response arrives
+(`received_at > awaiting_payor_again_at`).
+
+Same 409 contract as the payor-denial-reason endpoint: requires
+`Needs Review` + ≥1 inbound response.
+
+Writes an audit log with action `awaiting_payor_again`.
+
+ * @summary Flip the group off the Responses Awaiting Review list (waiting for payor again)
+ */
+export const getMarkAwaitingPayorAgainUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/awaiting-payor-again`;
+};
+
+export const markAwaitingPayorAgain = async (
+  id: number,
+  markAwaitingPayorAgainRequest?: MarkAwaitingPayorAgainRequest,
+  options?: RequestInit,
+): Promise<InvoiceGroupResponse> => {
+  return customFetch<InvoiceGroupResponse>(getMarkAwaitingPayorAgainUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(markAwaitingPayorAgainRequest),
+  });
+};
+
+export const getMarkAwaitingPayorAgainMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markAwaitingPayorAgain>>,
+    TError,
+    { id: number; data: BodyType<MarkAwaitingPayorAgainRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markAwaitingPayorAgain>>,
+  TError,
+  { id: number; data: BodyType<MarkAwaitingPayorAgainRequest> },
+  TContext
+> => {
+  const mutationKey = ["markAwaitingPayorAgain"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markAwaitingPayorAgain>>,
+    { id: number; data: BodyType<MarkAwaitingPayorAgainRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return markAwaitingPayorAgain(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkAwaitingPayorAgainMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markAwaitingPayorAgain>>
+>;
+export type MarkAwaitingPayorAgainMutationBody =
+  BodyType<MarkAwaitingPayorAgainRequest>;
+export type MarkAwaitingPayorAgainMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Flip the group off the Responses Awaiting Review list (waiting for payor again)
+ */
+export const useMarkAwaitingPayorAgain = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markAwaitingPayorAgain>>,
+    TError,
+    { id: number; data: BodyType<MarkAwaitingPayorAgainRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markAwaitingPayorAgain>>,
+  TError,
+  { id: number; data: BodyType<MarkAwaitingPayorAgainRequest> },
+  TContext
+> => {
+  return useMutation(getMarkAwaitingPayorAgainMutationOptions(options));
+};
 
 /**
  * @summary List evidence collected for an invoice group

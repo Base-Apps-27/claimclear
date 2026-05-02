@@ -19,6 +19,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",
     "@workspace/leg-state": "workspace:*",
+    "@workspace/payor-denial-reasons": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "cron-parser": "^5.5.0",

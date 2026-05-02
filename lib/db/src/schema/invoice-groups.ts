@@ -87,6 +87,23 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   evidenceNotes: text("evidence_notes"),
   evidenceChecklist: jsonb("evidence_checklist"),
   payorEmail: text("payor_email"),
+  // ────────────────────────────────────────────────────────────────────────
+  // Lightweight payor-denial-reason signal (Task #321). Captured when the
+  // operator reviews a payor response on Responses Awaiting Review. The
+  // column is `text` at the DB level; the API enforces the union from
+  // `@workspace/payor-denial-reasons`. This is NOT a closure reason and is
+  // intentionally separate from the `closure_*` columns above.
+  // ────────────────────────────────────────────────────────────────────────
+  payorDenialReason: text("payor_denial_reason"),
+  payorDenialReasonNote: text("payor_denial_reason_note"),
+  payorDenialReasonAt: timestamp("payor_denial_reason_at", { withTimezone: true }),
+  payorDenialReasonBy: text("payor_denial_reason_by"),
+  // Set when the operator clicks "I replied — wait for payor again" on the
+  // Responses Awaiting Review page. The list query for that page hides the
+  // row whenever this timestamp is newer than the latest inbound response's
+  // `received_at`; a newer response automatically re-includes the row.
+  // Does NOT change `status` or `outcome`.
+  awaitingPayorAgainAt: timestamp("awaiting_payor_again_at", { withTimezone: true }),
   importBatch: text("import_batch"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

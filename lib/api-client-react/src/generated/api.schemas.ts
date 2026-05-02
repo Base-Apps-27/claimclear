@@ -352,6 +352,11 @@ export interface ValidTransitionsResponse {
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this entity. For invoice groups, considers responses linked directly to the group OR via any of its child claims. */
   hasResponse?: boolean;
+  /**
+   * Echo of `invoice_groups.awaiting_payor_again_at`. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button is enabled (button is disabled when this timestamp is newer than the latest inbound response's `received_at`).
+   * @nullable
+   */
+  awaitingPayorAgainAt?: string | null;
 }
 
 export type InvoiceGroupResponseStatus =
@@ -457,6 +462,27 @@ export type InvoiceGroupResponseLegSubStatusCounts = {
   duplicate?: number;
 } | null;
 
+/**
+ * Stable machine code for the lightweight payor-denial-reason signal
+captured on the Responses Awaiting Review page (Task #321). Mirrored
+in the `@workspace/payor-denial-reasons` package — kept in lockstep
+by `payor-denial-reason.parity.ts` on the server. Distinct from
+`closureReason`; this is NOT a closure decision.
+
+ */
+export type PayorDenialReasonCode =
+  (typeof PayorDenialReasonCode)[keyof typeof PayorDenialReasonCode];
+
+export const PayorDenialReasonCode = {
+  payor_rejected_gps: "payor_rejected_gps",
+  payor_rejected_signature: "payor_rejected_signature",
+  payor_reclassified_error: "payor_reclassified_error",
+  payor_cited_benefit_rule: "payor_cited_benefit_rule",
+  payor_cited_timely_filing: "payor_cited_timely_filing",
+  payor_no_clear_reason: "payor_no_clear_reason",
+  payor_other: "payor_other",
+} as const;
+
 export interface InvoiceGroupResponse {
   id: number;
   invoiceNumber: string;
@@ -534,6 +560,25 @@ export interface InvoiceGroupResponse {
   evidenceChecklist?: InvoiceGroupResponseEvidenceChecklist;
   /** @nullable */
   payorEmail?: string | null;
+  /** Last-recorded payor denial reason code, or null when none has been captured yet. */
+  payorDenialReason?: PayorDenialReasonCode | null;
+  /**
+   * Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.
+   * @nullable
+   */
+  payorDenialReasonNote?: string | null;
+  /**
+   * Stamped each time the operator records (or re-records) a payor denial reason.
+   * @nullable
+   */
+  payorDenialReasonAt?: string | null;
+  /** @nullable */
+  payorDenialReasonBy?: string | null;
+  /**
+   * Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`/`outcome`.
+   * @nullable
+   */
+  awaitingPayorAgainAt?: string | null;
   /** @nullable */
   importBatch?: string | null;
   /** True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection. */
@@ -1256,6 +1301,40 @@ export interface UpdateInvoiceGroupOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+}
+
+/**
+ * Body for `POST /invoice-groups/{id}/payor-denial-reason`. `note` is
+required (and must be non-whitespace) when `reason === "payor_other"`;
+ignored otherwise on the API contract level (still persisted as the
+free-text note for any reason).
+
+ */
+export interface RecordPayorDenialReasonRequest {
+  reason: PayorDenialReasonCode;
+  /**
+   * Required when `reason === "payor_other"`.
+   * @nullable
+   */
+  note?: string | null;
+}
+
+/**
+ * Body for `POST /invoice-groups/{id}/awaiting-payor-again`. The
+optional `note` is a free-text reason ("operator clicked because the
+ticket was reopened on MAS") persisted into the audit row's metadata
+and surfaced in the timeline next to the flip stamp.
+
+ */
+export interface MarkAwaitingPayorAgainRequest {
+  /**
+   * Optional operator note explaining why the row is being flipped
+back to awaiting-payor-again. Trimmed server-side; whitespace-only
+strings collapse to null and are not persisted.
+
+   * @nullable
+   */
+  note?: string | null;
 }
 
 /**
@@ -3546,6 +3625,11 @@ export type GetClaimValidTransitions200 = {
   latestResponseType?: string | null;
   /** True if a portal/email response exists for this claim. */
   hasResponse?: boolean;
+  /**
+   * Echo of `invoice_groups.awaiting_payor_again_at` for the claim's group. Surfaced so the Responses Awaiting Review UI can decide whether the 'I replied — wait for payor again' button should be enabled. Always present on group endpoints; on claim endpoints it falls back to the parent group's value when joinable.
+   * @nullable
+   */
+  awaitingPayorAgainAt?: string | null;
 };
 
 export type ListAttestationPendingParams = {

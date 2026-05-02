@@ -20,6 +20,7 @@ import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupRespo
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
+import type { PayorDenialReasonCode } from "./payorDenialReasonCode";
 
 export interface InvoiceGroupResponse {
   id: number;
@@ -98,6 +99,25 @@ export interface InvoiceGroupResponse {
   evidenceChecklist?: InvoiceGroupResponseEvidenceChecklist;
   /** @nullable */
   payorEmail?: string | null;
+  /** Last-recorded payor denial reason code, or null when none has been captured yet. */
+  payorDenialReason?: PayorDenialReasonCode | null;
+  /**
+   * Free-text note. Required when `payorDenialReason === 'payor_other'`; optional otherwise.
+   * @nullable
+   */
+  payorDenialReasonNote?: string | null;
+  /**
+   * Stamped each time the operator records (or re-records) a payor denial reason.
+   * @nullable
+   */
+  payorDenialReasonAt?: Date | null;
+  /** @nullable */
+  payorDenialReasonBy?: string | null;
+  /**
+   * Set when the operator clicks 'I replied — wait for payor again' on the Responses Awaiting Review page. Hides the row from that page until a newer inbound response arrives. Does NOT change `status`/`outcome`.
+   * @nullable
+   */
+  awaitingPayorAgainAt?: Date | null;
   /** @nullable */
   importBatch?: string | null;
   /** True when the group must be re-attested in the MAS portal after per-leg verdict capture. Drives the MAS Action checklist's re-attest subsection. */

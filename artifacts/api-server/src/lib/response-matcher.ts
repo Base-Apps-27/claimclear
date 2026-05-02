@@ -332,7 +332,16 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       // Stamp every row so the LLM-first cohort (Task #314) is
       // distinguishable from earlier classifier generations in audits and
       // backfills (the backfill keys idempotency off this exact value).
-      classifierVersion: "llm-first-v1",
+      // Bumped to v2 in Task #321 when the AI hint output gained
+      // `newInvoiceNumber` + `suggestedPayorDenialReason` so the backfill
+      // can re-run rows in v1's cohort and pick up the new fields.
+      classifierVersion: "llm-first-v2",
+      // Task #321: AI hints surfaced on Responses Awaiting Review. Persisted
+      // verbatim from the classifier; UI uses them to pre-fill the operator
+      // pickers but never auto-applies. Both null when the AI was
+      // unavailable / abstained.
+      newInvoiceNumber: aiResult?.newInvoiceNumber ?? null,
+      suggestedPayorDenialReason: aiResult?.suggestedPayorDenialReason ?? null,
     },
   }).returning();
 

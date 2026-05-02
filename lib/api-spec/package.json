@@ -5,6 +5,9 @@
   "scripts": {
     "codegen": "orval --config ./orval.config.ts"
   },
+  "dependencies": {
+    "@workspace/payor-denial-reasons": "workspace:*"
+  },
   "devDependencies": {
     "orval": "^8.5.2"
   }
