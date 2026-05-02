@@ -832,7 +832,6 @@ export default function Import() {
               <UploadRail
                 stage={stage}
                 isProcessing={isProcessing}
-                onChooseFile={() => fileInputRef.current?.click()}
                 handleReset={handleReset}
               />
             )}
@@ -1720,9 +1719,9 @@ function SourceFileCard({ fileName, fileSize, onReplace }: { fileName: string; f
 // ────────────────────────────────────────────────────────────────────────────
 
 function UploadRail({
-  stage, isProcessing, onChooseFile, handleReset,
+  stage, isProcessing, handleReset,
 }: {
-  stage: UploadStage; isProcessing: boolean; onChooseFile: () => void; handleReset: () => void;
+  stage: UploadStage; isProcessing: boolean; handleReset: () => void;
 }) {
   if (isProcessing) {
     return (
@@ -1752,14 +1751,19 @@ function UploadRail({
 
   return (
     <>
+      {/*
+        Upload step: the dropzone in the main panel IS the primary action,
+        so the rail intentionally does NOT repeat a "Choose file" button
+        here. On mobile the rail stacks directly under the dropzone and
+        a second picker reads as a bug (two uploads stacked). The rail's
+        job on this step is just to orient the operator and surface the
+        manual one-off alternative below.
+      */}
       <ActionsRailRecommended
         label="Recommended"
-        description="Drop a CSV or Excel job-status report into the panel on the left."
+        description="Use the upload panel above to drop a CSV or Excel job-status report. ClaimClear will auto-detect the columns."
       >
-        <div className="text-sm font-semibold mb-2">Upload your report</div>
-        <ToneButton tone="blue" onClick={onChooseFile} testId="rail-button-choose-file">
-          <Upload className="w-4 h-4" /> Choose file
-        </ToneButton>
+        <div className="text-sm font-semibold">Upload your report</div>
       </ActionsRailRecommended>
 
       <ActionGroup label="Other ways to start">
