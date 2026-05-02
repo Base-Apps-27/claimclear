@@ -1,7 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { cronRunsTable, connectorHealthTable, emailBouncesTable, portalSubmissionsTable } from "@workspace/db";
+import { cronRunsTable, connectorHealthTable, emailBouncesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
 import { desc, gte, sql, eq, and, or, isNull, lte, count } from "drizzle-orm";
+import {
+  computeClassifierStats,
+  type ClassifierStatsRow,
+} from "../lib/classifier-stats";
+import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -358,6 +363,92 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
     lastSweepAt: prevSweepFire?.toISOString() ?? null,
     generatedAt: now.toISOString(),
     bootedAt: bootTime.toISOString(),
+  });
+}));
+
+// LLM email-classifier monitoring (Task #320). Filters portal_responses to
+// the LLM-first cohort (rows stamped `metadata.classifierVersion` of
+// 'llm-first-v1' or 'llm-first-v2' by `response-matcher.ts` — v2 was
+// introduced by Task #321 when the AI hint output gained
+// `newInvoiceNumber` + `suggestedPayorDenialReason`; the dashboard
+// unions both versions so spend continues to roll up across the
+// version bump) and rolls them up by day so
+// the System Health page can show verdict mix, daily Anthropic spend, and
+// alert when the most recent complete day's "other"/"abstain" rate
+// spikes vs the trailing baseline.
+//
+// Pure aggregation lives in `classifier-stats.ts` (covered by unit tests);
+// this handler is just the SQL fetch + projection into the rollup input.
+router.get("/admin/system-health/classifier-stats", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const rawDays = Number(req.query.days);
+  // Clamp to a sensible window: 1..90 days, default 14. Anything beyond
+  // 90 days is both expensive to scan and not useful for a "yesterday vs
+  // baseline" alert — operators want an at-a-glance view, not a long
+  // tail.
+  const windowDays = Number.isFinite(rawDays)
+    ? Math.min(90, Math.max(1, Math.floor(rawDays)))
+    : 14;
+
+  const now = new Date();
+  // Pull from (windowDays - 1) days ago, midnight UTC, so the bucket
+  // builder has a complete first day to anchor on.
+  const sinceUtc = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() - (windowDays - 1),
+  ));
+
+  // Project just the columns the rollup needs. Filtering by the
+  // classifierVersion stamp keeps the cohort honest — historical rows
+  // from earlier classifier generations are excluded from spend +
+  // verdict math even though they share the same table.
+  const rows = await db
+    .select({
+      receivedAt: portalResponsesTable.receivedAt,
+      classifierSource: portalResponsesTable.classifierSource,
+      responseType: portalResponsesTable.responseType,
+      // Numeric coercion happens server-side so the rollup math doesn't
+      // have to defensively parse strings out of the metadata blob.
+      costUsd: sql<number | null>`(${portalResponsesTable.metadata}->'classifierUsage'->>'costUsd')::numeric`,
+      inputTokens: sql<number | null>`(${portalResponsesTable.metadata}->'classifierUsage'->>'inputTokens')::int`,
+      outputTokens: sql<number | null>`(${portalResponsesTable.metadata}->'classifierUsage'->>'outputTokens')::int`,
+    })
+    .from(portalResponsesTable)
+    .where(and(
+      gte(portalResponsesTable.receivedAt, sinceUtc),
+      sql`${portalResponsesTable.metadata}->>'classifierVersion' IN ('llm-first-v1', 'llm-first-v2')`,
+    ));
+
+  const projected: ClassifierStatsRow[] = rows.map((r) => ({
+    receivedAt: r.receivedAt,
+    classifierSource: r.classifierSource,
+    // responseType is the DB enum; the rollup keys by ClassifiedDecision
+    // which is the same string set.
+    responseType: r.responseType as ClassifiedDecision,
+    costUsd: r.costUsd === null ? null : Number(r.costUsd),
+    inputTokens: r.inputTokens,
+    outputTokens: r.outputTokens,
+  }));
+
+  const stats = computeClassifierStats({ windowDays, now, rows: projected });
+
+  if (stats.alerts.length > 0) {
+    // Log alerts so an outage shows up in the worker logs even if no one
+    // is looking at the dashboard. Operators get the human-readable
+    // message; structured fields stay queryable.
+    for (const alert of stats.alerts) {
+      logger.warn({
+        kind: alert.kind,
+        recentRate: alert.recentRate,
+        baselineRate: alert.baselineRate,
+        recentSample: alert.recentSample,
+      }, `Classifier alert: ${alert.message}`);
+    }
+  }
+
+  res.json({
+    ...stats,
+    generatedAt: now.toISOString(),
   });
 }));
 

@@ -6,6 +6,7 @@ import { logger } from "./logger";
 import { transitionClaimStatus } from "./claim-transitions";
 import { transitionGroupStatus } from "./group-transitions";
 import { tryClassifyInboundEmail, type ClassifiedDecision, type InboundEmailContext } from "./inbound-email-classifier";
+import { computeCostUsd } from "./llm-pricing";
 import { classifyByPhrase } from "./email-phrase-classifier";
 
 interface MatchResult {
@@ -277,7 +278,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     const ctx = await loadInboundContext(match);
     aiResult = await tryClassifyInboundEmail(email.subject || "", bodyText, ctx);
     if (aiResult) {
-      responseType = aiResult.decision;
+      responseType = aiResult.result.decision;
       classifierSource = "ai";
     } else {
       responseType = "other";
@@ -317,12 +318,12 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     conversationId: email.conversationId || null,
     autoLinked: true,
     processed: autoMarkProcessed,
-    aiSummary: aiResult?.summary ?? null,
-    extractedAmount: aiResult?.amount ?? null,
-    extractedDeadline: aiResult?.deadline ?? null,
-    requestedAction: aiResult?.requestedAction ?? null,
+    aiSummary: aiResult?.result.summary ?? null,
+    extractedAmount: aiResult?.result.amount ?? null,
+    extractedDeadline: aiResult?.result.deadline ?? null,
+    requestedAction: aiResult?.result.requestedAction ?? null,
     classifierSource,
-    classifierConfidence: aiResult?.confidence ?? null,
+    classifierConfidence: aiResult?.result.confidence ?? null,
     receivedAt: new Date(email.receivedDateTime),
     metadata: {
       conversationId: email.conversationId,
@@ -340,8 +341,20 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
       // verbatim from the classifier; UI uses them to pre-fill the operator
       // pickers but never auto-applies. Both null when the AI was
       // unavailable / abstained.
-      newInvoiceNumber: aiResult?.newInvoiceNumber ?? null,
-      suggestedPayorDenialReason: aiResult?.suggestedPayorDenialReason ?? null,
+      newInvoiceNumber: aiResult?.result.newInvoiceNumber ?? null,
+      suggestedPayorDenialReason: aiResult?.result.suggestedPayorDenialReason ?? null,
+      // Per-row token usage + computed cost for the AI path. Persisted on
+      // metadata (rather than as new columns) so the classifier-stats
+      // dashboard (Task #320) can sum daily spend without a schema
+      // migration. Absent on phrase_signature / abstain rows.
+      classifierUsage: aiResult
+        ? {
+            model: aiResult.usage.model,
+            inputTokens: aiResult.usage.inputTokens,
+            outputTokens: aiResult.usage.outputTokens,
+            costUsd: computeCostUsd(aiResult.usage),
+          }
+        : null,
     },
   }).returning();
 
@@ -358,20 +371,20 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
   const noteContent = (() => {
     if (isAcknowledgment) {
       const base = `Acknowledged by ${senderLabel} (proof of receipt — no action required)`;
-      return aiResult?.summary ? `${base}: ${aiResult.summary}` : `${base}.`;
+      return aiResult?.result.summary ? `${base}: ${aiResult.result.summary}` : `${base}.`;
     }
     if (classifierSource === "abstain") {
       return `Unclassified response received via email from ${senderLabel} — left for manual review (no signature match and AI unavailable): "${email.subject}"`;
     }
     const headline = `${typeLabelFor(responseType)} response received via email from ${senderLabel}`;
-    return aiResult?.summary ? `${headline}: ${aiResult.summary}` : `${headline}: "${email.subject}"`;
+    return aiResult?.result.summary ? `${headline}: ${aiResult.result.summary}` : `${headline}: "${email.subject}"`;
   })();
 
   const sourceTag =
     classifierSource === "phrase_signature"
       ? `phrase: ${phraseResult.selectedSignatureId}`
       : classifierSource === "ai"
-      ? `AI confidence: ${aiResult?.confidence}`
+      ? `AI confidence: ${aiResult?.result.confidence}`
       : "abstain (no signature match, AI unavailable)";
   const auditDetails =
     `${responseType} response detected from email (${sourceTag}, match confidence: ${match.confidence})`;
@@ -385,7 +398,7 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     phraseSignature: phraseResult.selectedSignatureId,
     phraseSignatureMatches: phraseResult.matchedSignatureIds,
     senderEmail: email.from?.emailAddress?.address,
-    aiSummary: aiResult?.summary,
+    aiSummary: aiResult?.result.summary,
   };
 
   if (isGroup) {

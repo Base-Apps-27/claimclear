@@ -17531,6 +17531,86 @@ export const GetSystemHealthRollupResponse = zod.object({
 });
 
 /**
+ * Aggregated daily counts for the LLM-first inbound-email classifier
+(Task #320). Filters `portal_responses` to rows stamped with
+`metadata.classifierVersion = 'llm-first-v1'` (the cohort the
+Haiku-backed classifier produced). For each day in the window,
+returns the verdict mix (approval/denial/info_request/
+acknowledgment/other/abstain), the count of AI vs phrase-signature
+rows, and the total Anthropic spend computed from per-row token
+usage stored in `metadata.classifierUsage`. Surfaces alerts when
+the most recent complete day's "other" or "abstain" rate spikes
+relative to the trailing baseline.
+
+ * @summary LLM email-classifier verdict mix, daily spend, and spike alerts (admin only)
+ */
+export const GetSystemHealthClassifierStatsQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .optional()
+    .describe("Window length in days (1-90, default 14)."),
+});
+
+export const GetSystemHealthClassifierStatsResponse = zod.object({
+  windowDays: zod.number(),
+  daily: zod.array(
+    zod.object({
+      day: zod.string().describe("ISO YYYY-MM-DD (UTC bucket)."),
+      verdicts: zod.object({
+        approval: zod.number(),
+        denial: zod.number(),
+        partial_approval: zod.number(),
+        info_request: zod.number(),
+        acknowledgment: zod.number(),
+        other: zod.number(),
+        abstain: zod.number(),
+      }),
+      phraseSignatureCount: zod
+        .number()
+        .describe(
+          "Rows where the deterministic phrase classifier ran (no AI call).",
+        ),
+      aiAttemptCount: zod
+        .number()
+        .describe("Rows where the AI call was attempted (ai + abstain)."),
+      aiCallCount: zod
+        .number()
+        .describe("Rows where the AI call returned a verdict."),
+      abstainCount: zod.number().describe("Rows where the AI call failed."),
+      totalRows: zod.number(),
+      spendUsd: zod.number(),
+      inputTokens: zod.number(),
+      outputTokens: zod.number(),
+    }),
+  ),
+  totals: zod.object({
+    rows: zod.number(),
+    aiCalls: zod.number(),
+    spendUsd: zod.number(),
+    inputTokens: zod.number(),
+    outputTokens: zod.number(),
+  }),
+  alerts: zod.array(
+    zod.object({
+      kind: zod.enum(["spike_other", "spike_abstain"]),
+      message: zod.string(),
+      recentRate: zod
+        .number()
+        .describe("Most-recent-day rate that tripped the alert (0..1)."),
+      baselineRate: zod
+        .number()
+        .describe(
+          "Trailing-window baseline rate the recent rate is compared to (0..1).",
+        ),
+      recentSample: zod
+        .number()
+        .describe("Sample size used to compute recentRate."),
+    }),
+  ),
+  generatedAt: zod.string(),
+});
+
+/**
  * @summary Recent email bounces (admin only)
  */
 export const GetSystemHealthBouncesQueryParams = zod.object({

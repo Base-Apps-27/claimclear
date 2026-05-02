@@ -38,6 +38,23 @@ export interface ClassifiedInboundEmail {
   suggestedPayorDenialReason: PayorDenialReasonCode | null;
 }
 
+/**
+ * Token usage + model captured from the Anthropic response so the
+ * classifier-stats dashboard can compute daily spend without re-reading
+ * the original response object. Persisted on each row's
+ * `metadata.classifierUsage` (see `response-matcher.ts`).
+ */
+export interface ClassifierUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface ClassifierCallResult {
+  result: ClassifiedInboundEmail;
+  usage: ClassifierUsage;
+}
+
 export interface InboundEmailContext {
   payorName?: string | null;
   errorTypeName?: string | null;
@@ -248,18 +265,29 @@ export function parseClassifierResponse(rawText: string): ClassifiedInboundEmail
 export { PAYOR_DENIAL_REASON_CODES };
 
 /**
+ * Default model for the email classifier. Hoisted to a constant so the
+ * stats dashboard / pricing tables and the call site can never disagree
+ * about which Anthropic model is in use.
+ */
+export const CLASSIFIER_MODEL = "claude-haiku-4-5";
+
+/**
  * AI-classify an inbound email. Best-effort: throws on failure. Callers
  * should catch and abstain — there is no longer a keyword fallback for
  * decisions (Task #314 demoted the phrase classifier to ack-only). The
  * `response-matcher` write path treats abstain as "leave the row at
  * `other` and DON'T transition the group", so a Haiku outage degrades
  * gracefully into a no-op rather than a wrong decision.
+ *
+ * Returns the parsed verdict + the token usage block so the caller can
+ * persist per-row spend information for the classifier-stats dashboard
+ * (Task #320).
  */
 export async function classifyInboundEmail(
   subject: string,
   body: string,
   context: InboundEmailContext = {},
-): Promise<ClassifiedInboundEmail> {
+): Promise<ClassifierCallResult> {
   const prompt = buildUserPrompt(subject || "", body || "", context);
 
   // Cheap-by-default: Claude Haiku is the smallest model the AI Integrations
@@ -268,7 +296,7 @@ export async function classifyInboundEmail(
   // order of magnitude below Sonnet so the LLM-first pipeline (Task #314)
   // stays cheaper than the keyword-first pipeline it replaced.
   const message = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
+    model: CLASSIFIER_MODEL,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
@@ -279,7 +307,16 @@ export async function classifyInboundEmail(
     throw new Error("Empty LLM response");
   }
 
-  return parseClassifierResponse(textBlock.text);
+  const result = parseClassifierResponse(textBlock.text);
+  // The Anthropic SDK exposes `usage.input_tokens` / `usage.output_tokens`
+  // on every non-streaming `messages.create` response. Capture them here
+  // so the stats endpoint can compute spend without re-reading the model.
+  const usage: ClassifierUsage = {
+    model: (message as { model?: string }).model ?? CLASSIFIER_MODEL,
+    inputTokens: Number((message as { usage?: { input_tokens?: number } }).usage?.input_tokens ?? 0) || 0,
+    outputTokens: Number((message as { usage?: { output_tokens?: number } }).usage?.output_tokens ?? 0) || 0,
+  };
+  return { result, usage };
 }
 
 /**
@@ -292,7 +329,7 @@ export async function tryClassifyInboundEmail(
   subject: string,
   body: string,
   context: InboundEmailContext = {},
-): Promise<ClassifiedInboundEmail | null> {
+): Promise<ClassifierCallResult | null> {
   try {
     return await classifyInboundEmail(subject, body, context);
   } catch (err) {

@@ -3906,6 +3906,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/SystemHealthRollupResponse'
 
+  /admin/system-health/classifier-stats:
+    get:
+      operationId: getSystemHealthClassifierStats
+      tags: [systemHealth]
+      summary: LLM email-classifier verdict mix, daily spend, and spike alerts (admin only)
+      description: |
+        Aggregated daily counts for the LLM-first inbound-email classifier
+        (Task #320). Filters `portal_responses` to rows stamped with
+        `metadata.classifierVersion = 'llm-first-v1'` (the cohort the
+        Haiku-backed classifier produced). For each day in the window,
+        returns the verdict mix (approval/denial/info_request/
+        acknowledgment/other/abstain), the count of AI vs phrase-signature
+        rows, and the total Anthropic spend computed from per-row token
+        usage stored in `metadata.classifierUsage`. Surfaces alerts when
+        the most recent complete day's "other" or "abstain" rate spikes
+        relative to the trailing baseline.
+      parameters:
+        - name: days
+          in: query
+          description: Window length in days (1-90, default 14).
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Classifier stats rollup
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassifierStatsResponse'
+
   /admin/system-health/bounces:
     get:
       operationId: getSystemHealthBounces
@@ -8109,3 +8139,102 @@ components:
         bootedAt:
           type: string
           description: ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes.
+
+    ClassifierVerdictBin:
+      type: string
+      enum: [approval, denial, partial_approval, info_request, acknowledgment, other, abstain]
+      description: |
+        Verdict bins surfaced on the LLM-classifier dashboard. Mirrors the
+        six classifier decisions plus an explicit `abstain` bin for rows
+        where the AI call was attempted but failed (so a Haiku outage is
+        visible separately from genuine `other` verdicts).
+
+    ClassifierStatsVerdictCounts:
+      type: object
+      required: [approval, denial, partial_approval, info_request, acknowledgment, other, abstain]
+      properties:
+        approval: { type: integer }
+        denial: { type: integer }
+        partial_approval: { type: integer }
+        info_request: { type: integer }
+        acknowledgment: { type: integer }
+        other: { type: integer }
+        abstain: { type: integer }
+
+    ClassifierStatsDay:
+      type: object
+      required: [day, verdicts, phraseSignatureCount, aiAttemptCount, aiCallCount, abstainCount, totalRows, spendUsd, inputTokens, outputTokens]
+      properties:
+        day:
+          type: string
+          description: ISO YYYY-MM-DD (UTC bucket).
+        verdicts:
+          $ref: "#/components/schemas/ClassifierStatsVerdictCounts"
+        phraseSignatureCount:
+          type: integer
+          description: Rows where the deterministic phrase classifier ran (no AI call).
+        aiAttemptCount:
+          type: integer
+          description: Rows where the AI call was attempted (ai + abstain).
+        aiCallCount:
+          type: integer
+          description: Rows where the AI call returned a verdict.
+        abstainCount:
+          type: integer
+          description: Rows where the AI call failed.
+        totalRows:
+          type: integer
+        spendUsd:
+          type: number
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+
+    ClassifierStatsTotals:
+      type: object
+      required: [rows, aiCalls, spendUsd, inputTokens, outputTokens]
+      properties:
+        rows: { type: integer }
+        aiCalls: { type: integer }
+        spendUsd: { type: number }
+        inputTokens: { type: integer }
+        outputTokens: { type: integer }
+
+    ClassifierStatsAlert:
+      type: object
+      required: [kind, message, recentRate, baselineRate, recentSample]
+      properties:
+        kind:
+          type: string
+          enum: [spike_other, spike_abstain]
+        message:
+          type: string
+        recentRate:
+          type: number
+          description: Most-recent-day rate that tripped the alert (0..1).
+        baselineRate:
+          type: number
+          description: Trailing-window baseline rate the recent rate is compared to (0..1).
+        recentSample:
+          type: integer
+          description: Sample size used to compute recentRate.
+
+    ClassifierStatsResponse:
+      type: object
+      required: [windowDays, daily, totals, alerts, generatedAt]
+      properties:
+        windowDays:
+          type: integer
+        daily:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassifierStatsDay"
+        totals:
+          $ref: "#/components/schemas/ClassifierStatsTotals"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassifierStatsAlert"
+        generatedAt:
+          type: string

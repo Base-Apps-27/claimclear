@@ -3268,6 +3268,89 @@ still-pending rows are flagged as past their cycle.
   bootedAt: string;
 }
 
+/**
+ * Verdict bins surfaced on the LLM-classifier dashboard. Mirrors the
+six classifier decisions plus an explicit `abstain` bin for rows
+where the AI call was attempted but failed (so a Haiku outage is
+visible separately from genuine `other` verdicts).
+
+ */
+export type ClassifierVerdictBin =
+  (typeof ClassifierVerdictBin)[keyof typeof ClassifierVerdictBin];
+
+export const ClassifierVerdictBin = {
+  approval: "approval",
+  denial: "denial",
+  partial_approval: "partial_approval",
+  info_request: "info_request",
+  acknowledgment: "acknowledgment",
+  other: "other",
+  abstain: "abstain",
+} as const;
+
+export interface ClassifierStatsVerdictCounts {
+  approval: number;
+  denial: number;
+  partial_approval: number;
+  info_request: number;
+  acknowledgment: number;
+  other: number;
+  abstain: number;
+}
+
+export interface ClassifierStatsDay {
+  /** ISO YYYY-MM-DD (UTC bucket). */
+  day: string;
+  verdicts: ClassifierStatsVerdictCounts;
+  /** Rows where the deterministic phrase classifier ran (no AI call). */
+  phraseSignatureCount: number;
+  /** Rows where the AI call was attempted (ai + abstain). */
+  aiAttemptCount: number;
+  /** Rows where the AI call returned a verdict. */
+  aiCallCount: number;
+  /** Rows where the AI call failed. */
+  abstainCount: number;
+  totalRows: number;
+  spendUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface ClassifierStatsTotals {
+  rows: number;
+  aiCalls: number;
+  spendUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export type ClassifierStatsAlertKind =
+  (typeof ClassifierStatsAlertKind)[keyof typeof ClassifierStatsAlertKind];
+
+export const ClassifierStatsAlertKind = {
+  spike_other: "spike_other",
+  spike_abstain: "spike_abstain",
+} as const;
+
+export interface ClassifierStatsAlert {
+  kind: ClassifierStatsAlertKind;
+  message: string;
+  /** Most-recent-day rate that tripped the alert (0..1). */
+  recentRate: number;
+  /** Trailing-window baseline rate the recent rate is compared to (0..1). */
+  baselineRate: number;
+  /** Sample size used to compute recentRate. */
+  recentSample: number;
+}
+
+export interface ClassifierStatsResponse {
+  windowDays: number;
+  daily: ClassifierStatsDay[];
+  totals: ClassifierStatsTotals;
+  alerts: ClassifierStatsAlert[];
+  generatedAt: string;
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -3954,6 +4037,13 @@ export const AdminExportAuditLogsCsvCategory = {
   communication: "communication",
   other: "other",
 } as const;
+
+export type GetSystemHealthClassifierStatsParams = {
+  /**
+   * Window length in days (1-90, default 14).
+   */
+  days?: number;
+};
 
 export type GetSystemHealthBouncesParams = {
   limit?: number;

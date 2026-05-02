@@ -76,9 +76,10 @@ import { classifyByPhrase } from "../lib/email-phrase-classifier";
 import {
   tryClassifyInboundEmail,
   type ClassifiedDecision,
-  type ClassifiedInboundEmail,
+  type ClassifierCallResult,
   type InboundEmailContext,
 } from "../lib/inbound-email-classifier";
+import { computeCostUsd } from "../lib/llm-pricing";
 import { claimsTable } from "@workspace/db";
 
 // Bumped to v2 in Task #321 when the inbound classifier output gained
@@ -273,7 +274,12 @@ interface ClassifierVerdict {
   classifierSource: "phrase_signature" | "ai" | "abstain";
   phraseSignatureId: string | null;
   phraseSignatureMatches: string[];
-  aiResult: ClassifiedInboundEmail | null;
+  // Holds both the parsed verdict and the raw Anthropic usage block when
+  // the AI path ran. The wrapper shape (vs. just `ClassifiedInboundEmail`)
+  // lets the backfill stamp `metadata.classifierUsage` on rewritten rows
+  // so they show up in the classifier-stats dashboard alongside live
+  // traffic (Task #320).
+  aiResult: ClassifierCallResult | null;
 }
 
 async function reclassify(c: CandidateResponse): Promise<ClassifierVerdict> {
@@ -291,7 +297,7 @@ async function reclassify(c: CandidateResponse): Promise<ClassifierVerdict> {
   const ai = await tryClassifyInboundEmail(c.subject ?? "", bodyForClassification(c), ctx);
   if (ai) {
     return {
-      newResponseType: ai.decision,
+      newResponseType: ai.result.decision,
       classifierSource: "ai",
       phraseSignatureId: null,
       phraseSignatureMatches: [],
@@ -389,17 +395,28 @@ async function applyRelabel(
     // rows leave both null. Existing values (if any) are preserved on the
     // row via the `...oldMetadata` spread above and only overwritten when
     // the fresh verdict actually has a value to write.
-    newInvoiceNumber: verdict.aiResult?.newInvoiceNumber ?? (oldMetadata as Record<string, unknown>).newInvoiceNumber ?? null,
-    suggestedPayorDenialReason: verdict.aiResult?.suggestedPayorDenialReason ?? (oldMetadata as Record<string, unknown>).suggestedPayorDenialReason ?? null,
+    newInvoiceNumber: verdict.aiResult?.result.newInvoiceNumber ?? (oldMetadata as Record<string, unknown>).newInvoiceNumber ?? null,
+    suggestedPayorDenialReason: verdict.aiResult?.result.suggestedPayorDenialReason ?? (oldMetadata as Record<string, unknown>).suggestedPayorDenialReason ?? null,
     backfillVerdict: {
       newResponseType: verdict.newResponseType,
       classifierSource: verdict.classifierSource,
       phraseSignature: verdict.phraseSignatureId,
       phraseSignatureMatches: verdict.phraseSignatureMatches,
-      aiConfidence: verdict.aiResult?.confidence ?? null,
-      newInvoiceNumber: verdict.aiResult?.newInvoiceNumber ?? null,
-      suggestedPayorDenialReason: verdict.aiResult?.suggestedPayorDenialReason ?? null,
+      aiConfidence: verdict.aiResult?.result.confidence ?? null,
+      newInvoiceNumber: verdict.aiResult?.result.newInvoiceNumber ?? null,
+      suggestedPayorDenialReason: verdict.aiResult?.result.suggestedPayorDenialReason ?? null,
     },
+    // Stamp the same per-row usage shape the live classifier writes
+    // (response-matcher.ts) so backfilled rows are queryable by the
+    // classifier-stats dashboard. Null on phrase / abstain paths.
+    classifierUsage: verdict.aiResult
+      ? {
+          model: verdict.aiResult.usage.model,
+          inputTokens: verdict.aiResult.usage.inputTokens,
+          outputTokens: verdict.aiResult.usage.outputTokens,
+          costUsd: computeCostUsd(verdict.aiResult.usage),
+        }
+      : null,
   };
 
   if (!safe) {
@@ -436,11 +453,11 @@ async function applyRelabel(
       .set({
         responseType: verdict.newResponseType,
         classifierSource: verdict.classifierSource,
-        classifierConfidence: verdict.aiResult?.confidence ?? null,
-        aiSummary: verdict.aiResult?.summary ?? null,
-        extractedAmount: verdict.aiResult?.amount ?? null,
-        extractedDeadline: verdict.aiResult?.deadline ?? null,
-        requestedAction: verdict.aiResult?.requestedAction ?? null,
+        classifierConfidence: verdict.aiResult?.result.confidence ?? null,
+        aiSummary: verdict.aiResult?.result.summary ?? null,
+        extractedAmount: verdict.aiResult?.result.amount ?? null,
+        extractedDeadline: verdict.aiResult?.result.deadline ?? null,
+        requestedAction: verdict.aiResult?.result.requestedAction ?? null,
         metadata: baseMetadata,
         updatedAt: new Date(),
       })
@@ -476,7 +493,7 @@ async function writeReclassifyAudit(
       classifierVersion: CLASSIFIER_VERSION,
       phraseSignature: verdict.phraseSignatureId,
       phraseSignatureMatches: verdict.phraseSignatureMatches,
-      aiConfidence: verdict.aiResult?.confidence ?? null,
+      aiConfidence: verdict.aiResult?.result.confidence ?? null,
       backfillSource: BACKFILL_SOURCE,
       humanActivityFound: human.found,
       humanActivityAuditId: human.found ? human.auditId : null,
@@ -528,7 +545,7 @@ async function processOne(
   } else if (result.changedResponseType) {
     stats.reclassifiedSafe++;
     console.log(
-      `  ↺ response#${c.id} ${linkLabel} sender=${c.senderEmail} legacy=${c.responseType} → ${verdict.newResponseType} (src=${verdict.classifierSource}${verdict.aiResult ? `, conf=${verdict.aiResult.confidence}` : ""}${verdict.phraseSignatureId ? `, sig=${verdict.phraseSignatureId}` : ""})`,
+      `  ↺ response#${c.id} ${linkLabel} sender=${c.senderEmail} legacy=${c.responseType} → ${verdict.newResponseType} (src=${verdict.classifierSource}${verdict.aiResult ? `, conf=${verdict.aiResult.result.confidence}` : ""}${verdict.phraseSignatureId ? `, sig=${verdict.phraseSignatureId}` : ""})`,
     );
   } else {
     stats.unchangedSafe++;

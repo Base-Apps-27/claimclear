@@ -4,16 +4,19 @@ import {
   useGetSystemHealthBounces,
   useGetSystemHealthWorkerActivity,
   useGetSystemHealthRollup,
+  useGetSystemHealthClassifierStats,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
   getGetSystemHealthBouncesQueryKey,
   getGetSystemHealthWorkerActivityQueryKey,
   getGetSystemHealthRollupQueryKey,
+  getGetSystemHealthClassifierStatsQueryKey,
+  type ClassifierStatsResponse,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
@@ -80,6 +83,17 @@ export default function SystemHealth() {
       retry: false,
     },
   });
+  const { data: classifierData, isLoading: classifierLoading } =
+    useGetSystemHealthClassifierStats(
+      { days: 14 },
+      {
+        query: {
+          queryKey: getGetSystemHealthClassifierStatsQueryKey({ days: 14 }),
+          refetchInterval: REFRESH_MS,
+          retry: false,
+        },
+      },
+    );
 
   // Surface only components the rollup explicitly marked as informational —
   // e.g. "Awaiting first scheduled run since server boot" right after a
@@ -379,6 +393,8 @@ export default function SystemHealth() {
         </CardContent>
       </Card>
 
+      <ClassifierStatsCard data={classifierData} loading={classifierLoading} />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -417,4 +433,162 @@ export default function SystemHealth() {
       </Card>
     </div>
   );
+}
+
+// LLM email-classifier monitoring card (Task #320). Surfaces:
+// - 14-day verdict mix from the LLM-first cohort
+// - Total Anthropic spend (computed from per-row token usage)
+// - Per-day mini-table so trends are visible at a glance
+// - Spike alerts when "other" or "abstain" rates jump vs the baseline
+//
+// Lives in this file rather than its own component because it's tightly
+// coupled to the System Health page layout and consumes generated client
+// types directly.
+function ClassifierStatsCard({
+  data,
+  loading,
+}: {
+  data: ClassifierStatsResponse | undefined;
+  loading: boolean;
+}) {
+  return (
+    <Card data-testid="card-classifier-stats">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-violet-600" /> LLM Email Classifier
+        </CardTitle>
+        <CardDescription>
+          Inbound-email classifier verdict mix and Anthropic spend over the last{" "}
+          {data?.windowDays ?? 14} days. Includes the LLM-first cohort only.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground">
+            Classifier stats unavailable.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {data.alerts.length > 0 ? (
+              <div
+                className="rounded-md border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm"
+                role="alert"
+                data-testid="classifier-stats-alerts"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-amber-900 dark:text-amber-100">
+                      Classifier alert
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs text-amber-900/90 dark:text-amber-100/90">
+                      {data.alerts.map((a) => (
+                        <li key={a.kind}>
+                          <span className="font-mono">{a.kind}</span> — {a.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Stat label="Rows classified" value={fmtInt(data.totals.rows)} />
+              <Stat label="AI calls" value={fmtInt(data.totals.aiCalls)} />
+              <Stat
+                label="Anthropic spend"
+                value={fmtUsd(data.totals.spendUsd)}
+              />
+              <Stat
+                label="Tokens (in / out)"
+                value={`${fmtInt(data.totals.inputTokens)} / ${fmtInt(
+                  data.totals.outputTokens,
+                )}`}
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase border-b">
+                  <tr>
+                    <th className="text-left px-2 py-2">Day</th>
+                    <th className="text-right px-2 py-2">Rows</th>
+                    <th className="text-right px-2 py-2">AI</th>
+                    <th className="text-right px-2 py-2">Phrase</th>
+                    <th className="text-right px-2 py-2">Abstain</th>
+                    <th className="text-right px-2 py-2">Other</th>
+                    <th className="text-right px-2 py-2">Spend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.daily.map((d) => (
+                    <tr
+                      key={d.day}
+                      className="border-b last:border-0"
+                      data-testid={`classifier-stats-row-${d.day}`}
+                    >
+                      <td className="px-2 py-1.5 font-mono text-xs whitespace-nowrap">
+                        {d.day}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs">
+                        {fmtInt(d.totalRows)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs">
+                        {fmtInt(d.aiCallCount)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs">
+                        {fmtInt(d.phraseSignatureCount)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs">
+                        {d.abstainCount > 0 ? (
+                          <span className="text-amber-700 dark:text-amber-300 font-semibold">
+                            {fmtInt(d.abstainCount)}
+                          </span>
+                        ) : (
+                          fmtInt(d.abstainCount)
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs">
+                        {fmtInt(d.verdicts.other)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-xs font-mono">
+                        {fmtUsd(d.spendUsd)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="text-lg font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function fmtInt(n: number): string {
+  return n.toLocaleString();
+}
+
+// Show 4 decimal places below $1 so a Haiku day still surfaces a non-zero
+// number (single calls cost fractions of a cent), and 2 decimals above
+// that so the dashboard reads naturally for higher-volume days.
+function fmtUsd(n: number): string {
+  if (n === 0) return "$0.00";
+  if (n < 1) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
 }

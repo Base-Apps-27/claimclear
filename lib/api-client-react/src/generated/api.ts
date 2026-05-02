@@ -52,6 +52,7 @@ import type {
   ClaimResponse,
   ClaimVerdictResponse,
   ClaimsListResponse,
+  ClassifierStatsResponse,
   ClassifyLegBody,
   ClosureReviewBody,
   CompleteMasActionBody,
@@ -96,6 +97,7 @@ import type {
   GetInvoiceGroupEmailThread404,
   GetMyProcessedTodayParams,
   GetSystemHealthBouncesParams,
+  GetSystemHealthClassifierStatsParams,
   HealthStatus,
   HoldInvoiceGroupBody,
   ImportClaimsBody,
@@ -12554,6 +12556,126 @@ export function useGetSystemHealthRollup<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSystemHealthRollupQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Aggregated daily counts for the LLM-first inbound-email classifier
+(Task #320). Filters `portal_responses` to rows stamped with
+`metadata.classifierVersion = 'llm-first-v1'` (the cohort the
+Haiku-backed classifier produced). For each day in the window,
+returns the verdict mix (approval/denial/info_request/
+acknowledgment/other/abstain), the count of AI vs phrase-signature
+rows, and the total Anthropic spend computed from per-row token
+usage stored in `metadata.classifierUsage`. Surfaces alerts when
+the most recent complete day's "other" or "abstain" rate spikes
+relative to the trailing baseline.
+
+ * @summary LLM email-classifier verdict mix, daily spend, and spike alerts (admin only)
+ */
+export const getGetSystemHealthClassifierStatsUrl = (
+  params?: GetSystemHealthClassifierStatsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/system-health/classifier-stats?${stringifiedParams}`
+    : `/api/admin/system-health/classifier-stats`;
+};
+
+export const getSystemHealthClassifierStats = async (
+  params?: GetSystemHealthClassifierStatsParams,
+  options?: RequestInit,
+): Promise<ClassifierStatsResponse> => {
+  return customFetch<ClassifierStatsResponse>(
+    getGetSystemHealthClassifierStatsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthClassifierStatsQueryKey = (
+  params?: GetSystemHealthClassifierStatsParams,
+) => {
+  return [
+    `/api/admin/system-health/classifier-stats`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetSystemHealthClassifierStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthClassifierStats>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSystemHealthClassifierStatsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthClassifierStats>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthClassifierStatsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthClassifierStats>>
+  > = ({ signal }) =>
+    getSystemHealthClassifierStats(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthClassifierStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthClassifierStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthClassifierStats>>
+>;
+export type GetSystemHealthClassifierStatsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary LLM email-classifier verdict mix, daily spend, and spike alerts (admin only)
+ */
+
+export function useGetSystemHealthClassifierStats<
+  TData = Awaited<ReturnType<typeof getSystemHealthClassifierStats>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetSystemHealthClassifierStatsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthClassifierStats>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthClassifierStatsQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
