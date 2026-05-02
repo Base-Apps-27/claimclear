@@ -1,6 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@workspace/replit-auth-web";
+import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
+import { isPreSubmit as isPreSubmitFn, isInFlight } from "@/lib/lifecycle-phase";
 import {
   useGetInvoiceGroup,
   getGetInvoiceGroupQueryKey,
@@ -226,6 +229,24 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     query: { queryKey: getGetInvoiceGroupQueryKey(groupId), enabled: !!groupId },
   });
 
+  // ─────────────────────────────────────────────────────────────────────
+  // "Invoice shipped" microinteraction (Task #325). When this group's
+  // status flips out of pre-submit (New / Needs Evidence / Processed)
+  // into in-flight (Portal Queued / Generating Email / Awaiting
+  // Response) while the page is mounted — either because the operator's
+  // own package mutation just landed, or because the SSE stream
+  // broadcast their action back to this tab — briefly draw a check
+  // inside the group's status pill. We deliberately suppress the
+  // animation when the change came from a different operator (so a
+  // collaborator's submission doesn't feel like the current user's
+  // win). Mirrors the leg-level "you finished a thing" flourish on
+  // claim-detail-v2 (Task #315).
+  // ─────────────────────────────────────────────────────────────────────
+  const { user } = useAuth();
+  const { lastGroupUpdateBy } = useInvoiceGroupEvents(groupId);
+  const prevGroupStatusRef = useRef<string | null | undefined>(undefined);
+  const [justShipped, setJustShipped] = useState(false);
+
   const packageMutation = usePackageInvoiceGroup();
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
@@ -270,6 +291,27 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const excludedCount = allRides.length - disputedRides.length;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
   const packagingReadiness: GroupPackagingReadiness | undefined = detail?.packagingReadiness;
+
+  useEffect(() => {
+    const newStatus = group?.status;
+    if (newStatus === undefined) return; // group hasn't loaded yet
+    const prev = prevGroupStatusRef.current;
+    prevGroupStatusRef.current = newStatus;
+    // Skip on initial mount and on background refetches that don't
+    // change status — only the actual transition fires the animation.
+    if (prev === undefined) return;
+    if (prev === newStatus) return;
+    // Only celebrate the bucket transition out of pre-submit into
+    // in-flight (the dispute is actually out the door).
+    if (!(isPreSubmitFn(prev) && isInFlight(newStatus))) return;
+    // If the most recent SSE event for this group came from another
+    // operator, this transition isn't "ours" — stay quiet.
+    const lastBy = lastGroupUpdateBy.current?.email ?? null;
+    if (lastBy && user?.email && lastBy !== user.email) return;
+    setJustShipped(true);
+    const t = setTimeout(() => setJustShipped(false), 500);
+    return () => clearTimeout(t);
+  }, [group?.status, user?.email, lastGroupUpdateBy]);
 
   /* Aggregate-context state removed in Task #265 — per-leg context lives
      on each leg row in the queue and the editable AI write-up replaces
@@ -517,7 +559,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl font-bold mono">{group.invoiceNumber || `#${group.id}`}</h1>
-                  <StatusPill tone={statusTone(group.status)}>{group.status}</StatusPill>
+                  <StatusPill tone={statusTone(group.status)} justTransitioned={justShipped}>{group.status}</StatusPill>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                     {group.errorTypeName ? <>{group.errorTypeName} · </> : null}

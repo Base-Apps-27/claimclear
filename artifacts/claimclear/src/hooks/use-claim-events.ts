@@ -165,15 +165,35 @@ const GROUP_EVENT_LABELS: Record<string, string> = {
   group_triaged: "classified the group",
 };
 
-export function useInvoiceGroupEvents(groupId: number | undefined) {
+export interface InvoiceGroupEventsHandle {
+  /**
+   * Author of the most recent group_update SSE event for this invoice
+   * group. Used by callers (invoice-group-detail-v2) to gate one-shot
+   * UI flourishes on whether the change was triggered by the current
+   * operator vs a collaborator. Mirrors `lastClaimUpdateBy` on
+   * `useClaimEvents`. Stored in a ref so observing it inside a status-
+   * change effect doesn't add a re-render dependency.
+   */
+  lastGroupUpdateBy: { current: { email: string | null; type: string; timestamp: string } | null };
+}
+
+export function useInvoiceGroupEvents(groupId: number | undefined): InvoiceGroupEventsHandle {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const retryCount = useRef(0);
+  const lastGroupUpdateBy = useRef<{ email: string | null; type: string; timestamp: string } | null>(null);
 
   const handleEvent = useCallback(
     (event: MessageEvent) => {
       try {
         const data: GroupEvent = JSON.parse(event.data);
+
+        lastGroupUpdateBy.current = {
+          email: data.userEmail ?? null,
+          type: data.type,
+          timestamp: data.timestamp,
+        };
+
         queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(data.invoiceGroupId) });
         queryClient.invalidateQueries({ queryKey: getListInvoiceGroupEvidenceQueryKey(data.invoiceGroupId) });
         queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(data.invoiceGroupId) });
@@ -229,6 +249,8 @@ export function useInvoiceGroupEvents(groupId: number | undefined) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [groupId, handleEvent]);
+
+  return { lastGroupUpdateBy };
 }
 
 export function useInvoiceGroupsListEvents() {
