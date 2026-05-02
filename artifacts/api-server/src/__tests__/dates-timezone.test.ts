@@ -132,6 +132,34 @@ test("isUrgentDeadline: weekday deadline three days out is NOT urgent on a UTC-l
 // Cross-check: tz parameter and default agree
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// Malformed input guard — production data has historically included
+// empty strings, partial dates, and impossible calendar dates that used
+// to crash the dashboard with `RangeError: Invalid time value`.
+// ---------------------------------------------------------------------
+
+test("daysRemaining returns null for malformed service dates", () => {
+  for (const bad of ["", "2026-02", "not-a-date", "2026-02-30", "0000-00-00"]) {
+    assert.equal(
+      daysRemaining(bad as string),
+      null,
+      `expected null for ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test("effectiveDaysRemaining returns null for malformed service dates", () => {
+  for (const bad of ["", "2026-02", "not-a-date", "2026-02-30"]) {
+    assert.equal(effectiveDaysRemaining(bad as string), null);
+  }
+});
+
+test("isUrgentDeadline returns false for malformed service dates", () => {
+  for (const bad of ["", "2026-02", "not-a-date", "2026-02-30"]) {
+    assert.equal(isUrgentDeadline(bad as string), false);
+  }
+});
+
 test("default tz parameter is America/New_York", () => {
   // If anyone changes the default constant the production behaviour
   // shifts silently — pin it explicitly.

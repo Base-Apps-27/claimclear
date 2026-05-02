@@ -39,6 +39,32 @@ function parseYMD(s: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
+/**
+ * True when `s` looks like a valid YYYY-MM-DD prefix. Production data
+ * has historically included empty strings, partial dates, and other
+ * malformed entries that cause `addDaysToYMD` to throw a RangeError
+ * deep inside dashboard aggregation. Public deadline helpers gate on
+ * this so a single bad row can't 500 the whole dashboard. */
+function isValidYMD(s: string | null | undefined): s is string {
+  if (!s || typeof s !== "string") return false;
+  const head = s.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(head)) return false;
+  const { y, m, d } = parseYMD(head);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return false;
+  }
+  // Round-trip guard catches things like 2026-02-30 that `Date.UTC`
+  // would silently roll forward to March 2.
+  const ms = ymdToUtcMillis({ y, m, d });
+  if (!Number.isFinite(ms)) return false;
+  const back = new Date(ms);
+  return (
+    back.getUTCFullYear() === y &&
+    back.getUTCMonth() + 1 === m &&
+    back.getUTCDate() === d
+  );
+}
+
 function ymdToUtcMillis(parts: { y: number; m: number; d: number }): number {
   return Date.UTC(parts.y, parts.m - 1, parts.d);
 }
@@ -99,7 +125,7 @@ export function daysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  if (!serviceDate) return null;
+  if (!isValidYMD(serviceDate)) return null;
   const today = dateKeyInTz(now, tz);
   const deadline = rawDeadlineKey(serviceDate);
   return diffDaysYMD(deadline, today);
@@ -115,7 +141,7 @@ export function effectiveDaysRemaining(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): number | null {
-  if (!serviceDate) return null;
+  if (!isValidYMD(serviceDate)) return null;
   const today = dateKeyInTz(now, tz);
   const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
   return diffDaysYMD(deadline, today);
@@ -131,7 +157,7 @@ export function isUrgentDeadline(
   now: Date = new Date(),
   tz: string = DEFAULT_TZ,
 ): boolean {
-  if (!serviceDate) return false;
+  if (!isValidYMD(serviceDate)) return false;
   const today = dateKeyInTz(now, tz);
   const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
   // YYYY-MM-DD strings sort lexicographically as dates, so `<=` is a
