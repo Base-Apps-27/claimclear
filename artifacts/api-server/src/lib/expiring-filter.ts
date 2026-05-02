@@ -1,4 +1,4 @@
-import { and, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
@@ -60,19 +60,18 @@ export function buildClaimExpiringCondition(mode: ExpiringMode): SQL {
 
 export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   const max = maxDaysFor(mode);
-  // Earliest service date across the group's child claims, computed as a
-  // correlated subquery so the existing pagination / total-count queries on
-  // invoice_groups stay flat (no JOIN that would inflate row counts).
-  // claims.date is a typed DATE column, so MIN() yields a date directly.
-  const earliestDateSubquery = sql`(
-    SELECT MIN(c.date)
-    FROM claims c
-    WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
-      AND c.date IS NOT NULL
-  )`;
+  // Read the typed, indexed `invoice_groups.service_date` column instead
+  // of recomputing MIN(claims.date) on every request. The column is
+  // maintained on every write path by `recomputeGroupServiceDate`
+  // (lib/group-service-date.ts); the system-health rollup runs a JS-side
+  // drift check so any future write path that forgets to call the
+  // helper surfaces as an ops alert. See Task #350. Pairs with the
+  // typed `claims.date` work in Task #351 — both columns are now
+  // calendar-correct without per-query NULLIF/text-cast wrappers.
+  const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
   return and(
     actionableGroupStatusCondition(),
-    sql`${earliestDateSubquery} IS NOT NULL`,
-    sql`(${effectiveDeadlineSql(earliestDateSubquery)} - CURRENT_DATE) <= ${max}`,
+    isNotNull(invoiceGroupsTable.serviceDate),
+    sql`(${effectiveDeadlineSql(dateExpr)} - CURRENT_DATE) <= ${max}`,
   ) as SQL;
 }

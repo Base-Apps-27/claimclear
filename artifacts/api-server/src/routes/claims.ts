@@ -17,6 +17,7 @@ import {
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
+import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { getMacroPhase, getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -501,6 +502,16 @@ router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const [previous] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!previous) { res.status(404).json({ error: "Claim not found" }); return; }
 
+  // The PATCH allowedFields list above intentionally excludes
+  // `invoiceGroupId`, so a leg cannot move between groups via this
+  // route — only the parent group's earliest-service-date might shift,
+  // and only when `date` is in the patch and actually changes. We
+  // recompute after the transaction commits so the side effect runs
+  // against the post-write row state.
+  const dateChanged =
+    Object.prototype.hasOwnProperty.call(updateData, "date") &&
+    updateData.date !== previous.date;
+
   // Atomic block: row edit + claim_edited audit + (when applicable) the
   // auto_after_classify status transition all run in one drizzle
   // transaction. If anything inside throws, the whole patch rolls back so
@@ -544,6 +555,13 @@ router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
     return { saved: updated, advanced: null as typeof updated | null };
   });
 
+  // Refresh the parent group's earliest-service-date column when the
+  // edit moved the leg's `date`. Outside the txn so the recompute reads
+  // the committed row; no-op when the MIN didn't actually shift.
+  if (dateChanged && saved.invoiceGroupId != null) {
+    await recomputeGroupServiceDate(saved.invoiceGroupId);
+  }
+
   emitClaimEvent(id, "claim_edited", req);
   res.json(advanced ?? saved);
 }));
@@ -558,6 +576,12 @@ router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   await createAuditLog(id, "claim_deleted", `Claim ${existing.confNumber} deleted`, req);
   emitClaimEvent(id, "claim_deleted", req);
   await db.delete(claimsTable).where(eq(claimsTable.id, id));
+  // Refresh the orphaned parent group's earliest-service-date now that
+  // a child is gone — deleting the leg with the smallest `date` shifts
+  // the MIN forward; a no-op otherwise.
+  if (existing.invoiceGroupId != null) {
+    await recomputeGroupServiceDate(existing.invoiceGroupId);
+  }
   res.sendStatus(204);
 }));
 
@@ -2010,7 +2034,13 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
     metadata: { reason },
   });
   await refreshClaimDenormalizedCache(id);
-  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  if (leg.invoiceGroupId != null) {
+    await refreshGroupDerivedFields(leg.invoiceGroupId);
+    // No-op when the MIN(date) didn't move (excluding a leg never
+    // changes its `date` value), but routing through the canonical
+    // helper keeps every leg-state write path on the same code path.
+    await recomputeGroupServiceDate(leg.invoiceGroupId);
+  }
   emitClaimEvent(id, "excluded", req);
 
   res.json(updated);
@@ -2073,7 +2103,13 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
     metadata: {},
   });
   await refreshClaimDenormalizedCache(id);
-  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  if (leg.invoiceGroupId != null) {
+    await refreshGroupDerivedFields(leg.invoiceGroupId);
+    // Re-include never changes the leg's `date`, so the MIN can't move
+    // — but route through the canonical helper so every leg-state write
+    // path stays on the same code path. See lib/group-service-date.ts.
+    await recomputeGroupServiceDate(leg.invoiceGroupId);
+  }
   emitClaimEvent(id, "included", req);
 
   res.json(updated);
@@ -2199,6 +2235,11 @@ router.post("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<v
   });
   await refreshClaimDenormalizedCache(id);
   await refreshGroupDerivedFields(leg.invoiceGroupId);
+  // Marking a leg as a sibling duplicate doesn't change its `date`, so
+  // the group's MIN can't shift — recomputing here is a defensive
+  // no-op that keeps every group-mutating leg-state route funneling
+  // through the canonical helper. See lib/group-service-date.ts.
+  await recomputeGroupServiceDate(leg.invoiceGroupId);
   emitClaimEvent(id, "marked_duplicate", req);
 
   res.json(updated);
@@ -2260,7 +2301,13 @@ router.delete("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise
     metadata: { previousPrimaryClaimId: previousPrimaryId },
   });
   await refreshClaimDenormalizedCache(id);
-  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  if (leg.invoiceGroupId != null) {
+    await refreshGroupDerivedFields(leg.invoiceGroupId);
+    // Same defensive no-op as the mark route above — un-marking doesn't
+    // mutate `date`, but the canonical helper is the single sanctioned
+    // write path for `service_date`.
+    await recomputeGroupServiceDate(leg.invoiceGroupId);
+  }
   emitClaimEvent(id, "unmarked_duplicate", req);
 
   res.json(updated);

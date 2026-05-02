@@ -38,28 +38,17 @@ import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 // why this set diverges from the claim-level set.
 const GROUP_ON_CLOCK_STATUSES = new Set<string>(GROUP_EXPIRING_ACTIONABLE_STATUSES);
 
-// Correlated subquery returning the earliest service date across the rides in
-// a given invoice group. Used both as a sortable column and (separately) for
-// row decoration so a single group's deadline math has one source of truth.
-//
-// `claims.date` is a TEXT column historically populated in `M/D/YYYY` and
-// `M/D/YY` shape. We cast each value through `::date` and re-emit ISO
-// `YYYY-MM-DD` so:
-//   1. MIN() compares calendar-correctly (lexical text MIN of "4/2/2026"
-//      vs "4/15/2026" picks the wrong one — '1' < '2'),
-//   2. the API consistently returns ISO regardless of stored format,
-//   3. the JS deadline helpers receive a value they can parse without
-//      relying on the M/D/YYYY normalizer fallback.
-// claims.date is now a typed DATE column (Task #351, migration 0022),
-// so MIN() yields a date directly — calendar-correct without any cast
-// dance. ::text formats it as YYYY-MM-DD via postgres' ISO datestyle so
-// the API and the JS deadline helpers receive a string they can parse.
-const earliestServiceDateExpr = sql<string | null>`(
-  SELECT MIN(${claimsTable.date})::text
-  FROM ${claimsTable}
-  WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-    AND ${claimsTable.date} IS NOT NULL
-)`;
+// Earliest service date for a group is read straight off the typed,
+// indexed `invoice_groups.service_date` column. Maintained on every
+// write path by `recomputeGroupServiceDate` (lib/group-service-date.ts);
+// see Task #350 for the cutover from the per-query MIN() subquery this
+// expression replaces. The select returns ISO YYYY-MM-DD via `to_char`
+// so the JS deadline helpers receive the same shape they always have,
+// regardless of whether the `pg` driver hands `date` back as Date or
+// string at the connection level. (Pairs with Task #351, which made
+// `claims.date` itself a typed DATE column — the recompute helper now
+// reads typed Date values straight off `claims.date`.)
+const earliestServiceDateExpr = sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`;
 
 const router: IRouter = Router();
 

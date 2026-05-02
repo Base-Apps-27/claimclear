@@ -18,6 +18,7 @@
     "backfill:recover-misdemoted-classify-inbox": "tsx ./src/migrations/2026-05-recover-misdemoted-classify-inbox-backfill.ts",
     "backfill:mas-bulk-combined-non-issue": "tsx ./src/migrations/2026-05-mas-bulk-combined-non-issue-backfill.ts",
     "backfill:typed-claims-date": "tsx ./src/migrations/2026-05-typed-claims-date-backfill.ts",
+    "backfill:invoice-group-service-date": "tsx ./src/migrations/2026-05-invoice-group-service-date-backfill.ts",
     "check:vocab-drift": "tsx ./src/check-vocab-drift.ts"
   },
   "dependencies": {

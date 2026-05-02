@@ -94,6 +94,7 @@ function makeGroup(overrides: Partial<InvoiceGroup> = {}): InvoiceGroup {
     outcome: "Pending",
     approvedAmount: null,
     rideCount: 2,
+    serviceDate: null,
     totalAmount: "97.50",
     groupContext: null,
     draftSubject: null,

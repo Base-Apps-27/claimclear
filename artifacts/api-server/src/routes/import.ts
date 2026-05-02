@@ -5,6 +5,7 @@ import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { normalizeServiceDate } from "../lib/dates";
+import { recomputeGroupServiceDate } from "../lib/group-service-date";
 
 const router: IRouter = Router();
 
@@ -227,6 +228,15 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         created++;
         if (!hasErrorType) excludedCount++;
       }
+    }
+
+    // Refresh the group's denormalized earliest-service-date column now
+    // that every child claim for this invoice has been inserted /
+    // updated. The helper is the single canonical write path so the
+    // dashboard, queue, and groups list always read the same value
+    // — see lib/group-service-date.ts. No-op when the MIN didn't move.
+    if (groupId != null) {
+      await recomputeGroupServiceDate(groupId);
     }
   }
 

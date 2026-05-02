@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, index, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimStatusEnum, claimOutcomeEnum } from "./claims";
@@ -14,6 +14,16 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   outcome: claimOutcomeEnum().notNull().default("Pending"),
   approvedAmount: numeric("approved_amount", { precision: 12, scale: 2 }),
   rideCount: integer("ride_count").notNull().default(0),
+  // Earliest service date across the group's child claims (calendar
+  // MIN over `claims.date`), maintained by `recomputeGroupServiceDate`
+  // on every write path that can change the set of children or any
+  // child's `date`. Replaces the on-the-fly correlated
+  // `MIN(NULLIF(claims.date,'')::date)` subquery so the dashboard
+  // "FILE TODAY" hero, the Invoice Queue "must file today" tier, and
+  // the Groups list Service Date column all read the same indexed
+  // value. NULL when the group has no parseable child date. See
+  // Task #350 for the motivation and the drift-check guard.
+  serviceDate: date("service_date"),
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }),
   // ────────────────────────────────────────────────────────────────────────
   // Per-invoice (group-level) state machine columns. Discrete-typed
@@ -112,6 +122,7 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   index("invoice_groups_status_idx").on(table.status),
   index("invoice_groups_outcome_idx").on(table.outcome),
   index("invoice_groups_created_at_idx").on(table.createdAt),
+  index("invoice_groups_service_date_idx").on(table.serviceDate),
 ]);
 
 export const insertInvoiceGroupSchema = createInsertSchema(invoiceGroupsTable).omit({ id: true, createdAt: true, updatedAt: true });

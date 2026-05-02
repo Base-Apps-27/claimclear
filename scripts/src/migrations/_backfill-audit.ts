@@ -131,6 +131,14 @@ export const BACKFILL_IDS = {
   // written carrying the prior status, response-id breakdown, and
   // chosen target so the heal is fully traceable.
   healStuckNeedsReviewInbox: "2026-05-heal-stuck-needs-review-inbox",
+
+  // Task #350: populate the new `invoice_groups.service_date` column
+  // (added by drizzle migration 0020 / lib migration 0022) by running
+  // the canonical `recomputeGroupServiceDate` helper across every
+  // group. Does NOT write to audit_logs (only updates
+  // invoice_groups.service_date directly), so there's nothing to
+  // stamp; entry exists for registry completeness.
+  invoiceGroupServiceDate: "2026-05-invoice-group-service-date",
 } as const;
 
 export type BackfillId = (typeof BACKFILL_IDS)[keyof typeof BACKFILL_IDS];

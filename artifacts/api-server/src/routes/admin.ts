@@ -6,6 +6,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { isDayConcluded, tryEmitDayCompletedCelebration } from "../lib/day-complete";
+import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import {
   actionKeysForCategory,
   categoryForAction,
@@ -112,6 +113,12 @@ router.post("/admin/backfill-invoice-groups", requireAdmin, asyncHandler(async (
         .update(claimsTable)
         .set({ invoiceGroupId: groupId })
         .where(inArray(claimsTable.id, claimsForInvoice.map(c => c.id)));
+      // Refresh `service_date` after the orphan claims attach to this
+      // group — without this, a brand-new group would persist with
+      // service_date=NULL and the dashboard / queue would treat the
+      // group as having no filing deadline. Runs inside the same tx so
+      // the recompute and the link write commit atomically.
+      await recomputeGroupServiceDate(groupId, tx);
     }
     claimsLinked += claimsForInvoice.length;
   }

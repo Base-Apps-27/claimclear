@@ -52,6 +52,11 @@ export interface RollupComponent {
   informational?: boolean;
 }
 
+export interface ServiceDateDriftSummary {
+  totalGroups: number;
+  driftCount: number;
+}
+
 export interface RollupInput {
   now: Date;
   bootTime: Date;
@@ -70,6 +75,14 @@ export interface RollupInput {
   // treated as a transient blip and reported as "ok with note" instead.
   // Defined here so the threshold lives in one place and is easy to tune.
   missedTickThreshold?: number;
+  // Optional drift snapshot for `invoice_groups.service_date` (Task #350).
+  // When omitted, the rollup skips the `service_date_drift` component
+  // entirely (back-compat with existing test fixtures). When present and
+  // `driftCount > 0`, the component flips to `degraded` so any future
+  // write path that forgets to call `recomputeGroupServiceDate` surfaces
+  // as a dashboard ops signal. `null` means the drift check itself
+  // failed — surface as an informational note rather than a hard alert.
+  serviceDateDrift?: ServiceDateDriftSummary | null;
 }
 
 export const DEFAULT_MISSED_TICK_THRESHOLD = 2;
@@ -204,6 +217,39 @@ export function computeRollup(input: RollupInput): RollupOutput {
     workerDetail = `Last run ${input.lastWorkerRun.batchId} stopped by user at ${input.lastWorkerRun.finishedAt ?? input.lastWorkerRun.startedAt}`;
   }
   components.push({ name: "portal_worker", status: workerStatus, detail: workerDetail });
+
+  // Service-date drift (Task #350): the rollup carries a JS-side recompute
+  // of `invoice_groups.service_date` so any future write path that
+  // forgets to funnel through `recomputeGroupServiceDate` surfaces as a
+  // dashboard signal, not as silent skew between dashboard / queue /
+  // groups list. Optional (only emitted when the input was provided), so
+  // existing rollup test fixtures keep working unchanged.
+  if (input.serviceDateDrift !== undefined) {
+    if (input.serviceDateDrift === null) {
+      // Drift check itself failed (DB hiccup, etc.). Surface as an
+      // informational note — we don't know whether the column is in
+      // sync, but losing one observability sweep shouldn't raise the
+      // banner.
+      components.push({
+        name: "service_date_drift",
+        status: "ok",
+        detail: "Service-date drift check failed to run; will retry next rollup",
+        informational: true,
+      });
+    } else if (input.serviceDateDrift.driftCount > 0) {
+      components.push({
+        name: "service_date_drift",
+        status: "degraded",
+        detail: `${input.serviceDateDrift.driftCount} of ${input.serviceDateDrift.totalGroups} invoice_groups have a stored service_date that disagrees with MIN(claims.date) — a write path likely skipped recomputeGroupServiceDate`,
+      });
+    } else {
+      components.push({
+        name: "service_date_drift",
+        status: "ok",
+        detail: `${input.serviceDateDrift.totalGroups} invoice_groups checked, all in sync`,
+      });
+    }
+  }
 
   let overall: ComponentStatus = "ok";
   for (const c of components) {

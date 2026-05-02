@@ -18,6 +18,7 @@ import {
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
 import { computeRollup } from "../lib/system-health-rollup";
+import { safeRunServiceDateDriftCheck } from "../lib/group-service-date";
 import { getBootTime } from "../lib/boot-time";
 import { enumerateExpectedFiresSinceBoot } from "../lib/cron-fire-enumeration";
 import {
@@ -329,6 +330,14 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
 
   const lastWorkerRun = getLastWorkerRun();
 
+  // Task #350: cheap JS-side recompute of `invoice_groups.service_date`
+  // for every group. Two flat reads + a Map merge — well within the
+  // health-rollup budget. `safeRunServiceDateDriftCheck` swallows its
+  // own errors and returns `null` so a transient DB hiccup never kills
+  // the rollup; `computeRollup` then surfaces that as an informational
+  // note instead of a hard alert.
+  const driftReport = await safeRunServiceDateDriftCheck();
+
   const { overall, components } = computeRollup({
     now,
     bootTime,
@@ -350,6 +359,9 @@ router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req,
           lastError: lastWorkerRun.lastError,
         }
       : null,
+    serviceDateDrift: driftReport === null
+      ? null
+      : { totalGroups: driftReport.totalGroups, driftCount: driftReport.driftCount },
   });
 
   res.json({

@@ -7,8 +7,8 @@
 // + {ET-anchored urgency}. The route handlers and the snapshot cron
 // both call into it so they cannot drift.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { db, claimsTable, invoiceGroupsTable } from "@workspace/db";
+import { inArray, isNotNull, and, sql } from "drizzle-orm";
+import { db, invoiceGroupsTable } from "@workspace/db";
 import { isUrgentDeadline, serverTodayKey } from "./dates";
 import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "../routes/dashboard";
 import { emitStateEvent } from "./state-events";
@@ -34,24 +34,25 @@ interface ActionableRow {
 }
 
 async function loadActionableRows(): Promise<ActionableRow[]> {
+  // Read the typed, indexed `invoice_groups.service_date` column
+  // directly — no JOIN, no GROUP BY, no per-request MIN(). The column
+  // is the canonical source maintained by `recomputeGroupServiceDate`
+  // (lib/group-service-date.ts) on every write path; see Task #350.
+  // `to_char` keeps the wire shape stable as ISO YYYY-MM-DD regardless
+  // of whether the `pg` driver returns `date` columns as Date or string.
   const rows = await db
     .select({
       id: invoiceGroupsTable.id,
       status: invoiceGroupsTable.status,
-      // claims.date is a typed DATE column (Task #351, migration 0022).
-      // MIN() yields a date; cast to text so postgres' ISO datestyle
-      // serializes it as YYYY-MM-DD for the JS deadline helpers.
-      earliestDate: sql<string | null>`MIN(${claimsTable.date})::text`,
+      earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
-    .leftJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
     .where(
       and(
         inArray(invoiceGroupsTable.status, [...GROUP_EXPIRING_ACTIONABLE_STATUSES]),
-        sql`${claimsTable.date} IS NOT NULL`,
+        isNotNull(invoiceGroupsTable.serviceDate),
       ),
-    )
-    .groupBy(invoiceGroupsTable.id);
+    );
   return rows;
 }
 
