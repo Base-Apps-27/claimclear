@@ -2,6 +2,8 @@
 // Extracted so the filter, tier, and badge logic can be unit-tested
 // without spinning up React.
 
+import { countUrgentRows } from "./urgent-count";
+
 // Task #352 — "stuck" is the parallel "submitted but unconfirmed" tier.
 // Same date math as "urgent" (deadline ≤ today), but the status filter
 // is the post-submit set (Portal Queued / Processed) rather than the
@@ -198,19 +200,19 @@ export function formatTabBadge(
 
 /**
  * Sum of urgent rows across the on-clock lanes — drives the queue-level
- * hero count. Extracted so the value the hero shows is provably the
- * same number the Dashboard renders for the same data.
+ * hero count. Thin wrapper over `lib/urgent-count.countUrgentRows`,
+ * the single sanctioned client-side urgency counter; kept here as a
+ * named export so the queue's call site reads naturally and the Queue
+ * and Dashboard provably reduce to the same predicate.
  */
 export function computeAggregateUrgentCount(
   ...lanes: ReadonlyArray<ReadonlyArray<UrgencyShape>>
 ): number {
-  let total = 0;
-  for (const lane of lanes) {
-    for (const row of lane) {
-      if (row.isUrgent) total += 1;
-    }
-  }
-  return total;
+  // Delegated rather than re-implemented so a future change to the
+  // urgency predicate (e.g. a new flag on the row) only has to land
+  // in one place. See `lib/urgent-count.ts` for the contract and the
+  // regression history that justified consolidating it.
+  return countUrgentRows(lanes.flat());
 }
 
 /**

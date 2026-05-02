@@ -48,6 +48,7 @@ import {
   type ExpiringFilter,
   type DeadlineTier,
 } from "@/lib/queue-urgency";
+import { countUrgentRows } from "@/lib/urgent-count";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
 import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";

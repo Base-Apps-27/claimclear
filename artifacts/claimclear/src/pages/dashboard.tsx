@@ -37,6 +37,10 @@ import { InfoTooltip } from "@/components/info-tooltip";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { formatCurrency } from "@/lib/format";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
+import {
+  getUrgentGroupCountFromSummary,
+  selectUrgentRows,
+} from "@/lib/urgent-count";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
 function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
@@ -396,23 +400,14 @@ export default function Dashboard() {
   const totalGroups = stats.total ?? 0;
 
   // "File today" — every row whose effective deadline is today OR already
-  // past, mirroring the server's `urgentCount` (which is the count of
-  // `g.isUrgent` from the same `expiringGroups[]` payload — see
-  // dashboard.ts and isUrgentDeadline). Filtering on `effectiveDaysLeft
-  // === 0` here used to silently exclude past-due rows, so a service
-  // date like Mar 29 (deadline Apr 28, today May 2 → effectiveDaysLeft
-  // = -4) would render as "0 to file" on this page while the Queue
-  // hero — which uses `isUrgent` — correctly counted 71. The
-  // "Why?" widget then read the override 0 and lied with "peaked at
-  // 71 earlier — all clear now". Both are wired off `isUrgent` now so
-  // the Dashboard, Queue hero, snapshot cron, and the
-  // must-file-today-parity contract test all agree on the same set.
-  const fileTodayItems = summary.expiringGroups
-    .filter(g => g.isUrgent)
-    .slice(0, 3);
-  const fileTodayCount = summary.urgentCount ?? summary.expiringGroups.filter(
-    g => g.isUrgent,
-  ).length;
+  // past, mirroring the server's `urgentCount`. Both the count and the
+  // visible items go through `lib/urgent-count`, the only sanctioned
+  // path for client-side urgent counting (see that module's header for
+  // the regression history). Filtering by `effectiveDaysLeft === 0`
+  // would silently drop past-due rows and re-introduce the
+  // Dashboard-says-0-but-Queue-says-71 bug.
+  const fileTodayItems = selectUrgentRows(summary.expiringGroups).slice(0, 3);
+  const fileTodayCount = getUrgentGroupCountFromSummary(summary);
   const fileSoonItems = summary.expiringGroups.filter(
     g => !g.isUrgent && g.effectiveDaysLeft >= 1 && g.effectiveDaysLeft <= 3,
   );
