@@ -24,11 +24,9 @@ import {
   type DashboardActivityEvent,
   type InvoiceGroupResponse,
 } from "@workspace/api-client-react";
-import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
-import { useMidnightRollover } from "@/lib/midnight-rollover";
+import { useServerDayRolloverInvalidator } from "@/lib/server-day-rollover";
 import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
@@ -310,7 +308,6 @@ export default function Dashboard() {
   // fetch time — leaving it stale across a tab refocus is exactly how
   // the Dashboard and Queue used to drift apart. The Queue's lane
   // queries get the same treatment so neither surface can fall behind.
-  const queryClient = useQueryClient();
   const { data: summary, isLoading } = useGetDashboardSummary({
     query: {
       queryKey: getGetDashboardSummaryQueryKey(),
@@ -318,24 +315,15 @@ export default function Dashboard() {
     },
   });
 
-  // Day-rollover invalidator (Task #290). Mirrors the Queue-side
-  // scheduler so a Dashboard tab left open across midnight can't keep
-  // showing yesterday's "must file today" totals if the operator never
-  // navigates to the Queue. We invalidate the dashboard summary key
-  // (and the broader `/api/dashboard*` family for any sister cards),
-  // plus the invoice-group lane keys so any open Queue tab also
-  // refreshes — the two surfaces have to agree at the boundary.
-  const handleMidnightRollover = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-    queryClient.invalidateQueries({
-      predicate: (q) => {
-        const key = q.queryKey;
-        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
-      },
-    });
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-  }, [queryClient]);
-  useMidnightRollover(handleMidnightRollover);
+  // Day-rollover invalidator (Task #294, replaces Task #290's local
+  // midnight `setTimeout`). The server stamps `summary.today` against
+  // its own clock at fetch time; when that key changes vs. the
+  // previously-seen value, `useServerDayRolloverInvalidator` invalidates
+  // the dashboard summary family AND the invoice-group lane queries so
+  // any open Queue tab also refreshes — the two surfaces have to agree
+  // at the boundary, and the cascade is owned in one place rather than
+  // duplicated per page.
+  useServerDayRolloverInvalidator(summary?.today ?? null);
   const { data: activity } = useGetDashboardActivity(
     { limit: 15 },
     { query: { queryKey: getGetDashboardActivityQueryKey({ limit: 15 }) } },

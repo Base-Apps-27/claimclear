@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMidnightRollover } from "@/lib/midnight-rollover";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerDayRolloverInvalidator, latestTodayKey } from "@/lib/server-day-rollover";
 import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import {
@@ -540,25 +540,29 @@ export default function Queue() {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   };
 
-  // Day-rollover invalidator (Task #290). The server stamps `isUrgent`
-  // / `effectiveDaysLeft` against its own clock at fetch time. When the
-  // operator leaves the Queue open across midnight, today's deadlines
-  // tip but the cached rows still carry yesterday's flags — the
-  // Dashboard (mounted later) ends up disagreeing with the Queue.
-  // `useMidnightRollover` (shared with `pages/dashboard.tsx`) wakes on
-  // the next local midnight, invalidates the lane queries plus the
-  // dashboard summary family so any sister tab also stays in sync, then
-  // re-arms for the following midnight.
-  const handleMidnightRollover = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-    queryClient.invalidateQueries({
-      predicate: (q) => {
-        const key = q.queryKey;
-        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
-      },
-    });
-  }, [queryClient]);
-  useMidnightRollover(handleMidnightRollover);
+  // Day-rollover invalidator (Task #294, replaces Task #290's local
+  // midnight `setTimeout`). The server embeds a `today` key on every
+  // deadline-driven response; when the value changes vs. the previously-
+  // seen one, `useServerDayRolloverInvalidator` invalidates every
+  // deadline-driven query family (lane queries, dashboard summary) so
+  // the per-row `isUrgent` / `effectiveDaysLeft` flags refresh against
+  // the new "today". No client clock involved — the focus refetch on
+  // these queries is what surfaces the new server `today` in the first
+  // place, which then cascades the invalidation. We pick the *latest*
+  // `today` across every lane (not just the first non-null one) so that
+  // if any single lane has already seen the new day — e.g. one lane
+  // refetched on focus while another is still serving yesterday's
+  // cached payload — we react immediately rather than waiting for the
+  // preferred-order lane to catch up.
+  const serverToday = latestTodayKey(
+    newQuery.data?.today,
+    needsEvidenceQuery.data?.today,
+    generatingEmailQuery.data?.today,
+    portalQueuedQuery.data?.today,
+    onHoldQuery.data?.today,
+    inboxQuery.data?.today,
+  );
+  useServerDayRolloverInvalidator(serverToday);
 
   // Per-row deadline pill — renders for *every* on-clock row that has
   // an `effectiveDaysLeft`, including rows past a week. Before Task #274

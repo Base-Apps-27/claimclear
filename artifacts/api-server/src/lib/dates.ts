@@ -90,3 +90,21 @@ export function isUrgentDeadline(
   const today = startOfDay(now);
   return deadline.getTime() <= today.getTime();
 }
+
+/**
+ * Server-clock "today" key as `YYYY-MM-DD`, in the server's local
+ * timezone. Matches the day boundary used by {@link daysRemaining},
+ * {@link effectiveDaysRemaining}, and {@link isUrgentDeadline} (which all
+ * call `setHours(0, 0, 0, 0)` on a local-time `Date`).
+ *
+ * Embedded into deadline-driven API responses (`/dashboard/summary`,
+ * `/invoice-groups`) so the client can detect day rollover via a server
+ * signal instead of a per-page midnight `setTimeout` keyed off the
+ * user's machine clock. See `lib/server-day-rollover.ts` on the client.
+ */
+export function serverTodayKey(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}

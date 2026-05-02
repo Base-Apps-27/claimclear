@@ -29,4 +29,12 @@ export interface DashboardSummary {
   recentGroups: InvoiceGroupResponse[];
   portalStats: DashboardSummaryPortalStats;
   portalWorker: DashboardSummaryPortalWorker;
+  /** Server-clock "today" key (`YYYY-MM-DD`, server local time)
+used to stamp `urgentCount` and per-row `expiringGroups`
+urgency. The client compares this against the previously-
+seen value and invalidates deadline-driven query families on
+a mismatch, so urgency math refreshes on day rollover
+without a per-page midnight `setTimeout`.
+ */
+  today: string;
 }

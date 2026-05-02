@@ -22,7 +22,7 @@ import {
 } from "../lib/group-transitions";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
-import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 
 // A group is only "on the 30-day clock" while its status is one we still
@@ -306,7 +306,18 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  const responseBody: Record<string, unknown> = { groups, total: totalResult.count };
+  const responseBody: Record<string, unknown> = {
+    groups,
+    total: totalResult.count,
+    // Server-clock "today" stamp (Task #294). The per-row `isUrgent` /
+    // `effectiveDaysLeft` flags above were computed against `today`;
+    // embedding the matching key lets the client invalidate sister
+    // deadline-driven queries (other lanes, dashboard summary, etc.)
+    // when a future response carries a different date — replacing the
+    // per-page midnight `setTimeout` we used to wire from queue.tsx and
+    // dashboard.tsx. See `lib/server-day-rollover.ts` on the client.
+    today: serverTodayKey(today),
+  };
   if (includeSet.has("needs_classification")) {
     responseBody.needsClassificationInbox = await buildNeedsClassificationInbox();
   }

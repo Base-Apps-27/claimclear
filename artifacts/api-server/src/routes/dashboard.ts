@@ -3,7 +3,7 @@ import { eq, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNul
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { daysRemaining, effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
@@ -273,6 +273,15 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       pendingDueCount,
       overdueCount,
     },
+    // Server-clock "today" stamp (Task #294). The deadline math above
+    // (`isUrgentDeadline` / `effectiveDaysRemaining`) was computed
+    // against `expiringNow`; embedding the matching `today` key lets the
+    // client detect day rollover via a server signal — when a future
+    // response carries a different `today`, the client invalidates
+    // sister deadline-driven queries so the cache can never stay pinned
+    // to yesterday's "must file today" math. See
+    // `artifacts/claimclear/src/lib/server-day-rollover.ts`.
+    today: serverTodayKey(expiringNow),
   });
 }));
 

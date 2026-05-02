@@ -17,6 +17,14 @@ import type { NeedsClassificationInboxResponse } from "./needsClassificationInbo
 export interface InvoiceGroupsListResponse {
   groups: InvoiceGroupResponse[];
   total: number;
+  /** Server-clock "today" key (`YYYY-MM-DD`, server local time)
+used to stamp per-row `isUrgent` / `effectiveDaysLeft`. The
+client compares this against the previously-seen value and
+invalidates deadline-driven query families on a mismatch, so
+urgency math refreshes on day rollover without a per-page
+midnight `setTimeout`.
+ */
+  today: string;
   /** Present only when the request included `?include=needs_classification`.
 Same payload shape as `GET /invoice-groups/needs-classification`.
  */

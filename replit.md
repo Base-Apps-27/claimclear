@@ -145,6 +145,24 @@ The workflow player, the Claims/Invoice Groups tab strips, and the recommendatio
 
 Adding or renaming a status from now on means editing `STATUSES_BY_PHASE` and (if needed) `LIFECYCLE_TABS`. The player branches, the list-page tabs, the banners, and the rollup all flow through.
 
+## Day-rollover freshness — server-driven `today` signal (Task #294)
+
+Deadline math (`isUrgent`, `effectiveDaysLeft`, `urgentCount`) is computed against the **server's** clock at fetch time. When a Queue or Dashboard tab stays open across midnight, the cached rows still carry yesterday's flags until something else triggers a refetch — historically the Queue and Dashboard would silently disagree until the operator hit refresh. Task #290 plugged this with a per-page `setTimeout` that woke at the user's local midnight; Task #294 replaced that with a single server-driven signal.
+
+**How it works:**
+
+- The API stamps every deadline-driven response with `today: "YYYY-MM-DD"` (server local time, matching the boundary used by `daysRemaining` / `effectiveDaysRemaining` / `isUrgentDeadline`). The helper is `serverTodayKey()` in `artifacts/api-server/src/lib/dates.ts`. Currently embedded in `GET /dashboard/summary` and `GET /invoice-groups`.
+- The client hook `useServerDayRolloverInvalidator(today)` (in `artifacts/claimclear/src/lib/server-day-rollover.ts`) tracks the last-seen value via a ref. When a response carries a different `today`, it invalidates every deadline-driven query family — `/api/dashboard*` plus the invoice-groups list family (lane queries + the embedded Classification Inbox payload). The first response is **not** treated as a rollover (no baseline), so mounting the hook never stampedes the cache.
+- The hook is wired in two places — `pages/queue.tsx` (feeding the first available `today` from any of the lane queries) and `pages/dashboard.tsx` (feeding `summary.today`). A source-level lock in `artifacts/claimclear/src/lib/server-day-rollover.test.ts` guards both pages so a future refactor can't silently drop the wiring or re-introduce the local-clock scheduler.
+
+**Why this beats the local-clock approach:**
+
+- No dependency on the user's machine clock (DST, manual clock changes, drifted clocks all become non-issues).
+- A tab backgrounded for >24 h still converges the moment its first refetch returns the new `today`. The deadline-driven queries already have `refetchOnWindowFocus: true`, so a tab refocus alone surfaces the new key and cascades the invalidation; SSE/user actions do the same.
+- The cross-family invalidation list lives in one module, not duplicated per-page. Adding a new deadline-driven page means `useServerDayRolloverInvalidator(response.today)` and nothing else.
+
+Adding a new deadline-driven endpoint: include `today: serverTodayKey()` in the response, expose it as `today: string` (required) on the OpenAPI schema, then the client gets the rollover behaviour for free if it consumes the response and threads `today` into the hook.
+
 ## Disputed-leg cascade and rollup (fixed Apr 30, 2026)
 
 A bug let claim status drift away from invoice-group status mid-lifecycle, and let clean rides drag the group's stepper backwards. Mechanism:

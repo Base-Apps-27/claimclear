@@ -4555,6 +4555,15 @@ components:
             $ref: "#/components/schemas/InvoiceGroupResponse"
         total:
           type: integer
+        today:
+          type: string
+          description: |
+            Server-clock "today" key (`YYYY-MM-DD`, server local time)
+            used to stamp per-row `isUrgent` / `effectiveDaysLeft`. The
+            client compares this against the previously-seen value and
+            invalidates deadline-driven query families on a mismatch, so
+            urgency math refreshes on day rollover without a per-page
+            midnight `setTimeout`.
         needsClassificationInbox:
           description: |
             Present only when the request included `?include=needs_classification`.
@@ -4563,6 +4572,7 @@ components:
       required:
         - groups
         - total
+        - today
 
     UpdateInvoiceGroupBody:
       type: object
@@ -6212,6 +6222,15 @@ components:
             - isRunning
             - pendingDueCount
             - overdueCount
+        today:
+          type: string
+          description: |
+            Server-clock "today" key (`YYYY-MM-DD`, server local time)
+            used to stamp `urgentCount` and per-row `expiringGroups`
+            urgency. The client compares this against the previously-
+            seen value and invalidates deadline-driven query families on
+            a mismatch, so urgency math refreshes on day rollover
+            without a per-page midnight `setTimeout`.
       required:
         - pipeline
         - stats
@@ -6221,6 +6240,7 @@ components:
         - recentGroups
         - portalStats
         - portalWorker
+        - today
 
     DashboardActivity:
       type: object

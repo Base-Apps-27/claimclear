@@ -366,6 +366,11 @@ export const ListInvoiceGroupsResponse = zod.object({
     }),
   ),
   total: zod.number(),
+  today: zod
+    .string()
+    .describe(
+      'Server-clock \"today\" key (`YYYY-MM-DD`, server local time)\nused to stamp per-row `isUrgent` \/ `effectiveDaysLeft`. The\nclient compares this against the previously-seen value and\ninvalidates deadline-driven query families on a mismatch, so\nurgency math refreshes on day rollover without a per-page\nmidnight `setTimeout`.\n',
+    ),
   needsClassificationInbox: zod
     .object({
       total: zod
@@ -13613,6 +13618,11 @@ export const GetDashboardSummaryResponse = zod.object({
     pendingDueCount: zod.number(),
     overdueCount: zod.number(),
   }),
+  today: zod
+    .string()
+    .describe(
+      'Server-clock \"today\" key (`YYYY-MM-DD`, server local time)\nused to stamp `urgentCount` and per-row `expiringGroups`\nurgency. The client compares this against the previously-\nseen value and invalidates deadline-driven query families on\na mismatch, so urgency math refreshes on day rollover\nwithout a per-page midnight `setTimeout`.\n',
+    ),
 });
 
 /**
