@@ -32,9 +32,15 @@ import { useToast } from "@/hooks/use-toast";
 import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
+import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { legSubStatusDisplayLabel } from "@workspace/vocab";
 import type { DecisionTree } from "@/components/decision-tree/types";
+import {
+  buildTripOverridingErrorTypeIds,
+  findSiblingDuplicatePrimaryCandidates,
+  siblingPromptEligibilityFor,
+} from "@/lib/sop-sibling-eligibility";
 
 // Per-leg processing surface — intentionally minimal. The Process button on
 // the queue should drop the user straight into the SOP worktree walk and
@@ -111,26 +117,29 @@ export function ClaimDetailV2({ claimId }: Props) {
   // Trip-overriding error type lookup for the sibling-duplicate picker.
   // A leg can only be marked as a Sibling Duplicate of a sibling whose
   // assigned errorType has tripOverriding=true (e.g. eligibility lapse).
-  const tripOverridingErrorTypeIds = useMemo(() => {
-    const set = new Set<string>();
-    if (!errorTypes) return set;
-    for (const t of errorTypes as Array<ErrorTypeResponse & { tripOverriding?: boolean }>) {
-      if (t.tripOverriding === true) set.add(String(t.id));
-    }
-    return set;
-  }, [errorTypes]);
+  // Helper lives in `lib/sop-sibling-eligibility.ts` so the in-SOP
+  // sibling-detection prompt and this header dialog stay in lockstep
+  // (Guard #4 in the task spec).
+  const tripOverridingErrorTypeIds = useMemo(
+    () =>
+      buildTripOverridingErrorTypeIds(
+        (errorTypes ?? []) as Array<ErrorTypeResponse & { tripOverriding?: boolean }>,
+      ),
+    [errorTypes],
+  );
 
   // Candidate primaries: same group, not self, not itself a duplicate, with a
   // trip-overriding error type. We sort by service date / conf number for
   // stable display in the picker.
-  const duplicatePrimaryCandidates = useMemo(() => {
-    const rides = parentGroup?.rides ?? [];
-    return rides
-      .filter((r) => r.id !== claimId)
-      .filter((r) => r.duplicateOfClaimId == null)
-      .filter((r) => r.errorTypeId != null && tripOverridingErrorTypeIds.has(String(r.errorTypeId)))
-      .sort((a, b) => (a.confNumber || "").localeCompare(b.confNumber || ""));
-  }, [parentGroup?.rides, claimId, tripOverridingErrorTypeIds]);
+  const duplicatePrimaryCandidates = useMemo(
+    () =>
+      findSiblingDuplicatePrimaryCandidates({
+        selfClaimId: claimId,
+        rides: parentGroup?.rides ?? null,
+        tripOverridingErrorTypeIds,
+      }),
+    [parentGroup?.rides, claimId, tripOverridingErrorTypeIds],
+  );
 
   const isDuplicate = claim?.duplicateOfClaimId != null;
   const primaryRef = useMemo(() => {
@@ -139,6 +148,22 @@ export function ClaimDetailV2({ claimId }: Props) {
   }, [isDuplicate, parentGroup?.rides, claim?.duplicateOfClaimId]);
 
   const groupIsPreSubmit = parentGroup?.macroPhase === "pre-submit";
+
+  // In-SOP sibling-detection prompt: rendered above the first SOP
+  // question when the leg has a trip-overriding primary candidate in
+  // the same group. Eligibility lives in the same helper as the header
+  // dialog so the two sites can never disagree (Guard #4).
+  const siblingPromptCandidate = useMemo(() => {
+    if (!claim) return null;
+    return siblingPromptEligibilityFor({
+      selfClaimId: claim.id,
+      selfErrorTypeId: claim.errorTypeId ?? null,
+      selfDuplicateOfClaimId: claim.duplicateOfClaimId ?? null,
+      groupMacroPhase: parentGroup?.macroPhase ?? null,
+      rides: parentGroup?.rides ?? null,
+      errorTypes: (errorTypes ?? []) as Array<ErrorTypeResponse & { tripOverriding?: boolean }>,
+    });
+  }, [claim, parentGroup?.macroPhase, parentGroup?.rides, errorTypes]);
 
   function invalidateLeg() {
     qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
@@ -237,24 +262,28 @@ export function ClaimDetailV2({ claimId }: Props) {
   }
 
   const hasSopOutcome = !!claim.sopOutcome;
+  // `canShowPlayer` is intentionally OR'd with `isDuplicate` so the legacy
+  // disabled-reason ladder below stays quiet for duplicate legs. The
+  // duplicate render itself is owned exclusively by the short-circuit
+  // branch in JSX (`isDuplicate ? <DuplicateTerminal /> : …`), which mounts
+  // the terminal directly without going through `SopAdvancePlayer` — that
+  // way `mark as duplicate` works even before an error type / decision
+  // tree is assigned.
   const canShowPlayer =
-    !isDuplicate && (
-      hasSopOutcome ||
-      subStatus === "investigating" ||
-      subStatus === "ready" ||
-      subStatus === "dropped"
-    );
+    isDuplicate ||
+    hasSopOutcome ||
+    subStatus === "investigating" ||
+    subStatus === "ready" ||
+    subStatus === "dropped";
   const playerDisabledReason = canShowPlayer
     ? null
     : subStatus === "blocked"
       ? "Leg is on hold — clear the hold to advance the SOP."
       : subStatus === "excluded"
         ? "Leg is excluded from the dispute."
-        : subStatus === "duplicate"
-          ? "Leg is a Sibling Duplicate — its dispute rolls up to the primary leg, no SOP walk needed."
-          : subStatus === "needs_classification"
-            ? "Pick an error type before walking the SOP."
-            : null;
+        : subStatus === "needs_classification"
+          ? "Pick an error type before walking the SOP."
+          : null;
 
   const canReclassify =
     !isDuplicate && (
@@ -596,7 +625,21 @@ export function ClaimDetailV2({ claimId }: Props) {
 
         {/* SOP walk — the entire purpose of this surface */}
         <div className="cc-card p-4" data-testid="leg-sop-card">
-          {!claim.errorTypeId && (
+          {/* Duplicate legs always show the muted DuplicateTerminal, even
+              when no decision tree is configured. Marking-as-duplicate is
+              allowed from `needs_classification` (no error type yet, so
+              no tree), and we should never present the "configure a
+              tree" amber warning to the operator in that state. */}
+          {isDuplicate ? (
+            <DuplicateTerminal
+              leg={{
+                id: claim.id,
+                sopOutcome: claim.sopOutcome,
+                duplicateOfClaimId: claim.duplicateOfClaimId,
+              }}
+            />
+          ) : null}
+          {!isDuplicate && !claim.errorTypeId && (
             <div
               className="text-xs flex items-start gap-2 p-3 rounded"
               style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
@@ -605,7 +648,7 @@ export function ClaimDetailV2({ claimId }: Props) {
               <span>This leg has no error type yet. Pick one from the queue or use the legacy classifier.</span>
             </div>
           )}
-          {claim.errorTypeId && !tree && (
+          {!isDuplicate && claim.errorTypeId && !tree && (
             <div
               className="text-xs flex items-start gap-2 p-3 rounded"
               style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
@@ -618,7 +661,7 @@ export function ClaimDetailV2({ claimId }: Props) {
               </span>
             </div>
           )}
-          {tree && canShowPlayer && (
+          {!isDuplicate && tree && canShowPlayer && (
             <SopAdvancePlayer
               leg={{
                 id: claim.id,
@@ -627,12 +670,31 @@ export function ClaimDetailV2({ claimId }: Props) {
                 sopOutcome: claim.sopOutcome,
                 dropReason: claim.dropReason,
                 invoiceGroupId: claim.invoiceGroupId,
+                duplicateOfClaimId: claim.duplicateOfClaimId,
+                perLegContext: claim.perLegContext,
               }}
               tree={tree}
               onAdvanced={invalidateLeg}
+              errorType={
+                errorType
+                  ? { useDirectEmail: errorType.useDirectEmail ?? null }
+                  : null
+              }
+              siblingPrompt={
+                siblingPromptCandidate
+                  ? {
+                      primaryClaimId: siblingPromptCandidate.primary.id,
+                      primaryConfNumber:
+                        siblingPromptCandidate.primary.confNumber ||
+                        `CLM-${siblingPromptCandidate.primary.id}`,
+                      primaryErrorTypeName:
+                        siblingPromptCandidate.primary.errorTypeName ?? null,
+                    }
+                  : null
+              }
             />
           )}
-          {tree && !canShowPlayer && playerDisabledReason && (
+          {!isDuplicate && tree && !canShowPlayer && playerDisabledReason && (
             <div
               className="text-xs flex items-start gap-1.5 px-2.5 py-1.5 rounded"
               style={{ color: "var(--cc-muted-fg)", background: "var(--cc-muted)" }}

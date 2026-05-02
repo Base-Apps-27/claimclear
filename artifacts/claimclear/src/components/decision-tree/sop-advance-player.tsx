@@ -3,9 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type DecisionTree,
   type TreeNode,
-  type OutcomeType,
-  OUTCOME_LABELS,
-  OUTCOME_COLORS,
   getMaxDepth,
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,15 +14,19 @@ import {
   ChevronRight,
   HelpCircle,
   CheckCircle2,
-  Send,
-  Ban,
-  PauseCircle,
-  Mail,
   Loader2,
-  XCircle,
-  FileX,
-  Play,
 } from "lucide-react";
+import { terminalKindForLeg } from "@/lib/sop-terminal-routing";
+import { IncludeTerminal } from "./terminals/include-terminal";
+import { ClosedTerminal } from "./terminals/closed-terminal";
+import { HoldTerminal } from "./terminals/hold-terminal";
+import { DuplicateTerminal } from "./terminals/duplicate-terminal";
+import {
+  SiblingDuplicatePrompt,
+  type SiblingDuplicatePromptProps,
+} from "./terminals/sibling-prompt";
+import type { TerminalLeg } from "./terminals/types";
+import type { ErrorTypeChannelInput } from "@/lib/sop-terminal-routing";
 
 // v2 SOP-advance player: posts each step to /sop-advance so the server stays the source of truth.
 
@@ -35,15 +36,9 @@ interface SopAnswerRow {
   ts: string;
 }
 
-interface LegLite {
-  id: number;
+interface LegLite extends TerminalLeg {
   errorTypeId?: string | null;
-  sopNodeId?: string | null;
-  sopOutcome?: string | null;
   sopAnswers?: unknown;
-  dropReason?: string | null;
-  invoiceGroupId?: number | null;
-  perLegContext?: string | null;
 }
 
 interface Props {
@@ -58,20 +53,19 @@ interface Props {
    *  related queries (group preview, leg list, etc) without this component
    *  needing to know about them. */
   onAdvanced?: (next: { isTerminal: boolean; sopOutcome: string | null }) => void;
+  /** Source for the include terminal's "Channel: …" hint. Owned by the
+   *  parent surface (`claim-detail-v2`) which already loads the
+   *  error-types list to render the badge in the leg header. */
+  errorType?: ErrorTypeChannelInput | null;
+  /** When set, the in-SOP sibling-detection prompt renders above the
+   *  first SOP question. The parent computes eligibility — see
+   *  `lib/sop-sibling-eligibility.ts`. */
+  siblingPrompt?: Omit<SiblingDuplicatePromptProps, "legId" | "invoiceGroupId"> | null;
 }
 
 function apiBase(): string {
   return import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 }
-
-const OUTCOME_ICONS: Record<OutcomeType, typeof Send> = {
-  portal_dispute: Send,
-  internal: Ban,
-  hold: PauseCircle,
-  dispute: Mail,
-  cannot_dispute: XCircle,
-  non_issue: FileX,
-};
 
 function normalizeAnswers(raw: unknown): SopAnswerRow[] {
   if (!Array.isArray(raw)) return [];
@@ -80,54 +74,18 @@ function normalizeAnswers(raw: unknown): SopAnswerRow[] {
   );
 }
 
-export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Props) {
+export function SopAdvancePlayer({
+  leg,
+  tree,
+  disabledReason,
+  onAdvanced,
+  errorType,
+  siblingPrompt,
+}: Props) {
   const qc = useQueryClient();
   const disabled = !!disabledReason;
   const answers = useMemo(() => normalizeAnswers(leg.sopAnswers), [leg.sopAnswers]);
   const maxDepth = useMemo(() => getMaxDepth(tree), [tree]);
-
-  const clearSopHoldMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`${apiBase()}/api/claims/${leg.id}/clear-sop-hold`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `HTTP ${res.status}`);
-      }
-      return res.json() as Promise<LegLite>;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["claim", leg.id] });
-      qc.invalidateQueries({ queryKey: ["claims"] });
-      if (leg.invoiceGroupId != null) {
-        qc.invalidateQueries({ queryKey: ["invoice-group", leg.invoiceGroupId] });
-        qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-      }
-      onAdvanced?.({ isTerminal: false, sopOutcome: null });
-    },
-    onError: (err: Error) => {
-      toast({
-        title: "Could not clear SOP hold",
-        description: err.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // The leg might already be terminal — derive the visible state from
-  // the persisted sop_outcome/sop_node_id rather than from local state.
-  const terminalOutcome: OutcomeType | null = useMemo(() => {
-    if (!leg.sopOutcome) return null;
-    if (leg.sopOutcome === "portal_dispute") return "portal_dispute";
-    if (leg.sopOutcome === "dispute") return "dispute";
-    if (leg.sopOutcome === "hold") return "hold";
-    if (leg.sopOutcome === "cannot_dispute") return "cannot_dispute";
-    if (leg.sopOutcome === "non_issue") return "non_issue";
-    return null;
-  }, [leg.sopOutcome]);
 
   const currentNodeId: string = leg.sopNodeId ?? tree.rootId;
   const currentNode: TreeNode | undefined = tree.nodes.find((n) => n.id === currentNodeId);
@@ -221,74 +179,55 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
     [currentNode, disabled, advanceMutation],
   );
 
-  // Terminal state — render the outcome banner. The operator's next
-  // action (queue for portal, drop with closure intake, place on hold,
-  // reclassify) lives in the parent v2 surface; this player just shows
-  // what was decided.
-  if (terminalOutcome) {
-    const colors = OUTCOME_COLORS[terminalOutcome];
-    const Icon = OUTCOME_ICONS[terminalOutcome];
-    const label = OUTCOME_LABELS[terminalOutcome];
-    const isSopHold = terminalOutcome === "hold";
-    const canResumeFromNode = isSopHold && !!leg.sopNodeId && tree.nodes.some((n) => n.id === leg.sopNodeId);
+  // Terminal dispatch — single switch on outcomeRole-derived terminal
+  // kind (Guard #1: no parallel enum, no precedence ladder copy here).
+  const terminalKind = terminalKindForLeg(leg);
+  if (terminalKind !== "none") {
+    const terminalLeg: TerminalLeg = {
+      id: leg.id,
+      sopOutcome: leg.sopOutcome,
+      sopNodeId: leg.sopNodeId,
+      dropReason: leg.dropReason,
+      duplicateOfClaimId: leg.duplicateOfClaimId,
+      invoiceGroupId: leg.invoiceGroupId,
+      perLegContext: leg.perLegContext,
+    };
     return (
       <div className="space-y-3 min-w-0">
         {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
-        <Card className={`${colors.bg} border ${colors.border}`} data-testid="sop-terminal-card">
-          <CardContent className="p-4 text-center space-y-2">
-            <Icon className={`h-9 w-9 mx-auto ${colors.text}`} />
-            <div>
-              <p className={`text-base font-semibold ${colors.text}`}>{label}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                SOP outcome:{" "}
-                <code className="font-mono">{leg.sopOutcome}</code>
-                {leg.dropReason ? (
-                  <>
-                    {" · drop reason: "}
-                    <code className="font-mono">{leg.dropReason}</code>
-                  </>
-                ) : null}
-              </p>
-              {isSopHold && canResumeFromNode ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-muted-foreground" data-testid="sop-hold-guidance">
-                    SOP walk paused at this step. Resume to continue from where you left off.
-                  </p>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={disabled || clearSopHoldMutation.isPending}
-                    onClick={() => clearSopHoldMutation.mutate()}
-                    data-testid="sop-hold-resume-btn"
-                  >
-                    {clearSopHoldMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Play className="h-3.5 w-3.5" />
-                    )}
-                    Resume — clear hold
-                  </Button>
-                  {disabled && disabledReason && (
-                    <p className="text-xs text-muted-foreground italic">{disabledReason}</p>
-                  )}
-                </div>
-              ) : isSopHold ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-amber-700" data-testid="sop-hold-stale-guidance">
-                    Resume is not available; the SOP workflow was updated since this hold was placed. Reclassify the leg to restart the SOP walk.
-                  </p>
-                </div>
-              ) : (
-                <p
-                  className="text-xs text-muted-foreground italic mt-2"
-                  data-testid="sop-terminal-guidance"
-                >
-                  Outcome set by SOP — Reclassify if wrong.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {terminalKind === "include" && (
+          <IncludeTerminal
+            leg={terminalLeg}
+            tree={tree}
+            disabledReason={disabledReason}
+            onAdvanced={onAdvanced}
+            errorType={errorType ?? null}
+          />
+        )}
+        {terminalKind === "closed" && (
+          <ClosedTerminal
+            leg={terminalLeg}
+            tree={tree}
+            disabledReason={disabledReason}
+            onAdvanced={onAdvanced}
+          />
+        )}
+        {terminalKind === "hold" && (
+          <HoldTerminal
+            leg={terminalLeg}
+            tree={tree}
+            disabledReason={disabledReason}
+            onAdvanced={onAdvanced}
+          />
+        )}
+        {terminalKind === "duplicate" && (
+          <DuplicateTerminal
+            leg={terminalLeg}
+            tree={tree}
+            disabledReason={disabledReason}
+            onAdvanced={onAdvanced}
+          />
+        )}
       </div>
     );
   }
@@ -303,6 +242,10 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
   }
 
   const progress = maxDepth > 0 ? Math.min(100, Math.round((answers.length / maxDepth) * 100)) : 0;
+  // The sibling-detection prompt only makes sense BEFORE the operator
+  // has committed to walking the leg. Once any answer is recorded, the
+  // operator's intent is clear and the prompt would be confusing noise.
+  const showSiblingPrompt = !!siblingPrompt && answers.length === 0;
 
   return (
     <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
@@ -315,6 +258,14 @@ export function SopAdvancePlayer({ leg, tree, disabledReason, onAdvanced }: Prop
       </div>
 
       {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
+
+      {showSiblingPrompt && siblingPrompt && (
+        <SiblingDuplicatePrompt
+          legId={leg.id}
+          invoiceGroupId={leg.invoiceGroupId ?? null}
+          {...siblingPrompt}
+        />
+      )}
 
       <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
         <CardContent className="p-4 space-y-3">
@@ -383,3 +334,4 @@ function SopBreadcrumb({ tree, answers }: { tree: DecisionTree; answers: SopAnsw
     </div>
   );
 }
+
