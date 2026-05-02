@@ -1,14 +1,22 @@
 import type { ClaimResponse } from "@workspace/api-client-react";
 
 /**
- * The shared "what to do in the payor portal" checklist used by both
- * tabs of the Re-attest modal. The "Re-attest now" tab renders these
- * as live checkboxes; the "Queue for attestation" tab renders the
- * exact same items as a read-only preview AND ships the rendered text
- * to the API so the queue surface displays the literal instructions
- * the operator was looking at when they parked the work.
+ * The shared attestation checklist used by both tabs of the Re-attest
+ * modal AND any other surface that displays the attestation steps.
  *
- * One source of truth → both surfaces stay in lockstep automatically.
+ * Single source of truth, two cases only:
+ *
+ *   1. All legs are clear (no denials) → one item:
+ *        "Re-attest the invoice."
+ *
+ *   2. One or more legs were denied → one MAS line per affected
+ *      invoice number, then the single re-attest line:
+ *        "In MAS: cancel / accept GPS deviation for invoice #{X}."
+ *        "Re-attest the invoice."
+ *
+ * No "open the portal" item, no per-approved-leg cancel item, no
+ * screenshot/audit item — those were not in the spec and were removed
+ * after the user pointed out approved+positive legs need no cancel.
  */
 
 export interface ReattestInstructionItem {
@@ -18,39 +26,57 @@ export interface ReattestInstructionItem {
   text: string;
 }
 
+/**
+ * Pull the most useful invoice number for an MAS line. Prefer the leg's
+ * own `invoiceNumbers` (first token of the comma/space-delimited field
+ * already on `ClaimResponse`) so multi-invoice groups still address the
+ * specific affected invoice. Fall back to the group invoice number when
+ * the leg has nothing on file.
+ */
+function legInvoiceNumber(
+  leg: ClaimResponse,
+  groupInvoiceNumber: string | null,
+): string {
+  const raw = (leg.invoiceNumbers ?? "").trim();
+  if (raw) {
+    const first = raw.split(/[,\s]+/).filter(Boolean)[0];
+    if (first) return first;
+  }
+  return groupInvoiceNumber || "this invoice";
+}
+
 export function buildReattestChecklist(
-  approvedLegs: readonly ClaimResponse[],
+  deniedLegs: readonly ClaimResponse[],
   groupInvoiceNumber: string | null,
 ): ReattestInstructionItem[] {
-  const inv = groupInvoiceNumber || "this invoice";
-  const items: ReattestInstructionItem[] = [
-    {
-      id: "open-portal",
-      text: `Open invoice ${inv} in the payor portal.`,
-    },
-  ];
-  for (const leg of approvedLegs) {
+  const items: ReattestInstructionItem[] = [];
+  // Case 2: one MAS line per denied leg, addressed at the affected
+  // invoice number. De-duplicated when several denied legs share the
+  // same invoice number so the operator doesn't tick the same MAS
+  // gesture twice.
+  const seen = new Set<string>();
+  for (const leg of deniedLegs) {
+    const inv = legInvoiceNumber(leg, groupInvoiceNumber);
+    if (seen.has(inv)) continue;
+    seen.add(inv);
     items.push({
-      id: `cancel-${leg.id}`,
-      text: `Cancel the existing claim on leg ${leg.confNumber} in the payor portal so it doesn't double-up.`,
-    });
-    items.push({
-      id: `reattest-${leg.id}`,
-      text: `Re-attest leg ${leg.confNumber} with the corrected info.`,
+      id: `mas-${inv}`,
+      text: `In MAS: cancel / accept GPS deviation for invoice #${inv}.`,
     });
   }
+  // The single re-attest step closes both cases. When there are no
+  // denials this is the only item on the list.
   items.push({
-    id: "screenshot",
-    text: "Take a confirmation screenshot or note the portal reference number for the audit trail.",
+    id: "reattest",
+    text: "Re-attest the invoice.",
   });
   return items;
 }
 
 /**
- * Render the checklist back to a plain-text block we can persist to
- * `attestation_note` so the Attestation Queue surface shows the exact
- * instruction set the operator was looking at when they queued the
- * work. Numbered to match the on-screen list ordering.
+ * Render the checklist as plain text for persistence on the
+ * Attestation Queue surface so the queued row shows the literal
+ * walkthrough text the operator was looking at when they parked it.
  */
 export function renderChecklistAsText(items: readonly ReattestInstructionItem[]): string {
   return items.map((it, i) => `${i + 1}. ${it.text}`).join("\n");

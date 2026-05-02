@@ -32,6 +32,12 @@ interface Props {
   group: InvoiceGroupResponse;
   rides: readonly ClaimResponse[];
   responses: readonly PortalResponseItem[];
+  /**
+   * True if the operator has sent at least one outbound reply on this
+   * group's email thread. Gates the "I replied — wait for payor again"
+   * button so it can't be clicked before any reply was actually sent.
+   */
+  hasOperatorReply: boolean;
   onAfterAction: (message: string) => void;
 }
 
@@ -66,7 +72,7 @@ interface Props {
  * dialog), so the group only leaves `response-pending` once Step 4 is
  * actually committed.
  */
-export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props) {
+export function WhatsNextCard({ group, rides, responses, hasOperatorReply, onAfterAction }: Props) {
   const queryClient = useQueryClient();
   const promoteDrafts = usePromoteVerdictDrafts();
   const closureLauncher = useClosureLauncher();
@@ -257,10 +263,15 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
 
         {showAwaitingPayorAgain && (
           <div className="pt-1">
-            <AwaitingPayorAgainButton group={group} onAfterStamp={invalidate} />
+            <AwaitingPayorAgainButton
+              group={group}
+              onAfterStamp={invalidate}
+              hasOperatorReply={hasOperatorReply}
+            />
             <p className="mt-1 text-[10px] text-muted-foreground text-center">
-              Use this when you've already sent a reply and want this row to
-              come back when the payor responds.
+              {hasOperatorReply
+                ? "Use this when you've already sent a reply and want this row to come back when the payor responds."
+                : "Send a reply to the payor in the email thread above to unlock this."}
             </p>
           </div>
         )}
@@ -271,6 +282,7 @@ export function WhatsNextCard({ group, rides, responses, onAfterAction }: Props)
         onOpenChange={setReattestOpen}
         group={group}
         approvedLegs={derivation.approvedLegs}
+        deniedLegs={derivation.deniedLegs}
         promoteDrafts={async () => {
           // Re-attest (Attest now / Queue for later) commits Step 4 by
           // first promoting every draft on the group to

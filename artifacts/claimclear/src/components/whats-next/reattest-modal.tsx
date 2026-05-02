@@ -31,6 +31,8 @@ interface Props {
   group: InvoiceGroupResponse;
   /** Approved-verdict legs that still need re-attestation in the portal. */
   approvedLegs: readonly ClaimResponse[];
+  /** Denied-verdict legs — drive the per-affected-invoice MAS checklist line. */
+  deniedLegs: readonly ClaimResponse[];
   /**
    * Step 4 commit (Task #343). Promotes every per-leg `operator_draft`
    * on the group to `operator_confirmed` in one transaction, *before*
@@ -71,6 +73,7 @@ export function ReattestModal({
   onOpenChange,
   group,
   approvedLegs,
+  deniedLegs,
   promoteDrafts,
   onAfterAction,
 }: Props) {
@@ -80,8 +83,8 @@ export function ReattestModal({
   const markWaiting = useMarkAwaitingPayorAgain();
 
   const checklist = useMemo<ReattestInstructionItem[]>(
-    () => buildReattestChecklist(approvedLegs, group.invoiceNumber),
-    [approvedLegs, group.invoiceNumber],
+    () => buildReattestChecklist(deniedLegs, group.invoiceNumber),
+    [deniedLegs, group.invoiceNumber],
   );
   const renderedChecklistText = useMemo(
     () => renderChecklistAsText(checklist),

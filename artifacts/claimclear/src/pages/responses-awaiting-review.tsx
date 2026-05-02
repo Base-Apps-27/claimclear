@@ -625,6 +625,18 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
     [emailThread, legIdToLabel],
   );
 
+  // Gates the "I replied — wait for payor again" button on the
+  // What's-next card: the button must stay disabled until the operator
+  // has actually sent at least one outbound reply on this group's
+  // email thread. Reading the merged thread directly (not the page-
+  // local conversation adapter) so a reply sent from anywhere on this
+  // page — or from the full invoice-group detail page — flips the
+  // gate without us having to maintain a parallel signal.
+  const hasOperatorReply = useMemo(
+    () => (emailThread?.messages ?? []).some((m) => m.direction === "outbound"),
+    [emailThread],
+  );
+
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
 
   // The thread component's own `id="invoice-thread"` anchor is what the
@@ -778,6 +790,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
             detail={detail as InvoiceGroupDetailResponse | undefined}
             allRides={allRides}
             responses={responses}
+            hasOperatorReply={hasOperatorReply}
             onAfterVerdict={onAfterVerdict}
           />
         </div>
@@ -847,6 +860,9 @@ interface ActionRailProps {
   /** Latest payor responses on the group — feeds the WhatsNextCard's
    *  metadata derivation (new invoice number, AI denial-reason hint). */
   responses: PortalResponseItem[];
+  /** Forwarded to WhatsNextCard so the "I replied" button stays
+   *  disabled until the operator has actually sent a reply. */
+  hasOperatorReply: boolean;
   onAfterVerdict: (message: string) => void;
 }
 
@@ -903,6 +919,7 @@ function ActionRail({
   detail,
   allRides,
   responses,
+  hasOperatorReply,
   onAfterVerdict,
 }: ActionRailProps) {
   // Real, actionable legs the operator can pick a verdict on. Mirrors
@@ -985,6 +1002,7 @@ function ActionRail({
             group={group}
             rides={allRides}
             responses={responses}
+            hasOperatorReply={hasOperatorReply}
             onAfterAction={onAfterVerdict}
           />
         </div>
