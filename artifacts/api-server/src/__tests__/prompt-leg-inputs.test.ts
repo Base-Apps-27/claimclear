@@ -32,6 +32,7 @@ import {
 } from "@workspace/db";
 import {
   buildPromptLegInputs,
+  promptLegAuditCounters,
   type PromptLegRowInput,
 } from "../lib/prompt-leg-inputs";
 import {
@@ -606,4 +607,77 @@ test("(d) duplicate-only with missing primary: helper throws (no silent fallback
     () => buildPromptLegInputs({ legs: [orphan], groupLegs: [orphan] }),
     /primary claim 999 for duplicate 502 not found/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task #312: audit-counter projection (per-leg context threading into the
+// audit-log metadata for the email-channel write-up + readback prompt sites)
+// ---------------------------------------------------------------------------
+
+test("Task #312: promptLegAuditCounters projects exactly the three traceability counters (parity case)", () => {
+  const rides = [
+    makeLeg({ id: 501, confNumber: "ABC123" }),
+    makeLeg({ id: 502, confNumber: "DEF456" }),
+  ];
+  const result = buildPromptLegInputs({ legs: rides, groupLegs: rides });
+  const counters = promptLegAuditCounters(result);
+
+  // Exact keys + values — the audit log shape is a contract for downstream
+  // analytics ("did the AI see the per-leg finding when it drafted this?").
+  assert.deepEqual(counters, {
+    hasPerLegContext: false,
+    perLegContextLegCount: 0,
+    siblingDuplicateCount: 0,
+  });
+  // No extra keys leak into the projection — spreading it into an audit
+  // metadata object must NOT carry the prompt strings or input arrays.
+  assert.deepEqual(Object.keys(counters).sort(), [
+    "hasPerLegContext",
+    "perLegContextLegCount",
+    "siblingDuplicateCount",
+  ]);
+});
+
+test("Task #312: promptLegAuditCounters reflects per_leg_context counts (all-context case)", () => {
+  const rides = [
+    makeLeg({ id: 501, confNumber: "ABC123", perLegContext: "Driver waited 47 min." }),
+    makeLeg({ id: 502, confNumber: "DEF456", perLegContext: "GPS shows trip ended early." }),
+  ];
+  const counters = promptLegAuditCounters(
+    buildPromptLegInputs({ legs: rides, groupLegs: rides }),
+  );
+  assert.deepEqual(counters, {
+    hasPerLegContext: true,
+    perLegContextLegCount: 2,
+    siblingDuplicateCount: 0,
+  });
+});
+
+test("Task #312: promptLegAuditCounters reflects sibling-duplicate roll-up (primary+siblings case)", () => {
+  const primary = makeLeg({ id: 501, confNumber: "ABC123", perLegContext: "Trip started at member's home." });
+  const dupA = makeLeg({ id: 502, confNumber: "DEF456", duplicateOfClaimId: 501 });
+  const dupB = makeLeg({ id: 503, confNumber: "GHI789", duplicateOfClaimId: 501 });
+  const counters = promptLegAuditCounters(
+    buildPromptLegInputs({ legs: [primary, dupA, dupB], groupLegs: [primary, dupA, dupB] }),
+  );
+  assert.deepEqual(counters, {
+    hasPerLegContext: true,
+    perLegContextLegCount: 1,
+    siblingDuplicateCount: 2,
+  });
+});
+
+test("Task #312: promptLegAuditCounters on a duplicate-only slice — primary owns the finding, counters reflect the slice", () => {
+  const primary = makeLeg({ id: 501, confNumber: "ABC123", perLegContext: "Primary owns the finding." });
+  const dup = makeLeg({ id: 502, confNumber: "DEF456", duplicateOfClaimId: 501 });
+  const counters = promptLegAuditCounters(
+    buildPromptLegInputs({ legs: [dup], groupLegs: [primary, dup] }),
+  );
+  // The duplicate's perLegContext is suppressed, and sibling refs only
+  // accrue on primaries — neither is in this slice, so both counts are 0.
+  assert.deepEqual(counters, {
+    hasPerLegContext: false,
+    perLegContextLegCount: 0,
+    siblingDuplicateCount: 0,
+  });
 });

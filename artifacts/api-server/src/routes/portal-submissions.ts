@@ -12,7 +12,7 @@ import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
-import { buildPromptLegInputs, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
+import { buildPromptLegInputs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
 
 // NOTE: Confirming a draft, queueing a submission, or retrying a failed
 // submission only moves the row to status="pending". The Playwright worker is
@@ -608,9 +608,7 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
       hasSpecialCircumstances: trimmedSpecial.length > 0,
       specialCircumstancesLength: trimmedSpecial.length,
       readbackLength: readback.length,
-      hasPerLegContext: promptLegInputs.hasPerLegContext,
-      perLegContextLegCount: promptLegInputs.perLegContextLegCount,
-      siblingDuplicateCount: promptLegInputs.siblingDuplicateCount,
+      ...promptLegAuditCounters(promptLegInputs),
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
@@ -739,6 +737,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}${contextSuffix}`,
     metadata: {
       hasSpecialCircumstances: trimmedSpecial.length > 0,
+      ...promptLegAuditCounters(promptLegInputs),
       ...(isPartialSubmission ? {
         includedLegs: ctx.rides.map(r => r.confNumber || r.id),
         excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
@@ -942,7 +941,7 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     invoiceGroupId: existing.invoiceGroupId,
     action: "portal_draft_regenerated",
     details: `Portal submission #${id} description regenerated`,
-    metadata: { submissionId: id },
+    metadata: { submissionId: id, ...promptLegAuditCounters(promptLegInputs) },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });

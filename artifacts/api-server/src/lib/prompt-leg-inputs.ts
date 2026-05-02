@@ -231,6 +231,27 @@ export function buildPromptLegInputs(ctx: PromptLegInputsContext): PromptLegInpu
   };
 }
 
+/**
+ * Per Task #312: every audit-log event that fires alongside a Claude prompt
+ * built from `buildPromptLegInputs` must surface the same three per-leg
+ * traceability counters. Centralising the projection here keeps the audit
+ * metadata shape consistent across the four prompt sites (portal write-up,
+ * portal regenerate, AI readback preflight, per-claim email) and lets call
+ * sites spread `...promptLegAuditCounters(promptLegInputs)` into their
+ * `metadata` object without duplicating the field names.
+ */
+export function promptLegAuditCounters(r: PromptLegInputsResult): {
+  hasPerLegContext: boolean;
+  perLegContextLegCount: number;
+  siblingDuplicateCount: number;
+} {
+  return {
+    hasPerLegContext: r.hasPerLegContext,
+    perLegContextLegCount: r.perLegContextLegCount,
+    siblingDuplicateCount: r.siblingDuplicateCount,
+  };
+}
+
 const PROMPT_LEG_COLUMNS = {
   id: claimsTable.id,
   confNumber: claimsTable.confNumber,

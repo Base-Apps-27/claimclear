@@ -9,6 +9,7 @@ import { registerBotProcess, unregisterBotProcess } from "../lib/bot-presence";
 import {
   buildPromptLegInputs,
   loadGroupLegsForClaim,
+  promptLegAuditCounters,
   type PromptLegInputsResult,
 } from "../lib/prompt-leg-inputs";
 
@@ -200,6 +201,10 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
       claimId: id,
       action: "email_generated",
       details: `Dispute email generated via ${generationMethod}`,
+      metadata: {
+        generationMethod,
+        ...promptLegAuditCounters(promptLegInputs),
+      },
       userEmail: req.user?.email || null,
       userName: req.user?.displayName ?? null,
     });
