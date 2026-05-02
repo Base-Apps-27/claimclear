@@ -7,6 +7,7 @@ import {
   getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
+import { useSystemEvents } from "@/hooks/use-system-events";
 import {
   Sidebar,
   SidebarContent,
@@ -88,6 +89,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // signed-in surface — the pip stays accurate whether you process a
   // claim from the queue, the claim detail, or the invoice group.
   useStreakPipLiveUpdates();
+
+  // Day-complete celebration listener (Task #313). One open EventSource
+  // per authenticated tab; fires confetti + toast when the day flips to
+  // fully concluded. Disabled on the auth screen so we don't leak an SSE
+  // connection past sign-out.
+  useSystemEvents({ enabled: isAuthenticated && user?.status === "active" });
 
   // Nav badge for the Attestation Queue: pending = approved verdicts that
   // landed and have not been actioned (amber, urgent), queued = parked for a

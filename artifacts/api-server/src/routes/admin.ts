@@ -5,6 +5,7 @@ import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
+import { isDayConcluded, tryEmitDayCompletedCelebration } from "../lib/day-complete";
 import {
   actionKeysForCategory,
   categoryForAction,
@@ -299,6 +300,38 @@ router.get("/admin/audit-logs.csv", requireAdmin, asyncHandler(async (req, res):
     offset += CHUNK;
   }
   res.end();
+}));
+
+// Manual day-complete trigger (Task #313). Admin-only debug helper used
+// to verify the celebration end-to-end without forcing a real terminal
+// transition: when `force=true` the celebration is emitted regardless of
+// the day's true conclusion state (still subject to the partial unique
+// index — the second call for the same day is a no-op). Without `force`
+// it only emits when the day is actually concluded.
+//
+// Body: { date: "YYYY-MM-DD", force?: boolean }
+router.post("/admin/day-complete-celebration", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const date = typeof req.body?.date === "string" ? req.body.date.slice(0, 10) : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({ error: "date must be YYYY-MM-DD" });
+    return;
+  }
+  const force = req.body?.force === true;
+
+  if (!force) {
+    const concluded = await isDayConcluded(date);
+    if (!concluded) {
+      res.status(409).json({ error: "Day is not concluded; pass force=true to override.", date });
+      return;
+    }
+  }
+
+  const result = await tryEmitDayCompletedCelebration({
+    day: date,
+    triggeredByGroupId: null,
+    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+  });
+  res.json({ date, emitted: result.emitted, alreadyCelebrated: !result.emitted });
 }));
 
 export default router;

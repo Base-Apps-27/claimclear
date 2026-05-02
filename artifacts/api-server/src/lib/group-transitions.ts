@@ -6,6 +6,7 @@ import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
 import { computeAttestationDelta } from "./attestation";
+import { checkAndEmitDayCompleteForGroup } from "./day-complete";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
 type GroupOutcome = typeof invoiceGroupsTable.outcome.enumValues[number];
@@ -319,6 +320,11 @@ export async function transitionGroupStatus(opts: {
       userEmail: actor.userEmail,
       timestamp: new Date().toISOString(),
     });
+
+    // Day-complete celebration: re-check after every status change because
+    // entering in-flight or closed can make the group's day fully concluded.
+    // Idempotent — guarded by a partial unique index on state_events.
+    await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
   }
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
@@ -487,6 +493,10 @@ export async function transitionGroupOutcome(opts: {
     userEmail: actor.userEmail,
     timestamp: new Date().toISOString(),
   });
+
+  // Day-complete celebration: setting outcome to Non-Issue or Withdrawn
+  // can be the final action that concludes the group's day.
+  await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
 }
@@ -668,6 +678,11 @@ export async function transitionGroupStatusAndOutcome(opts: {
     userEmail: actor.userEmail,
     timestamp: new Date().toISOString(),
   });
+
+  // Day-complete celebration: combined status+outcome transitions are how
+  // the closure path (Resolved / Denied / Withdrawn) commits, so this is
+  // the most common terminal flip for the day-complete signal.
+  await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
 }

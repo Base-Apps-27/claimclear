@@ -1,4 +1,4 @@
-import { pgTable, bigserial, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, bigserial, text, integer, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -41,6 +41,13 @@ export const stateEventsTable = pgTable(
       table.invoiceGroupId,
       sql`${table.createdAt} DESC`,
     ),
+    // Day-complete celebration idempotency (Task #313). Guarantees at most
+    // one row per ISO date for the `day_completed_celebration` event_key,
+    // even under concurrent group transitions on the same calendar day.
+    // Other event keys are unaffected (partial index, WHERE clause).
+    uniqueIndex("state_events_day_completed_celebration_unique")
+      .on(table.eventKey, sql`((${table.metadata}->>'date'))`)
+      .where(sql`${table.eventKey} = 'day_completed_celebration'`),
   ],
 );
 

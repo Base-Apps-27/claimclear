@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { addClaimClient, addGlobalClient, addGroupClient, addGlobalGroupClient } from "../lib/sse";
+import { addClaimClient, addGlobalClient, addGroupClient, addGlobalGroupClient, addGlobalSystemClient } from "../lib/sse";
 
 const router: IRouter = Router();
 
@@ -39,6 +39,15 @@ router.get("/invoice-groups/:id/events", (req, res) => {
 router.get("/invoice-groups/events", (req, res) => {
   const userEmail = req.user?.email ?? null;
   const cleanup = addGlobalGroupClient(res, userEmail);
+  req.on("close", cleanup);
+});
+
+// App-wide system announcements (Task #313). One open EventSource per
+// authenticated tab; carries the day-complete celebration trigger today
+// and is the natural channel for any future cross-resource broadcast.
+router.get("/system-events", (req, res) => {
+  const userEmail = req.user?.email ?? null;
+  const cleanup = addGlobalSystemClient(res, userEmail);
   req.on("close", cleanup);
 });
 

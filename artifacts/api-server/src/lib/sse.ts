@@ -44,6 +44,7 @@ const globalClients = new Set<SSEClient>();
 const groupClients = new Map<number, Set<SSEClient>>();
 const globalGroupClients = new Set<SSEClient>();
 const globalBatchClients = new Set<SSEClient>();
+const globalSystemClients = new Set<SSEClient>();
 
 // Lifecycle event for the shared portal-submission batch run. Pushed on the
 // global batch channel so every connected user sees the same in-flight queue,
@@ -269,5 +270,50 @@ function sendBatchEvent(client: SSEClient, event: BatchEvent): void {
 export function broadcastBatchEvent(event: BatchEvent): void {
   for (const client of globalBatchClients) {
     sendBatchEvent(client, event);
+  }
+}
+
+// App-wide system announcements broadcast to every authenticated client
+// (separate from the claim/group/batch channels so a future system event
+// can be added without crossing wires with resource-scoped traffic).
+//
+// `day_completed` is fired exactly once per ISO date when every invoice
+// group dated for that day reaches a concluded state. The client uses
+// the connection-open timestamp to ignore replays after reconnect, so
+// missed celebrations do NOT fire retroactively.
+export type SystemEvent = {
+  type: "day_completed";
+  date: string;        // ISO YYYY-MM-DD
+  dateLabel: string;   // "April 15, 2026"
+  timestamp: string;   // ISO timestamp of the broadcast
+};
+
+export function addGlobalSystemClient(res: Response, userEmail: string | null): () => void {
+  initSSE(res);
+  const client: SSEClient = { res, userEmail };
+  globalSystemClients.add(client);
+
+  const keepAlive = setInterval(() => {
+    try { res.write(":ping\n\n"); } catch { cleanup(); }
+  }, 25000);
+
+  const cleanup = () => {
+    clearInterval(keepAlive);
+    globalSystemClients.delete(client);
+  };
+  return cleanup;
+}
+
+function sendSystemEvent(client: SSEClient, event: SystemEvent): void {
+  try {
+    client.res.write(`event: system_update\ndata: ${JSON.stringify(event)}\n\n`);
+  } catch {
+    // client disconnected
+  }
+}
+
+export function broadcastSystemEvent(event: SystemEvent): void {
+  for (const client of globalSystemClients) {
+    sendSystemEvent(client, event);
   }
 }

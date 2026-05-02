@@ -127,6 +127,13 @@
       "when": 1777717527759,
       "tag": "0017_whole_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777720099105,
+      "tag": "0018_fair_dakota_north",
+      "breakpoints": true
     }
   ]
 }

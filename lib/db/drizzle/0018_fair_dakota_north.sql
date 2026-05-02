@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "state_events_day_completed_celebration_unique" ON "state_events" USING btree ("event_key",(("metadata"->>'date'))) WHERE "state_events"."event_key" = 'day_completed_celebration';
