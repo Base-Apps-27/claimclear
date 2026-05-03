@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "codegen": "orval --config ./orval.config.ts"
+    "codegen": "orval --config ./orval.config.ts && node ./scripts/patch-upload-file.mjs"
   },
   "dependencies": {
     "@workspace/payor-denial-reasons": "workspace:*"

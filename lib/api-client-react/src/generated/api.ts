@@ -10705,8 +10705,11 @@ export const uploadFile = async (
   return customFetch<UploadResponse>(getUploadFileUrl(), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "image/png", ...options?.headers },
-    body: JSON.stringify(uploadFileBody),
+    headers: {
+      "Content-Type": uploadFileBody.type || "application/octet-stream",
+      ...options?.headers,
+    },
+    body: uploadFileBody,
   });
 };
 
