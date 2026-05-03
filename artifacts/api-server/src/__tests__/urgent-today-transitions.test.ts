@@ -16,7 +16,7 @@ import { eq, inArray } from "drizzle-orm";
 
 import dashboardRouter, { etMidnightUtcInstant } from "../routes/dashboard";
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
-import { addDaysToYMD } from "../lib/dates";
+import { addDaysToYMD, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import {
   db,
   pool,
@@ -71,10 +71,39 @@ after(async () => {
 
 interface SeedGroupOpts {
   status: "New" | "Needs Evidence" | "On Hold" | "Generating Email" | "Portal Queued" | "Awaiting Response";
-  // Days ago for the earliest claim's service date. 30 = deadline today.
-  serviceDaysAgo: number;
+  // Days ago for the earliest claim's service date. With strict-today
+  // urgency (see `isUrgentDeadline`), 30 means the row is urgent
+  // exactly today on weekdays. Weekends shift the effective deadline
+  // back to Friday — pass `urgentToday: true` to let the helper pick a
+  // value that lands the effective deadline on today no matter what
+  // weekday it's run.
+  serviceDaysAgo?: number;
+  /**
+   * When true, ignores `serviceDaysAgo` and computes the service date
+   * such that {@link isUrgentDeadline} returns true today. Falls back
+   * to `today - 30` when no candidate matches (e.g. weekend runs where
+   * no service date can produce a "today" effective deadline) so the
+   * caller can still observe the seeded row even if the urgency
+   * assertion has to be skipped at the test layer.
+   */
+  urgentToday?: boolean;
   invoiceNumber?: string;
   clientNumber?: string;
+}
+
+/**
+ * Pick a YYYY-MM-DD service date whose 30-day deadline (after the
+ * weekend → Friday shift) lands on today. Returns null on Sat/Sun
+ * runs, where no service date can produce a "today" deadline because
+ * the shift always pulls weekend deadlines back to Friday.
+ */
+export function pickServiceDateUrgentToday(now: Date = new Date()): string | null {
+  const todayKey = serverTodayKey(now);
+  for (let n = 28; n <= 34; n++) {
+    const candidate = addDaysToYMD(todayKey, -n);
+    if (isUrgentDeadline(candidate, now)) return candidate;
+  }
+  return null;
 }
 
 async function seedUrgentGroup(opts: SeedGroupOpts): Promise<{ groupId: number; claimId: number }> {
@@ -90,10 +119,19 @@ async function seedUrgentGroup(opts: SeedGroupOpts): Promise<{ groupId: number; 
 
   // Build a YYYY-MM-DD `serviceDaysAgo` calendar days back from today.
   // Calendar arithmetic, not timestamp arithmetic — matches the rest
-  // of the deadline math.
+  // of the deadline math. When `urgentToday` is set we delegate to
+  // the picker so the seeded row lands a deadline on today under the
+  // strict-equality semantics in `isUrgentDeadline` (regardless of the
+  // weekday the test runs on).
   const now = new Date();
-  const ms = now.getTime() - opts.serviceDaysAgo * 24 * 60 * 60 * 1000;
-  const ymd = new Date(ms).toISOString().slice(0, 10);
+  let ymd: string;
+  if (opts.urgentToday) {
+    ymd = pickServiceDateUrgentToday(now) ?? addDaysToYMD(serverTodayKey(now), -30);
+  } else {
+    const days = opts.serviceDaysAgo ?? 30;
+    const ms = now.getTime() - days * 24 * 60 * 60 * 1000;
+    ymd = new Date(ms).toISOString().slice(0, 10);
+  }
 
   const [claim] = await db.insert(claimsTable).values({
     confNumber: `${tag}-C`,
@@ -131,8 +169,16 @@ async function fetchTransitions(): Promise<{ status: number; json: Record<string
 // computeUrgentSnapshot
 // =====================================================================
 
-test("computeUrgentSnapshot counts a 30-day-old New group as urgent", async () => {
-  const { groupId } = await seedUrgentGroup({ status: "New", serviceDaysAgo: 35 });
+test("computeUrgentSnapshot counts a today-deadline New group as urgent", async (t) => {
+  // Strict-today urgency means "no urgent rows possible on weekends" —
+  // the office is closed and the effective-deadline shift pulls every
+  // raw deadline back to Friday. Skip on Sat/Sun rather than seed a
+  // row we know cannot trip the predicate.
+  if (pickServiceDateUrgentToday() == null) {
+    t.skip("strict-today urgency cannot fire on Sat/Sun (deadlines shift back to Fri)");
+    return;
+  }
+  const { groupId } = await seedUrgentGroup({ status: "New", urgentToday: true });
   const snap = await computeUrgentSnapshot();
   assert.ok(snap.urgentGroupIds.includes(groupId), `expected snapshot to include the seeded urgent group ${groupId}; got ${snap.urgentGroupIds.join(",")}`);
   assert.ok(snap.urgentCount >= 1);
@@ -176,10 +222,14 @@ test("GET /dashboard/urgent-today/transitions returns the contract shape", async
   assert.equal(typeof body.clearedSummary.total, "number");
 });
 
-test("GET /dashboard/urgent-today/transitions: clearedToday includes a today's New→Portal Queued audit row", async () => {
+test("GET /dashboard/urgent-today/transitions: clearedToday includes a today's New→Portal Queued audit row", async (t) => {
+  if (pickServiceDateUrgentToday() == null) {
+    t.skip("strict-today urgency cannot fire on Sat/Sun (deadlines shift back to Fri)");
+    return;
+  }
   // Seed a group that was urgent and then a status_change audit row
   // showing it left the actionable set today.
-  const { groupId } = await seedUrgentGroup({ status: "Portal Queued", serviceDaysAgo: 35 });
+  const { groupId } = await seedUrgentGroup({ status: "Portal Queued", urgentToday: true });
   const [audit] = await db.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
     action: "group_status_changed",
@@ -268,10 +318,14 @@ test("clearedToday EXCLUDES groups whose earliest service date isn't urgent toda
   );
 });
 
-test("clearedToday rows expose payor (clientNumber), source, reason, and ET timestamp", async () => {
+test("clearedToday rows expose payor (clientNumber), source, reason, and ET timestamp", async (t) => {
+  if (pickServiceDateUrgentToday() == null) {
+    t.skip("strict-today urgency cannot fire on Sat/Sun (deadlines shift back to Fri)");
+    return;
+  }
   const { groupId } = await seedUrgentGroup({
     status: "Portal Queued",
-    serviceDaysAgo: 32,
+    urgentToday: true,
     clientNumber: "PAYOR-298",
   });
   const [audit] = await db.insert(auditLogsTable).values({

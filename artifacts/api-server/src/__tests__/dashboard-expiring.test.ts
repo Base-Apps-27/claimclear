@@ -175,10 +175,14 @@ test("isUrgent: Monday + Wednesday deadline is NOT urgent", () => {
   assert.equal(isUrgentDeadline(sd, MONDAY), false);
 });
 
-test("isUrgent: a deadline already in the past counts as urgent", () => {
-  // Service date well in the past so deadline < today.
+test("isUrgent: a deadline already in the past does NOT count as urgent (strict today-only)", () => {
+  // Strict-equality semantics (see `isUrgentDeadline`): operationally
+  // we never carry past-due unsubmitted invoices, so flagging older
+  // slips as "Today" inflated counts and labelled future deadlines
+  // incorrectly. Past-due chase work belongs to the `submittedStuck`
+  // tier, computed via `isAtOrPastEffectiveDeadline`.
   const pastService = serviceDateForDeadline(localDay(2025, 11, 1)); // Dec 1 2025
-  assert.equal(isUrgentDeadline(pastService, FRIDAY), true);
+  assert.equal(isUrgentDeadline(pastService, FRIDAY), false);
 });
 
 // Status filter (Task #290) --------------------------------------------

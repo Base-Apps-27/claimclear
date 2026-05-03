@@ -205,8 +205,16 @@ export function effectiveDaysRemaining(
 
 /**
  * A deadline is "urgent" when, after shifting weekend deadlines back to
- * the prior Friday, it lands on today (in ET) or earlier — the team
- * must file it today because tomorrow is too late.
+ * the prior Friday, it lands on today (in ET) — the team must file it
+ * today because tomorrow is too late.
+ *
+ * Strict equality: past-due rows are NOT urgent. Operationally we never
+ * carry past-due unsubmitted invoices (the daily routine clears them
+ * the day they hit the deadline), so flagging older slips as "Today"
+ * just inflated the count and labelled future deadlines incorrectly.
+ * Use {@link isAtOrPastEffectiveDeadline} when you need the broader
+ * "past or at the deadline" predicate (e.g. the post-submit "stuck"
+ * tier, where a slipped Portal Queued group still needs a chase).
  */
 export function isUrgentDeadline(
   serviceDate: string | null,
@@ -216,8 +224,26 @@ export function isUrgentDeadline(
   if (!isValidYMD(serviceDate)) return false;
   const today = dateKeyInTz(now, tz);
   const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
-  // YYYY-MM-DD strings sort lexicographically as dates, so `<=` is a
+  // YYYY-MM-DD strings sort lexicographically as dates, so `===` is a
   // valid calendar comparison here — no Date round-trip required.
+  return deadline === today;
+}
+
+/**
+ * True when the effective (weekend-shifted) deadline is today or has
+ * already passed. Used by the "submitted but unconfirmed" tier so that
+ * Portal Queued groups whose deadline slipped without acknowledgement
+ * still light up the chase-confirmation badge — even though they are
+ * no longer "Urgent" in the strict file-today sense.
+ */
+export function isAtOrPastEffectiveDeadline(
+  serviceDate: string | null,
+  now: Date = new Date(),
+  tz: string = DEFAULT_TZ,
+): boolean {
+  if (!isValidYMD(serviceDate)) return false;
+  const today = dateKeyInTz(now, tz);
+  const deadline = shiftDeadlineKeyForOfficeClosure(rawDeadlineKey(serviceDate));
   return deadline <= today;
 }
 

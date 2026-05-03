@@ -23,7 +23,7 @@ import { getMacroPhase, getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
-import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline } from "../lib/dates";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
   CLAIM_SUBMITTED_STUCK_STATUSES,
@@ -327,16 +327,19 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     return {
       ...claim,
       effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
-      // Status-aware: only flag as urgent if we still owe action.
+      // Status-aware: only flag as urgent if we still owe action AND
+      // the deadline is exactly today (see `isUrgentDeadline` —
+      // strict-equality semantics; past-due rows fall through to the
+      // `submittedStuck` chase tier instead of inflating "Today").
       isUrgent: urgent,
-      // Task #352. Same date math as `isUrgent`, but narrowed to the
-      // post-submit "stuck" status set so the UI can render the
-      // distinct "stuck after submission" badge variant. By
-      // construction `submittedStuck === true` implies `isUrgent === true`
-      // (stuck rows are a subset of urgent ones); the dashboard's
-      // tier counts still partition the urgent total via the
-      // dashboard summary's `submittedStuckCount`.
-      submittedStuck: urgent && CLAIM_STUCK_STATUSES.has(claim.status),
+      // Task #352. Post-submit "stuck" tier — uses the broader
+      // "deadline today or past" predicate so a Portal Queued / Processed
+      // claim whose deadline already slipped still surfaces for a
+      // confirmation chase. Independent of `isUrgent` (which is now
+      // strictly today-only), so a stuck row past its deadline can be
+      // `submittedStuck: true, isUrgent: false`.
+      submittedStuck:
+        CLAIM_STUCK_STATUSES.has(claim.status) && isAtOrPastEffectiveDeadline(claim.date, today),
     };
   });
 

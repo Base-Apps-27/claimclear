@@ -224,15 +224,22 @@ test("daysRemaining: helpers now accept ISO only — non-ISO inputs return null"
   assert.equal(daysRemaining("4/28/26", today, ET), null);
 });
 
-test("isUrgentDeadline flags an Apr 2 ISO service date on May 2 (deadline today)", () => {
-  // The exact bug the user reported: it's May 2 and Apr 2 service
-  // dates have hit their 30-day deadline. With the typed-date
-  // contract, the column reads back as "2026-04-02" already; the
-  // helper just needs to treat the ISO string as urgent.
-  const may2et = new Date("2026-05-02T16:00:00Z"); // May 2 noon ET
-  assert.equal(isUrgentDeadline("2026-04-02", may2et, ET), true);
+test("isUrgentDeadline flags an Apr 1 ISO service date on May 1 (deadline today, weekday)", () => {
+  // The exact bug the user reported: an ISO service date whose 30-day
+  // deadline equals today must be flagged urgent. Strict-today
+  // semantics (Task #358 follow-up) means the deadline must land
+  // exactly on today — past-due rows are NOT urgent, they belong to
+  // the parallel `submittedStuck` chase tier. Apr 1, 2026 + 30 days
+  // = May 1, 2026 (Friday), so the deadline lands on today with no
+  // weekend shift.
+  const may1et = new Date("2026-05-01T16:00:00Z"); // May 1 noon ET (Fri)
+  assert.equal(isUrgentDeadline("2026-04-01", may1et, ET), true);
+  // Past-due is no longer urgent under strict-today semantics: Mar 31
+  // + 30 = Apr 30 (yesterday), which the dashboard surfaces in the
+  // submittedStuck tier, not the urgent tier.
+  assert.equal(isUrgentDeadline("2026-03-31", may1et, ET), false);
   // Non-ISO input is no longer accepted — the contract is "DB
   // returns ISO or null", and a stray non-ISO value should never
   // trip the urgent badge.
-  assert.equal(isUrgentDeadline("4/2/2026", may2et, ET), false);
+  assert.equal(isUrgentDeadline("4/1/2026", may1et, ET), false);
 });

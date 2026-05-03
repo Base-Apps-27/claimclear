@@ -27,7 +27,7 @@ import {
   PAYOR_DENIAL_REASON_CODES,
 } from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
-import { effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
+import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import {
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
@@ -473,7 +473,7 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       // emit both flags so consumers can branch on whichever surface
       // they need without recomputing the deadline.
       submittedStuck:
-        GROUP_STUCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today),
+        GROUP_STUCK_STATUSES.has(row.status) && isAtOrPastEffectiveDeadline(earliestDate, today),
       legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
       serviceDateReason: classifyGroupServiceDateReason(
         earliestDate,

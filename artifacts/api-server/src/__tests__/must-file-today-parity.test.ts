@@ -35,6 +35,7 @@ import { inArray } from "drizzle-orm";
 import dashboardRouter from "../routes/dashboard";
 import invoiceGroupsRouter from "../routes/invoice-groups";
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
+import { isUrgentDeadline } from "../lib/dates";
 import {
   db,
   pool,
@@ -116,6 +117,20 @@ function ymdDaysAgo(days: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+// Strict-today urgency: pick a service date whose 30-day deadline (after
+// the weekend → Friday shift) lands exactly on today. Returns null on
+// Sat/Sun because the shift always pulls weekend deadlines back to
+// Friday — no service date can produce a "today" deadline on those
+// days. Tests gate on this and skip the urgent-fixture assertions.
+function ymdServiceDateUrgentToday(): string | null {
+  const now = new Date();
+  for (let n = 28; n <= 34; n++) {
+    const candidate = ymdDaysAgo(n);
+    if (isUrgentDeadline(candidate, now)) return candidate;
+  }
+  return null;
+}
+
 interface SeedOpts {
   status:
     | "New"
@@ -167,7 +182,18 @@ async function seedGroup(opts: SeedOpts): Promise<number> {
 
 // --- test ----------------------------------------------------------------
 
-test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent group set", async () => {
+test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent group set", async (t) => {
+  // Strict-today urgency cannot fire on Sat/Sun (effective deadline
+  // shifts back to Friday on weekends, so no service date can produce
+  // a "today" deadline). Skip the parity assertion on those days —
+  // the contract under test is "all surfaces agree on the urgent
+  // set", and "agree on the empty set" is trivially true and tells us
+  // nothing about the read-path parity we're actually checking.
+  const urgentTodaySD = ymdServiceDateUrgentToday();
+  if (urgentTodaySD == null) {
+    t.skip("strict-today urgency cannot fire on Sat/Sun (deadlines shift back to Fri)");
+    return;
+  }
   // Seed a battery of fixtures spanning every edge the cohesion audit
   // had to collapse onto one source of truth. Each fixture is labelled
   // with the contract it pins down, and we assert membership/non-
@@ -176,18 +202,23 @@ test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent gr
   // every surface should agree on; the parity contract is about
   // *agreement*, not absolute counts).
 
-  // (a) actionable + clearly-old service date → MUST be urgent on all surfaces.
+  // (a) actionable + service date whose effective deadline lands on
+  // today → MUST be urgent on all surfaces. Strict-today semantics
+  // (Task #358 follow-up) means past-due rows are NOT urgent — they
+  // belong to the parallel `submittedStuck` chase tier — so the
+  // fixture is pinned to the exact-today edge.
   const urgentNew = await seedGroup({
     status: "New",
-    serviceDate: ymdDaysAgo(45),
+    serviceDate: urgentTodaySD,
     tag: "urgent-new",
   });
 
-  // (b) actionable + service date that lands the deadline in the past
-  // even after the weekend shift back to Friday → MUST be urgent.
+  // (b) Same actionable+today fixture for a different status to prove
+  // the urgent set isn't keyed off any single status. Both rows must
+  // appear identically across all three surfaces.
   const urgentNeedsEvidence = await seedGroup({
     status: "Needs Evidence",
-    serviceDate: ymdDaysAgo(60),
+    serviceDate: urgentTodaySD,
     tag: "urgent-needs-evidence",
   });
 
@@ -255,8 +286,8 @@ test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent gr
   // keeps the test resilient to unrelated dev-DB rows while still
   // proving the parity contract on every edge case we care about.
   const expectUrgent = [
-    { id: urgentNew, label: "actionable + 45-day-old service_date" },
-    { id: urgentNeedsEvidence, label: "actionable + 60-day-old service_date" },
+    { id: urgentNew, label: "actionable + today-deadline service_date (New)" },
+    { id: urgentNeedsEvidence, label: "actionable + today-deadline service_date (Needs Evidence)" },
   ];
   const expectNotUrgent = [
     { id: futureNew, label: "actionable + 5-day-old service_date (future deadline)" },
