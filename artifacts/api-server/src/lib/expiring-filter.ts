@@ -64,21 +64,35 @@ function groupStatusCondition(mode: ExpiringMode): SQL {
   return or(...parts) as SQL;
 }
 
+// `soon` is the strictly-future band (1..SOON_DAYS); today/overdue
+// rows belong to `urgent`/`stuck`, never to `soon`.
+function minDaysFor(mode: ExpiringMode): number | null {
+  if (mode === "soon") return 1;
+  return null;
+}
+
 export function buildClaimExpiringCondition(mode: ExpiringMode): SQL {
   const max = maxDaysFor(mode);
+  const min = minDaysFor(mode);
   // claims.date is now a typed DATE column (Task #351, migration 0022)
   // so the column reference is directly usable as a date expression —
   // no NULLIF/text-cast safety net required.
   const dateExpr = sql`${claimsTable.date}`;
-  return and(
-    sql`${dateExpr} IS NOT NULL`,
+  const deadline = effectiveDeadlineSql(dateExpr);
+  const conds: SQL[] = [
+    sql`${dateExpr} IS NOT NULL` as SQL,
     claimStatusCondition(mode),
-    sql`(${effectiveDeadlineSql(dateExpr)} - CURRENT_DATE) <= ${max}`,
-  ) as SQL;
+    sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL,
+  ];
+  if (min !== null) {
+    conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+  }
+  return and(...conds) as SQL;
 }
 
 export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   const max = maxDaysFor(mode);
+  const min = minDaysFor(mode);
   // Read the typed, indexed `invoice_groups.service_date` column instead
   // of recomputing MIN(claims.date) on every request. The column is
   // maintained on every write path by `recomputeGroupServiceDate`
@@ -88,9 +102,14 @@ export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   // typed `claims.date` work in Task #351 — both columns are now
   // calendar-correct without per-query NULLIF/text-cast wrappers.
   const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
-  return and(
+  const deadline = effectiveDeadlineSql(dateExpr);
+  const conds: SQL[] = [
     groupStatusCondition(mode),
-    isNotNull(invoiceGroupsTable.serviceDate),
-    sql`(${effectiveDeadlineSql(dateExpr)} - CURRENT_DATE) <= ${max}`,
-  ) as SQL;
+    isNotNull(invoiceGroupsTable.serviceDate) as SQL,
+    sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL,
+  ];
+  if (min !== null) {
+    conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+  }
+  return and(...conds) as SQL;
 }

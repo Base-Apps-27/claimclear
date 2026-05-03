@@ -360,14 +360,19 @@ export default function Dashboard() {
   });
 
   // Top items for the "Responses to review" hero card.
-  const responsesQueryArgs = { macroPhase: "response-pending", limit: 3 } as const;
+  // `includeExpired: true`: response-pending and
+  // MAS-action-required hero cards surface verdict / reattest work
+  // that's still actionable past the filing deadline. Opt past-
+  // deadline rows back in so the dashboard top-3 mirrors what the
+  // dedicated workspaces show.
+  const responsesQueryArgs = { macroPhase: "response-pending", limit: 3, includeExpired: true } as const;
   const { data: responsesData, isLoading: responsesLoading } = useListInvoiceGroups(
     responsesQueryArgs,
     { query: { queryKey: getListInvoiceGroupsQueryKey(responsesQueryArgs) } },
   );
 
   // Top items for the "MAS reattest pending" hero card.
-  const reattestQueryArgs = { macroPhase: "mas-action-required", limit: 3 } as const;
+  const reattestQueryArgs = { macroPhase: "mas-action-required", limit: 3, includeExpired: true } as const;
   const { data: reattestData, isLoading: reattestLoading } = useListInvoiceGroups(
     reattestQueryArgs,
     { query: { queryKey: getListInvoiceGroupsQueryKey(reattestQueryArgs) } },

@@ -3574,6 +3574,10 @@ sifting through historical groups.
    */
   errorTypeId?: string;
   /**
+   * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
+   */
+  errorTypeAssigned?: boolean;
+  /**
    * Filter groups created on or after this date (ISO 8601)
    */
   createdFrom?: string;

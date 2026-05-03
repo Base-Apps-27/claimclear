@@ -153,6 +153,11 @@ paths:
           description: Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
           schema:
             type: string
+        - name: errorTypeAssigned
+          in: query
+          description: When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
+          schema:
+            type: boolean
         - name: createdFrom
           in: query
           description: Filter groups created on or after this date (ISO 8601)

@@ -125,28 +125,30 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   // their parent group's Expired status via `syncChildRides`, so this
   // SQL-level guard is sufficient — no JS post-filter required.
   const includeExpiredFlag = String(query.includeExpired ?? "").toLowerCase() === "true";
+  // `urgent` (≤ today) and `stuck` (past deadline) intentionally
+  // include past-deadline rows; `soon` (1..SOON_DAYS) does not.
+  const expiringModeRaw = parseExpiringMode(query.expiring);
+  const expiringModeIncludesPastDeadline =
+    expiringModeRaw === "urgent" || expiringModeRaw === "stuck";
   if (!includeExpiredFlag && !statusFilterIncludesExpired) {
     conditions.push(ne(claimsTable.status, "Expired"));
-    // "On Hold past the filing deadline" is treated as expired for
-    // visibility purposes — the payor will not accept a submission
-    // past the deadline regardless of the manual hold, so the row
-    // is dead weight in the active list. Hidden by default; the
-    // `Show expired` toggle reveals them just like Status="Expired"
-    // rows. (The hold-row itself is NOT auto-transitioned to
-    // Expired here — that's the nightly sweep's job, and extending
-    // it to On Hold is a separate task. This filter just keeps the
-    // active list honest in the meantime.)
-    const dateExpr = sql`${claimsTable.date}`;
-    const effectiveDeadlineSql = sql`(
-      CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
-        WHEN 6 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
-        WHEN 0 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
-        ELSE (${dateExpr} + INTERVAL '30 days')::date
-      END
-    )`;
-    conditions.push(
-      sql`NOT (${claimsTable.status} = 'On Hold' AND ${dateExpr} IS NOT NULL AND ${effectiveDeadlineSql} < CURRENT_DATE)`,
-    );
+    // Hide rows whose effective filing deadline has slipped (any
+    // status with a service date) — payors won't accept the
+    // submission. Bypassed under `?expiring=urgent|stuck`, where
+    // past-deadline rows are the point of the view.
+    if (!expiringModeIncludesPastDeadline) {
+      const dateExpr = sql`${claimsTable.date}`;
+      const effectiveDeadlineSql = sql`(
+        CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
+          WHEN 6 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
+          WHEN 0 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
+          ELSE (${dateExpr} + INTERVAL '30 days')::date
+        END
+      )`;
+      conditions.push(
+        sql`NOT (${dateExpr} IS NOT NULL AND ${effectiveDeadlineSql} < CURRENT_DATE)`,
+      );
+    }
   }
 
   if (outcome && typeof outcome === "string") {

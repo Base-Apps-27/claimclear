@@ -83,6 +83,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Comma-separated list of error type IDs, use __unassigned__ for groups with no error type",
     ),
+  errorTypeAssigned: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.",
+    ),
   createdFrom: zod.coerce
     .string()
     .optional()

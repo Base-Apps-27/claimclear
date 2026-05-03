@@ -137,11 +137,17 @@ export default function ResponsesAwaitingReview() {
 
   const selectedId = params.id ? parseInt(params.id, 10) || null : null;
 
-  // Post-cutover: the Verdict Pending list is sourced from the
-  // `response-pending` macro phase and the MAS Action tab is always
-  // available. The legacy "Needs Review" status query and the
-  // PER_INVOICE_TRANSITION_ENABLED gate were removed in Task #199.
-  const verdictPendingQuery = { macroPhase: "response-pending", limit: 500 } as const;
+  // Verdict Pending is sourced from the `response-pending` macro phase.
+  // `includeExpired: true` keeps past-deadline groups in (operators
+  // pick verdicts off response signals, not the clock).
+  // `errorTypeAssigned: true` restricts to classified groups so the
+  // server total reflects exactly what this list renders.
+  const verdictPendingQuery = {
+    macroPhase: "response-pending",
+    limit: 500,
+    includeExpired: true,
+    errorTypeAssigned: true,
+  } as const;
   const { data, isLoading, isError, refetch } = useListInvoiceGroups(
     verdictPendingQuery,
     {
@@ -157,11 +163,9 @@ export default function ResponsesAwaitingReview() {
   // (`/attestation-queue`) reachable from the sidebar. This page is
   // single-purpose now: pick verdicts on payor responses.
 
-  // Mirror the Queue card's split: only post-classification (errorTypeId set)
-  // groups belong in this surface. The Classification Inbox handles the
-  // unclassified rows on the Queue page.
+  // Server already restricts to classified groups via `errorTypeAssigned`.
   const baseGroups: InvoiceGroupResponse[] = useMemo(
-    () => (data?.groups || []).filter((g) => !!g.errorTypeId),
+    () => data?.groups || [],
     [data?.groups],
   );
 

@@ -13,7 +13,6 @@ import { ServiceDateCell, type ServiceDateReason } from "@/components/service-da
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
-import { partitionOverdue } from "@/lib/queue-urgency";
 import { Badge } from "@/components/ui/badge";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
@@ -223,23 +222,14 @@ export default function InvoiceGroupsList() {
   const bulkAssign = useBulkAssignInvoiceGroupErrorType();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
-  const groupsAll: InvoiceGroupResponse[] = data?.groups ?? [];
+  // Past-deadline groups are now hidden server-side via the
+  // unified `includeExpired=false` guard. The total, page count, and
+  // "Showing A–B of N" all match the visible set without any
+  // client-side post-fetch filter. Operators opt past-deadline rows
+  // back in by toggling Show expired (`?includeExpired=true`) or
+  // drilling into a deadline tier with `?expiring=…`.
+  const groups: InvoiceGroupResponse[] = data?.groups ?? [];
   const total = data?.total ?? 0;
-
-  // Past-deadline groups are tucked behind a per-page disclosure on
-  // the current page (server pagination is unaffected — only the
-  // rendered tbody is filtered). Suppressed when the operator has
-  // explicitly opened the gate via "Show expired" or `?expiring=urgent`,
-  // because in those views past-deadline rows are the point.
-  const [showOverdue, setShowOverdue] = useState(false);
-  const overdueDisclosureSuppressed = filterIncludeExpired || filterExpiring === "urgent";
-  const groupsSplit = partitionOverdue(groupsAll);
-  const groups: InvoiceGroupResponse[] = overdueDisclosureSuppressed || showOverdue
-    ? groupsAll
-    : groupsSplit.visible;
-  const overdueHidden = overdueDisclosureSuppressed || showOverdue
-    ? 0
-    : groupsSplit.overdue.length;
 
   const allSelected = groups.length > 0 && groups.every(g => selectedIds.has(g.id));
   const someSelected = selectedIds.size > 0;
@@ -913,26 +903,6 @@ export default function InvoiceGroupsList() {
                           </tr>
                         );
                       })}
-                      {overdueHidden > 0 && (
-                        <tr data-testid="overdue-disclosure-groups">
-                          <td colSpan={colCount} className="px-4 py-2">
-                            <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                              <span>
-                                <span className="font-medium text-foreground">{overdueHidden}</span>{" "}
-                                past-deadline {overdueHidden === 1 ? "group is" : "groups are"} hidden on this page — payors won't accept these.
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowOverdue(true)}
-                                className="font-medium text-foreground underline-offset-2 hover:underline"
-                                data-testid="overdue-disclosure-show-groups"
-                              >
-                                Show overdue
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                       </>
                     )}
                   </tbody>

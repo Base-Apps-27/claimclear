@@ -117,7 +117,10 @@ export default function Insights() {
 
   useDashboardLiveUpdates();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
-  const { data: allClaimsData } = useListClaims({ limit: 1000, createdFrom: createdFromISO });
+  // `includeExpired: true`: analytics over a date range
+  // must include past-deadline and Expired claims; otherwise the
+  // counts misrepresent the historical workload.
+  const { data: allClaimsData } = useListClaims({ limit: 1000, createdFrom: createdFromISO, includeExpired: true });
   const { data: timeseries, isLoading: tsLoading } = useGetDashboardTimeseries({ days });
   const { data: productivity, isLoading: prodLoading } = useGetDashboardUserProductivity({ days });
   const { data: repeat, isLoading: repeatLoading } = useGetDashboardRepeatOffenders({ days, limit: 5 });

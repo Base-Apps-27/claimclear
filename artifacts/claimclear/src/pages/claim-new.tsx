@@ -66,7 +66,9 @@ export default function ClaimNew() {
 
   const parsedInvoiceNumber = useMemo(() => parseInvoiceNumber(form.refNumber), [form.refNumber]);
 
-  const lookupParams = { search: parsedInvoiceNumber ?? undefined, limit: 5 };
+  // Invoice-number lookup may legitimately match a past-deadline
+  // group (e.g. attaching a late disputed claim to its parent).
+  const lookupParams = { search: parsedInvoiceNumber ?? undefined, limit: 5, includeExpired: true };
   const { data: groupLookup } = useListInvoiceGroups(
     lookupParams,
     {
