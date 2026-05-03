@@ -510,7 +510,12 @@ export default function Dashboard() {
       {/* SYSTEM HEALTH BANNER — only renders when degraded/failed */}
       <WorkerHealthBanner />
 
-      {/* UNIVERSAL KPIs — always-on numbers across all roles */}
+      {/* UNIVERSAL KPIs — At risk / Already lost / Reclaimed money model.
+          Each invoice group lands in EXACTLY ONE bucket (server-side
+          mutex SUM CASE), so the three dollar figures here always
+          reconcile against the portfolio without double-counting.
+          Withdrawn / Non-Issue groups are intentionally excluded
+          from every bucket — they're not money in flight. */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiTile
           label="Invoices pending"
@@ -520,32 +525,51 @@ export default function Dashboard() {
           testid="kpi-invoices-pending"
         />
         <KpiTile
-          label="Total exposure"
-          value={formatCurrency(amounts.totalExposure)}
-          sub="claim + ~70% vendor prepay"
+          label="At risk"
+          value={formatCurrency(amounts.atRiskExposure ?? amounts.totalExposure)}
+          sub={
+            <>
+              {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} claim + ~70% driver prepay
+              {typeof amounts.atRiskGroups === "number" && (
+                <> · {amounts.atRiskGroups} group{amounts.atRiskGroups === 1 ? "" : "s"}</>
+              )}
+            </>
+          }
           tone="danger"
-          tooltip="Estimated total financial exposure including claim amounts plus ~70% vendor prepayment."
-          testid="kpi-total-exposure"
+          tooltip="Open dollars still in flight (claim + 70% driver prepay). Includes everything not yet locked in: in-workflow rows AND final-state rows whose re-attestation hasn't settled. Excludes withdrawn and non-issue rows."
+          testid="kpi-at-risk"
         />
         <KpiTile
-          label="Recovered"
-          value={formatCurrency(amounts.totalApproved)}
+          label="Already lost"
+          value={formatCurrency(amounts.lostExposureTotal ?? amounts.totalLost)}
+          sub={
+            <>
+              {formatCurrency(amounts.lostExpiredExposure ?? "0")} expired
+              {typeof amounts.lostExpiredGroups === "number" && (
+                <> ({amounts.lostExpiredGroups})</>
+              )}
+              {" · "}
+              {formatCurrency(amounts.lostDeniedExposure ?? "0")} denied
+              {typeof amounts.lostDeniedGroups === "number" && (
+                <> ({amounts.lostDeniedGroups})</>
+              )}
+            </>
+          }
+          tooltip="Money we won't see, claim + 70% prepay. Expired = filing deadline missed (literal Expired status OR On Hold past the 30-day Friday-shifted deadline). Denied = denied portion of Denied / Partially Approved rows, but only after re-attestation is settled — until then those dollars stay in At risk."
+          testid="kpi-already-lost"
+        />
+        <KpiTile
+          label="Reclaimed"
+          value={formatCurrency(amounts.reclaimedApproved ?? amounts.totalApproved)}
           sub={
             <span className="inline-flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
-              {formatCurrency(amounts.totalClaimed)} claimed across {totalGroups} groups
+              raw approved · prepay washes through
             </span>
           }
           tone="good"
-          tooltip="Total dollar amount approved/recovered from disputes."
-          testid="kpi-recovered"
-        />
-        <KpiTile
-          label="Lost"
-          value={formatCurrency(amounts.totalLost)}
-          sub={`${stats.denied} denied · ${stats.withdrawn} withdrawn`}
-          tooltip="Claimed dollars on invoice groups that were denied by the payor."
-          testid="kpi-lost"
+          tooltip="Total dollars approved by the payor. Shown raw — the 70% driver prepay is reimbursed via the payor remit on approved rows, so it's not added back as exposure here. Only counts against the company on rows we don't get paid for (which roll into Already lost)."
+          testid="kpi-reclaimed"
         />
       </div>
 

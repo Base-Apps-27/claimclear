@@ -2568,6 +2568,28 @@ export type DashboardSummaryAmounts = {
   totalLost: string;
   /** Vendor prepayment rate (0.70 = 70%) */
   vendorPrepayRate: number;
+  /** Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn / non-issue and any deadline-missed rows. */
+  atRiskClaim?: string;
+  /** atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). */
+  atRiskExposure?: string;
+  /** Count of invoice groups in the at-risk bucket. */
+  atRiskGroups?: number;
+  /** Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. */
+  lostExpiredClaim?: string;
+  /** lostExpiredClaim × (1 + vendorPrepayRate). */
+  lostExpiredExposure?: string;
+  /** Count of invoice groups in the expired/aged-out lost bucket. */
+  lostExpiredGroups?: number;
+  /** Sum of (totalAmount − approvedAmount) on rows with outcome Denied / Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. */
+  lostDeniedClaim?: string;
+  /** lostDeniedClaim × (1 + vendorPrepayRate). */
+  lostDeniedExposure?: string;
+  /** Count of invoice groups in the denied lost bucket. */
+  lostDeniedGroups?: number;
+  /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. */
+  lostExposureTotal?: string;
+  /** Σ approvedAmount across the portfolio, RAW (no prepay multiplier — once approved, the payor remit washes the prepay through). Approved dollars on rows whose re-attestation deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
+  reclaimedApproved?: string;
 };
 
 export type DashboardSummaryPortalStats = {

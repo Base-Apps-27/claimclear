@@ -229,6 +229,163 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
     .where(eq(invoiceGroupsTable.outcome, "Denied"));
   const totalLost = parseFloat(lostResult?.totalLost || "0");
 
+  // ────────────────────────────────────────────────────────────────────
+  // At-risk / Already-lost / Reclaimed money model. The legacy fields
+  // above (`totalExposure`, `totalLost`) lump everything-ever into a
+  // single number and don't reflect the "70% prepay only counts as a
+  // negative when we don't get paid" rule. The fields below replace
+  // that model with three clean buckets, with each invoice group
+  // assigned to exactly one bucket so the sums never double-count:
+  //
+  //   At risk         = open dollars × 1.70 (claim + driver prepay
+  //                     both still on the line). Includes every group
+  //                     whose outcome isn't yet locked in: still in
+  //                     workflow, OR final-state but with re-attest
+  //                     still pending. Already-approved portions are
+  //                     subtracted out and flow to Reclaimed.
+  //   Already lost
+  //     - Expired     = totalAmount × 1.70 over rows whose deadline
+  //                     slipped, where "deadline slipped" is ANY of:
+  //                       (a) literal status='Expired'
+  //                       (b) status='On Hold' past the (Friday-
+  //                           shifted) 30-day filing deadline
+  //                       (c) re-attestation still pending/queued
+  //                           past the same 30-day window
+  //                     The MAS rule is one 30-day clock from service
+  //                     date for both filing and re-attestation — once
+  //                     that clock runs out without confirmation, the
+  //                     trip is cancelled regardless of what verdict
+  //                     we already had on paper. The prepay counts
+  //                     because the payor will never reimburse this
+  //                     row, AND any approvedAmount on these rows is
+  //                     stripped out of Reclaimed below (the verdict
+  //                     was approved but the money never landed).
+  //     - Denied      = (totalAmount − approvedAmount) × 1.70 over
+  //                     rows with outcome IN ('Denied','Partially
+  //                     Approved') AND re-attestation already settled
+  //                     in time (no pending/queued steps left). Until
+  //                     re-attest settles, the dollars stay in At-risk
+  //                     — re-attestation can still flip the outcome.
+  //                     Operator-friendly: "denied portion only counts
+  //                     as lost once the re-attest part is finished."
+  //   Reclaimed       = raw Σ approvedAmount, no multiplier — per spec
+  //                     the driver prepay only counts against the
+  //                     company when we DON'T get paid, so an approved
+  //                     row's prepay is implicitly washed out by the
+  //                     payor remit and shouldn't inflate exposure.
+  //                     Approved dollars on rows whose re-attestation
+  //                     deadline slipped are EXCLUDED — those moved
+  //                     to Already-lost (expired) above as a full
+  //                     claim loss.
+  //
+  // Withdrawn and Non-Issue outcomes are intentionally excluded from
+  // every bucket — they're self-cancellations / triage no-ops, not
+  // money in flight.
+  //
+  // The on-hold-past-deadline predicate mirrors the one in the list
+  // routes (`/claims`, `/invoice-groups`) so the dashboard "expired"
+  // dollars line up with the rows that the list filter hides. The
+  // CASE expressions inside SUM are mutually exclusive by design —
+  // each row contributes to at most one of {at-risk, expired,
+  // denied-lost} so the buckets always reconcile.
+  // ────────────────────────────────────────────────────────────────────
+  // Status-agnostic "service date is past the Friday-shifted 30-day
+  // deadline" predicate. Same Friday-shift rule used by the list
+  // routes' on-hold-past-deadline guard, hoisted out so we can apply
+  // it to two different bucket conditions: the on-hold-aged case AND
+  // the pending-attest-aged case. NULL service date returns FALSE
+  // (we can't age out something we don't have a clock for).
+  const pastDeadlineExpr = sql`(${invoiceGroupsTable.serviceDate} IS NOT NULL AND (
+    CASE EXTRACT(DOW FROM (${invoiceGroupsTable.serviceDate} + INTERVAL '30 days'))
+      WHEN 6 THEN ((${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
+      WHEN 0 THEN ((${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
+      ELSE (${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date
+    END
+  ) < CURRENT_DATE)`;
+
+  const hasPendingAttestExpr = sql`EXISTS (
+    SELECT 1 FROM ${claimsTable}
+    WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${claimsTable.attestationState} IN ('pending','queued')
+  )`;
+
+  // The full "deadline-missed → already lost" predicate. Three cases,
+  // any one of which makes the row a full-claim loss:
+  //   1. Operator already marked the row Expired.
+  //   2. Row is parked On Hold and the filing deadline slipped.
+  //   3. Row has a verdict but at least one claim still owes a re-
+  //      attest step AND the (same) 30-day window from service date
+  //      is gone. Per the MAS rule, the trip is cancelled at that
+  //      point regardless of the verdict — the approvedAmount we
+  //      booked never lands in the bank.
+  const deadlineMissedExpr = sql`(
+    ${invoiceGroupsTable.status} = 'Expired'
+    OR (${invoiceGroupsTable.status} = 'On Hold' AND ${pastDeadlineExpr})
+    OR (${hasPendingAttestExpr} AND ${pastDeadlineExpr})
+  )`;
+
+  const [bucketRow] = await db
+    .select({
+      atRiskClaim: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Approved','Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 0
+        ELSE GREATEST(COALESCE(${invoiceGroupsTable.totalAmount}, 0) - COALESCE(${invoiceGroupsTable.approvedAmount}, 0), 0)
+      END), 0)`,
+      atRiskGroups: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Approved','Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 0
+        ELSE 1
+      END), 0)`,
+      expiredClaim: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN COALESCE(${invoiceGroupsTable.totalAmount}, 0)
+        ELSE 0
+      END), 0)`,
+      expiredGroups: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 1
+        ELSE 0
+      END), 0)`,
+      deniedLostClaim: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr}
+          THEN GREATEST(COALESCE(${invoiceGroupsTable.totalAmount}, 0) - COALESCE(${invoiceGroupsTable.approvedAmount}, 0), 0)
+        ELSE 0
+      END), 0)`,
+      deniedLostGroups: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 1
+        ELSE 0
+      END), 0)`,
+      // Reclaimed is raw approvedAmount, but we strip out approvedAmount
+      // on rows whose re-attestation deadline slipped — per the MAS rule
+      // those approvals never become real money, and the entire claim
+      // moves to Already-lost (expired) above as a full loss.
+      reclaimedApproved: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${deadlineMissedExpr} THEN 0
+        ELSE COALESCE(${invoiceGroupsTable.approvedAmount}, 0)
+      END), 0)`,
+    })
+    .from(invoiceGroupsTable);
+
+  const PREPAY_MULT = 1 + VENDOR_PREPAY_RATE;
+  const atRiskClaim = parseFloat(bucketRow?.atRiskClaim || "0");
+  const expiredClaim = parseFloat(bucketRow?.expiredClaim || "0");
+  const deniedLostClaim = parseFloat(bucketRow?.deniedLostClaim || "0");
+  const reclaimedApproved = parseFloat(bucketRow?.reclaimedApproved || "0");
+  const atRiskExposure = atRiskClaim * PREPAY_MULT;
+  const lostExpiredExposure = expiredClaim * PREPAY_MULT;
+  const lostDeniedExposure = deniedLostClaim * PREPAY_MULT;
+  const lostExposureTotal = lostExpiredExposure + lostDeniedExposure;
+  const atRiskGroups = parseInt(bucketRow?.atRiskGroups || "0", 10);
+  const expiredGroups = parseInt(bucketRow?.expiredGroups || "0", 10);
+  const deniedLostGroups = parseInt(bucketRow?.deniedLostGroups || "0", 10);
+
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
   const expiringStatusFilter = or(
@@ -372,7 +529,36 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
     stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, expired, withdrawnByReason, deniedByReason },
-    amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), totalLost: totalLost.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
+    amounts: {
+      // ── Legacy fields (kept for backward compat; daily-brief and a
+      // couple of dashboard tiles still read them). DO NOT remove
+      // without sweeping the consumers — see grep for `totalExposure`
+      // and `totalLost`. New surfaces should prefer the explicit
+      // at-risk / lost / reclaimed fields below.
+      totalClaimed: totalClaimed.toFixed(2),
+      totalApproved: totalApproved.toFixed(2),
+      totalExposure: totalExposure.toFixed(2),
+      totalLost: totalLost.toFixed(2),
+      vendorPrepayRate: VENDOR_PREPAY_RATE,
+      // ── At-risk / Already-lost / Reclaimed money model. See the
+      // long comment above the bucketRow query for definitions.
+      // All `*Exposure` fields apply the (1 + prepay) multiplier;
+      // `*Claim` fields are raw claim dollars (pre-multiplier).
+      // `reclaimedApproved` is intentionally NOT multiplied — once
+      // a claim is approved the prepay washes through the payor
+      // remit, so showing it inflated would overstate recovery.
+      atRiskClaim: atRiskClaim.toFixed(2),
+      atRiskExposure: atRiskExposure.toFixed(2),
+      atRiskGroups,
+      lostExpiredClaim: expiredClaim.toFixed(2),
+      lostExpiredExposure: lostExpiredExposure.toFixed(2),
+      lostExpiredGroups: expiredGroups,
+      lostDeniedClaim: deniedLostClaim.toFixed(2),
+      lostDeniedExposure: lostDeniedExposure.toFixed(2),
+      lostDeniedGroups: deniedLostGroups,
+      lostExposureTotal: lostExposureTotal.toFixed(2),
+      reclaimedApproved: reclaimedApproved.toFixed(2),
+    },
     expiringGroups,
     urgentCount,
     submittedStuckGroups,

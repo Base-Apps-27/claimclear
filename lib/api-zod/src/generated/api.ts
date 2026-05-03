@@ -16959,6 +16959,64 @@ export const GetDashboardSummaryResponse = zod.object({
     vendorPrepayRate: zod
       .number()
       .describe("Vendor prepayment rate (0.70 = 70%)"),
+    atRiskClaim: zod
+      .string()
+      .optional()
+      .describe(
+        "Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn \/ non-issue and any deadline-missed rows.",
+      ),
+    atRiskExposure: zod
+      .string()
+      .optional()
+      .describe(
+        "atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line).",
+      ),
+    atRiskGroups: zod
+      .number()
+      .optional()
+      .describe("Count of invoice groups in the at-risk bucket."),
+    lostExpiredClaim: zod
+      .string()
+      .optional()
+      .describe(
+        "Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file.",
+      ),
+    lostExpiredExposure: zod
+      .string()
+      .optional()
+      .describe("lostExpiredClaim × (1 + vendorPrepayRate)."),
+    lostExpiredGroups: zod
+      .number()
+      .optional()
+      .describe(
+        "Count of invoice groups in the expired\/aged-out lost bucket.",
+      ),
+    lostDeniedClaim: zod
+      .string()
+      .optional()
+      .describe(
+        "Sum of (totalAmount − approvedAmount) on rows with outcome Denied \/ Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome.",
+      ),
+    lostDeniedExposure: zod
+      .string()
+      .optional()
+      .describe("lostDeniedClaim × (1 + vendorPrepayRate)."),
+    lostDeniedGroups: zod
+      .number()
+      .optional()
+      .describe("Count of invoice groups in the denied lost bucket."),
+    lostExposureTotal: zod
+      .string()
+      .optional()
+      .describe(
+        "lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display.",
+      ),
+    reclaimedApproved: zod
+      .string()
+      .optional()
+      .describe(
+        "Σ approvedAmount across the portfolio, RAW (no prepay multiplier — once approved, the payor remit washes the prepay through). Approved dollars on rows whose re-attestation deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss.",
+      ),
   }),
   expiringGroups: zod.array(
     zod.object({
