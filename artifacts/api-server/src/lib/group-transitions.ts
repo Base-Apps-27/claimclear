@@ -33,23 +33,50 @@ export const VALID_GROUP_STATUS_TRANSITIONS: Record<string, string[]> = {
   // from Needs Evidence or On Hold; those have their own resolution
   // paths and reaching MAS Eligible from them would skip the
   // outstanding evidence / hold-reason housekeeping.
-  "New": ["Needs Evidence", "Needs Review", "On Hold", "MAS Eligible", "Resolved", "Denied"],
+  //
+  // "Expired" is offered as a manual destination from every pre-submit
+  // status that the nightly sweep itself can stamp (see
+  // GROUP_EXPIRABLE_STATUSES below) so an operator can pre-empt the
+  // sweep on a row they already know is dead. The sweep uses
+  // `systemOverride: true` so it can also stamp Generating Email
+  // rows where the manual transition map omits the destination.
+  "New": ["Needs Evidence", "Needs Review", "On Hold", "MAS Eligible", "Expired", "Resolved", "Denied"],
   "Needs Review": ["New", "Needs Evidence", "On Hold", "MAS Eligible", "Resolved", "Denied"],
-  "Needs Evidence": ["Needs Review", "On Hold", "Resolved", "Denied"],
+  "Needs Evidence": ["Needs Review", "On Hold", "Expired", "Resolved", "Denied"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
   "Awaiting Response": ["Needs Review", "On Hold", "MAS Eligible", "Resolved", "Denied"],
-  "On Hold": ["New", "Needs Review", "Needs Evidence"],
+  "On Hold": ["New", "Needs Review", "Needs Evidence", "Expired"],
   // From MAS Eligible an operator can revert (mistake / re-triage) or
   // close the group as Resolved once the off-system MAS portal
   // re-attestation is complete. Going to Denied / Needs Evidence /
   // On Hold from here would muddy the post-verdict state — explicitly
   // omitted.
   "MAS Eligible": ["Needs Review", "Resolved"],
+  // Expired is reversible — revert path mirrors Resolved/Denied so an
+  // operator who retired a row in error can put it back into the
+  // working set. The audit log row preserves the original pre-expiry
+  // status (the transition writes from→to metadata).
+  "Expired": ["New", "Needs Review"],
   "Resolved": ["New", "Needs Review"],
   "Denied": ["New", "Needs Review"],
 };
+
+// Pre-submit statuses whose past-deadline rows are eligible for the
+// nightly Expired sweep. Mirror of the user-spec list — kept as a
+// dedicated constant so the sweep, the dashboard "expirable" facet,
+// and the transition map all reason about the same set. "Generating
+// Email" is system-controlled (cannot be set manually) but the sweep
+// passes `systemOverride: true` so it CAN flip those rows; a row
+// stuck in Generating Email past its deadline is by definition a
+// stalled draft that needs to be retired.
+export const GROUP_EXPIRABLE_STATUSES = [
+  "New",
+  "Needs Evidence",
+  "On Hold",
+  "Generating Email",
+] as const;
 
 export const SYSTEM_CONTROLLED_GROUP_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
 
@@ -70,6 +97,11 @@ export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
   // trigger semantics (attestation here is engaged via the dedicated
   // MAS Eligible cascade in `engageMasEligibleAttestationCascade`).
   "MAS Eligible": ["Pending"],
+  // Expired carries no resolution outcome — it's a "we missed the
+  // window" terminal status. Outcome stays Pending so a future revert
+  // back to New/Needs Review preserves the row's original outcome
+  // envelope without forcing an outcome flip on the way out.
+  "Expired": ["Pending"],
   "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };

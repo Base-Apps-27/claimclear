@@ -29,6 +29,7 @@ export const CLAIM_STATUSES = [
   "Awaiting Response",
   "On Hold",
   "MAS Eligible",
+  "Expired",
   "Resolved",
   "Denied",
   "Portal Queued",
@@ -84,6 +85,12 @@ export const CLAIM_STATUS: Record<ClaimStatus, GlossaryEntry> = {
     enumValue: "MAS Eligible",
     label: "MAS Eligible",
     description: "MAS portal confirmed this is a contestable claim — the carrier owes money, but re-attestation in the MAS portal is still owed before the funds are released. Next: complete the re-attestation in MAS, then mark the claim Resolved.",
+    domain: "claim_status",
+  },
+  "Expired": {
+    enumValue: "Expired",
+    label: "Expired",
+    description: "The 30-day filing deadline passed before this pre-submit claim was filed. Hidden from default lists and dashboard counts. Reversible — revert to New or Needs Review if the row was retired in error.",
     domain: "claim_status",
   },
   "Resolved": {

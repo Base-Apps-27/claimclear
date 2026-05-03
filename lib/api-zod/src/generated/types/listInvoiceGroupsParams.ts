@@ -66,6 +66,15 @@ sifting through historical groups.
    */
   expiring?: ListInvoiceGroupsExpiring;
   /**
+ * When `true`, include groups with `status="Expired"` in the
+response. Off by default everywhere — the nightly 6 AM ET
+sweep retires past-deadline pre-submit rows so they recede
+from every workload list. Implicitly enabled if the caller
+already filtered to a status set that contains `Expired`.
+
+ */
+  includeExpired?: boolean;
+  /**
  * Filter groups by server-derived macro phase. `mas-action-required`
 returns groups that owe per-leg MAS cancellations, group-level
 re-attestation, or both. Drives the new MAS Action surfaces.

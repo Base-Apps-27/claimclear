@@ -24,6 +24,10 @@ export type ExportInvoiceGroupsCsvParams = {
   amountMin?: string;
   amountMax?: string;
   expiring?: ExportInvoiceGroupsCsvExpiring;
+  /**
+   * When true, include rows with status=Expired in the export. Off by default.
+   */
+  includeExpired?: boolean;
   sort?: string;
   dir?: string;
   /**

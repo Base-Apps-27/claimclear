@@ -2551,6 +2551,8 @@ export type DashboardSummaryStats = {
   onHold: number;
   /** Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal. */
   awaitingAttestation?: number;
+  /** Invoice groups currently in `status=Expired`. Reported separately so the dashboard can surface a deadbook count without inflating any of the live workload counters above; excluded from `total` for the same reason. */
+  expired?: number;
   /** Counts of Withdrawn invoice groups broken down by closure_reason. */
   withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
   /** Counts of Denied invoice groups broken down by closure_reason. */
@@ -3570,6 +3572,15 @@ sifting through historical groups.
    */
   expiring?: ListInvoiceGroupsExpiring;
   /**
+ * When `true`, include groups with `status="Expired"` in the
+response. Off by default everywhere — the nightly 6 AM ET
+sweep retires past-deadline pre-submit rows so they recede
+from every workload list. Implicitly enabled if the caller
+already filtered to a status set that contains `Expired`.
+
+ */
+  includeExpired?: boolean;
+  /**
  * Filter groups by server-derived macro phase. `mas-action-required`
 returns groups that owe per-leg MAS cancellations, group-level
 re-attestation, or both. Drives the new MAS Action surfaces.
@@ -3691,6 +3702,10 @@ export type ExportInvoiceGroupsCsvParams = {
   amountMin?: string;
   amountMax?: string;
   expiring?: ExportInvoiceGroupsCsvExpiring;
+  /**
+   * When true, include rows with status=Expired in the export. Off by default.
+   */
+  includeExpired?: boolean;
   sort?: string;
   dir?: string;
   /**
@@ -3837,6 +3852,15 @@ export type ListClaimsParams = {
    */
   expiring?: ListClaimsExpiring;
   /**
+ * When `true`, include claims whose `status="Expired"` in the
+response. Off by default everywhere — disputed children
+inherit the Expired status from their parent group when the
+nightly sweep retires it. Implicitly enabled if the caller
+already filtered to a status set that contains `Expired`.
+
+ */
+  includeExpired?: boolean;
+  /**
    * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
    */
   legSubStatus?: string;
@@ -3895,6 +3919,10 @@ export type ExportClaimsCsvParams = {
   carNumber?: string;
   clientNumber?: string;
   expiring?: ExportClaimsCsvExpiring;
+  /**
+   * When true, include rows with status=Expired in the export. Off by default.
+   */
+  includeExpired?: boolean;
   sort?: string;
   dir?: string;
   /**
@@ -4274,6 +4302,28 @@ export const GetSystemHealthBouncesOnlyUnmatched = {
   true: "true",
   false: "false",
 } as const;
+
+export type RunExpiredSweepBody = {
+  /** If true, identify eligible rows but do not transition them. */
+  dryRun?: boolean;
+};
+
+/**
+ * Per-source-status breakdown of the retired rows.
+ */
+export type RunExpiredSweep200ByStatus = { [key: string]: number };
+
+export type RunExpiredSweep200 = {
+  /** Number of groups transitioned to Expired (or that would be, if dryRun). */
+  expired: number;
+  /** Number of groups skipped due to a transition error (e.g. mid-flight submission). */
+  skipped: number;
+  /** Per-source-status breakdown of the retired rows. */
+  byStatus: RunExpiredSweep200ByStatus;
+  /** First few group ids that were transitioned, for the audit toast. */
+  sampleGroupIds: number[];
+  dryRun: boolean;
+};
 
 export type BackfillInvoiceGroupsBody = {
   /** If true, report what would change without writing to the database */

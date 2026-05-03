@@ -60,6 +60,10 @@ const CLAIM_LEG_TABS: readonly LegSubStatus[] = [
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
+  // Expired is selectable here — when chosen, the backend implicitly
+  // opens the include-Expired gate so the rows surface even without
+  // the standalone "Show expired" toggle being on.
+  "Expired",
 ] as const;
 
 // `OUTCOMES` is re-exported from @workspace/vocab — keep enum spelling.
@@ -131,6 +135,10 @@ export default function ClaimsList() {
   // Post-cutover: the secondary tab strip that filters the list by
   // per-leg sub-status is always shown (the legacy status-tab strip was
   // removed in Task #199).
+  // "Show expired" toggle. Expired claims (and disputed children of
+  // Expired groups) are hidden by default; flipping this on opens
+  // the gate via `?includeExpired=true` on the list query.
+  const filterIncludeExpired = get("includeExpired") === "true";
   const filterLegSubStatusRaw = get("legSubStatus");
   const filterLegSubStatus = (CLAIM_LEG_TABS as readonly string[]).includes(filterLegSubStatusRaw)
     ? (filterLegSubStatusRaw as LegSubStatus)
@@ -169,6 +177,7 @@ export default function ClaimsList() {
     carNumber: filterCarNumber || undefined,
     clientNumber: filterClientNumber || undefined,
     expiring: (filterExpiring || undefined) as ListClaimsParams["expiring"],
+    includeExpired: filterIncludeExpired || undefined,
     legSubStatus: filterLegSubStatus || undefined,
     sort: (sortCol || undefined) as typeof ListClaimsSort[keyof typeof ListClaimsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListClaimsDir[keyof typeof ListClaimsDir] | undefined,
@@ -555,6 +564,15 @@ export default function ClaimsList() {
             onClearAllFilters={clearFilters}
             extras={
               <>
+                <Button
+                  variant={filterIncludeExpired ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => set({ includeExpired: filterIncludeExpired ? null : "true", page: null }, false)}
+                  data-testid="toggle-show-expired"
+                  title="Expired claims are hidden by default. The nightly 6 AM ET sweep retires past-deadline pre-submit rows."
+                >
+                  {filterIncludeExpired ? "Hide expired" : "Show expired"}
+                </Button>
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
                 <a href={csvUrl} download>

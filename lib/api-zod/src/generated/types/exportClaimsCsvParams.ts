@@ -27,6 +27,10 @@ export type ExportClaimsCsvParams = {
   carNumber?: string;
   clientNumber?: string;
   expiring?: ExportClaimsCsvExpiring;
+  /**
+   * When true, include rows with status=Expired in the export. Off by default.
+   */
+  includeExpired?: boolean;
   sort?: string;
   dir?: string;
   /**

@@ -23,6 +23,8 @@ export type DashboardSummaryStats = {
   onHold: number;
   /** Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal. */
   awaitingAttestation?: number;
+  /** Invoice groups currently in `status=Expired`. Reported separately so the dashboard can surface a deadbook count without inflating any of the live workload counters above; excluded from `total` for the same reason. */
+  expired?: number;
   /** Counts of Withdrawn invoice groups broken down by closure_reason. */
   withdrawnByReason: DashboardSummaryStatsWithdrawnByReason;
   /** Counts of Denied invoice groups broken down by closure_reason. */

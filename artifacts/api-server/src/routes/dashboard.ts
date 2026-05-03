@@ -162,7 +162,13 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   const needsEvidence = (statusCounts["New"] || 0) + (statusCounts["Needs Evidence"] || 0);
   const portalQueued = (statusCounts["Portal Queued"] || 0) + (statusCounts["Generating Email"] || 0) + (statusCounts["Ready to Review"] || 0);
   const awaitingResponse = statusCounts["Awaiting Response"] || 0;
-  const total = statusCountsRaw.reduce((s, r) => s + r.count, 0);
+  // `expired` is reported separately so the dashboard tile/sparkline
+  // can surface "N rows retired this week" without inflating any of
+  // the workload counters above. Excluded from `total` for the same
+  // reason — the headline number represents live work in flight, not
+  // the deadbook.
+  const expired = statusCounts["Expired"] || 0;
+  const total = statusCountsRaw.reduce((s, r) => (r.status === "Expired" ? s : s + r.count), 0);
   const newCount = statusCounts["New"] || 0;
   const resolvedAll = statusCounts["Resolved"] || 0;
   const denied = statusCounts["Denied"] || 0;
@@ -365,7 +371,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
 
   res.json({
     pipeline: { needsEvidence, portalQueued, awaitingResponse },
-    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, withdrawnByReason, deniedByReason },
+    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, expired, withdrawnByReason, deniedByReason },
     amounts: { totalClaimed: totalClaimed.toFixed(2), totalApproved: totalApproved.toFixed(2), totalExposure: totalExposure.toFixed(2), totalLost: totalLost.toFixed(2), vendorPrepayRate: VENDOR_PREPAY_RATE },
     expiringGroups,
     urgentCount,

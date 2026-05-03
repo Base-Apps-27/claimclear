@@ -1,0 +1,36 @@
+-- 0025_expired_status.sql
+--
+-- Adds the "Expired" value to the claim_status enum so a pre-submit
+-- invoice/claim whose 30-day filing deadline has already slipped can
+-- be retired into a terminal-style status that is hidden from every
+-- list and dashboard count by default. This is the first phase of the
+-- "Expired" lane introduced after the strict-today urgency cutover
+-- (commit c669007): once the deadline clock can produce zero-day
+-- counts on past-due rows, those rows need a permanent home that does
+-- not pollute the daily file-today / actionable-now metrics.
+--
+-- Eligibility (enforced by the nightly sweep in `lib/expired-sweep.ts`
+-- and by the operator-facing transition map in
+-- `lib/group-transitions.ts` / `lib/claim-transitions.ts`):
+--   - status is in the pre-submit set: New / Needs Evidence / On Hold
+--     / Generating Email (group level); + Processed (claim level)
+--   - effectiveDeadline (service date + 30d, weekend-shifted) is
+--     strictly before today
+--
+-- Reversibility: an operator can revert Expired → New / Needs Review
+-- if a row was retired in error. The original status is preserved in
+-- the audit log row written by the transition.
+--
+-- Why a dedicated migration file:
+--   PostgreSQL forbids ALTER TYPE ... ADD VALUE inside an explicit OR
+--   implicit transaction block. Same constraint as 0024 — keep this
+--   file to a single autocommit DDL statement.
+--
+-- Idempotent: `ADD VALUE IF NOT EXISTS` is a no-op if "Expired" is
+-- already on the enum (safe to re-run on dev pushes and on prod).
+--
+-- Position: BEFORE 'Resolved' so the enum reads roughly in
+-- lifecycle order (..., 'On Hold', 'MAS Eligible', 'Expired',
+-- 'Resolved', 'Denied').
+
+ALTER TYPE "public"."claim_status" ADD VALUE IF NOT EXISTS 'Expired' BEFORE 'Resolved';

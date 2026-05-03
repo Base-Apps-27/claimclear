@@ -35,7 +35,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import {
   getUrgentGroupCountFromSummary,

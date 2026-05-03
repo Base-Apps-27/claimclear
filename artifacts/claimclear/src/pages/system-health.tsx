@@ -5,6 +5,7 @@ import {
   useGetSystemHealthWorkerActivity,
   useGetSystemHealthRollup,
   useGetSystemHealthClassifierStats,
+  useRunExpiredSweep,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
   getGetSystemHealthBouncesQueryKey,
@@ -15,8 +16,11 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles, CalendarOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
@@ -49,6 +53,31 @@ function relTime(iso: string | null | undefined) {
 }
 
 export default function SystemHealth() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  // Manual companion to the nightly 6 AM ET Expired sweep cron. Useful
+  // when an operator notices stale past-deadline rows mid-day and
+  // wants to retire them without waiting for the next tick.
+  const expiredSweep = useRunExpiredSweep({
+    mutation: {
+      onSuccess: (result) => {
+        toast({
+          title: result.expired === 0 ? "No groups to expire" : `Expired ${result.expired} group${result.expired === 1 ? "" : "s"}`,
+          description: result.expired > 0
+            ? `Sample IDs: ${result.sampleGroupIds.join(", ")}${result.skipped > 0 ? ` · ${result.skipped} skipped` : ""}`
+            : "Everything past-deadline has already been retired.",
+        });
+        queryClient.invalidateQueries({ queryKey: getGetSystemHealthCronRunsQueryKey() });
+      },
+      onError: (err) => {
+        toast({
+          title: "Expired sweep failed",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const { data: cronData, isLoading: cronLoading } = useGetSystemHealthCronRuns({
     query: {
       queryKey: getGetSystemHealthCronRunsQueryKey(),
@@ -115,6 +144,26 @@ export default function SystemHealth() {
       </div>
 
       <WorkerHealthBanner variant="full" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarOff className="h-5 w-5 text-stone-600" /> Expired Sweep
+          </CardTitle>
+          <CardDescription>
+            Retires invoice groups whose 30-day filing deadline has slipped while still in a pre-submit status (New, Needs Evidence, On Hold, Generating Email). Runs nightly at 6 AM ET; trigger here to catch up immediately.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={() => expiredSweep.mutate({ data: {} })}
+            disabled={expiredSweep.isPending}
+            data-testid="button-run-expired-sweep"
+          >
+            {expiredSweep.isPending ? "Running…" : "Run Expired sweep now"}
+          </Button>
+        </CardContent>
+      </Card>
 
       {infoNotes.length > 0 ? (
         <div

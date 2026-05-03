@@ -159,6 +159,8 @@ import type {
   ResponseStats,
   ResponsesAwaitingReviewCountResponse,
   RevertPortalSubmissionDescriptionBody,
+  RunExpiredSweep200,
+  RunExpiredSweepBody,
   SOPAnalysisResult,
   SaveInvoiceGroupDraftBody,
   SaveMappingsBody,
@@ -13306,6 +13308,97 @@ export const useUpdateUserNotificationPreferences = <
   return useMutation(
     getUpdateUserNotificationPreferencesMutationOptions(options),
   );
+};
+
+/**
+ * Retires every invoice group whose 30-day filing deadline has
+slipped while still in a pre-submit status (`New`, `Needs
+Evidence`, `On Hold`, `Generating Email`). Companion to the
+nightly 6 AM ET cron — idempotent, safe to re-run.
+
+ * @summary Manually run the nightly Expired sweep
+ */
+export const getRunExpiredSweepUrl = () => {
+  return `/api/admin/expired-sweep`;
+};
+
+export const runExpiredSweep = async (
+  runExpiredSweepBody?: RunExpiredSweepBody,
+  options?: RequestInit,
+): Promise<RunExpiredSweep200> => {
+  return customFetch<RunExpiredSweep200>(getRunExpiredSweepUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runExpiredSweepBody),
+  });
+};
+
+export const getRunExpiredSweepMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runExpiredSweep>>,
+    TError,
+    { data: BodyType<RunExpiredSweepBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runExpiredSweep>>,
+  TError,
+  { data: BodyType<RunExpiredSweepBody> },
+  TContext
+> => {
+  const mutationKey = ["runExpiredSweep"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runExpiredSweep>>,
+    { data: BodyType<RunExpiredSweepBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return runExpiredSweep(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunExpiredSweepMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runExpiredSweep>>
+>;
+export type RunExpiredSweepMutationBody = BodyType<RunExpiredSweepBody>;
+export type RunExpiredSweepMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Manually run the nightly Expired sweep
+ */
+export const useRunExpiredSweep = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runExpiredSweep>>,
+    TError,
+    { data: BodyType<RunExpiredSweepBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runExpiredSweep>>,
+  TError,
+  { data: BodyType<RunExpiredSweepBody> },
+  TContext
+> => {
+  return useMutation(getRunExpiredSweepMutationOptions(options));
 };
 
 /**

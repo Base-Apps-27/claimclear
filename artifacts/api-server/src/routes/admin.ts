@@ -7,6 +7,7 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { isDayConcluded, tryEmitDayCompletedCelebration } from "../lib/day-complete";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
+import { sweepExpiredGroups } from "../lib/expired-sweep";
 import {
   actionKeysForCategory,
   categoryForAction,
@@ -339,6 +340,34 @@ router.post("/admin/day-complete-celebration", requireAdmin, asyncHandler(async 
     actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
   });
   res.json({ date, emitted: result.emitted, alreadyCelebrated: !result.emitted });
+}));
+
+// Admin button companion to the nightly Expired sweep cron.
+//
+// Re-runs the same `sweepExpiredGroups` helper so the admin can retire
+// freshly-eligible rows without waiting for tomorrow morning's 6 AM ET
+// tick. The helper is idempotent — calling this when nothing is
+// eligible returns `expired=0` and is safe.
+//
+// Body (all optional):
+//   { dryRun?: boolean }
+// Response:
+//   { expired, skipped, byStatus, sampleGroupIds, dryRun }
+//
+// The route uses `requireAdmin` (not `requireAdminOrOperator`) because
+// retiring rows changes their visibility everywhere — same blast radius
+// as the cron job, which runs as the system actor.
+router.post("/admin/expired-sweep", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const dryRun = req.body?.dryRun === true;
+  const result = await sweepExpiredGroups({
+    actor: {
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? "Admin (manual sweep)",
+    },
+    source: "expired_sweep_admin",
+    dryRun,
+  });
+  res.json(result);
 }));
 
 export default router;

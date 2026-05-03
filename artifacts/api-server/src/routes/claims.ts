@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, gte, lte, sql, type SQL } from "drizzle-orm";
+import { eq, ne, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, LEG_EXCLUSION_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
@@ -107,14 +107,26 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
 
   const conditions: SQL[] = [];
 
+  let statusFilterIncludesExpired = false;
   if (status && typeof status === "string") {
     const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof claimsTable.status.enumValues)[number][];
+    statusFilterIncludesExpired = statuses.includes("Expired");
     if (statuses.length === 1) {
       conditions.push(eq(claimsTable.status, statuses[0]));
     } else if (statuses.length > 1) {
       const statusOr = or(...statuses.map(s => eq(claimsTable.status, s)));
       if (statusOr) conditions.push(statusOr);
     }
+  }
+
+  // Mirror the Expired filter on `invoice-groups`: hide Expired by
+  // default; opt in via `?includeExpired=true` or by explicitly
+  // selecting Expired in the status filter. Disputed children inherit
+  // their parent group's Expired status via `syncChildRides`, so this
+  // SQL-level guard is sufficient — no JS post-filter required.
+  const includeExpiredFlag = String(query.includeExpired ?? "").toLowerCase() === "true";
+  if (!includeExpiredFlag && !statusFilterIncludesExpired) {
+    conditions.push(ne(claimsTable.status, "Expired"));
   }
 
   if (outcome && typeof outcome === "string") {

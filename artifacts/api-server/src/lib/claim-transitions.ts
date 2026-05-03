@@ -45,23 +45,41 @@ export interface TransitionResult {
 }
 
 const VALID_MANUAL_STATUS_TRANSITIONS: Record<string, string[]> = {
-  "New": ["Needs Evidence", "Needs Review", "On Hold", "Resolved", "Denied"],
+  "New": ["Needs Evidence", "Needs Review", "On Hold", "Expired", "Resolved", "Denied"],
   "Needs Review": ["New", "Needs Evidence", "On Hold", "Resolved", "Denied"],
-  "Needs Evidence": ["Needs Review", "On Hold", "Resolved", "Denied"],
+  "Needs Evidence": ["Needs Review", "On Hold", "Expired", "Resolved", "Denied"],
   // Operator can drop a "Processed" leg back to Needs Evidence if they
   // realise they ran the worktree on the wrong basis, place it on
   // hold, or close it as resolved/denied. The actual flip into
   // Generating Email happens at the group level (operator clicks
   // "Ready to package"), not via a manual claim transition.
-  "Processed": ["Needs Evidence", "On Hold", "Resolved", "Denied"],
+  "Processed": ["Needs Evidence", "On Hold", "Expired", "Resolved", "Denied"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
   "Awaiting Response": ["Needs Review", "On Hold", "Resolved", "Denied"],
-  "On Hold": ["New", "Needs Review", "Needs Evidence"],
+  "On Hold": ["New", "Needs Review", "Needs Evidence", "Expired"],
+  // Expired reversible to the same New/Needs Review re-entry path
+  // used by the other terminal statuses. See group-transitions.ts
+  // for the parent-level semantics.
+  "Expired": ["New", "Needs Review"],
   "Resolved": ["New", "Needs Review"],
   "Denied": ["New", "Needs Review"],
 };
+
+// Pre-submit claim statuses eligible for the nightly Expired sweep.
+// Superset of GROUP_EXPIRABLE_STATUSES (adds Processed — a leg-only
+// pre-submit status). Portal Queued is intentionally NOT here: a
+// past-deadline Portal Queued row is "submitted but unconfirmed" and
+// stays on the submittedStuck tier per Task #352 + the Expired-lane
+// design decision.
+export const CLAIM_EXPIRABLE_STATUSES = [
+  "New",
+  "Needs Evidence",
+  "On Hold",
+  "Generating Email",
+  "Processed",
+] as const;
 
 const SYSTEM_CONTROLLED_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
 
@@ -78,6 +96,9 @@ const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
   "Ready to Review": [],
   "Awaiting Response": ["Approved", "Partially Approved", "Denied", "Withdrawn"],
   "On Hold": [],
+  // See group-transitions.ts: Expired keeps outcome=Pending so a
+  // revert preserves the original outcome envelope.
+  "Expired": ["Pending"],
   "Resolved": ["Approved", "Partially Approved", "Denied", "Withdrawn"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };

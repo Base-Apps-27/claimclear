@@ -123,14 +123,26 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     conditions.push(eq(invoiceGroupsTable.importBatch, importBatch));
   }
 
+  let statusFilterIncludesExpired = false;
   if (status && typeof status === "string") {
     const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof invoiceGroupsTable.status.enumValues)[number][];
+    statusFilterIncludesExpired = statuses.includes("Expired");
     if (statuses.length === 1) {
       conditions.push(eq(invoiceGroupsTable.status, statuses[0]));
     } else if (statuses.length > 1) {
       const statusOr = or(...statuses.map(s => eq(invoiceGroupsTable.status, s)));
       if (statusOr) conditions.push(statusOr);
     }
+  }
+
+  // Hide Expired by default everywhere. The flag is opt-in via the
+  // `Show expired` toggle on the Queue / Claims / Groups pages, or
+  // implicitly enabled when the caller already filtered to a status
+  // set that includes Expired (in which case suppressing the rows
+  // they explicitly asked for would be confusing). See spec.
+  const includeExpiredFlag = String(query.includeExpired ?? "").toLowerCase() === "true";
+  if (!includeExpiredFlag && !statusFilterIncludesExpired) {
+    conditions.push(ne(invoiceGroupsTable.status, "Expired"));
   }
 
   if (outcome && typeof outcome === "string") {

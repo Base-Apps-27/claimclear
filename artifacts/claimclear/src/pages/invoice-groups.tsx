@@ -50,6 +50,12 @@ import {
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
+  // Expired is selectable here so an operator who flips on the
+  // "Show expired" toggle can also narrow the resulting list to
+  // just the retired rows. The backend implicitly opens the gate
+  // when the status filter contains Expired (see
+  // `buildInvoiceGroupWhere` in routes/invoice-groups.ts).
+  "Expired",
 ] as const;
 
 // `OUTCOMES` is re-exported from @workspace/vocab — the constant must
@@ -146,6 +152,10 @@ export default function InvoiceGroupsList() {
   // they can see what they just brought in instead of getting dumped
   // into the global list.
   const filterImportBatch = get("importBatch") || "";
+  // "Show expired" toggle. Expired groups are hidden by default
+  // everywhere; flipping this on adds `?includeExpired=true` to the
+  // list query so the retired rows surface alongside the live ones.
+  const filterIncludeExpired = get("includeExpired") === "true";
 
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
@@ -182,6 +192,7 @@ export default function InvoiceGroupsList() {
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     importBatch: filterImportBatch || undefined,
+    includeExpired: filterIncludeExpired || undefined,
     limit: pageSize,
     offset: (page - 1) * pageSize,
   };
@@ -619,6 +630,15 @@ export default function InvoiceGroupsList() {
             onClearAllFilters={clearFilters}
             extras={
               <>
+                <Button
+                  variant={filterIncludeExpired ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => set({ includeExpired: filterIncludeExpired ? null : "true", page: null }, false)}
+                  data-testid="toggle-show-expired"
+                  title="Expired groups are hidden by default. The nightly 6 AM ET sweep retires past-deadline pre-submit rows."
+                >
+                  {filterIncludeExpired ? "Hide expired" : "Show expired"}
+                </Button>
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
                 <a href={csvUrl} download>

@@ -179,6 +179,16 @@ paths:
           schema:
             type: string
             enum: [soon, urgent, stuck]
+        - name: includeExpired
+          in: query
+          description: |
+            When `true`, include groups with `status="Expired"` in the
+            response. Off by default everywhere — the nightly 6 AM ET
+            sweep retires past-deadline pre-submit rows so they recede
+            from every workload list. Implicitly enabled if the caller
+            already filtered to a status set that contains `Expired`.
+          schema:
+            type: boolean
         - name: macroPhase
           in: query
           description: |
@@ -300,6 +310,11 @@ paths:
           schema:
             type: string
             enum: [soon, urgent, stuck]
+        - name: includeExpired
+          in: query
+          description: When true, include rows with status=Expired in the export. Off by default.
+          schema:
+            type: boolean
         - name: sort
           in: query
           schema:
@@ -1321,6 +1336,16 @@ paths:
           schema:
             type: string
             enum: [soon, urgent, stuck]
+        - name: includeExpired
+          in: query
+          description: |
+            When `true`, include claims whose `status="Expired"` in the
+            response. Off by default everywhere — disputed children
+            inherit the Expired status from their parent group when the
+            nightly sweep retires it. Implicitly enabled if the caller
+            already filtered to a status set that contains `Expired`.
+          schema:
+            type: boolean
         - name: legSubStatus
           in: query
           description: Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
@@ -1432,6 +1457,11 @@ paths:
           schema:
             type: string
             enum: [soon, urgent, stuck]
+        - name: includeExpired
+          in: query
+          description: When true, include rows with status=Expired in the export. Off by default.
+          schema:
+            type: boolean
         - name: sort
           in: query
           schema:
@@ -4228,6 +4258,59 @@ paths:
         '404':
           description: User not found
 
+  /admin/expired-sweep:
+    post:
+      operationId: runExpiredSweep
+      tags: [admin]
+      summary: Manually run the nightly Expired sweep
+      description: |
+        Retires every invoice group whose 30-day filing deadline has
+        slipped while still in a pre-submit status (`New`, `Needs
+        Evidence`, `On Hold`, `Generating Email`). Companion to the
+        nightly 6 AM ET cron — idempotent, safe to re-run.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dryRun:
+                  type: boolean
+                  description: "If true, identify eligible rows but do not transition them."
+      responses:
+        "200":
+          description: Sweep result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expired:
+                    type: integer
+                    description: Number of groups transitioned to Expired (or that would be, if dryRun).
+                  skipped:
+                    type: integer
+                    description: Number of groups skipped due to a transition error (e.g. mid-flight submission).
+                  byStatus:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    description: Per-source-status breakdown of the retired rows.
+                  sampleGroupIds:
+                    type: array
+                    items:
+                      type: integer
+                    description: First few group ids that were transitioned, for the audit toast.
+                  dryRun:
+                    type: boolean
+                required:
+                  - expired
+                  - skipped
+                  - byStatus
+                  - sampleGroupIds
+                  - dryRun
+
   /admin/backfill-invoice-groups:
     post:
       operationId: backfillInvoiceGroups
@@ -6858,6 +6941,9 @@ components:
             awaitingAttestation:
               type: integer
               description: "Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal."
+            expired:
+              type: integer
+              description: "Invoice groups currently in `status=Expired`. Reported separately so the dashboard can surface a deadbook count without inflating any of the live workload counters above; excluded from `total` for the same reason."
             withdrawnByReason:
               type: object
               description: "Counts of Withdrawn invoice groups broken down by closure_reason."

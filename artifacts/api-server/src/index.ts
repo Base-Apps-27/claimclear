@@ -19,8 +19,10 @@ import {
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,
+  EXPIRED_SWEEP,
 } from "./lib/cron-schedule";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
+import { sweepExpiredGroups } from "./lib/expired-sweep";
 
 // Cap on how long a cron-triggered worker run blocks its cron lane. On
 // timeout the cron row is recorded as degraded and the worker continues in
@@ -554,6 +556,35 @@ cron.schedule(OUTLOOK_HEARTBEAT.cron, async () => {
     return { message: `Outlook healthy (${probe.email ?? "unknown mailbox"})` };
   });
 }, { timezone: OUTLOOK_HEARTBEAT.tz });
+
+// Nightly Expired sweep (6 AM ET). Retires every invoice group whose
+// 30-day filing deadline has slipped while still in a pre-submit
+// status, so the morning queue does not lead with corpses. Operators
+// can also trigger this on demand via `POST /api/admin/expired-sweep`.
+// The sweep is idempotent and safe to re-run.
+cron.schedule(EXPIRED_SWEEP.cron, async () => {
+  await recordCronRun(EXPIRED_SWEEP.name, async () => {
+    const result = await sweepExpiredGroups({
+      actor: { userEmail: null, userName: "Expired sweep cron" },
+      source: "expired_sweep_cron",
+    });
+    const breakdown = Object.entries(result.byStatus)
+      .map(([s, n]) => `${s}=${n}`)
+      .join(", ");
+    return {
+      message: result.expired === 0
+        ? "No invoice groups eligible for Expired retirement"
+        : `Retired ${result.expired} invoice group${result.expired === 1 ? "" : "s"} to Expired${breakdown ? ` (${breakdown})` : ""}${result.skipped > 0 ? `; skipped ${result.skipped}` : ""}`,
+      metadata: {
+        expired: result.expired,
+        skipped: result.skipped,
+        byStatus: result.byStatus,
+        sampleGroupIds: result.sampleGroupIds,
+      },
+      ...(result.skipped > 0 ? { status: "degraded" as const } : {}),
+    };
+  });
+}, { timezone: EXPIRED_SWEEP.tz });
 
 cron.schedule(STUCK_SUBMISSION_RESET.cron, async () => {
   await recordCronRun(STUCK_SUBMISSION_RESET.name, async () => {

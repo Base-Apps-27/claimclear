@@ -66,6 +66,15 @@ export type ListClaimsParams = {
    */
   expiring?: ListClaimsExpiring;
   /**
+ * When `true`, include claims whose `status="Expired"` in the
+response. Off by default everywhere — disputed children
+inherit the Expired status from their parent group when the
+nightly sweep retires it. Implicitly enabled if the caller
+already filtered to a status set that contains `Expired`.
+
+ */
+  includeExpired?: boolean;
+  /**
    * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
    */
   legSubStatus?: string;

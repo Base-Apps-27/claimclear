@@ -105,6 +105,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       'Restrict to actionable groups whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
     ),
+  includeExpired: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      'When `true`, include groups with `status=\"Expired\"` in the\nresponse. Off by default everywhere — the nightly 6 AM ET\nsweep retires past-deadline pre-submit rows so they recede\nfrom every workload list. Implicitly enabled if the caller\nalready filtered to a status set that contains `Expired`.\n',
+    ),
   macroPhase: zod
     .enum([
       "pre-submit",
@@ -520,6 +526,12 @@ export const ExportInvoiceGroupsCsvQueryParams = zod.object({
   amountMin: zod.coerce.string().optional(),
   amountMax: zod.coerce.string().optional(),
   expiring: zod.enum(["soon", "urgent", "stuck"]).optional(),
+  includeExpired: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include rows with status=Expired in the export. Off by default.",
+    ),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -7344,6 +7356,12 @@ export const ListClaimsQueryParams = zod.object({
     .describe(
       'Restrict to actionable claims whose filing deadline is within the named window. \"soon\" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). \"urgent\" is the narrower red-badge band (within 3 days).',
     ),
+  includeExpired: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      'When `true`, include claims whose `status=\"Expired\"` in the\nresponse. Off by default everywhere — disputed children\ninherit the Expired status from their parent group when the\nnightly sweep retires it. Implicitly enabled if the caller\nalready filtered to a status set that contains `Expired`.\n',
+    ),
   legSubStatus: zod.coerce
     .string()
     .optional()
@@ -7668,6 +7686,12 @@ export const ExportClaimsCsvQueryParams = zod.object({
   carNumber: zod.coerce.string().optional(),
   clientNumber: zod.coerce.string().optional(),
   expiring: zod.enum(["soon", "urgent", "stuck"]).optional(),
+  includeExpired: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include rows with status=Expired in the export. Off by default.",
+    ),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
@@ -16896,6 +16920,12 @@ export const GetDashboardSummaryResponse = zod.object({
       .describe(
         "Resolved Approved-family invoice groups that still owe an off-system re-attestation in the payor portal.",
       ),
+    expired: zod
+      .number()
+      .optional()
+      .describe(
+        "Invoice groups currently in `status=Expired`. Reported separately so the dashboard can surface a deadbook count without inflating any of the live workload counters above; excluded from `total` for the same reason.",
+      ),
     withdrawnByReason: zod
       .object({
         cannot_dispute: zod.number(),
@@ -19256,6 +19286,43 @@ export const UpdateUserNotificationPreferencesResponse = zod.object({
   dailyBrief: zod.boolean(),
   weeklyDigest: zod.boolean(),
   updatedAt: zod.union([zod.coerce.date(), zod.null()]).optional(),
+});
+
+/**
+ * Retires every invoice group whose 30-day filing deadline has
+slipped while still in a pre-submit status (`New`, `Needs
+Evidence`, `On Hold`, `Generating Email`). Companion to the
+nightly 6 AM ET cron — idempotent, safe to re-run.
+
+ * @summary Manually run the nightly Expired sweep
+ */
+export const RunExpiredSweepBody = zod.object({
+  dryRun: zod
+    .boolean()
+    .optional()
+    .describe("If true, identify eligible rows but do not transition them."),
+});
+
+export const RunExpiredSweepResponse = zod.object({
+  expired: zod
+    .number()
+    .describe(
+      "Number of groups transitioned to Expired (or that would be, if dryRun).",
+    ),
+  skipped: zod
+    .number()
+    .describe(
+      "Number of groups skipped due to a transition error (e.g. mid-flight submission).",
+    ),
+  byStatus: zod
+    .record(zod.string(), zod.number())
+    .describe("Per-source-status breakdown of the retired rows."),
+  sampleGroupIds: zod
+    .array(zod.number())
+    .describe(
+      "First few group ids that were transitioned, for the audit toast.",
+    ),
+  dryRun: zod.boolean(),
 });
 
 /**
