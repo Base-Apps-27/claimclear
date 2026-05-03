@@ -290,10 +290,10 @@ export default function Insights() {
       />
 
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <FilterStrip<RangeKey>
+        <FilterStrip
           tabs={RANGE_TABS}
           active={rangeKey}
-          onChange={setRangeKey}
+          onChange={setRangeKey as (k: string) => void}
           accent="green"
           ariaLabel="Filter insights by time range"
         />

@@ -169,6 +169,13 @@
       "when": 1777797903906,
       "tag": "0023_expired_status",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777825733650,
+      "tag": "0024_tour_version_seen",
+      "breakpoints": true
     }
   ]
 }

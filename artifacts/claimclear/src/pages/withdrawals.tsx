@@ -386,10 +386,10 @@ export default function WithdrawalsPage() {
       />
 
       <div className="flex flex-wrap items-center gap-3">
-        <FilterStrip<TabKey>
+        <FilterStrip
           tabs={tabs}
           active={activeTab}
-          onChange={handleTabChange}
+          onChange={handleTabChange as (k: string) => void}
           accent="amber"
           ariaLabel="Filter withdrawals by reason"
         />

@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
+import { useAdminTour } from "@/tour/admin-tour";
+import { HelpCircle } from "lucide-react";
 import { StreakPipAvatar, useStreakPipLiveUpdates } from "@/components/streak-pip-avatar";
 import { 
   LayoutDashboard, 
@@ -44,7 +46,7 @@ import {
   HeartPulse,
   FileMinus,
   ShieldCheck,
-  Eye
+  Eye,
 } from "lucide-react";
 
 type NavBadge = { count: number; tone: "amber" | "blue"; label: string };
@@ -80,6 +82,7 @@ const navDescriptions: Record<string, string> = {
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, isAuthenticated, sessionExpiry, login, logout } = useAuth();
+  const { startTour, isAvailable: tourAvailable } = useAdminTour();
 
   const isAdmin = user?.role === "admin";
 
@@ -301,7 +304,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <div className="min-h-screen w-full flex bg-background">
-        <Sidebar className="border-r border-sidebar-border">
+        <Sidebar className="border-r border-sidebar-border" data-tour="sidebar">
           <SidebarHeader className="p-4 border-b border-sidebar-border">
             <div className="flex items-center gap-2.5 font-bold text-xl text-sidebar-foreground tracking-tight">
               <div className="w-8 h-8 flex items-center justify-center shrink-0">
@@ -405,10 +408,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="mr-4" />
             <h1 className="font-semibold text-sm text-muted-foreground">NEMT Claims Dispute Command Center</h1>
             <div className="ml-auto flex items-center gap-3">
+              {tourAvailable && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => startTour()}
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  data-tour="header-take-tour"
+                  data-testid="header-take-tour"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">Take the tour</span>
+                </Button>
+              )}
               <BatchStatusPill />
             </div>
           </header>
-          <main className="flex-1 overflow-auto p-6 md:p-8">
+          <main className="flex-1 overflow-auto p-6 md:p-8" data-tour="page-main">
             <div className="max-w-7xl mx-auto h-full">
               {children}
             </div>

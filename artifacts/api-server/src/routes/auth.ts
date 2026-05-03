@@ -113,6 +113,37 @@ router.get("/auth/user", (req: Request, res: Response) => {
   });
 });
 
+router.get("/auth/user/tour-state", asyncHandler(async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || !req.user) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  const [row] = await db
+    .select({ tourVersionSeen: usersTable.tourVersionSeen })
+    .from(usersTable)
+    .where(eq(usersTable.id, String(req.user.id)));
+  res.json({ tourVersionSeen: row?.tourVersionSeen ?? null });
+}));
+
+router.patch("/auth/user/tour-state", asyncHandler(async (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || !req.user) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  const body = req.body ?? {};
+  if (!("tourVersionSeen" in body) || (body.tourVersionSeen !== null && typeof body.tourVersionSeen !== "string")) {
+    res.status(400).json({ error: "tourVersionSeen must be a string or null" });
+    return;
+  }
+  const next: string | null = body.tourVersionSeen;
+  const [row] = await db
+    .update(usersTable)
+    .set({ tourVersionSeen: next, updatedAt: new Date() })
+    .where(eq(usersTable.id, String(req.user.id)))
+    .returning({ tourVersionSeen: usersTable.tourVersionSeen });
+  res.json({ tourVersionSeen: row?.tourVersionSeen ?? null });
+}));
+
 router.get("/auth/session", (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
     res.status(401).json({ error: "Not authenticated" });

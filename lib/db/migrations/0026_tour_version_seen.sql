@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "tour_version_seen" varchar;

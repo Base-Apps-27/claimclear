@@ -617,10 +617,10 @@ export default function InvoiceGroupsList() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <FilterStrip<GroupsTabKey>
+        <FilterStrip
           tabs={tabs}
           active={activeTab}
-          onChange={handleTabChange}
+          onChange={handleTabChange as (k: string) => void}
           accent="purple"
           ariaLabel="Filter invoice groups by status"
         />

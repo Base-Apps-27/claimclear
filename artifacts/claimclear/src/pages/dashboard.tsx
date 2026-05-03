@@ -521,7 +521,7 @@ export default function Dashboard() {
           reconcile against the portfolio without double-counting.
           Withdrawn / Non-Issue groups are intentionally excluded
           from every bucket — they're not money in flight. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" data-tour="dashboard-kpis">
         <KpiTile
           label="Invoices pending"
           value={(pipeline.needsEvidence ?? 0) + (pipeline.awaitingResponse ?? 0)}
@@ -579,7 +579,7 @@ export default function Dashboard() {
       </div>
 
       {/* TODAY'S WORK — four hero columns: file today / stuck / respond / reattest */}
-      <div>
+      <div data-tour="dashboard-today">
         <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
           Today's work
         </div>

@@ -2959,6 +2959,11 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+export interface TourState {
+  /** @nullable */
+  tourVersionSeen: string | null;
+}
+
 export interface GetCurrentAuthUserResponse {
   id: string;
   email: string;
@@ -3540,6 +3545,11 @@ export interface ClassifierStatsResponse {
 
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
+};
+
+export type UpdateUserTourStateBody = {
+  /** @nullable */
+  tourVersionSeen: string | null;
 };
 
 export type GetAuthSession200 = {

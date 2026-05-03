@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
 import { HistoryTracker } from "@/components/back-bar";
+import { AdminTourProvider } from "@/tour/admin-tour";
 import Dashboard from "@/pages/dashboard";
 import ClaimsList from "@/pages/claims";
 import ClaimDetail from "@/pages/claim-detail";
@@ -45,6 +46,7 @@ const queryClient = new QueryClient({
 
 function Router() {
   return (
+    <AdminTourProvider>
     <AppLayout>
       <Switch>
         <Route path="/" component={() => <Redirect to="/dashboard" />} />
@@ -71,6 +73,7 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
+    </AdminTourProvider>
   );
 }
 

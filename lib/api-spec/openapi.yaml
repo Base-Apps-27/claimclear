@@ -92,6 +92,45 @@ paths:
                 required:
                   - user
 
+  /auth/user/tour-state:
+    get:
+      operationId: getUserTourState
+      tags: [auth]
+      summary: Get the tour version this user has already completed
+      responses:
+        "200":
+          description: Tour state for the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TourState"
+        "401":
+          description: Not authenticated
+    patch:
+      operationId: updateUserTourState
+      tags: [auth]
+      summary: Mark a tour version as seen by the current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tourVersionSeen:
+                  type: ["string", "null"]
+              required:
+                - tourVersionSeen
+      responses:
+        "200":
+          description: Updated tour state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TourState"
+        "401":
+          description: Not authenticated
+
   /auth/session:
     get:
       operationId: getAuthSession
@@ -7671,6 +7710,14 @@ components:
           type: boolean
       required:
         - success
+
+    TourState:
+      type: object
+      properties:
+        tourVersionSeen:
+          type: ["string", "null"]
+      required:
+        - tourVersionSeen
 
     GetCurrentAuthUserResponse:
       type: object

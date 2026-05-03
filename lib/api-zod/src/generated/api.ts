@@ -38,6 +38,24 @@ export const GetCurrentAuthUserResponse = zod.object({
 });
 
 /**
+ * @summary Get the tour version this user has already completed
+ */
+export const GetUserTourStateResponse = zod.object({
+  tourVersionSeen: zod.string().nullable(),
+});
+
+/**
+ * @summary Mark a tour version as seen by the current user
+ */
+export const UpdateUserTourStateBody = zod.object({
+  tourVersionSeen: zod.string().nullable(),
+});
+
+export const UpdateUserTourStateResponse = zod.object({
+  tourVersionSeen: zod.string().nullable(),
+});
+
+/**
  * @summary Get current session (returns 401 if unauthenticated)
  */
 export const GetAuthSessionResponse = zod.object({

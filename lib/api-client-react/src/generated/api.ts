@@ -172,6 +172,7 @@ import type {
   StateConflictResponse,
   SuccessResponse,
   SystemHealthRollupResponse,
+  TourState,
   TriageClaimBody,
   TriageInvoiceGroupBody,
   UpdateAppSettingsBody,
@@ -185,6 +186,7 @@ import type {
   UpdateInvoiceGroupStatusBody,
   UpdateNotificationPreferencesBody,
   UpdatePortalSubmissionDraftBody,
+  UpdateUserTourStateBody,
   UploadResponse,
   UrgentTodayTransitions,
   ValidTransitionsResponse,
@@ -350,6 +352,167 @@ export function useGetCurrentAuthUser<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get the tour version this user has already completed
+ */
+export const getGetUserTourStateUrl = () => {
+  return `/api/auth/user/tour-state`;
+};
+
+export const getUserTourState = async (
+  options?: RequestInit,
+): Promise<TourState> => {
+  return customFetch<TourState>(getGetUserTourStateUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetUserTourStateQueryKey = () => {
+  return [`/api/auth/user/tour-state`] as const;
+};
+
+export const getGetUserTourStateQueryOptions = <
+  TData = Awaited<ReturnType<typeof getUserTourState>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getUserTourState>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetUserTourStateQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getUserTourState>>
+  > = ({ signal }) => getUserTourState({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getUserTourState>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetUserTourStateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getUserTourState>>
+>;
+export type GetUserTourStateQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the tour version this user has already completed
+ */
+
+export function useGetUserTourState<
+  TData = Awaited<ReturnType<typeof getUserTourState>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getUserTourState>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUserTourStateQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mark a tour version as seen by the current user
+ */
+export const getUpdateUserTourStateUrl = () => {
+  return `/api/auth/user/tour-state`;
+};
+
+export const updateUserTourState = async (
+  updateUserTourStateBody: UpdateUserTourStateBody,
+  options?: RequestInit,
+): Promise<TourState> => {
+  return customFetch<TourState>(getUpdateUserTourStateUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateUserTourStateBody),
+  });
+};
+
+export const getUpdateUserTourStateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUserTourState>>,
+    TError,
+    { data: BodyType<UpdateUserTourStateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateUserTourState>>,
+  TError,
+  { data: BodyType<UpdateUserTourStateBody> },
+  TContext
+> => {
+  const mutationKey = ["updateUserTourState"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateUserTourState>>,
+    { data: BodyType<UpdateUserTourStateBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateUserTourState(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateUserTourStateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateUserTourState>>
+>;
+export type UpdateUserTourStateMutationBody = BodyType<UpdateUserTourStateBody>;
+export type UpdateUserTourStateMutationError = ErrorType<void>;
+
+/**
+ * @summary Mark a tour version as seen by the current user
+ */
+export const useUpdateUserTourState = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUserTourState>>,
+    TError,
+    { data: BodyType<UpdateUserTourStateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateUserTourState>>,
+  TError,
+  { data: BodyType<UpdateUserTourStateBody> },
+  TContext
+> => {
+  return useMutation(getUpdateUserTourStateMutationOptions(options));
+};
 
 /**
  * @summary Get current session (returns 401 if unauthenticated)
