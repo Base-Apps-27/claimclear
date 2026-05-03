@@ -703,7 +703,7 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { status, _systemOverride } = req.body;
+  const { status } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
 
   try {
@@ -713,7 +713,6 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
       source: "manual",
       reason: `Manual status change by user`,
       actor: actorFromReq(req),
-      systemOverride: _systemOverride,
     });
     res.json(result.claim);
   } catch (err: any) {
@@ -728,7 +727,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { outcome, approvedAmount, invoiceNumbers, closureReason, _systemOverride } = req.body;
+  const { outcome, approvedAmount, invoiceNumbers, closureReason } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
   if (outcome === "Denied" && closureReason !== undefined && closureReason !== "denied_by_payor") {
@@ -802,7 +801,6 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
       source: "manual",
       reason: `Manual outcome change by user`,
       actor: actorFromReq(req),
-      systemOverride: _systemOverride,
       approvedAmount,
       invoiceNumbers,
       closureReason: effectiveReason ?? closureReason,

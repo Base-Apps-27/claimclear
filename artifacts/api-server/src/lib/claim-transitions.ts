@@ -333,6 +333,35 @@ export async function transitionClaimStatusAndOutcome(opts: {
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
+  if (!systemOverride) {
+    if (old.invoiceGroupId) {
+      const activeSubmissions = await db.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress"])
+        ));
+      if (activeSubmissions.length > 0) {
+        throw new Error(`Cannot change status while a portal submission is in progress. Wait for the submission to complete or cancel it first.`);
+      }
+    }
+
+    if (newStatus !== old.status) {
+      if (SYSTEM_CONTROLLED_STATUSES.includes(newStatus)) {
+        throw new Error(`"${newStatus}" is a system-controlled status and cannot be set manually.`);
+      }
+
+      const allowedStatuses = VALID_MANUAL_STATUS_TRANSITIONS[old.status] || [];
+      if (!allowedStatuses.includes(newStatus)) {
+        throw new Error(`Cannot transition from "${old.status}" to "${newStatus}". Valid transitions: ${allowedStatuses.length > 0 ? allowedStatuses.join(", ") : "none (status is system-controlled)"}`);
+      }
+    }
+
+    const allowedOutcomes = VALID_OUTCOME_BY_STATUS[old.status] || [];
+    if (!allowedOutcomes.includes(newOutcome)) {
+      throw new Error(`Cannot set outcome to "${newOutcome}" when claim is in "${old.status}" status. ${allowedOutcomes.length > 0 ? `Valid outcomes: ${allowedOutcomes.join(", ")}` : "Outcome changes are not allowed in this status."}`);
+    }
+  }
+
   if (newOutcome === "Withdrawn") {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
