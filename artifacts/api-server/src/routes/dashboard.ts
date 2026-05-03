@@ -244,27 +244,26 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   //                     still pending. Already-approved portions are
   //                     subtracted out and flow to Reclaimed.
   //   Already lost
-  //     - Expired     = totalAmount × 1.70 over rows whose deadline
-  //                     slipped, where "deadline slipped" is ANY of:
-  //                       (a) literal status='Expired'
-  //                       (b) status='On Hold' past the (Friday-
-  //                           shifted) 30-day filing deadline
-  //                       (c) re-attestation still pending/queued
-  //                           past the same 30-day window
-  //                     The MAS rule is one 30-day clock from service
-  //                     date for both filing and re-attestation — once
-  //                     that clock runs out without confirmation, the
-  //                     trip is cancelled regardless of what verdict
-  //                     we already had on paper. The prepay counts
-  //                     because the payor will never reimburse this
-  //                     row, AND any approvedAmount on these rows is
-  //                     stripped out of Reclaimed below (the verdict
-  //                     was approved but the money never landed).
+  //     - Expired     = totalAmount × 1.70 over rows whose filing
+  //                     deadline slipped: literal status='Expired'
+  //                     OR status='On Hold' past the (Friday-shifted)
+  //                     30-day filing deadline. Prepay counts because
+  //                     the payor will never reimburse this row.
+  //                     NOTE: Re-attestation does NOT have a known
+  //                     hard deadline. The MAS 30-day clock is the
+  //                     filing window — if we filed in time, the re-
+  //                     attest portal step gets additional time we
+  //                     don't have a precise number for. Per operator
+  //                     decision, pending-attest rows are NEVER auto-
+  //                     expired into this bucket; they stay in
+  //                     At-risk until the verdict + re-attest both
+  //                     settle. Revisit if/when the real attest
+  //                     deadline rule is documented.
   //     - Denied      = (totalAmount − approvedAmount) × 1.70 over
   //                     rows with outcome IN ('Denied','Partially
   //                     Approved') AND re-attestation already settled
-  //                     in time (no pending/queued steps left). Until
-  //                     re-attest settles, the dollars stay in At-risk
+  //                     (no pending/queued steps left). Until re-
+  //                     attest settles, the dollars stay in At-risk
   //                     — re-attestation can still flip the outcome.
   //                     Operator-friendly: "denied portion only counts
   //                     as lost once the re-attest part is finished."
@@ -273,10 +272,6 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   //                     company when we DON'T get paid, so an approved
   //                     row's prepay is implicitly washed out by the
   //                     payor remit and shouldn't inflate exposure.
-  //                     Approved dollars on rows whose re-attestation
-  //                     deadline slipped are EXCLUDED — those moved
-  //                     to Already-lost (expired) above as a full
-  //                     claim loss.
   //
   // Withdrawn and Non-Issue outcomes are intentionally excluded from
   // every bucket — they're self-cancellations / triage no-ops, not
@@ -309,19 +304,18 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       AND ${claimsTable.attestationState} IN ('pending','queued')
   )`;
 
-  // The full "deadline-missed → already lost" predicate. Three cases,
-  // any one of which makes the row a full-claim loss:
+  // The "deadline-missed → already lost" predicate. Two cases — both
+  // are filing-deadline failures (the only deadline we know with
+  // certainty). Pending-attest is intentionally NOT included: the
+  // re-attest portal step has additional time after a successful
+  // filing, and we don't have a documented number for it yet, so we
+  // keep those rows in At-risk indefinitely until the verdict and
+  // re-attest both settle.
   //   1. Operator already marked the row Expired.
   //   2. Row is parked On Hold and the filing deadline slipped.
-  //   3. Row has a verdict but at least one claim still owes a re-
-  //      attest step AND the (same) 30-day window from service date
-  //      is gone. Per the MAS rule, the trip is cancelled at that
-  //      point regardless of the verdict — the approvedAmount we
-  //      booked never lands in the bank.
   const deadlineMissedExpr = sql`(
     ${invoiceGroupsTable.status} = 'Expired'
     OR (${invoiceGroupsTable.status} = 'On Hold' AND ${pastDeadlineExpr})
-    OR (${hasPendingAttestExpr} AND ${pastDeadlineExpr})
   )`;
 
   const [bucketRow] = await db
@@ -361,15 +355,11 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
         WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 1
         ELSE 0
       END), 0)`,
-      // Reclaimed is raw approvedAmount, but we strip out approvedAmount
-      // on rows whose re-attestation deadline slipped — per the MAS rule
-      // those approvals never become real money, and the entire claim
-      // moves to Already-lost (expired) above as a full loss.
-      reclaimedApproved: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
-        WHEN ${deadlineMissedExpr} THEN 0
-        ELSE COALESCE(${invoiceGroupsTable.approvedAmount}, 0)
-      END), 0)`,
+      // Reclaimed = raw Σ approvedAmount across the portfolio. No
+      // multiplier (prepay washes through on approved rows) and no
+      // attest-deadline carve-out (we don't auto-expire pending
+      // attest — see the long comment above).
+      reclaimedApproved: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
     })
     .from(invoiceGroupsTable);
 
