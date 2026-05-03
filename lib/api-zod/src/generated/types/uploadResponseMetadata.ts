@@ -12,11 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export interface UploadUrlRequest {
-  /** @minLength 1 */
-  name: string;
-  /** @minimum 1 */
-  size: number;
-  /** @minLength 1 */
-  contentType: string;
-}
+export type UploadResponseMetadata = {
+  name?: string;
+  contentType?: string;
+};

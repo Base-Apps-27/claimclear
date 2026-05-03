@@ -7,3 +7,11 @@ export {
   PayorDenialReasonCode,
   type PayorDenialReasonCode as PayorDenialReasonCodeType,
 } from "./generated/types/payorDenialReasonCode";
+// Upload constraints live outside the generated directory so they survive
+// codegen (`orval --config` wipes `generated/` with clean:true).
+export {
+  ALLOWED_UPLOAD_CONTENT_TYPES,
+  ALLOWED_UPLOAD_CONTENT_TYPES_SET,
+  MAX_UPLOAD_SIZE_BYTES,
+  type AllowedUploadContentType,
+} from "./upload-constraints";

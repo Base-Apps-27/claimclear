@@ -3033,19 +3033,14 @@ export interface BulkAssignResult {
   updated: number;
 }
 
-export interface UploadUrlRequest {
-  /** @minLength 1 */
-  name: string;
-  /** @minimum 1 */
-  size: number;
-  /** @minLength 1 */
-  contentType: string;
-}
+export type UploadResponseMetadata = {
+  name?: string;
+  contentType?: string;
+};
 
-export interface UploadUrlResponse {
-  uploadURL: string;
+export interface UploadResponse {
   objectPath: string;
-  metadata?: UploadUrlRequest;
+  metadata?: UploadResponseMetadata;
 }
 
 export interface EvidenceTypeBody {

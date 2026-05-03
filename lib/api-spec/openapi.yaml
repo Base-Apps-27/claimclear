@@ -3426,24 +3426,52 @@ paths:
           content:
             text/event-stream: {}
 
-  /storage/uploads/request-url:
-    post:
+  /storage/uploads:
+    put:
       tags: [Storage]
-      operationId: requestUploadUrl
-      summary: Request a presigned URL for file upload
+      operationId: uploadFile
+      summary: Upload a file to object storage
+      description: >
+        Server-mediated upload. Send raw file bytes as the request body.
+        Content-Type must be an allowed MIME type (image/png, image/jpeg,
+        image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp,
+        application/pdf). Maximum file size is 50 MB.
+      parameters:
+        - name: x-upload-name
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Original filename (informational).
+        - name: Content-Length
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Declared file size in bytes; rejected immediately if > 52428800.
       requestBody:
         required: true
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadUrlRequest'
+          image/png: {}
+          image/jpeg: {}
+          image/gif: {}
+          image/webp: {}
+          image/heic: {}
+          image/heif: {}
+          image/tiff: {}
+          image/bmp: {}
+          application/pdf: {}
       responses:
         '200':
-          description: Presigned upload URL generated.
+          description: File uploaded successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UploadUrlResponse'
+                $ref: '#/components/schemas/UploadResponse'
+        '413':
+          description: File exceeds maximum allowed size.
+        '415':
+          description: Unsupported media type.
 
   /evidence-types:
     get:
@@ -7734,31 +7762,19 @@ components:
       required:
         - updated
 
-    UploadUrlRequest:
+    UploadResponse:
       type: object
-      required: [name, size, contentType]
+      required: [objectPath]
       properties:
-        name:
-          type: string
-          minLength: 1
-        size:
-          type: integer
-          minimum: 1
-        contentType:
-          type: string
-          minLength: 1
-
-    UploadUrlResponse:
-      type: object
-      required: [uploadURL, objectPath]
-      properties:
-        uploadURL:
-          type: string
-          format: uri
         objectPath:
           type: string
         metadata:
-          $ref: '#/components/schemas/UploadUrlRequest'
+          type: object
+          properties:
+            name:
+              type: string
+            contentType:
+              type: string
 
     EvidenceTypeBody:
       type: object

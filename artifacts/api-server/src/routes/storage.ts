@@ -1,45 +1,68 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
 import {
-  RequestUploadUrlBody,
-  RequestUploadUrlResponse,
+  MAX_UPLOAD_SIZE_BYTES,
+  ALLOWED_UPLOAD_CONTENT_TYPES_SET,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
+
+const SAFE_SERVE_CONTENT_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
+  "application/pdf",
+]);
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
 /**
- * POST /storage/uploads/request-url
+ * PUT /storage/uploads
  *
- * Request a presigned URL for file upload.
- * The client sends JSON metadata (name, size, contentType) — NOT the file.
- * Then uploads the file directly to the returned presigned URL.
+ * Server-mediated file upload. The client sends the raw file bytes directly
+ * to this endpoint. The server validates Content-Type against the allowlist,
+ * enforces the byte-size limit while streaming to object storage, and returns
+ * the resulting object path. No presigned URLs are issued.
+ *
+ * Required headers:
+ *   Content-Type: must be an allowed MIME type (image/png, image/jpeg, etc.)
+ *   x-upload-name: original filename (informational)
+ *
+ * Optional headers:
+ *   Content-Length: declared size; rejected immediately if > MAX_UPLOAD_SIZE_BYTES
  */
-router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
-  const parsed = RequestUploadUrlBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Missing or invalid required fields" });
+router.put("/storage/uploads", async (req: Request, res: Response) => {
+  const rawContentType = (req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (!ALLOWED_UPLOAD_CONTENT_TYPES_SET.has(rawContentType)) {
+    res.status(415).json({
+      error: "Unsupported media type. Allowed types: image/png, image/jpeg, image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp, application/pdf",
+    });
     return;
   }
 
+  const declaredLength = parseInt(req.headers["content-length"] || "0", 10);
+  if (!isNaN(declaredLength) && declaredLength > MAX_UPLOAD_SIZE_BYTES) {
+    res.status(413).json({ error: `File size exceeds maximum allowed size of ${MAX_UPLOAD_SIZE_BYTES} bytes` });
+    return;
+  }
+
+  const name = String(req.headers["x-upload-name"] || "upload").slice(0, 255);
+
   try {
-    const { name, size, contentType } = parsed.data;
-
-    const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-    const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
-
-    res.json(
-      RequestUploadUrlResponse.parse({
-        uploadURL,
-        objectPath,
-        metadata: { name, size, contentType },
-      }),
-    );
+    const objectPath = await objectStorageService.uploadStream(req, rawContentType, MAX_UPLOAD_SIZE_BYTES);
+    res.json({ objectPath, metadata: { name, contentType: rawContentType } });
   } catch (error) {
-    req.log.error({ err: error }, "Error generating upload URL");
-    res.status(500).json({ error: "Failed to generate upload URL" });
+    const msg = error instanceof Error ? error.message : "";
+    if (msg.includes("exceeds maximum allowed size")) {
+      res.status(413).json({ error: msg });
+      return;
+    }
+    req.log.error({ err: error }, "Error uploading file");
+    res.status(500).json({ error: "Failed to upload file" });
   }
 });
 
@@ -110,6 +133,13 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
 
     res.status(response.status);
     response.headers.forEach((value, key) => res.setHeader(key, value));
+
+    const servedContentType = (response.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    if (!SAFE_SERVE_CONTENT_TYPES.has(servedContentType)) {
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader("Content-Disposition", "attachment");
+    }
+    res.setHeader("X-Content-Type-Options", "nosniff");
 
     if (response.body) {
       const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);

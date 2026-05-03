@@ -403,7 +403,22 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
   const hasEvidence = !!currentNode.evidenceRequirements?.length;
   const evidenceReady = nodeEvidenceComplete(currentNode);
 
+  const MAX_EVIDENCE_SIZE = 50 * 1024 * 1024;
+  const ALLOWED_EVIDENCE_TYPES = new Set([
+    "image/png", "image/jpeg", "image/gif", "image/webp",
+    "image/heic", "image/heif", "image/tiff", "image/bmp",
+    "application/pdf",
+  ]);
+
   const uploadFile = async (nodeId: string, key: string, file: File) => {
+    if (!ALLOWED_EVIDENCE_TYPES.has(file.type)) {
+      toast({ title: "Unsupported file type", description: "Please upload an image (PNG, JPG, GIF, WEBP, HEIC, TIFF, BMP) or PDF.", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_EVIDENCE_SIZE) {
+      toast({ title: "File too large", description: "Please upload a file smaller than 50 MB.", variant: "destructive" });
+      return;
+    }
     const tempId = newId();
     const previewUrl = URL.createObjectURL(file);
     updateEntry(nodeId, key, (e) => ({
@@ -411,24 +426,30 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
       items: [...e.items, { id: tempId, uploading: true, imagePreview: previewUrl, scope: "group" }],
     }));
     try {
-      const res = await fetch("/api/storage/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const uploadRes = await fetch("/api/storage/uploads", {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+          "x-upload-name": file.name,
+        },
         credentials: "include",
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+        body: file,
       });
-      const { uploadURL, objectPath } = await res.json();
-      await fetch(uploadURL, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const { objectPath } = await uploadRes.json();
       updateEntry(nodeId, key, (e) => ({
         ...e,
         items: e.items.map(it => it.id === tempId ? { ...it, imageUrl: objectPath, uploading: false } : it),
       }));
-    } catch {
+    } catch (err) {
       updateEntry(nodeId, key, (e) => ({
         ...e,
         items: e.items.filter(it => it.id !== tempId),
       }));
-      toast({ title: "Upload failed", description: "Please try again.", variant: "destructive" });
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
     }
   };
 
@@ -757,7 +778,7 @@ function EvidenceUploadTrigger({
       <input
         ref={inputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.svg,.pdf"
+        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

@@ -183,8 +183,7 @@ import type {
   UpdateInvoiceGroupStatusBody,
   UpdateNotificationPreferencesBody,
   UpdatePortalSubmissionDraftBody,
-  UploadUrlRequest,
-  UploadUrlResponse,
+  UploadResponse,
   UrgentTodayTransitions,
   ValidTransitionsResponse,
   WithdrawalsListResponse,
@@ -10691,42 +10690,47 @@ export const useSendAnthropicMessage = <
 };
 
 /**
- * @summary Request a presigned URL for file upload
+ * Server-mediated upload. Send raw file bytes as the request body. Content-Type must be an allowed MIME type (image/png, image/jpeg, image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp, application/pdf). Maximum file size is 50 MB.
+
+ * @summary Upload a file to object storage
  */
-export const getRequestUploadUrlUrl = () => {
-  return `/api/storage/uploads/request-url`;
+export const getUploadFileUrl = () => {
+  return `/api/storage/uploads`;
 };
 
-export const requestUploadUrl = async (
-  uploadUrlRequest: UploadUrlRequest,
+export const uploadFile = async (
+  uploadFileBody: Blob,
   options?: RequestInit,
-): Promise<UploadUrlResponse> => {
-  return customFetch<UploadUrlResponse>(getRequestUploadUrlUrl(), {
+): Promise<UploadResponse> => {
+  return customFetch<UploadResponse>(getUploadFileUrl(), {
     ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(uploadUrlRequest),
+    method: "PUT",
+    headers: {
+      "Content-Type": uploadFileBody.type || "application/octet-stream",
+      ...options?.headers,
+    },
+    body: uploadFileBody,
   });
 };
 
-export const getRequestUploadUrlMutationOptions = <
-  TError = ErrorType<unknown>,
+export const getUploadFileMutationOptions = <
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof requestUploadUrl>>,
+    Awaited<ReturnType<typeof uploadFile>>,
     TError,
-    { data: BodyType<UploadUrlRequest> },
+    { data: BodyType<Blob> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof requestUploadUrl>>,
+  Awaited<ReturnType<typeof uploadFile>>,
   TError,
-  { data: BodyType<UploadUrlRequest> },
+  { data: BodyType<Blob> },
   TContext
 > => {
-  const mutationKey = ["requestUploadUrl"];
+  const mutationKey = ["uploadFile"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -10736,44 +10740,44 @@ export const getRequestUploadUrlMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof requestUploadUrl>>,
-    { data: BodyType<UploadUrlRequest> }
+    Awaited<ReturnType<typeof uploadFile>>,
+    { data: BodyType<Blob> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return requestUploadUrl(data, requestOptions);
+    return uploadFile(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type RequestUploadUrlMutationResult = NonNullable<
-  Awaited<ReturnType<typeof requestUploadUrl>>
+export type UploadFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadFile>>
 >;
-export type RequestUploadUrlMutationBody = BodyType<UploadUrlRequest>;
-export type RequestUploadUrlMutationError = ErrorType<unknown>;
+export type UploadFileMutationBody = BodyType<Blob>;
+export type UploadFileMutationError = ErrorType<void>;
 
 /**
- * @summary Request a presigned URL for file upload
+ * @summary Upload a file to object storage
  */
-export const useRequestUploadUrl = <
-  TError = ErrorType<unknown>,
+export const useUploadFile = <
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof requestUploadUrl>>,
+    Awaited<ReturnType<typeof uploadFile>>,
     TError,
-    { data: BodyType<UploadUrlRequest> },
+    { data: BodyType<Blob> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof requestUploadUrl>>,
+  Awaited<ReturnType<typeof uploadFile>>,
   TError,
-  { data: BodyType<UploadUrlRequest> },
+  { data: BodyType<Blob> },
   TContext
 > => {
-  return useMutation(getRequestUploadUrlMutationOptions(options));
+  return useMutation(getUploadFileMutationOptions(options));
 };
 
 /**

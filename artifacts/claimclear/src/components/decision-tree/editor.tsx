@@ -820,26 +820,29 @@ function InstructionImageUploader({
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
+  const MAX_IMG_SIZE = 50 * 1024 * 1024;
+  const ALLOWED_IMG_TYPES = new Set([
+    "image/png", "image/jpeg", "image/gif", "image/webp",
+    "image/heic", "image/heif", "image/tiff", "image/bmp",
+  ]);
+
   const handleFile = useCallback(async (file: File) => {
+    if (!ALLOWED_IMG_TYPES.has(file.type)) return;
+    if (file.size > MAX_IMG_SIZE) return;
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {
-      const res = await fetch("/api/storage/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type,
-        }),
-      });
-      const { uploadURL, objectPath } = await res.json();
-      await fetch(uploadURL, {
+      const uploadRes = await fetch("/api/storage/uploads", {
         method: "PUT",
-        headers: { "Content-Type": file.type },
+        headers: {
+          "Content-Type": file.type,
+          "x-upload-name": file.name,
+        },
+        credentials: "include",
         body: file,
       });
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const { objectPath } = await uploadRes.json();
       onUploaded(objectPath);
     } catch {
       setPreview(null);
@@ -914,7 +917,7 @@ function InstructionImageUploader({
       <input
         ref={inputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.svg,.pdf"
+        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

@@ -17756,23 +17756,29 @@ export const SendAnthropicMessageBody = zod.object({
 });
 
 /**
- * @summary Request a presigned URL for file upload
- */
+ * Server-mediated upload. Send raw file bytes as the request body. Content-Type must be an allowed MIME type (image/png, image/jpeg, image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp, application/pdf). Maximum file size is 50 MB.
 
-export const RequestUploadUrlBody = zod.object({
-  name: zod.string().min(1),
-  size: zod.number().min(1),
-  contentType: zod.string().min(1),
+ * @summary Upload a file to object storage
+ */
+export const UploadFileHeader = zod.object({
+  "x-upload-name": zod
+    .string()
+    .optional()
+    .describe("Original filename (informational)."),
+  "Content-Length": zod
+    .number()
+    .optional()
+    .describe(
+      "Declared file size in bytes; rejected immediately if > 52428800.",
+    ),
 });
 
-export const RequestUploadUrlResponse = zod.object({
-  uploadURL: zod.string().url(),
+export const UploadFileResponse = zod.object({
   objectPath: zod.string(),
   metadata: zod
     .object({
-      name: zod.string().min(1),
-      size: zod.number().min(1),
-      contentType: zod.string().min(1),
+      name: zod.string().optional(),
+      contentType: zod.string().optional(),
     })
     .optional(),
 });

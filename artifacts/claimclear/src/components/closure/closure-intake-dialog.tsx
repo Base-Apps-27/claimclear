@@ -269,23 +269,38 @@ export function ClosureIntakeDialog({
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
+  const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+  const ALLOWED_UPLOAD_TYPES = new Set([
+    "image/png", "image/jpeg", "image/gif", "image/webp",
+    "image/heic", "image/heif", "image/tiff", "image/bmp",
+    "application/pdf",
+  ]);
+
   const handleUpload = async (file: File) => {
+    if (!ALLOWED_UPLOAD_TYPES.has(file.type)) {
+      toast({ title: "Unsupported file type", description: "Please upload an image (PNG, JPG, GIF, WEBP, HEIC, TIFF, BMP) or PDF.", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_UPLOAD_SIZE) {
+      toast({ title: "File too large", description: "Please upload a file smaller than 50 MB.", variant: "destructive" });
+      return;
+    }
     setUploading(true);
     try {
-      const presignRes = await fetch("/api/storage/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
-      });
-      if (!presignRes.ok) throw new Error("Failed to request upload URL");
-      const { uploadURL, objectPath } = await presignRes.json();
-      const putRes = await fetch(uploadURL, {
+      const uploadRes = await fetch("/api/storage/uploads", {
         method: "PUT",
-        headers: { "Content-Type": file.type },
+        headers: {
+          "Content-Type": file.type,
+          "x-upload-name": file.name,
+        },
+        credentials: "include",
         body: file,
       });
-      if (!putRes.ok) throw new Error("Upload failed");
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const { objectPath } = await uploadRes.json();
 
       const created = await attachEvidence.mutateAsync({
         data: {
@@ -654,6 +669,7 @@ export function ClosureIntakeDialog({
                   type="file"
                   className="hidden"
                   multiple
+                  accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf"
                   onChange={onFileInput}
                   disabled={uploading}
                 />

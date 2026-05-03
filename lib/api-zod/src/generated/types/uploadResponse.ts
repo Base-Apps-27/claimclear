@@ -11,10 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { UploadUrlRequest } from "./uploadUrlRequest";
+import type { UploadResponseMetadata } from "./uploadResponseMetadata";
 
-export interface UploadUrlResponse {
-  uploadURL: string;
+export interface UploadResponse {
   objectPath: string;
-  metadata?: UploadUrlRequest;
+  metadata?: UploadResponseMetadata;
 }

@@ -1,5 +1,6 @@
 import { Storage, File } from "@google-cloud/storage";
-import { Readable } from "stream";
+import { Readable, Transform, pipeline as streamPipeline } from "stream";
+import { promisify } from "util";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import {
@@ -9,6 +10,22 @@ import {
   getObjectAclPolicy,
   setObjectAclPolicy,
 } from "./objectAcl";
+
+const pipeline = promisify(streamPipeline);
+
+const UPLOAD_MIME_TO_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/tiff": "tiff",
+  "image/bmp": "bmp",
+  "application/pdf": "pdf",
+};
+
+export const MAX_OBJECT_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 
@@ -107,26 +124,41 @@ export class ObjectStorageService {
     return new Response(webStream, { headers });
   }
 
-  async getObjectEntityUploadURL(): Promise<string> {
+  async uploadStream(
+    readableStream: NodeJS.ReadableStream,
+    contentType: string,
+    maxBytes: number
+  ): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
-    if (!privateObjectDir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
+    const objectId = randomUUID();
+    const ext = UPLOAD_MIME_TO_EXT[contentType] || "bin";
+    const fullPath = `${privateObjectDir}/uploads/${objectId}.${ext}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+
+    let bytesReceived = 0;
+    const byteGuard = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytesReceived += chunk.length;
+        if (bytesReceived > maxBytes) {
+          callback(new Error(`Upload rejected: file exceeds maximum allowed size of ${maxBytes} bytes`));
+        } else {
+          callback(null, chunk);
+        }
+      },
+    });
+
+    const writeStream = file.createWriteStream({ contentType, resumable: false });
+
+    try {
+      await pipeline(readableStream as Readable, byteGuard, writeStream);
+    } catch (err) {
+      try { await file.delete({ ignoreNotFound: true }); } catch { }
+      throw err;
     }
 
-    const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
-
-    const { bucketName, objectName } = parseObjectPath(fullPath);
-
-    return signObjectURL({
-      bucketName,
-      objectName,
-      method: "PUT",
-      ttlSec: 900,
-    });
+    return `/objects/uploads/${objectId}.${ext}`;
   }
 
   async getObjectEntityFile(objectPath: string): Promise<File> {
@@ -194,6 +226,11 @@ export class ObjectStorageService {
     const file = await this.getObjectEntityFile(objectPath);
     const [metadata] = await file.getMetadata();
     const contentType = (metadata.contentType as string) || "";
+
+    const storedSize = parseInt(String(metadata.size || "0"), 10);
+    if (storedSize > MAX_OBJECT_DOWNLOAD_BYTES) {
+      throw new Error(`Object at ${objectPath} size ${storedSize} bytes exceeds the maximum allowed download size of ${MAX_OBJECT_DOWNLOAD_BYTES} bytes`);
+    }
 
     const MIME_TO_EXT: Record<string, string> = {
       "image/png": "png",
