@@ -4,6 +4,10 @@ import { eq, and } from "drizzle-orm";
 
 const router = Router();
 
+function isValidImageUrl(url: unknown): url is string {
+  return typeof url === "string" && url.startsWith("/objects/");
+}
+
 router.get("/claims/:claimId/evidence", async (req: Request, res: Response) => {
   const claimId = parseInt(String(req.params.claimId), 10);
   if (isNaN(claimId)) {
@@ -30,6 +34,10 @@ router.post("/claims/:claimId/evidence", async (req: Request, res: Response) => 
   const { evidenceTypeId, evidenceTypeName, treeNodeId, imageUrl, notes } = req.body;
   if (!evidenceTypeName) {
     res.status(400).json({ error: "evidenceTypeName is required" });
+    return;
+  }
+  if (imageUrl != null && imageUrl !== "" && !isValidImageUrl(imageUrl)) {
+    res.status(400).json({ error: "imageUrl must be an application storage path beginning with /objects/" });
     return;
   }
   try {
@@ -94,6 +102,10 @@ router.post("/claim-evidence/closure", async (req: Request, res: Response) => {
   }
   if (typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
     res.status(400).json({ error: "imageUrl is required: closure evidence must reference an uploaded file." });
+    return;
+  }
+  if (!isValidImageUrl(imageUrl)) {
+    res.status(400).json({ error: "imageUrl must be an application storage path beginning with /objects/" });
     return;
   }
   if (req.body && Object.prototype.hasOwnProperty.call(req.body, "closureScope") && req.body.closureScope !== "closure") {

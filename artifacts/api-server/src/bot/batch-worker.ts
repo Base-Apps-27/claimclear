@@ -123,56 +123,77 @@ export interface PortalSubmission {
   attachmentUrls: string[];
 }
 
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+function isObjectStorageUrl(url: string): boolean {
+  return typeof url === "string" && url.startsWith("/objects/");
+}
+
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
 async function downloadToTemp(url: string, index: number, label?: string): Promise<string> {
   logger.info({ url, index, label }, "downloadToTemp: starting download");
 
-  if (url.startsWith("/objects/")) {
+  if (!isObjectStorageUrl(url)) {
+    throw new Error(`Evidence URL rejected — only application storage paths (/objects/...) are permitted: ${url}`);
+  }
+
+  try {
+    const { ObjectStorageService } = await import("../lib/objectStorage");
+    const storage = new ObjectStorageService();
+    const result = await storage.downloadObjectToTemp(url, index, label);
+    logger.info({ url, tmpPath: result }, "downloadToTemp: downloaded from object storage");
+    return result;
+  } catch (objErr) {
+    const objErrMsg = objErr instanceof Error ? objErr.message : String(objErr);
+    logger.warn({ url, err: objErrMsg }, "downloadToTemp: object storage download failed, trying HTTP fallback via /api/storage/objects/ route");
+    const apiBase = `http://localhost:${process.env.PORT || 8080}`;
+    const storagePath = url.replace(/^\/objects\//, "/api/storage/objects/");
+    const httpUrl = `${apiBase}${storagePath}`;
     try {
-      const { ObjectStorageService } = await import("../lib/objectStorage");
-      const storage = new ObjectStorageService();
-      const result = await storage.downloadObjectToTemp(url, index, label);
-      logger.info({ url, tmpPath: result }, "downloadToTemp: downloaded from object storage");
-      return result;
-    } catch (objErr) {
-      const objErrMsg = objErr instanceof Error ? objErr.message : String(objErr);
-      logger.warn({ url, err: objErrMsg }, "downloadToTemp: object storage download failed, trying HTTP fallback via /api/storage/objects/ route");
-      const apiBase = `http://localhost:${process.env.PORT || 8080}`;
-      const storagePath = url.replace(/^\/objects\//, "/api/storage/objects/");
-      const httpUrl = `${apiBase}${storagePath}`;
-      try {
-        const lastPart = url.split("/").pop() || "";
-        const dotIdx = lastPart.lastIndexOf(".");
-        const ext = dotIdx > 0 ? "." + lastPart.substring(dotIdx + 1) : ".png";
-        const baseName = label ? `${label}-evidence-${index + 1}` : `evidence-${Date.now()}-${index}`;
-        const tmpFile = path.join(os.tmpdir(), `${baseName}${ext}`);
-        const response = await fetch(httpUrl);
-        if (!response.ok || !response.body) {
-          throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
-        }
-        const fileStream = fs.createWriteStream(tmpFile);
-        await pipeline(Readable.fromWeb(response.body as any), fileStream);
-        const fileSize = fs.statSync(tmpFile).size;
-        logger.info({ url, httpUrl, tmpPath: tmpFile, fileSize }, "downloadToTemp: downloaded via HTTP fallback");
-        return tmpFile;
-      } catch (httpErr) {
-        throw new Error(`Evidence download failed for ${url}: GCS error: ${objErrMsg}, HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+      const lastPart = url.split("/").pop() || "";
+      const dotIdx = lastPart.lastIndexOf(".");
+      const ext = dotIdx > 0 ? "." + lastPart.substring(dotIdx + 1) : ".png";
+      const baseName = label ? `${label}-evidence-${index + 1}` : `evidence-${Date.now()}-${index}`;
+      const tmpFile = path.join(os.tmpdir(), `${baseName}${ext}`);
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+      const response = await fetch(httpUrl, { signal: controller.signal });
+      clearTimeout(timeoutHandle);
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
       }
+      const fileStream = fs.createWriteStream(tmpFile);
+      let bytesWritten = 0;
+      const readable = Readable.fromWeb(response.body as any);
+      readable.on("data", (chunk: Buffer) => {
+        bytesWritten += chunk.length;
+        if (bytesWritten > MAX_ATTACHMENT_BYTES) {
+          readable.destroy(new Error(`Evidence file exceeds ${MAX_ATTACHMENT_BYTES} byte size limit`));
+        }
+      });
+      await pipeline(readable, fileStream);
+      const fileSize = fs.statSync(tmpFile).size;
+      logger.info({ url, httpUrl, tmpPath: tmpFile, fileSize }, "downloadToTemp: downloaded via HTTP fallback");
+      return tmpFile;
+    } catch (httpErr) {
+      throw new Error(`Evidence download failed for ${url}: GCS error: ${objErrMsg}, HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
     }
   }
-
-  if (fs.existsSync(url)) {
-    return url;
-  }
-
-  const ext = path.extname(new URL(url).pathname) || ".png";
-  const tmpFile = path.join(os.tmpdir(), `evidence-${Date.now()}-${index}${ext}`);
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}: ${response.status}`);
-  }
-  const fileStream = fs.createWriteStream(tmpFile);
-  await pipeline(Readable.fromWeb(response.body as any), fileStream);
-  return tmpFile;
 }
 
 function markdownToHtml(text: string): string {
@@ -652,28 +673,29 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
     }
 
-    const descriptionText = sub.descriptionHtml || buildDescription(sub);
+    const rawDescriptionHtml = sub.descriptionHtml || buildDescription(sub);
+    const descriptionPlainText = htmlToPlainText(rawDescriptionHtml);
     const richEditorFrame = await page.$('#helpdesk_ticket_ticket_body_attributes_description_html');
     if (richEditorFrame) {
       const isVisible = await richEditorFrame.isVisible();
       if (isVisible) {
-        await richEditorFrame.fill(descriptionText);
+        await richEditorFrame.fill(descriptionPlainText);
         logger.info({ submissionId: sub.id }, "Batch worker: filled Description via textarea");
       } else {
         const froalaEditor = await page.$('.fr-element.fr-view');
         if (froalaEditor) {
           await froalaEditor.click();
-          await froalaEditor.evaluate((el, text) => {
-            el.innerHTML = `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
-          }, descriptionText);
+          await froalaEditor.evaluate((el: Element, text: string) => {
+            el.textContent = text;
+          }, descriptionPlainText);
           logger.info({ submissionId: sub.id }, "Batch worker: filled Description via Froala editor");
         } else {
           const contentEditable = await page.$('[contenteditable="true"]');
           if (contentEditable) {
             await contentEditable.click();
-            await contentEditable.evaluate((el, text) => {
-              el.innerHTML = `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
-            }, descriptionText);
+            await contentEditable.evaluate((el: Element, text: string) => {
+              el.textContent = text;
+            }, descriptionPlainText);
             logger.info({ submissionId: sub.id }, "Batch worker: filled Description via contenteditable");
           } else {
             logger.warn({ submissionId: sub.id }, "Batch worker: Description field hidden and no rich editor found");

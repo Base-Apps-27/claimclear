@@ -3,6 +3,7 @@ import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable, stateEventsTable, portalBatchRunsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+
 import { asyncHandler } from "../lib/asyncHandler";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
@@ -13,6 +14,17 @@ import { getMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
 import { buildPromptLegInputs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
+
+function sanitizeHtml(html: string): string {
+  let safe = html.replace(/<(script|style|iframe|object|embed|form|link|meta|base)[\s\S]*?<\/\1>/gi, "");
+  safe = safe.replace(/<(script|style|iframe|object|embed|form|link|meta|base)[^>]*\/?>/gi, "");
+  safe = safe.replace(/\s+on\w+\s*=\s*"[^"]*"/gi, "");
+  safe = safe.replace(/\s+on\w+\s*=\s*'[^']*'/gi, "");
+  safe = safe.replace(/\s+on\w+\s*=\s*[^\s>]*/gi, "");
+  safe = safe.replace(/href\s*=\s*"javascript:[^"]*"/gi, 'href="#"');
+  safe = safe.replace(/href\s*=\s*'javascript:[^']*'/gi, "href='#'");
+  return safe;
+}
 
 // NOTE: Confirming a draft, queueing a submission, or retrying a failed
 // submission only moves the row to status="pending". The Playwright worker is
@@ -105,6 +117,10 @@ async function collectGroupEvidenceUrls(ctx: GroupContext): Promise<string[]> {
   const seen = new Set<string>();
   const add = (u: unknown) => {
     if (typeof u === "string" && u.length > 0 && !seen.has(u)) {
+      if (!u.startsWith("/objects/")) {
+        logger.warn({ url: u, groupId: ctx.group.id }, "collectGroupEvidenceUrls: dropping non-object-storage URL to prevent uncontrolled outbound request");
+        return;
+      }
       seen.add(u);
       urls.push(u);
     }
@@ -800,7 +816,7 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
   }
 
   if (req.body.descriptionHtml !== undefined) {
-    const newDescription = req.body.descriptionHtml;
+    const newDescription = sanitizeHtml(String(req.body.descriptionHtml ?? ""));
     const previousDescription = existing.descriptionHtml || "";
     if (newDescription !== previousDescription) {
       updates.descriptionHtml = newDescription;

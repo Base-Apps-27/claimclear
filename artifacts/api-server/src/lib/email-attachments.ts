@@ -9,57 +9,66 @@ import { ObjectStorageService } from "./objectStorage";
 import type { EmailAttachment } from "./outlook";
 import { logger } from "./logger";
 
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 export async function downloadAttachment(
   url: string,
   index: number,
   label: string,
 ): Promise<EmailAttachment> {
-  if (url.startsWith("/objects/")) {
-    try {
-      const storage = new ObjectStorageService();
-      const file = await storage.getObjectEntityFile(url);
-      const [metadata] = await file.getMetadata();
-      const chunks: Buffer[] = [];
-      await new Promise<void>((resolve, reject) => {
-        file.createReadStream()
-          .on("data", (chunk: Buffer | string) => {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          })
-          .on("end", () => resolve())
-          .on("error", (err) => reject(err));
-      });
-      const filename = pickFilename(url, label, index, (metadata.contentType as string | undefined) ?? null);
-      return {
-        name: filename,
-        content: Buffer.concat(chunks),
-        contentType: (metadata.contentType as string | undefined) ?? guessMimeFromName(filename),
-      };
-    } catch (objErr) {
-      logger.warn(
-        { url, err: objErr instanceof Error ? objErr.message : String(objErr) },
-        "email-attachments: object storage download failed, trying HTTP fallback",
-      );
-      const apiBase = `http://localhost:${process.env.PORT || 8080}`;
-      const httpUrl = `${apiBase}${url.replace(/^\/objects\//, "/api/storage/objects/")}`;
-      const response = await fetch(httpUrl);
-      if (!response.ok || !response.body) {
-        throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
-      }
-      const buf = Buffer.from(await response.arrayBuffer());
-      const contentType = response.headers.get("content-type") || undefined;
-      const filename = pickFilename(url, label, index, contentType ?? null);
-      return { name: filename, content: buf, contentType: contentType ?? guessMimeFromName(filename) };
-    }
+  if (typeof url !== "string" || !url.startsWith("/objects/")) {
+    throw new Error(`Attachment URL rejected — only application storage paths (/objects/...) are permitted: ${url}`);
   }
 
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}: ${response.status}`);
+  try {
+    const storage = new ObjectStorageService();
+    const file = await storage.getObjectEntityFile(url);
+    const [metadata] = await file.getMetadata();
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    await new Promise<void>((resolve, reject) => {
+      file.createReadStream()
+        .on("data", (chunk: Buffer | string) => {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          totalBytes += buf.length;
+          if (totalBytes > MAX_ATTACHMENT_BYTES) {
+            reject(new Error(`Attachment file exceeds ${MAX_ATTACHMENT_BYTES} byte size limit`));
+            return;
+          }
+          chunks.push(buf);
+        })
+        .on("end", () => resolve())
+        .on("error", (err) => reject(err));
+    });
+    const filename = pickFilename(url, label, index, (metadata.contentType as string | undefined) ?? null);
+    return {
+      name: filename,
+      content: Buffer.concat(chunks),
+      contentType: (metadata.contentType as string | undefined) ?? guessMimeFromName(filename),
+    };
+  } catch (objErr) {
+    logger.warn(
+      { url, err: objErr instanceof Error ? objErr.message : String(objErr) },
+      "email-attachments: object storage download failed, trying HTTP fallback",
+    );
+    const apiBase = `http://localhost:${process.env.PORT || 8080}`;
+    const httpUrl = `${apiBase}${url.replace(/^\/objects\//, "/api/storage/objects/")}`;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+    const response = await fetch(httpUrl, { signal: controller.signal });
+    clearTimeout(timeoutHandle);
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP fallback ${httpUrl} returned ${response.status}`);
+    }
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`Attachment file exceeds ${MAX_ATTACHMENT_BYTES} byte size limit`);
+    }
+    const contentType = response.headers.get("content-type") || undefined;
+    const filename = pickFilename(url, label, index, contentType ?? null);
+    return { name: filename, content: buf, contentType: contentType ?? guessMimeFromName(filename) };
   }
-  const buf = Buffer.from(await response.arrayBuffer());
-  const contentType = response.headers.get("content-type") || undefined;
-  const filename = pickFilename(url, label, index, contentType ?? null);
-  return { name: filename, content: buf, contentType: contentType ?? guessMimeFromName(filename) };
 }
 
 /**
