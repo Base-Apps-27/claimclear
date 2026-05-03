@@ -11,6 +11,8 @@ import {
   formatShortMonthDay,
   computeAggregateUrgentCount,
   emptyStateCopy,
+  isOverdueRow,
+  partitionOverdue,
 } from "./queue-urgency";
 
 test("parseExpiringParam validates the URL token", () => {
@@ -72,6 +74,30 @@ test("computeDeadlineTier covers every on-clock row, including past a week", () 
     "rows past a week still get a tier — fixes the silent-row bug from Task #274",
   );
   assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: null }), null);
+});
+
+test("isOverdueRow + partitionOverdue split past-deadline rows out of the visible lane", () => {
+  // `isOverdueRow` rides on `computeDeadlineTier`, so the same precedence
+  // applies — `isUrgent` (today) wins over a negative day count.
+  assert.equal(isOverdueRow({ isUrgent: false, effectiveDaysLeft: -1 }), true);
+  assert.equal(isOverdueRow({ isUrgent: false, effectiveDaysLeft: -30 }), true);
+  assert.equal(isOverdueRow({ isUrgent: true, effectiveDaysLeft: -1 }), false,
+    "due-today rows are still actionable and must not be tucked behind the disclosure");
+  assert.equal(isOverdueRow({ isUrgent: false, effectiveDaysLeft: 0 }), false);
+  assert.equal(isOverdueRow({ isUrgent: false, effectiveDaysLeft: 5 }), false);
+  assert.equal(isOverdueRow({ isUrgent: false, effectiveDaysLeft: null }), false,
+    "rows with no service date are not overdue — they have no deadline yet");
+
+  const rows = [
+    { id: 1, isUrgent: true, effectiveDaysLeft: 0 },
+    { id: 2, isUrgent: false, effectiveDaysLeft: -2 },
+    { id: 3, isUrgent: false, effectiveDaysLeft: 4 },
+    { id: 4, isUrgent: false, effectiveDaysLeft: -10 },
+    { id: 5, isUrgent: false, effectiveDaysLeft: null },
+  ];
+  const split = partitionOverdue(rows);
+  assert.deepEqual(split.visible.map(r => r.id), [1, 3, 5]);
+  assert.deepEqual(split.overdue.map(r => r.id), [2, 4]);
 });
 
 test("addDays + formatShortMonthDay produce the deadline-date stamp", () => {

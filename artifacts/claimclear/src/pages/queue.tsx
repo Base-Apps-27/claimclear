@@ -45,6 +45,7 @@ import {
   formatTabBadge,
   computeAggregateUrgentCount,
   emptyStateCopy,
+  partitionOverdue,
   type ExpiringFilter,
   type DeadlineTier,
 } from "@/lib/queue-urgency";
@@ -415,6 +416,14 @@ export default function Queue() {
     Number.isFinite(triageParam) && triageParam > 0 ? triageParam : null;
 
   const [successMessage, setSuccessMessage] = useState("");
+  // Overdue rows are past the filing deadline — payors will not accept
+  // the claim, so the operator literally cannot act on them. Hide them
+  // from each lane by default and let the operator opt back in per lane
+  // if they want to audit them. Three-tuple, one bit per lane, so each
+  // tab remembers its own disclosure state independently.
+  const [showOverdueActionable, setShowOverdueActionable] = useState(false);
+  const [showOverduePortalQueued, setShowOverduePortalQueued] = useState(false);
+  const [showOverdueOnHold, setShowOverdueOnHold] = useState(false);
 
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
   const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedWorkflowId ?? undefined);
@@ -562,9 +571,41 @@ export default function Queue() {
   const onHoldAll = sortByUrgency(onHoldGroups);
 
   // Filtered lists are what the row renderer sees.
-  const actionableGroups = filterByExpiringParam(actionableAll, expiringFilter);
-  const portalQueuedSorted = filterByExpiringParam(portalQueuedAll, expiringFilter);
-  const onHoldSorted = filterByExpiringParam(onHoldAll, expiringFilter);
+  const actionableFiltered = filterByExpiringParam(actionableAll, expiringFilter);
+  const portalQueuedFiltered = filterByExpiringParam(portalQueuedAll, expiringFilter);
+  const onHoldFiltered = filterByExpiringParam(onHoldAll, expiringFilter);
+
+  // Past-deadline rows are split out per lane so each list can hide
+  // them by default behind a disclosure. We never hide overdue rows
+  // when the operator is explicitly drilling on a deadline filter
+  // (`?expiring=urgent` or `?expiring=stuck`) — in those modes the
+  // overdue set is the point of the view, not noise.
+  const overdueDisclosureSuppressed =
+    expiringFilter === "urgent" || expiringFilter === "stuck";
+  const actionableSplit = partitionOverdue(actionableFiltered);
+  const portalQueuedSplit = partitionOverdue(portalQueuedFiltered);
+  const onHoldSplit = partitionOverdue(onHoldFiltered);
+  const actionableGroups = overdueDisclosureSuppressed || showOverdueActionable
+    ? actionableFiltered
+    : actionableSplit.visible;
+  const portalQueuedSorted = overdueDisclosureSuppressed || showOverduePortalQueued
+    ? portalQueuedFiltered
+    : portalQueuedSplit.visible;
+  const onHoldSorted = overdueDisclosureSuppressed || showOverdueOnHold
+    ? onHoldFiltered
+    : onHoldSplit.visible;
+  const actionableOverdueHidden =
+    !overdueDisclosureSuppressed && !showOverdueActionable
+      ? actionableSplit.overdue.length
+      : 0;
+  const portalQueuedOverdueHidden =
+    !overdueDisclosureSuppressed && !showOverduePortalQueued
+      ? portalQueuedSplit.overdue.length
+      : 0;
+  const onHoldOverdueHidden =
+    !overdueDisclosureSuppressed && !showOverdueOnHold
+      ? onHoldSplit.overdue.length
+      : 0;
 
   const actionableUrgent = actionableAll.filter(g => g.isUrgent).length;
   const portalQueuedUrgent = portalQueuedAll.filter(g => g.isUrgent).length;
@@ -722,6 +763,38 @@ export default function Queue() {
       >
         {labelInfo.label}
       </span>
+    );
+  };
+
+  // Footer that surfaces the count of past-deadline rows hidden from
+  // a lane and lets the operator opt in to seeing them. Rendered below
+  // the visible list (or in place of the empty state when every row
+  // in the lane was overdue) so the queue can never silently swallow
+  // rows.
+  const renderOverdueDisclosure = (
+    lane: "actionable" | "portal-queued" | "on-hold",
+    hidden: number,
+    onShow: () => void,
+  ) => {
+    if (hidden <= 0) return null;
+    return (
+      <div
+        data-testid={`overdue-disclosure-${lane}`}
+        className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+      >
+        <span>
+          <span className="font-medium text-foreground">{hidden}</span>{" "}
+          past-deadline {hidden === 1 ? "group is" : "groups are"} hidden — payors won't accept these.
+        </span>
+        <button
+          type="button"
+          onClick={onShow}
+          className="font-medium text-foreground underline-offset-2 hover:underline"
+          data-testid={`overdue-disclosure-show-${lane}`}
+        >
+          Show overdue
+        </button>
+      </div>
     );
   };
 
@@ -954,14 +1027,18 @@ export default function Queue() {
               </p>
               {actionableGroups.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    {emptyStateCopy("actionable", expiringFilter)}
+                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
+                    <div>{emptyStateCopy("actionable", expiringFilter)}</div>
+                    {renderOverdueDisclosure("actionable", actionableOverdueHidden, () => setShowOverdueActionable(true))}
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
-                  {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
+                    {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                  </div>
+                  {renderOverdueDisclosure("actionable", actionableOverdueHidden, () => setShowOverdueActionable(true))}
+                </>
               )}
             </TabsContent>
 
@@ -971,14 +1048,18 @@ export default function Queue() {
               </p>
               {portalQueuedSorted.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    {emptyStateCopy("portal-queued", expiringFilter)}
+                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
+                    <div>{emptyStateCopy("portal-queued", expiringFilter)}</div>
+                    {renderOverdueDisclosure("portal-queued", portalQueuedOverdueHidden, () => setShowOverduePortalQueued(true))}
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
-                  {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
+                    {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                  </div>
+                  {renderOverdueDisclosure("portal-queued", portalQueuedOverdueHidden, () => setShowOverduePortalQueued(true))}
+                </>
               )}
             </TabsContent>
 
@@ -988,14 +1069,18 @@ export default function Queue() {
               </p>
               {onHoldSorted.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    {emptyStateCopy("on-hold", expiringFilter)}
+                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
+                    <div>{emptyStateCopy("on-hold", expiringFilter)}</div>
+                    {renderOverdueDisclosure("on-hold", onHoldOverdueHidden, () => setShowOverdueOnHold(true))}
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
-                  {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
+                    {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                  </div>
+                  {renderOverdueDisclosure("on-hold", onHoldOverdueHidden, () => setShowOverdueOnHold(true))}
+                </>
               )}
             </TabsContent>
           </Tabs>

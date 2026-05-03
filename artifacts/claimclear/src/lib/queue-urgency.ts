@@ -80,6 +80,34 @@ export function computeDeadlineTier(group: UrgencyShape): DeadlineTier | null {
 }
 
 /**
+ * A row is "overdue" when the filing deadline has already passed and
+ * the row is not flagged as `isUrgent` (which covers due-today). Past
+ * the deadline the payor will not accept the claim, so the operator
+ * literally cannot act on these — they should be tucked behind a
+ * disclosure on the queue rather than dominating the visible list.
+ */
+export function isOverdueRow(group: UrgencyShape): boolean {
+  return computeDeadlineTier(group) === "overdue";
+}
+
+/**
+ * Split a lane's rows into the visible set (everything the operator
+ * can still act on) and the overdue set (past-deadline rows the queue
+ * hides by default behind a "show overdue" disclosure).
+ */
+export function partitionOverdue<T extends UrgencyShape>(
+  rows: T[],
+): { visible: T[]; overdue: T[] } {
+  const visible: T[] = [];
+  const overdue: T[] = [];
+  for (const r of rows) {
+    if (isOverdueRow(r)) overdue.push(r);
+    else visible.push(r);
+  }
+  return { visible, overdue };
+}
+
+/**
  * Add `days` calendar days to `from` and return a fresh Date. Used to
  * project the filing-deadline date from `effectiveDaysLeft` so urgent
  * rows can show "Today · M/D" instead of a bare "TODAY" with no date.
