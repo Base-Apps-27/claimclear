@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-03.v2";
+export const CURRENT_TOUR_VERSION = "2026-05-03.v3";
 
 export type TourStepDef = {
   // Element selector or "body" for an unanchored center modal.
@@ -40,7 +40,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     target: "body",
     placement: "center",
     title: "Welcome to ClaimClear",
-    body: "ClaimClear is built around one repeatable process: turning rides that couldn't be attested at attestation time into rides that CAN be attested — and the revenue that comes with them. Before we tour the screens, let's anchor on the five steps you'll repeat for every batch of disputes. About three minutes, no clicks required — just hit Next.",
+    body: "Every claim that lands in ClaimClear is one our automated attestation system already tried — and rejected. The auto-system couldn't safely attest it, so it kicked the ride to us to work by hand. ClaimClear is the playbook for that hand-work: a single repeatable process that turns those rejected rides into rides we can attest, and the revenue that comes with them. Before we tour the screens, let's anchor on the five steps you'll repeat for every batch. About three minutes, no clicks required — just hit Next.",
     disableBeacon: true,
   },
   {
@@ -74,8 +74,8 @@ export const TOUR_STEPS: TourStepDef[] = [
   {
     target: "body",
     placement: "center",
-    title: "Step 5 of 5 — Read the response and decide",
-    body: "When MAS responds, it lands on the Responses page. Read it back, decide whether they agreed with our ask, and lock in the call: are we re-attesting this ride or not? Reattested rides are revenue we recovered.",
+    title: "Step 5 of 5 — Read the response and decide, right then",
+    body: "When MAS responds, it lands on the Responses page. The decision happens in that moment: read it back, and either (a) re-attest the ride right there if you have the authority and the response is clean, or (b) queue it at the station for a billing supervisor to process. Either way the call is made when you read the response — nothing sits unowned. Reattested rides are revenue we recovered.",
     disableBeacon: true,
   },
   {
