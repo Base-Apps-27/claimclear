@@ -13,6 +13,7 @@ import { Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download, MoreHorizontal,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
+import { partitionOverdue } from "@/lib/queue-urgency";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
@@ -193,8 +194,23 @@ export default function ClaimsList() {
   const bulkAssign = useBulkAssignErrorType();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
-  const claims: ClaimResponse[] = data?.claims ?? [];
+  const claimsAll: ClaimResponse[] = data?.claims ?? [];
   const total = data?.total ?? 0;
+
+  // Past-deadline claims are tucked behind a per-page disclosure on
+  // the current page (server pagination is unaffected — only the
+  // rendered tbody is filtered). Suppressed when the operator has
+  // explicitly opened the gate via "Show expired" or `?expiring=urgent`,
+  // because in those views past-deadline rows are the point.
+  const [showOverdue, setShowOverdue] = useState(false);
+  const overdueDisclosureSuppressed = filterIncludeExpired || filterExpiring === "urgent";
+  const claimsSplit = partitionOverdue(claimsAll);
+  const claims: ClaimResponse[] = overdueDisclosureSuppressed || showOverdue
+    ? claimsAll
+    : claimsSplit.visible;
+  const overdueHidden = overdueDisclosureSuppressed || showOverdue
+    ? 0
+    : claimsSplit.overdue.length;
 
   const allSelected = claims.length > 0 && claims.every(c => selectedIds.has(c.id));
   const someSelected = selectedIds.size > 0;
@@ -706,7 +722,8 @@ export default function ClaimsList() {
                         </td>
                       </tr>
                     ) : (
-                      claims.map(claim => {
+                      <>
+                      {claims.map(claim => {
                         const isSel = selectedIds.has(claim.id);
                         return (
                           <tr
@@ -779,7 +796,28 @@ export default function ClaimsList() {
                             )}
                           </tr>
                         );
-                      })
+                      })}
+                      {overdueHidden > 0 && (
+                        <tr data-testid="overdue-disclosure-claims">
+                          <td colSpan={colCount} className="px-4 py-2">
+                            <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                              <span>
+                                <span className="font-medium text-foreground">{overdueHidden}</span>{" "}
+                                past-deadline {overdueHidden === 1 ? "claim is" : "claims are"} hidden on this page — payors won't accept these.
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowOverdue(true)}
+                                className="font-medium text-foreground underline-offset-2 hover:underline"
+                                data-testid="overdue-disclosure-show-claims"
+                              >
+                                Show overdue
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </>
                     )}
                   </tbody>
                 </table>
