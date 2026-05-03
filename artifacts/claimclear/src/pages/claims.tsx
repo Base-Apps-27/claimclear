@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Link, useLocation } from "wouter";
-import { Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download, MoreHorizontal, ListTodo, Sparkles, FileText, FolderOpen, Activity, FileCheck, AlertCircle, Calendar as CalendarIcon, DollarSign, Clock } from "lucide-react";
+import { Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download, MoreHorizontal, Sparkles, FileText, FolderOpen, Activity, FileCheck, AlertCircle, Calendar as CalendarIcon, DollarSign, Clock } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -861,18 +861,19 @@ export default function ClaimsList() {
             </RailActionGroup>
 
             <RailActionGroup label="Selection">
+              {/*
+                "Open Queue" intentionally NOT repeated here — the rail's
+                Recommended primary button above already routes to /queue.
+                Surfacing the same destination twice in one rail (once as
+                the headline CTA, once as a row) reads as a duplicate
+                affordance, the same anti-pattern we hit on /import.
+              */}
               <ActionRow
                 icon={<Download className="w-3.5 h-3.5" />}
                 label="Export current view (CSV)"
                 sub={`${total.toLocaleString()} matching ${total === 1 ? "row" : "rows"}`}
                 onClick={() => { window.location.href = csvUrl; }}
                 testId="rail-action-export-csv"
-              />
-              <ActionRow
-                icon={<ListTodo className="w-3.5 h-3.5" />}
-                label="Open Queue"
-                sub="Step through one at a time"
-                onClick={() => navigate("/queue")}
               />
               <ActionRow
                 icon={<FolderOpen className="w-3.5 h-3.5" />}
