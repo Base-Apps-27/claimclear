@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/admin-walkthrough/"
+title = "ClaimClear Admin Walkthrough"
+version = "1.0.0"
+id = "artifacts/admin-walkthrough"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/admin-walkthrough/" ]
+localPort = 21201
+
+[services.development]
+run = "pnpm --filter @workspace/admin-walkthrough run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/admin-walkthrough", "run", "build" ]
+publicDir = "artifacts/admin-walkthrough/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21201"
+BASE_PATH = "/admin-walkthrough/"
