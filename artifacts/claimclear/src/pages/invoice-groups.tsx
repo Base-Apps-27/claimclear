@@ -45,8 +45,14 @@ import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
   LIFECYCLE_TABS,
   deriveLifecycleTab,
+  ENGAGEMENT_NEEDED_STATUSES,
   type LifecycleTabKey,
 } from "@/lib/lifecycle-phase";
+import {
+  NeedsEngagementToggle,
+  HideExpiredToggle,
+  readEngagementMode,
+} from "@/components/engagement-filter-controls";
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -157,6 +163,10 @@ export default function InvoiceGroupsList() {
   // everywhere; flipping this on adds `?includeExpired=true` to the
   // list query so the retired rows surface alongside the live ones.
   const filterIncludeExpired = get("includeExpired") === "true";
+  // "Needs engagement" filter — defaults to `needs`. See claims.tsx for
+  // the same pattern: explicit status pick wins; otherwise the
+  // engagement-needed set is injected into the API call.
+  const engagementMode = readEngagementMode(get("engagement"));
 
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
@@ -177,9 +187,16 @@ export default function InvoiceGroupsList() {
     localStorage.setItem(STORAGE_KEY_DENSITY, density);
   }, [density]);
 
+  const effectiveStatuses: readonly string[] =
+    filterStatuses.length > 0
+      ? filterStatuses
+      : engagementMode === "needs"
+        ? ENGAGEMENT_NEEDED_STATUSES
+        : [];
+
   const listParams: ListInvoiceGroupsParams = {
     search: search || undefined,
-    status: filterStatuses.length > 0 ? filterStatuses.join(",") : undefined,
+    status: effectiveStatuses.length > 0 ? effectiveStatuses.join(",") : undefined,
     outcome: filterOutcomes.length > 0 ? filterOutcomes.join(",") : undefined,
     errorTypeId: filterErrorTypeIds.length > 0 ? filterErrorTypeIds.join(",") : undefined,
     errorDetails: (filterErrorDetails || undefined) as "empty" | "present" | undefined,
@@ -646,15 +663,16 @@ export default function InvoiceGroupsList() {
             onClearAllFilters={clearFilters}
             extras={
               <>
-                <Button
-                  variant={filterIncludeExpired ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => set({ includeExpired: filterIncludeExpired ? null : "true", page: null }, false)}
-                  data-testid="toggle-show-expired"
-                  title="Expired groups are hidden by default. The nightly 6 AM ET sweep retires past-deadline pre-submit rows."
-                >
-                  {filterIncludeExpired ? "Hide expired" : "Show expired"}
-                </Button>
+                <NeedsEngagementToggle
+                  mode={engagementMode}
+                  onChange={(next) => set({ engagement: next === "needs" ? null : "all", page: null }, false)}
+                  testidPrefix="engagement-toggle-groups"
+                />
+                <HideExpiredToggle
+                  includeExpired={filterIncludeExpired}
+                  onChange={(nextIncludeExpired) => set({ includeExpired: nextIncludeExpired ? "true" : null, page: null }, false)}
+                  testid="toggle-hide-expired-groups"
+                />
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
                 <a href={csvUrl} download>

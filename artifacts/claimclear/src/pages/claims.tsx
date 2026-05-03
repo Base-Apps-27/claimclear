@@ -41,8 +41,14 @@ import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
   LIFECYCLE_TABS,
   deriveLifecycleTab,
+  ENGAGEMENT_NEEDED_STATUSES,
   type LifecycleTabKey,
 } from "@/lib/lifecycle-phase";
+import {
+  NeedsEngagementToggle,
+  HideExpiredToggle,
+  readEngagementMode,
+} from "@/components/engagement-filter-controls";
 import { type LegSubStatus } from "@workspace/leg-state";
 import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
@@ -140,6 +146,14 @@ export default function ClaimsList() {
   // Expired groups) are hidden by default; flipping this on opens
   // the gate via `?includeExpired=true` on the list query.
   const filterIncludeExpired = get("includeExpired") === "true";
+  // "Needs engagement" filter — defaults to `needs` so the operator
+  // lands on action-required rows only. URL param: `engagement=needs|all`.
+  // When `needs` is active AND the operator has not explicitly picked a
+  // status, we inject the engagement-needed status set into the API
+  // call. An explicit status pick (lifecycle tab / faceted filter)
+  // always wins over the engagement default — clicking "On Hold" should
+  // show on-hold rows even if the engagement toggle is still pressed.
+  const engagementMode = readEngagementMode(get("engagement"));
   const filterLegSubStatusRaw = get("legSubStatus");
   const filterLegSubStatus = (CLAIM_LEG_TABS as readonly string[]).includes(filterLegSubStatusRaw)
     ? (filterLegSubStatusRaw as LegSubStatus)
@@ -164,9 +178,18 @@ export default function ClaimsList() {
     localStorage.setItem(STORAGE_KEY_DENSITY, density);
   }, [density]);
 
+  // Effective status filter: explicit picks win; otherwise inject
+  // engagement-needed statuses when the engagement toggle is pressed.
+  const effectiveStatuses: readonly string[] =
+    filterStatuses.length > 0
+      ? filterStatuses
+      : engagementMode === "needs"
+        ? ENGAGEMENT_NEEDED_STATUSES
+        : [];
+
   const listParams: ListClaimsParams = {
     search: search || undefined,
-    status: filterStatuses.length > 0 ? filterStatuses.join(",") : undefined,
+    status: effectiveStatuses.length > 0 ? effectiveStatuses.join(",") : undefined,
     outcome: filterOutcomes.length > 0 ? filterOutcomes.join(",") : undefined,
     errorTypeId: filterErrorTypeIds.length > 0 ? filterErrorTypeIds.join(",") : undefined,
     createdFrom: filterCreatedFrom || undefined,
@@ -580,15 +603,16 @@ export default function ClaimsList() {
             onClearAllFilters={clearFilters}
             extras={
               <>
-                <Button
-                  variant={filterIncludeExpired ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => set({ includeExpired: filterIncludeExpired ? null : "true", page: null }, false)}
-                  data-testid="toggle-show-expired"
-                  title="Expired claims are hidden by default. The nightly 6 AM ET sweep retires past-deadline pre-submit rows."
-                >
-                  {filterIncludeExpired ? "Hide expired" : "Show expired"}
-                </Button>
+                <NeedsEngagementToggle
+                  mode={engagementMode}
+                  onChange={(next) => set({ engagement: next === "needs" ? null : "all", page: null }, false)}
+                  testidPrefix="engagement-toggle-claims"
+                />
+                <HideExpiredToggle
+                  includeExpired={filterIncludeExpired}
+                  onChange={(nextIncludeExpired) => set({ includeExpired: nextIncludeExpired ? "true" : null, page: null }, false)}
+                  testid="toggle-hide-expired-claims"
+                />
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
                 <a href={csvUrl} download>

@@ -66,6 +66,31 @@ export const isClosed = (s: string | null | undefined) =>
 export const isOnHold = (s: string | null | undefined) =>
   getLifecyclePhase(s) === "on-hold";
 
+// ──────────────────────────────────────────────────────────────────────────
+// Operator-engagement filter — what counts as "needs my action right now"
+// vs. "managed / parked / done". Used by the prominent default-on
+// "Needs engagement" toggle on the Claims, Invoice Groups, and Queue
+// list pages (Task: needs-engagement-default-filter).
+//
+// Engagement-needed = pre-submit + response-pending + mas-action-required.
+//   pre-submit          — operator owes work to package & file
+//   response-pending    — payor response landed, operator must verdict it
+//   mas-action-required — MAS verdict in, operator must re-attest
+//
+// Parked / managed = in-flight (waiting on portal/payor), on-hold (manually
+// parked), closed (terminal). Expired is its own gate, filtered via the
+// separate `includeExpired` URL param.
+// ──────────────────────────────────────────────────────────────────────────
+export const ENGAGEMENT_NEEDED_PHASES: readonly LifecyclePhase[] = [
+  "pre-submit",
+  "response-pending",
+  "mas-action-required",
+];
+
+export const ENGAGEMENT_NEEDED_STATUSES: readonly string[] = ENGAGEMENT_NEEDED_PHASES.flatMap(
+  (p) => STATUSES_BY_PHASE[p],
+);
+
 // Group rollup: when collapsing a set of leg statuses into one phase for the
 // invoice group, only "disputed" legs (errorTypeId != null) count. Clean legs
 // sit on the same invoice but were never part of any dispute and must not

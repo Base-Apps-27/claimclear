@@ -143,6 +143,23 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   const includeExpiredFlag = String(query.includeExpired ?? "").toLowerCase() === "true";
   if (!includeExpiredFlag && !statusFilterIncludesExpired) {
     conditions.push(ne(invoiceGroupsTable.status, "Expired"));
+    // "On Hold past the filing deadline" is treated as expired for
+    // visibility — payors won't accept a submission past the deadline
+    // regardless of the manual hold. Hidden by default; revealed via
+    // `?includeExpired=true`. (Auto-transition to Status='Expired'
+    // is intentionally NOT done here — that's the nightly sweep's
+    // job. Extending the sweep to On Hold rows is a separate task.)
+    const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
+    const effectiveDeadlineSql = sql`(
+      CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
+        WHEN 6 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
+        WHEN 0 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
+        ELSE (${dateExpr} + INTERVAL '30 days')::date
+      END
+    )`;
+    conditions.push(
+      sql`NOT (${invoiceGroupsTable.status} = 'On Hold' AND ${invoiceGroupsTable.serviceDate} IS NOT NULL AND ${effectiveDeadlineSql} < CURRENT_DATE)`,
+    );
   }
 
   if (outcome && typeof outcome === "string") {

@@ -57,6 +57,10 @@ import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatViewerNames } from "@/components/presence-lock";
 import { useUrlParams } from "@/lib/use-url-params";
+import {
+  NeedsEngagementToggle,
+  readEngagementMode,
+} from "@/components/engagement-filter-controls";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { LegConclusionList } from "@/components/leg-conclusion-row";
 import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -392,8 +396,24 @@ export default function Queue() {
   const { get, set } = useUrlParams();
 
   const tabParam = get("tab");
-  const activeTab: QueueTab = (VALID_TABS as readonly string[]).includes(tabParam)
+  // "Needs engagement" toggle — defaults to `needs`. When pressed, the
+  // Portal Queued and On Hold lanes are hidden from the tab strip
+  // (those are managed/parked, not engagement-needed). Operator must
+  // press "All" to widen back. Same URL param shape as Claims and
+  // Invoice Groups so a single toggle in the URL flows everywhere.
+  const engagementMode = readEngagementMode(get("engagement"));
+  const VISIBLE_TABS: readonly QueueTab[] =
+    engagementMode === "needs"
+      ? (["actionable"] as const)
+      : VALID_TABS;
+  const rawTab: QueueTab = (VALID_TABS as readonly string[]).includes(tabParam)
     ? (tabParam as QueueTab)
+    : DEFAULT_TAB;
+  // If engagement filter hides the requested tab, fall back to the
+  // default actionable lane so the operator never lands on a tab
+  // that the filter strip is hiding.
+  const activeTab: QueueTab = (VISIBLE_TABS as readonly string[]).includes(rawTab)
+    ? rawTab
     : DEFAULT_TAB;
 
   // `?expiring=urgent|soon` is the link payload from the Dashboard's
@@ -984,6 +1004,18 @@ export default function Queue() {
 
       <div className={`grid grid-cols-1 gap-6 ${selectedWorkflowId ? "lg:grid-cols-3" : ""}`}>
         <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <NeedsEngagementToggle
+              mode={engagementMode}
+              onChange={(next) => set({ engagement: next === "needs" ? null : "all", tab: null }, false)}
+              testidPrefix="engagement-toggle-queue"
+            />
+            {engagementMode === "needs" && (
+              <span className="text-xs text-muted-foreground" data-testid="engagement-hint-queue">
+                Portal Queued &amp; On Hold lanes hidden — press <span className="font-medium text-foreground">All</span> to show them.
+              </span>
+            )}
+          </div>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="actionable" data-testid="tab-actionable">
@@ -996,26 +1028,30 @@ export default function Queue() {
                   testid="tab-badge-actionable"
                 />
               </TabsTrigger>
-              <TabsTrigger value="portal-queued" data-testid="tab-portal-queued">
-                Portal Queued
-                <TabBadgeSplit
-                  total={portalQueuedTotal}
-                  urgent={portalQueuedUrgent}
-                  soon={portalQueuedSoonCount}
-                  filterMode={expiringFilter}
-                  testid="tab-badge-portal-queued"
-                />
-              </TabsTrigger>
-              <TabsTrigger value="on-hold" data-testid="tab-on-hold">
-                On Hold
-                <TabBadgeSplit
-                  total={onHoldTotal}
-                  urgent={onHoldUrgent}
-                  soon={onHoldSoonCount}
-                  filterMode={expiringFilter}
-                  testid="tab-badge-on-hold"
-                />
-              </TabsTrigger>
+              {(VISIBLE_TABS as readonly string[]).includes("portal-queued") && (
+                <TabsTrigger value="portal-queued" data-testid="tab-portal-queued">
+                  Portal Queued
+                  <TabBadgeSplit
+                    total={portalQueuedTotal}
+                    urgent={portalQueuedUrgent}
+                    soon={portalQueuedSoonCount}
+                    filterMode={expiringFilter}
+                    testid="tab-badge-portal-queued"
+                  />
+                </TabsTrigger>
+              )}
+              {(VISIBLE_TABS as readonly string[]).includes("on-hold") && (
+                <TabsTrigger value="on-hold" data-testid="tab-on-hold">
+                  On Hold
+                  <TabBadgeSplit
+                    total={onHoldTotal}
+                    urgent={onHoldUrgent}
+                    soon={onHoldSoonCount}
+                    filterMode={expiringFilter}
+                    testid="tab-badge-on-hold"
+                  />
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="actionable" className="mt-4 space-y-2">
