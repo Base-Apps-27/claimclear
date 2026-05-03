@@ -9,9 +9,13 @@
 //   mas-action-required). When "All" is pressed, no engagement filter
 //   is applied. URL param: `engagement=needs|all`, default `needs`.
 //
-// - HideExpiredToggle: "Hide expired" (default on, pressed) | "Show
-//   expired". Mirrors the existing `?includeExpired=true` URL param
-//   but with a depressed visual so the operator knows the gate is on.
+// - HideExpiredToggle: "Hide past-deadline" (default on, pressed) |
+//   "Show past-deadline". Mirrors the existing `?includeExpired=true`
+//   URL param (kept for back-compat) but with a depressed visual so
+//   the operator knows the gate is on. The label says "past-deadline"
+//   because the unified server-side guard hides both Expired-status
+//   rows AND any row whose effective deadline has slipped, regardless
+//   of status.
 
 export type EngagementMode = "needs" | "all";
 
@@ -48,7 +52,7 @@ export function NeedsEngagementToggle({
         className={
           "px-3 py-1.5 text-xs font-semibold transition-colors flex items-center gap-1.5 " +
           (needsPressed
-            ? "bg-foreground text-background shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
+            ? "bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
             : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
         }
       >
@@ -64,7 +68,7 @@ export function NeedsEngagementToggle({
         className={
           "px-3 py-1.5 text-xs font-semibold transition-colors border-l border-border " +
           (allPressed
-            ? "bg-foreground text-background shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
+            ? "bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
             : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
         }
       >
@@ -75,7 +79,11 @@ export function NeedsEngagementToggle({
 }
 
 interface HideExpiredToggleProps {
-  /** True when the includeExpired URL param is on (i.e. expired ARE shown). */
+  /**
+   * True when the includeExpired URL param is on (i.e. past-deadline
+   * rows — including Expired-status rows and any row whose effective
+   * deadline has slipped — ARE shown).
+   */
   includeExpired: boolean;
   onChange: (nextIncludeExpired: boolean) => void;
   testid?: string;
@@ -86,14 +94,15 @@ export function HideExpiredToggle({
   onChange,
   testid = "toggle-hide-expired",
 }: HideExpiredToggleProps) {
-  // "Hide expired" is the default state; when pressed (hidePressed=true)
-  // the toggle visibly looks depressed so the operator knows the gate is
-  // on and a single click ("Show expired") releases it.
+  // "Hide past-deadline" is the default state; when pressed
+  // (hidePressed=true) the toggle visibly looks depressed so the
+  // operator knows the gate is on and a single click ("Show
+  // past-deadline") releases it.
   const hidePressed = !includeExpired;
   return (
     <div
       role="group"
-      aria-label="Expired filter"
+      aria-label="Past-deadline filter"
       className="inline-flex rounded-md border border-border overflow-hidden shadow-sm"
       data-testid={testid}
     >
@@ -102,31 +111,31 @@ export function HideExpiredToggle({
         onClick={() => onChange(false)}
         aria-pressed={hidePressed}
         data-testid={`${testid}-hide`}
-        title="Hide expired rows. Items past their filing deadline are tucked away. Press 'Show expired' to include them."
+        title="Hide rows past their filing deadline (including Expired-status rows and any row whose effective deadline has slipped). Press 'Show past-deadline' to include them."
         className={
           "px-3 py-1.5 text-xs font-semibold transition-colors flex items-center gap-1.5 " +
           (hidePressed
-            ? "bg-foreground text-background shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
+            ? "bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
             : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
         }
       >
         <span aria-hidden className={hidePressed ? "h-1.5 w-1.5 rounded-full bg-background/80" : "h-1.5 w-1.5 rounded-full bg-muted-foreground/40"} />
-        Hide expired
+        Hide past-deadline
       </button>
       <button
         type="button"
         onClick={() => onChange(true)}
         aria-pressed={!hidePressed}
         data-testid={`${testid}-show`}
-        title="Include rows whose filing deadline has passed."
+        title="Include rows whose effective deadline has passed, including Expired-status rows."
         className={
           "px-3 py-1.5 text-xs font-semibold transition-colors border-l border-border " +
           (!hidePressed
-            ? "bg-foreground text-background shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
+            ? "bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]"
             : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
         }
       >
-        Show expired
+        Show past-deadline
       </button>
     </div>
   );

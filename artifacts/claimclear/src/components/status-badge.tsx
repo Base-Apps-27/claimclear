@@ -44,7 +44,7 @@ const STATUS_COLORS: Record<string, string> = {
   // label comes from the glossary below. vocab-allow-next-line
   "Non-Issue": "bg-slate-100 text-slate-800 border-slate-200",
   // Expired: filing deadline passed without a submission. Muted gray
-  // so retired rows recede visually when the "Show expired" toggle
+  // so retired rows recede visually when the "Show past-deadline" toggle
   // pulls them back into a list — they should be obviously inert
   // versus the live workflow palette above.
   "Expired": "bg-stone-100 text-stone-600 border-stone-300",

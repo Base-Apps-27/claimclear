@@ -57,7 +57,7 @@ const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
   // Expired is selectable here so an operator who flips on the
-  // "Show expired" toggle can also narrow the resulting list to
+  // "Show past-deadline" toggle can also narrow the resulting list to
   // just the retired rows. The backend implicitly opens the gate
   // when the status filter contains Expired (see
   // `buildInvoiceGroupWhere` in routes/invoice-groups.ts).
@@ -158,8 +158,9 @@ export default function InvoiceGroupsList() {
   // they can see what they just brought in instead of getting dumped
   // into the global list.
   const filterImportBatch = get("importBatch") || "";
-  // "Show expired" toggle. Expired groups are hidden by default
-  // everywhere; flipping this on adds `?includeExpired=true` to the
+  // "Show past-deadline" toggle. Past-deadline groups (Expired-status
+  // and any group whose effective deadline has slipped) are hidden by
+  // default everywhere; flipping this on adds `?includeExpired=true` to the
   // list query so the retired rows surface alongside the live ones.
   const filterIncludeExpired = get("includeExpired") === "true";
   // "Needs engagement" filter — defaults to `needs`. See claims.tsx for
@@ -226,7 +227,7 @@ export default function InvoiceGroupsList() {
   // unified `includeExpired=false` guard. The total, page count, and
   // "Showing A–B of N" all match the visible set without any
   // client-side post-fetch filter. Operators opt past-deadline rows
-  // back in by toggling Show expired (`?includeExpired=true`) or
+  // back in by toggling Show past-deadline (`?includeExpired=true`) or
   // drilling into a deadline tier with `?expiring=…`.
   const groups: InvoiceGroupResponse[] = data?.groups ?? [];
   const total = data?.total ?? 0;

@@ -68,7 +68,7 @@ const STATUSES = [
   "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied",
   // Expired is selectable here — when chosen, the backend implicitly
   // opens the include-Expired gate so the rows surface even without
-  // the standalone "Show expired" toggle being on.
+  // the standalone "Show past-deadline" toggle being on.
   "Expired",
 ] as const;
 
@@ -141,9 +141,11 @@ export default function ClaimsList() {
   // Post-cutover: the secondary tab strip that filters the list by
   // per-leg sub-status is always shown (the legacy status-tab strip was
   // removed in Task #199).
-  // "Show expired" toggle. Expired claims (and disputed children of
-  // Expired groups) are hidden by default; flipping this on opens
-  // the gate via `?includeExpired=true` on the list query.
+  // "Show past-deadline" toggle. Past-deadline claims (Expired-status
+  // rows and any row whose effective deadline has slipped, including
+  // disputed children of Expired groups) are hidden by default;
+  // flipping this on opens the gate via `?includeExpired=true` on the
+  // list query (param name kept for back-compat).
   const filterIncludeExpired = get("includeExpired") === "true";
   // "Needs engagement" filter — defaults to `needs` so the operator
   // lands on action-required rows only. URL param: `engagement=needs|all`.
@@ -221,7 +223,7 @@ export default function ClaimsList() {
   // returns are exactly what the page renders. The total, page count,
   // and "Showing A–B of N" all match the visible set without any
   // client-side post-fetch filter — the operator opts past-deadline
-  // rows back in by toggling Show expired (`?includeExpired=true`)
+  // rows back in by toggling Show past-deadline (`?includeExpired=true`)
   // or drilling into a deadline tier with `?expiring=…`.
   const claims: ClaimResponse[] = data?.claims ?? [];
   const total = data?.total ?? 0;
