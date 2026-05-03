@@ -1,9 +1,11 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "path";
 import { authMiddleware } from "./middlewares/authMiddleware";
+import { verifyBotToken } from "./lib/bot-token";
+import { SESSION_COOKIE } from "./lib/auth";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -28,24 +30,89 @@ app.use(
     },
   }),
 );
-const CORS_ORIGINS = process.env.CORS_ORIGINS
+
+const CORS_ORIGINS: string[] = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(o => o.trim())
-  : [/^https?:\/\/localhost(:\d+)?$/, /\.replit\.dev$/, /\.repl\.co$/, /\.replit\.app$/];
+  : [];
 
 app.use(cors({
   credentials: true,
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (typeof CORS_ORIGINS[0] === "string") {
-      return callback(null, (CORS_ORIGINS as string[]).includes(origin));
+    if (CORS_ORIGINS.length > 0 && CORS_ORIGINS.includes(origin)) {
+      return callback(null, true);
     }
-    const allowed = (CORS_ORIGINS as RegExp[]).some(r => r.test(origin));
-    return callback(null, allowed);
+    if (CORS_ORIGINS.length === 0 && /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
   },
 }));
+
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function csrfOriginCheck(req: Request, res: Response, next: NextFunction) {
+  if (!UNSAFE_METHODS.has(req.method)) {
+    next();
+    return;
+  }
+
+  if (verifyBotToken(req.headers["x-bot-token"])) {
+    next();
+    return;
+  }
+
+  if (!req.cookies?.[SESSION_COOKIE]) {
+    next();
+    return;
+  }
+
+  const requestOrigin = req.headers["origin"] as string | undefined;
+  const referer = req.headers["referer"] as string | undefined;
+
+  const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+  const host = (req.headers["x-forwarded-host"] as string) || req.headers["host"] || "";
+  const serverOrigin = `${proto}://${host}`;
+
+  function isAllowedOrigin(candidate: string): boolean {
+    if (candidate === serverOrigin) return true;
+    if (CORS_ORIGINS.length > 0) {
+      return CORS_ORIGINS.includes(candidate);
+    }
+    return /^https?:\/\/localhost(:\d+)?$/.test(candidate);
+  }
+
+  if (requestOrigin) {
+    if (!isAllowedOrigin(requestOrigin)) {
+      res.status(403).json({ error: "Cross-origin request blocked" });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (referer) {
+    try {
+      const refererOrigin = new URL(referer).origin;
+      if (!isAllowedOrigin(refererOrigin)) {
+        res.status(403).json({ error: "Cross-origin request blocked" });
+        return;
+      }
+      next();
+      return;
+    } catch {
+      res.status(403).json({ error: "Cross-origin request blocked" });
+      return;
+    }
+  }
+
+  res.status(403).json({ error: "Cross-origin request blocked" });
+}
+
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(csrfOriginCheck);
 app.use(authMiddleware);
 
 app.use("/api", router);
