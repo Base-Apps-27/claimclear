@@ -1,64 +1,53 @@
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
 
 export function Scene1() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
     const timers = [
-      setTimeout(() => setPhase(1), 100),
-      setTimeout(() => setPhase(2), 600),
-      setTimeout(() => setPhase(3), 1500),
+      setTimeout(() => setPhase(1), 800),
+      setTimeout(() => setPhase(2), 2000),
+      setTimeout(() => setPhase(3), 4000),
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
   return (
     <motion.div 
-      className="absolute inset-0 flex items-center justify-center bg-[#0d162b]"
+      className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.05 }}
-      transition={{ duration: 0.6 }}
+      exit={{ opacity: 0 }}
     >
-      {/* Background drift */}
       <motion.div 
         className="absolute inset-0 opacity-20"
-        style={{ background: 'radial-gradient(circle at center, #1e3a8a 0%, transparent 60%)' }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.3, 0.1] }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+        style={{ background: 'radial-gradient(circle at center, var(--color-primary), transparent 60%)' }}
+        animate={{ scale: [1, 1.2, 1] }}
+        transition={{ duration: 10, repeat: Infinity }}
       />
-      
-      <div className="relative z-10 text-center flex flex-col items-center">
-        <motion.div
-          className="w-16 h-16 rounded-xl bg-blue-500 flex items-center justify-center mb-6"
+      <div className="relative z-10 text-center">
+        <motion.div 
+          className="w-20 h-20 bg-primary rounded-xl mb-8 mx-auto shadow-[0_0_40px_rgba(59,130,246,0.5)]"
           initial={{ scale: 0, rotate: -45 }}
-          animate={phase >= 1 ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -45 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-        >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
-        </motion.div>
-        
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: 'spring', delay: 0.2 }}
+        />
         <motion.h1 
-          className="text-5xl font-bold text-white tracking-tight"
-          initial={{ opacity: 0, y: 20 }}
-          animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="text-6xl font-black text-white tracking-tight mb-4"
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.5 }}
         >
-          What's new this week
+          Welcome to ClaimClear
         </motion.h1>
-        
         <motion.p 
-          className="text-xl text-blue-200 mt-4 max-w-lg"
-          initial={{ opacity: 0, y: 15 }}
-          animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 15 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="text-2xl text-slate-400 font-medium"
+          initial={{ opacity: 0 }}
+          animate={phase >= 1 ? { opacity: 1 } : { opacity: 0 }}
+          transition={{ duration: 0.5 }}
         >
-          ClaimClear — NEMT Claims Dispute Command Center
+          A guided tour for administrators.
         </motion.p>
       </div>
     </motion.div>

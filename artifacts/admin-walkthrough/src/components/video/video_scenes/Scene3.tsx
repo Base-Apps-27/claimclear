@@ -1,142 +1,97 @@
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { FakeSidebar, FakeHeader, Callout } from './shared';
 
 export function Scene3() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
     const timers = [
-      setTimeout(() => setPhase(1), 300),
-      setTimeout(() => setPhase(2), 1500),
-      setTimeout(() => setPhase(3), 2500),
-      setTimeout(() => setPhase(4), 4000),
+      setTimeout(() => setPhase(1), 1000), // Lanes
+      setTimeout(() => setPhase(2), 5000), // Past-deadline
+      setTimeout(() => setPhase(3), 9000), // Engagement filter
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
   return (
     <motion.div 
-      className="absolute inset-0 bg-white flex"
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 1.05 }}
-      transition={{ duration: 0.5 }}
+      className="absolute inset-0 bg-slate-50 flex overflow-hidden"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
     >
-      {/* Sidebar mockup */}
-      <div className="w-64 bg-[#0d162b] text-white/70 p-4 border-r border-[#1e293b]">
-        <div className="h-8 w-32 bg-white/10 rounded mb-8" />
-        <div className="space-y-2">
-          <div className="h-8 w-full bg-white/10 rounded" />
-          <div className="h-8 w-4/5 bg-white/5 rounded" />
-          <div className="h-8 w-full bg-white/5 rounded" />
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 bg-[#f8fafc] flex flex-col">
-        {/* Header */}
-        <div className="h-16 border-b border-[#e5e7eb] bg-white flex items-center px-6">
-          <div className="h-5 w-48 bg-[#e5e7eb] rounded" />
-        </div>
-
-        <div className="p-8 flex-1 overflow-hidden relative">
-          <motion.div 
-            className="flex items-center justify-between mb-6"
-            initial={{ opacity: 0 }}
-            animate={phase >= 1 ? { opacity: 1 } : { opacity: 0 }}
-          >
-            <div>
-              <h2 className="text-2xl font-bold">INV-90245-A</h2>
-              <p className="text-[#6b7280]">Created on Oct 12, 2026</p>
-            </div>
+      <FakeSidebar active="Queue" />
+      <div className="flex-1 flex flex-col relative">
+        <FakeHeader title="Queue" />
+        <div className="p-8 flex flex-col gap-6 relative">
+          
+          <div className="flex justify-between items-center">
             <div className="flex gap-2">
-              <div className="px-3 py-1.5 bg-[#e0f2fe] text-[#1e40af] text-sm font-medium rounded-md">Action Required</div>
+              <div className="bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm">
+                <div className="w-2 h-2 rounded-full bg-slate-400" />
+                All Engagements
+              </div>
             </div>
-          </motion.div>
-
-          <div className="grid grid-cols-3 gap-6">
-            <div className="col-span-2 space-y-4">
-              <motion.div 
-                className="bg-white border border-[#e5e7eb] rounded-lg p-6 shadow-sm h-64 relative overflow-hidden"
-                initial={{ opacity: 0, y: 20 }}
-                animate={phase >= 1 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                transition={{ delay: 0.1 }}
-              >
-                <div className="h-4 w-32 bg-[#e5e7eb] rounded mb-4" />
-                <div className="space-y-2">
-                  <div className="h-3 w-full bg-[#f1f5f9] rounded" />
-                  <div className="h-3 w-full bg-[#f1f5f9] rounded" />
-                  <div className="h-3 w-3/4 bg-[#f1f5f9] rounded" />
-                </div>
-                
-                {/* Highlight box */}
-                <motion.div 
-                  className="absolute inset-0 bg-blue-500/10 border-2 border-blue-500 rounded-lg pointer-events-none"
-                  initial={{ opacity: 0 }}
-                  animate={phase >= 2 ? { opacity: 1 } : { opacity: 0 }}
-                />
-              </motion.div>
-              
-              <motion.div 
-                className="bg-white border border-[#e5e7eb] rounded-lg p-6 shadow-sm h-48"
-                initial={{ opacity: 0, y: 20 }}
-                animate={phase >= 1 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                transition={{ delay: 0.2 }}
-              />
-            </div>
-            
-            <div className="space-y-4">
-              <motion.div 
-                className="bg-white border border-[#e5e7eb] rounded-lg p-6 shadow-sm h-96 relative"
-                initial={{ opacity: 0, y: 20 }}
-                animate={phase >= 1 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                transition={{ delay: 0.3 }}
-              >
-                <div className="h-4 w-24 bg-[#e5e7eb] rounded mb-4" />
-                
-                {/* Audit Timeline Mock */}
-                <div className="space-y-6 mt-6">
-                  <div className="flex gap-3">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5" />
-                    <div className="space-y-1 flex-1">
-                      <div className="h-3 w-full bg-[#e5e7eb] rounded" />
-                      <div className="h-2 w-16 bg-[#f1f5f9] rounded" />
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5" />
-                    <div className="space-y-1 flex-1">
-                      <div className="h-3 w-4/5 bg-[#e5e7eb] rounded" />
-                      <div className="h-2 w-16 bg-[#f1f5f9] rounded" />
-                    </div>
-                  </div>
-                </div>
-                
-                <motion.div 
-                  className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none"
-                  initial={{ opacity: 0, scale: 1.05 }}
-                  animate={phase >= 3 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 1.05 }}
-                  transition={{ type: "spring", bounce: 0.5 }}
-                />
-              </motion.div>
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+              <div className="w-8 h-4 bg-primary rounded-full relative">
+                <div className="w-3 h-3 bg-white rounded-full absolute right-0.5 top-0.5" />
+              </div>
+              <span className="text-sm font-medium">Show past-deadline</span>
             </div>
           </div>
 
-          <motion.div 
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-[#0d162b] text-white px-8 py-4 rounded-xl shadow-2xl"
-            initial={{ scale: 0.8, opacity: 0, y: 20 }}
-            animate={phase >= 4 ? { scale: 1, opacity: 1, y: "-50%" } : { scale: 0.8, opacity: 0, y: 20 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          >
-            <h3 className="text-2xl font-bold">New claim detail layout</h3>
-            <p className="text-blue-200 mt-1">Audit you can trust. Everything in one place.</p>
-          </motion.div>
-          
-          <motion.div 
-            className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-40 pointer-events-none"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: phase >= 4 ? 1 : 0 }}
-            transition={{ duration: 0.5 }}
+          {/* Lanes */}
+          <div className="grid grid-cols-3 gap-6 h-[600px]">
+            <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-4 border border-slate-200/60">
+              <div className="flex justify-between items-center">
+                <div className="font-bold text-slate-800">Urgent</div>
+                <div className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">12</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-red-500">
+                <div className="text-xs text-slate-500 font-bold mb-1">MAS · CLM-2026-0481</div>
+                <div className="font-medium text-slate-800">$1,450.00</div>
+                <div className="text-xs text-red-600 mt-2 font-medium">Expiring today</div>
+              </div>
+            </div>
+            
+            <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-4 border border-slate-200/60">
+              <div className="flex justify-between items-center">
+                <div className="font-bold text-slate-800">Stuck</div>
+                <div className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-bold">8</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-amber-500">
+                <div className="text-xs text-slate-500 font-bold mb-1">LogistiCare · CLM-2026-0210</div>
+                <div className="font-medium text-slate-800">$850.00</div>
+                <div className="text-xs text-amber-600 mt-2 font-medium">Needs info</div>
+              </div>
+            </div>
+
+            <div className="bg-slate-100 rounded-xl p-4 flex flex-col gap-4 border border-slate-200/60">
+              <div className="flex justify-between items-center">
+                <div className="font-bold text-slate-800">Soon</div>
+                <div className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-xs font-bold">45</div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                <div className="text-xs text-slate-500 font-bold mb-1">Modivcare · CLM-2026-0992</div>
+                <div className="font-medium text-slate-800">$320.00</div>
+                <div className="text-xs text-slate-500 mt-2">Due in 4 days</div>
+              </div>
+            </div>
+          </div>
+
+          <Callout 
+            x="20px" y="140px" 
+            title="Triage Lanes" 
+            description="Work flows from left to right. Urgent claims first, then stuck, then everything else." 
+            phase={phase} showAtPhase={1} 
+          />
+          <Callout 
+            x="600px" y="80px" 
+            title="Past-Deadline Toggle" 
+            description="Toggle to temporarily include claims that are already past their deadline." 
+            phase={phase} showAtPhase={2} 
+            align="right"
           />
         </div>
       </div>
