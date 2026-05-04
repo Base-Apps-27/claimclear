@@ -3,6 +3,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setOnSessionExpired } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import type { ComponentType } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
@@ -26,6 +27,8 @@ import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
 import SystemHealth from "@/pages/system-health";
 import NotFound from "@/pages/not-found";
+import ClerkNotAvailable from "@/pages/clerk-not-available";
+import { isClerk } from "@/lib/role";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +46,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Route guard for setup/admin pages — clerks see ClerkNotAvailable
+// instead of triggering a 403 cascade from the underlying queries.
+function DenyClerk({ component: Component }: { component: ComponentType }) {
+  const { user } = useAuth();
+  if (isClerk(user)) return <ClerkNotAvailable />;
+  return <Component />;
+}
 
 function Router() {
   return (
@@ -62,14 +73,14 @@ function Router() {
         <Route path="/withdrawals" component={Withdrawals} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/claims/:id" component={ClaimDetail} />
-        <Route path="/import" component={Import} />
-        <Route path="/error-types" component={ErrorTypes} />
+        <Route path="/import" component={() => <DenyClerk component={Import} />} />
+        <Route path="/error-types" component={() => <DenyClerk component={ErrorTypes} />} />
         <Route path="/portal-submissions" component={PortalSubmissions} />
         <Route path="/insights" component={Insights} />
         <Route path="/summary" component={() => <Redirect to="/insights" />} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/admin/users/activity" component={AdminUserActivity} />
-        <Route path="/system-health" component={SystemHealth} />
+        <Route path="/settings" component={() => <DenyClerk component={Settings} />} />
+        <Route path="/admin/users/activity" component={() => <DenyClerk component={AdminUserActivity} />} />
+        <Route path="/system-health" component={() => <DenyClerk component={SystemHealth} />} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -25,6 +25,8 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline } from "../lib/dates";
+import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
+import { denyClerk } from "../middlewares/denyClerk";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
   CLAIM_SUBMITTED_STUCK_STATUSES,
@@ -347,6 +349,10 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
   const limitVal = Math.min(parseInt(String(limitStr || "50"), 10), 500);
   const offsetVal = parseInt(String(offsetStr || "0"), 10);
 
+  // Strip amountMin/amountMax for clerks so filter results can't leak
+  // existence-of-amount information.
+  dropAmountFiltersForUser(req.query as Record<string, unknown>, req.user);
+
   const where = buildClaimsWhere(req.query as Record<string, unknown>);
   const orderBy = buildClaimsOrderBy(sort as string, dir as string);
 
@@ -378,10 +384,10 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     };
   });
 
-  res.json({ claims, total: totalResult.count });
+  res.json({ claims: scrubMoneyFieldsArray(claims, req.user), total: totalResult.count });
 }));
 
-router.get("/claims/export-csv", asyncHandler(async (req, res): Promise<void> => {
+router.get("/claims/export-csv", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const { sort, dir, columns: columnsParam } = req.query;
   const where = buildClaimsWhere(req.query as Record<string, unknown>);
   const orderBy = buildClaimsOrderBy(sort as string, dir as string);
@@ -557,7 +563,7 @@ router.get("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!claim) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  res.json(claim);
+  res.json(scrubMoneyFields(claim, req.user));
 }));
 
 router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
@@ -1358,7 +1364,7 @@ router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): P
   }
 }));
 
-router.post("/claims/bulk-assign-error-type", asyncHandler(async (req, res): Promise<void> => {
+router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const { claimIds, errorTypeId } = req.body;
   if (!Array.isArray(claimIds) || claimIds.length === 0) {
     res.status(400).json({ error: "claimIds array is required" });

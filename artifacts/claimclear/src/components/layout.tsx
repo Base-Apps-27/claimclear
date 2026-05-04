@@ -85,6 +85,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { startTour, isAvailable: tourAvailable } = useAdminTour();
 
   const isAdmin = user?.role === "admin";
+  const isClerk = user?.role === "clerk";
 
   // Mounts the SSE listener that bumps the personal "claims processed
   // today" counter the moment the current user moves a leg into
@@ -141,10 +142,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     ? [{ count: totalAttest, tone: "amber" as const, label: "To re-attest" }]
     : [];
 
+  // Insights is shown to every approved user; clerks see it with money
+  // tiles masked out (HideForClerk wrappers inside the page itself).
+  // System Health remains admin-only.
   const adminItems: NavItem[] = [
     { label: "Insights", href: "/insights", icon: BarChart3 },
-    ...(isAdmin ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }] : []),
+    ...(isAdmin
+      ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }]
+      : []),
   ];
+
+  // Setup section — Import, Error Types, Settings — is admin/user
+  // only. Clerks lose the whole section (the empty-array filter in
+  // the render block below collapses it without an empty header).
+  const setupItems: NavItem[] = isClerk
+    ? []
+    : [
+        { label: "Import", href: "/import", icon: Upload },
+        { label: "Error Types", href: "/error-types", icon: AlertCircle },
+        { label: "Settings", href: "/settings", icon: Settings },
+      ];
 
   const navSections: NavSection[] = [
     {
@@ -182,11 +199,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     },
     {
       label: "Setup",
-      items: [
-        { label: "Import", href: "/import", icon: Upload },
-        { label: "Error Types", href: "/error-types", icon: AlertCircle },
-        { label: "Settings", href: "/settings", icon: Settings },
-      ],
+      items: setupItems,
     },
     {
       label: "Admin",

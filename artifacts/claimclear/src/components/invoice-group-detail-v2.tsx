@@ -46,6 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { HideForClerk } from "@/lib/role";
 import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
 import { StatusPill } from "@/components/cohesion";
 import type { Tone } from "@/components/cohesion/tone";
@@ -241,6 +242,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isClerk = user?.role === "clerk";
   const { data: group, isLoading } = useGetInvoiceGroup(groupId, {
     query: { queryKey: getGetInvoiceGroupQueryKey(groupId), enabled: !!groupId },
   });
@@ -619,10 +621,12 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
                       {allRides.length} leg{allRides.length === 1 ? "" : "s"}
                     </span>
-                    {" · "}
-                    <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
-                      {formatCurrency(group.totalAmount ?? "0")}
-                    </span>
+                    <HideForClerk>
+                      {" · "}
+                      <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
+                        {formatCurrency(group.totalAmount ?? "0")}
+                      </span>
+                    </HideForClerk>
                   </span>
                 </div>
                 <div className="text-xs mt-1.5" style={{ color: "var(--cc-muted-fg)" }}>
@@ -764,34 +768,36 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           </a>
         )}
 
-        {/* KPI strip */}
-        <div className="grid grid-cols-5 gap-3">
-          <Kpi
-            label="Total exposure"
-            value={formatCurrency(totalExposure.toFixed(2))}
-            sub={`${allRides.length} leg${allRides.length === 1 ? "" : "s"}`}
-            testId="kpi-total-exposure"
-          />
-          <Kpi
-            label="In dispute"
-            value={formatCurrency(inDisputeAmount.toFixed(2))}
-            sub={`${inDisputeCount} leg${inDisputeCount === 1 ? "" : "s"}`}
-            tone="warn"
-            testId="kpi-in-dispute"
-          />
-          <Kpi
-            label="Non-issue"
-            value={formatCurrency(excludedAmount.toFixed(2))}
-            sub={excludedCount > 0 ? `${excludedCount} leg${excludedCount === 1 ? "" : "s"}` : "—"}
-            testId="kpi-excluded"
-          />
-          <Kpi
-            label="Recovered"
-            value={formatCurrency(recoveredAmount.toFixed(2))}
-            sub={recoveredAmount > 0 ? "approved" : "—"}
-            tone="good"
-            testId="kpi-recovered"
-          />
+        {/* KPI strip — money tiles hidden for clerks (sums of nulls would otherwise leak as $0.00) */}
+        <div className={isClerk ? "grid grid-cols-1 gap-3" : "grid grid-cols-5 gap-3"}>
+          <HideForClerk>
+            <Kpi
+              label="Total exposure"
+              value={formatCurrency(totalExposure.toFixed(2))}
+              sub={`${allRides.length} leg${allRides.length === 1 ? "" : "s"}`}
+              testId="kpi-total-exposure"
+            />
+            <Kpi
+              label="In dispute"
+              value={formatCurrency(inDisputeAmount.toFixed(2))}
+              sub={`${inDisputeCount} leg${inDisputeCount === 1 ? "" : "s"}`}
+              tone="warn"
+              testId="kpi-in-dispute"
+            />
+            <Kpi
+              label="Non-issue"
+              value={formatCurrency(excludedAmount.toFixed(2))}
+              sub={excludedCount > 0 ? `${excludedCount} leg${excludedCount === 1 ? "" : "s"}` : "—"}
+              testId="kpi-excluded"
+            />
+            <Kpi
+              label="Recovered"
+              value={formatCurrency(recoveredAmount.toFixed(2))}
+              sub={recoveredAmount > 0 ? "approved" : "—"}
+              tone="good"
+              testId="kpi-recovered"
+            />
+          </HideForClerk>
           <Kpi
             label="Days in queue"
             value={String(daysInQueue)}
@@ -950,10 +956,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}
               >
                 <div className="col-span-3">Leg / member</div>
-                <div className="col-span-3">Service date</div>
-                <div className="col-span-2 text-right">Amount</div>
+                <div className={isClerk ? "col-span-4" : "col-span-3"}>Service date</div>
+                {!isClerk && <div className="col-span-2 text-right">Amount</div>}
                 <div className="col-span-2">Sub-status</div>
-                <div className="col-span-2 text-right">Action</div>
+                <div className={isClerk ? "col-span-3 text-right" : "col-span-2 text-right"}>Action</div>
               </div>
               {visibleRides.length === 0 ? (
                 <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
@@ -978,16 +984,18 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           Leg #{r.id}
                         </div>
                       </div>
-                      <div className="col-span-3 text-xs mono" style={{ color: "var(--cc-fg)" }}>
+                      <div className={`${isClerk ? "col-span-4" : "col-span-3"} text-xs mono`} style={{ color: "var(--cc-fg)" }}>
                         {r.date ? formatDateTime(r.date) : "—"}
                       </div>
-                      <div className="col-span-2 text-right mono font-semibold">
-                        {formatCurrency(r.claimAmount ?? "0")}
-                      </div>
+                      {!isClerk && (
+                        <div className="col-span-2 text-right mono font-semibold">
+                          {formatCurrency(r.claimAmount ?? "0")}
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <StatusPill tone={legSubStatusTone(sub)}>{legSubStatusLabel(sub)}</StatusPill>
                       </div>
-                      <div className="col-span-2 flex items-center justify-end gap-1.5">
+                      <div className={`${isClerk ? "col-span-3" : "col-span-2"} flex items-center justify-end gap-1.5`}>
                         <Link
                           href={`/claims/${r.id}`}
                           className="cc-btn text-[11px] inline-flex items-center gap-0.5 px-1.5 py-1"
@@ -1109,9 +1117,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           )}
                         </div>
                         {group.approvedAmount && (
-                          <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                            Approved amount: {formatCurrency(group.approvedAmount)}
-                          </p>
+                          <HideForClerk>
+                            <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                              Approved amount: {formatCurrency(group.approvedAmount)}
+                            </p>
+                          </HideForClerk>
                         )}
                       </div>
                     ) : (

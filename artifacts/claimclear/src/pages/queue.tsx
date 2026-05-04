@@ -25,6 +25,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { HideForClerk } from "@/lib/role";
 import {
   CheckCircle2,
   ChevronRight,
@@ -845,12 +846,14 @@ export default function Queue() {
           <div className="flex items-center gap-4 text-sm min-w-0 justify-between">
             <div className="min-w-0 flex-1 truncate">{meta}</div>
             <div className="flex items-center gap-4 shrink-0">
-              <span
-                className={`whitespace-nowrap ${group.isUrgent ? "font-bold" : "font-medium"}`}
-                style={group.isUrgent ? { color: "hsl(var(--destructive))" } : undefined}
-              >
-                {formatCurrency(group.totalAmount)}
-              </span>
+              <HideForClerk>
+                <span
+                  className={`whitespace-nowrap ${group.isUrgent ? "font-bold" : "font-medium"}`}
+                  style={group.isUrgent ? { color: "hsl(var(--destructive))" } : undefined}
+                >
+                  {formatCurrency(group.totalAmount)}
+                </span>
+              </HideForClerk>
               <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </div>
           </div>
@@ -1300,9 +1303,11 @@ function ClassificationInboxRow({
               <span className="text-muted-foreground shrink-0">
                 {c.date ? formatDate(c.date) : "—"}
               </span>
-              <span className="tabular-nums text-muted-foreground shrink-0">
-                {formatCurrency(c.claimAmount ?? "0")}
-              </span>
+              <HideForClerk>
+                <span className="tabular-nums text-muted-foreground shrink-0">
+                  {formatCurrency(c.claimAmount ?? "0")}
+                </span>
+              </HideForClerk>
               <span className={`flex-1 truncate ${c.isBlank ? "italic text-muted-foreground" : ""}`}>
                 {c.isBlank ? "(blank — auto-exclude on classify)" : (c.errorDetails ?? "")}
               </span>

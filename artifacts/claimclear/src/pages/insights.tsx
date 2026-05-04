@@ -39,6 +39,7 @@ import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } fro
 import { InfoTooltip } from "@/components/info-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
+import { useRole, HideForClerk } from "@/lib/role";
 
 type RangeKey = "7" | "30" | "90" | "qtd" | "ytd";
 const RANGE_TABS: FilterStripTab<RangeKey>[] = [
@@ -106,6 +107,13 @@ function MiniBar({ pct, tone = "blue" }: { pct: number; tone?: "blue" | "amber" 
 }
 
 export default function Insights() {
+  // Clerks see Insights but with money figures masked to "—". The server
+  // already nulls money on /claims, /dashboard/*, /dashboard/timeseries,
+  // and /dashboard/repeat-offenders for clerks, so most downstream
+  // formatCurrency calls render "—" automatically. We only need to
+  // short-circuit client-computed sums (which would otherwise add nulls
+  // as 0 and display "$0.00") via the HideForClerk wrappers below.
+  const { isClerk: clerk } = useRole();
   const [rangeKey, setRangeKey] = useState<RangeKey>("30");
   const days = daysForRange(rangeKey);
   const createdFromISO = useMemo(() => {
@@ -300,18 +308,20 @@ export default function Insights() {
         <span className="text-xs text-muted-foreground">{rangeWindowLabel(rangeKey, days)}</span>
       </div>
 
-      {/* Topline metric tiles — windowed to the selected time range */}
+      {/* Topline metric tiles — windowed to the selected time range.
+          Money tiles render "—" for clerks; non-money tiles (claim count
+          and recovery rate) stay visible to everyone. */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="insights-topline">
         <MetricTile label="Total claims" value={totalClaims} sub={`in last ${days}d`} />
-        <MetricTile label="Disputed" value={formatCurrency(String(totalClaimed))} sub={`filed in last ${days}d`} tone="blue" />
+        <MetricTile label="Disputed" value={clerk ? "—" : formatCurrency(String(totalClaimed))} sub={`filed in last ${days}d`} tone="blue" />
         <MetricTile
           label="Recovered"
-          value={formatCurrency(String(totalApproved))}
-          sub={trendTotals.recovered > 0 ? `${formatCompactCurrency(trendTotals.recovered)} in last ${days}d` : `last ${days}d`}
+          value={clerk ? "—" : formatCurrency(String(totalApproved))}
+          sub={!clerk && trendTotals.recovered > 0 ? `${formatCompactCurrency(trendTotals.recovered)} in last ${days}d` : `last ${days}d`}
           tone="green"
         />
-        <MetricTile label="Total exposure" value={formatCurrency(String(totalExposure))} sub="claim + ~70% vendor prepay" tone="red" />
-        <MetricTile label="Recovery rate" value={`${recoveryRate}%`} sub="recovered / disputed" tone="muted" />
+        <MetricTile label="Total exposure" value={clerk ? "—" : formatCurrency(String(totalExposure))} sub="claim + ~70% vendor prepay" tone="red" />
+        <MetricTile label="Recovery rate" value={clerk ? "—" : `${recoveryRate}%`} sub="recovered / disputed" tone="muted" />
       </div>
 
       {/* Recovery over time block */}
@@ -319,10 +329,10 @@ export default function Insights() {
         <div className="flex items-stretch gap-6 flex-wrap">
           <div className="min-w-[200px]">
             <div className="text-3xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-success))" }}>
-              {formatCompactCurrency(trendTotals.recovered)}
+              {clerk ? "—" : formatCompactCurrency(trendTotals.recovered)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">recovered in last {days} days</div>
-            {bestDay && bestDay.dollars > 0 && (
+            {!clerk && bestDay && bestDay.dollars > 0 && (
               <div className="text-xs mt-2 text-muted-foreground">
                 Best day: <strong>{formatShortDate(bestDay.date)}</strong> · {formatCompactCurrency(bestDay.dollars)} recovered
               </div>
@@ -571,10 +581,10 @@ export default function Insights() {
                     <span className="flex-1 truncate">{b.name}</span>
                     <span className="text-xs font-mono text-muted-foreground">{b.pct}%</span>
                     <span className="text-xs font-medium font-mono" style={{ color: "hsl(var(--cc-success))" }}>
-                      +{formatCompactCurrency(b.recovered)}
+                      {clerk ? "—" : `+${formatCompactCurrency(b.recovered)}`}
                     </span>
                     <span className="text-xs font-mono opacity-70" style={{ color: "hsl(var(--destructive))" }}>
-                      -{formatCompactCurrency(b.denied)}
+                      {clerk ? "—" : `-${formatCompactCurrency(b.denied)}`}
                     </span>
                   </div>
                   <MiniBar pct={b.barPct} tone="green" />
@@ -702,10 +712,10 @@ export default function Insights() {
                     <span className="font-mono tabular-nums">{agg.count}</span>
                     <span
                       className="font-mono tabular-nums text-[10px]"
-                      style={{ color: agg.atRisk > 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))" }}
+                      style={{ color: !clerk && agg.atRisk > 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))" }}
                       title="Sum of denied claim amounts attributed to this payor"
                     >
-                      {agg.atRisk > 0 ? `-${formatCompactCurrency(agg.atRisk)}` : "—"}
+                      {clerk ? "—" : agg.atRisk > 0 ? `-${formatCompactCurrency(agg.atRisk)}` : "—"}
                     </span>
                   </div>
                 ))
@@ -729,11 +739,15 @@ export default function Insights() {
                 <strong style={{ color: "hsl(var(--destructive))" }}>{summary.urgentCount} urgent</strong> ·{" "}
               </>
             ) : null}
-            <strong>{summary.expiringGroups.length}</strong> invoice group{summary.expiringGroups.length === 1 ? "" : "s"} approaching the dispute deadline · est. exposure {" "}
-            <strong style={{ color: "hsl(var(--destructive))" }}>
-              {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * exposureMultiplier))}
-            </strong>{" "}
-            <span className="text-xs text-muted-foreground">(claim + ~{Math.round(vendorPrepayRate * 100)}% vendor prepay, approx.)</span>
+            <strong>{summary.expiringGroups.length}</strong> invoice group{summary.expiringGroups.length === 1 ? "" : "s"} approaching the dispute deadline{!clerk && (
+              <>
+                {" "}· est. exposure{" "}
+                <strong style={{ color: "hsl(var(--destructive))" }}>
+                  {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * exposureMultiplier))}
+                </strong>{" "}
+                <span className="text-xs text-muted-foreground">(claim + ~{Math.round(vendorPrepayRate * 100)}% vendor prepay, approx.)</span>
+              </>
+            )}
           </span>
           <Link
             href={summary.urgentCount > 0 ? "/invoice-groups?expiring=urgent" : "/invoice-groups?expiring=soon"}

@@ -36,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { HideForClerk } from "@/lib/role";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import {
   getUrgentGroupCountFromSummary,
@@ -529,53 +530,59 @@ export default function Dashboard() {
           tooltip="Open invoice groups still in flight: those needing evidence and those waiting on a payor response."
           testid="kpi-invoices-pending"
         />
-        <KpiTile
-          label="At risk"
-          value={formatCurrency(amounts.atRiskExposure ?? amounts.totalExposure)}
-          sub={
-            <>
-              {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} claim + ~70% driver prepay
-              {typeof amounts.atRiskGroups === "number" && (
-                <> · {amounts.atRiskGroups} group{amounts.atRiskGroups === 1 ? "" : "s"}</>
-              )}
-            </>
-          }
-          tone="danger"
-          tooltip="Open dollars still in flight (claim + 70% driver prepay). Includes everything not yet locked in: in-workflow rows AND final-state rows whose re-attestation hasn't settled. Excludes withdrawn and non-issue rows."
-          testid="kpi-at-risk"
-        />
-        <KpiTile
-          label="Already lost"
-          value={formatCurrency(amounts.lostExposureTotal ?? amounts.totalLost)}
-          sub={
-            <>
-              {formatCurrency(amounts.lostExpiredExposure ?? "0")} expired
-              {typeof amounts.lostExpiredGroups === "number" && (
-                <> ({amounts.lostExpiredGroups})</>
-              )}
-              {" · "}
-              {formatCurrency(amounts.lostDeniedExposure ?? "0")} denied
-              {typeof amounts.lostDeniedGroups === "number" && (
-                <> ({amounts.lostDeniedGroups})</>
-              )}
-            </>
-          }
-          tooltip="Money we won't see, claim + 70% prepay. Expired = filing deadline missed (literal Expired status OR On Hold past the 30-day Friday-shifted deadline). Denied = denied portion of Denied / Partially Approved rows, but only after re-attestation is settled — until then those dollars stay in At risk."
-          testid="kpi-already-lost"
-        />
-        <KpiTile
-          label="Reclaimed"
-          value={formatCurrency(amounts.reclaimedApproved ?? amounts.totalApproved)}
-          sub={
-            <span className="inline-flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              raw approved · prepay washes through
-            </span>
-          }
-          tone="good"
-          tooltip="Total dollars approved by the payor. Shown raw — the 70% driver prepay is reimbursed via the payor remit on approved rows, so it's not added back as exposure here. Only counts against the company on rows we don't get paid for (which roll into Already lost)."
-          testid="kpi-reclaimed"
-        />
+        <HideForClerk>
+          <KpiTile
+            label="At risk"
+            value={formatCurrency(amounts.atRiskExposure ?? amounts.totalExposure)}
+            sub={
+              <>
+                {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} claim + ~70% driver prepay
+                {typeof amounts.atRiskGroups === "number" && (
+                  <> · {amounts.atRiskGroups} group{amounts.atRiskGroups === 1 ? "" : "s"}</>
+                )}
+              </>
+            }
+            tone="danger"
+            tooltip="Open dollars still in flight (claim + 70% driver prepay). Includes everything not yet locked in: in-workflow rows AND final-state rows whose re-attestation hasn't settled. Excludes withdrawn and non-issue rows."
+            testid="kpi-at-risk"
+          />
+        </HideForClerk>
+        <HideForClerk>
+          <KpiTile
+            label="Already lost"
+            value={formatCurrency(amounts.lostExposureTotal ?? amounts.totalLost)}
+            sub={
+              <>
+                {formatCurrency(amounts.lostExpiredExposure ?? "0")} expired
+                {typeof amounts.lostExpiredGroups === "number" && (
+                  <> ({amounts.lostExpiredGroups})</>
+                )}
+                {" · "}
+                {formatCurrency(amounts.lostDeniedExposure ?? "0")} denied
+                {typeof amounts.lostDeniedGroups === "number" && (
+                  <> ({amounts.lostDeniedGroups})</>
+                )}
+              </>
+            }
+            tooltip="Money we won't see, claim + 70% prepay. Expired = filing deadline missed (literal Expired status OR On Hold past the 30-day Friday-shifted deadline). Denied = denied portion of Denied / Partially Approved rows, but only after re-attestation is settled — until then those dollars stay in At risk."
+            testid="kpi-already-lost"
+          />
+        </HideForClerk>
+        <HideForClerk>
+          <KpiTile
+            label="Reclaimed"
+            value={formatCurrency(amounts.reclaimedApproved ?? amounts.totalApproved)}
+            sub={
+              <span className="inline-flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                raw approved · prepay washes through
+              </span>
+            }
+            tone="good"
+            tooltip="Total dollars approved by the payor. Shown raw — the 70% driver prepay is reimbursed via the payor remit on approved rows, so it's not added back as exposure here. Only counts against the company on rows we don't get paid for (which roll into Already lost)."
+            testid="kpi-reclaimed"
+          />
+        </HideForClerk>
       </div>
 
       {/* TODAY'S WORK — four hero columns: file today / stuck / respond / reattest */}
@@ -621,7 +628,7 @@ export default function Dashboard() {
                     {g.status}
                   </>
                 }
-                right={formatCurrency(g.totalAmount)}
+                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
               />
             ))}
             footer={
@@ -631,7 +638,8 @@ export default function Dashboard() {
                   className="hover:underline"
                   data-testid="file-soon-footer"
                 >
-                  + <span className="font-mono font-semibold">{fileSoonItems.length}</span> more in next 3 days · {formatCurrency(fileSoonTotal)}
+                  + <span className="font-mono font-semibold">{fileSoonItems.length}</span> more in next 3 days
+                  <HideForClerk> · {formatCurrency(fileSoonTotal)}</HideForClerk>
                 </Link>
               ) : null
             }
@@ -667,7 +675,7 @@ export default function Dashboard() {
                     {formatDate(g.earliestDate)} · {g.status}
                   </>
                 }
-                right={formatCurrency(g.totalAmount)}
+                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
               />
             ))}
             footer={null}
@@ -700,7 +708,7 @@ export default function Dashboard() {
                     {g.status}
                   </>
                 }
-                right={formatCurrency(g.totalAmount)}
+                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
               />
             ))}
             footer={
@@ -742,7 +750,7 @@ export default function Dashboard() {
                     {g.status}
                   </>
                 }
-                right={formatCurrency(g.totalAmount)}
+                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
               />
             ))}
             footer={

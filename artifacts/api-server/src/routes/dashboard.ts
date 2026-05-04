@@ -9,6 +9,7 @@ import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor"
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 import { getOverdueCount } from "../lib/overdue-submissions";
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
+import { scrubDashboardAmounts, scrubMoneyFieldsArray, canSeeAmounts } from "../lib/role";
 
 const router: IRouter = Router();
 
@@ -125,7 +126,7 @@ function buildDateBuckets(days: number): string[] {
   return out;
 }
 
-router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> => {
+router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> => {
   const statusCountsRaw = await db
     .select({ status: invoiceGroupsTable.status, count: count() })
     .from(invoiceGroupsTable)
@@ -516,10 +517,7 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
   // page, and the worker banner can never disagree.
   const overdueCount = await getOverdueCount(now);
 
-  res.json({
-    pipeline: { needsEvidence, portalQueued, awaitingResponse },
-    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, expired, withdrawnByReason, deniedByReason },
-    amounts: {
+  const scrubbedAmounts = scrubDashboardAmounts({
       // ── Legacy fields (kept for backward compat; daily-brief and a
       // couple of dashboard tiles still read them). DO NOT remove
       // without sweeping the consumers — see grep for `totalExposure`
@@ -548,12 +546,17 @@ router.get("/dashboard/summary", asyncHandler(async (_req, res): Promise<void> =
       lostDeniedGroups: deniedLostGroups,
       lostExposureTotal: lostExposureTotal.toFixed(2),
       reclaimedApproved: reclaimedApproved.toFixed(2),
-    },
-    expiringGroups,
+  }, req.user);
+
+  res.json({
+    pipeline: { needsEvidence, portalQueued, awaitingResponse },
+    stats: { total, new: newCount, resolved, denied, withdrawn, onHold, awaitingAttestation, expired, withdrawnByReason, deniedByReason },
+    amounts: scrubbedAmounts,
+    expiringGroups: scrubMoneyFieldsArray(expiringGroups, req.user),
     urgentCount,
-    submittedStuckGroups,
+    submittedStuckGroups: scrubMoneyFieldsArray(submittedStuckGroups, req.user),
     submittedStuckCount,
-    recentGroups,
+    recentGroups: scrubMoneyFieldsArray(recentGroups, req.user),
     portalStats: { pending, submitted, failed, successRate },
     portalWorker: {
       lastRun: getLastWorkerRun(),
@@ -616,11 +619,16 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   const resolvedMap = new Map(resolvedRows.map(r => [r.bucket, r.count]));
   const recoveredMap = new Map(recoveredRows.map(r => [r.bucket, parseFloat(r.total || "0")]));
 
+  // Clerks don't see money — null out the dollarsRecovered series so the
+  // Insights page renders "—" via formatCurrency rather than $0.00.
+  const showAmounts = canSeeAmounts(req.user);
   const points = buckets.map(date => ({
     date,
     claimsCreated: createdMap.get(date) ?? 0,
     claimsResolved: resolvedMap.get(date) ?? 0,
-    dollarsRecovered: Number((recoveredMap.get(date) ?? 0).toFixed(2)),
+    dollarsRecovered: showAmounts
+      ? Number((recoveredMap.get(date) ?? 0).toFixed(2))
+      : null,
   }));
 
   res.json({ days, points });
@@ -894,11 +902,20 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
   const currentMembers = aggregateRepeatOffenders(currentMemberRows);
   const priorMembers = aggregateRepeatOffenders(priorMemberRows);
 
+  // Money scrub: clerks never see atRiskAmount on driver/member rows.
+  // The repeat-offender stats remain visible (rejection count, win rate,
+  // trend) — only the dollar exposure is hidden.
+  const drivers = shapeRepeatOffenders(currentDrivers, priorDrivers, "carNumber", limit);
+  const members = shapeRepeatOffenders(currentMembers, priorMembers, "clientNumber", limit);
+  const moneyHidden = !canSeeAmounts(req.user);
+  const stripAtRisk = <T extends { atRiskAmount: string }>(row: T) =>
+    moneyHidden ? { ...row, atRiskAmount: null as unknown as string } : row;
+
   res.json({
     days,
     previousPeriodDays: days,
-    drivers: shapeRepeatOffenders(currentDrivers, priorDrivers, "carNumber", limit),
-    members: shapeRepeatOffenders(currentMembers, priorMembers, "clientNumber", limit),
+    drivers: drivers.map(stripAtRisk),
+    members: members.map(stripAtRisk),
     driverGroupsTotal: currentDrivers.size,
     memberGroupsTotal: currentMembers.size,
   });

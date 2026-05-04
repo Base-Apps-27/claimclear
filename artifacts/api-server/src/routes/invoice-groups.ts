@@ -28,6 +28,8 @@ import {
 } from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, serverTodayKey } from "../lib/dates";
+import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
+import { denyClerk } from "../middlewares/denyClerk";
 import {
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
@@ -439,6 +441,8 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   const limitVal = Math.min(parseInt(String(limitStr || "50"), 10), 500);
   const offsetVal = parseInt(String(offsetStr || "0"), 10);
 
+  dropAmountFiltersForUser(req.query as Record<string, unknown>, req.user);
+
   const where = buildInvoiceGroupWhere(req.query as Record<string, unknown>);
   const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
 
@@ -551,10 +555,23 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     responseBody.needsClassificationInbox = await buildNeedsClassificationInbox();
   }
 
+  responseBody.groups = scrubMoneyFieldsArray(groups, req.user);
+  if (responseBody.needsClassificationInbox && !canSeeAmounts(req.user)) {
+    const inbox = responseBody.needsClassificationInbox as NeedsClassificationInbox;
+    responseBody.needsClassificationInbox = {
+      ...inbox,
+      groups: inbox.groups.map((g) => ({
+        ...g,
+        totalAmount: null,
+        claims: g.claims.map((c) => ({ ...c, claimAmount: null })),
+      })),
+    };
+  }
+
   res.json(responseBody);
 }));
 
-router.get("/invoice-groups/export-csv", asyncHandler(async (req, res): Promise<void> => {
+router.get("/invoice-groups/export-csv", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const { sort, dir, columns: columnsParam } = req.query;
   const where = buildInvoiceGroupWhere(req.query as Record<string, unknown>);
   const orderBy = buildInvoiceGroupOrderBy(sort as string, dir as string);
@@ -746,8 +763,9 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  const groupRowRaw = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
+  if (!groupRowRaw[0]) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  const group = scrubMoneyFields(groupRowRaw[0], req.user);
 
   const rides = await db.select().from(claimsTable)
     .where(eq(claimsTable.invoiceGroupId, id))
@@ -787,15 +805,20 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
       verdictMap.set(v.claimId, slot);
     }
   }
-  const ridesWithVerdicts = rides.map((r) => {
-    const slot = verdictMap.get(r.id);
-    return {
-      ...r,
-      latestVerdict: slot?.latest ?? null,
-      latestAiSuggestion: slot?.latestAi ?? null,
-      latestDraft: slot?.latestDraft ?? null,
-    };
-  });
+  // Scrub per-ride money for clerks — the rides array would otherwise
+  // leak claimAmount even though the top-level group row is scrubbed.
+  const ridesWithVerdicts = scrubMoneyFieldsArray(
+    rides.map((r) => {
+      const slot = verdictMap.get(r.id);
+      return {
+        ...r,
+        latestVerdict: slot?.latest ?? null,
+        latestAiSuggestion: slot?.latestAi ?? null,
+        latestDraft: slot?.latestDraft ?? null,
+      };
+    }),
+    req.user,
+  );
 
   const submissions = await db.select().from(portalSubmissionsTable)
     .where(eq(portalSubmissionsTable.invoiceGroupId, id))
@@ -1300,7 +1323,7 @@ router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise
   }
 }));
 
-router.post("/invoice-groups/bulk-assign-error-type", asyncHandler(async (req, res): Promise<void> => {
+router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const { groupIds, errorTypeId, errorTypeName } = req.body;
   if (!Array.isArray(groupIds) || groupIds.length === 0 || !errorTypeId) {
     res.status(400).json({ error: "groupIds array and errorTypeId are required" });

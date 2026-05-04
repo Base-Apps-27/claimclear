@@ -1,19 +1,26 @@
 import { useGetSystemHealthRollup, getGetSystemHealthRollupQueryKey } from "@workspace/api-client-react";
 import { AlertTriangle, AlertCircle } from "lucide-react";
+import { useRole } from "@/lib/role";
 
 interface Props {
   variant?: "compact" | "full";
 }
 
 export function WorkerHealthBanner({ variant = "compact" }: Props) {
+  // The /admin/system-health/rollup endpoint denies clerks (denyClerk).
+  // Skip the query for them so we don't churn 403s on every dashboard /
+  // portal-submissions render — they are not the audience for this banner.
+  const { isClerk: clerk } = useRole();
   const { data, isError } = useGetSystemHealthRollup({
     query: {
       queryKey: getGetSystemHealthRollupQueryKey(),
       refetchInterval: 30000,
       retry: false,
+      enabled: !clerk,
     },
   });
 
+  if (clerk) return null;
   if (isError || !data) return null;
   if (data.overall === "ok") return null;
 

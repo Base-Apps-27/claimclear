@@ -1,9 +1,12 @@
 import { format } from "date-fns";
 
+// Returns "—" for null/undefined so server-nulled money fields (clerks)
+// render cleanly. Also distinguishes "no amount on this row" from a real
+// $0.00 for admin/user surfaces.
 export function formatCurrency(amount: string | number | null | undefined): string {
-  if (amount === null || amount === undefined) return "$0.00";
+  if (amount === null || amount === undefined) return "—";
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  if (isNaN(num)) return "$0.00";
+  if (isNaN(num)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

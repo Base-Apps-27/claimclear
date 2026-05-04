@@ -39,6 +39,7 @@ import {
 import { ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow } from "@/components/actions-rail";
 import { usePortalBatchEvents } from "@/hooks/use-portal-batch-events";
 import { useAuth } from "@workspace/replit-auth-web";
+import { useRole } from "@/lib/role";
 import { useRetryPortalSubmission, useCancelPortalSubmission, useSandboxRunPortalSubmission, useConfirmPortalSubmission } from "@workspace/api-client-react";
 
 const statusPillClass: Record<string, string> = {
@@ -151,6 +152,7 @@ function timeAgo(iso: string | undefined | null): string {
 export default function PortalSubmissions() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { isClerk: clerk } = useRole();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [drawerId, setDrawerId] = useState<number | null>(null);
@@ -191,8 +193,14 @@ export default function PortalSubmissions() {
   const { data: submissions, isLoading } = useListPortalSubmissions(undefined);
 
   // Worker health rollup — collapsed into the one-line status strip.
+  // The endpoint denies clerks; skip the query for them to avoid 403 churn.
   const { data: healthData } = useGetSystemHealthRollup({
-    query: { queryKey: getGetSystemHealthRollupQueryKey(), refetchInterval: 30000, retry: false },
+    query: {
+      queryKey: getGetSystemHealthRollupQueryKey(),
+      refetchInterval: 30000,
+      retry: false,
+      enabled: !clerk,
+    },
   });
 
   const retrySubmission = useRetryPortalSubmission();
@@ -461,8 +469,8 @@ export default function PortalSubmissions() {
             matchingNoun={{ one: "submission", other: "submissions" }}
           />
 
-          {/* Recommendation banner */}
-          {draftsReadyToQueue.length > 0 && !batchInFlight && (
+          {/* Recommendation banner — hidden for clerks (no bulk queue). */}
+          {!clerk && draftsReadyToQueue.length > 0 && !batchInFlight && (
             <Card className="border-blue-200 bg-blue-50/60 dark:bg-blue-950/20">
               <CardContent className="py-3 px-4 flex items-center gap-3">
                 <Sparkles className="h-4 w-4 text-blue-700 dark:text-blue-300 flex-shrink-0" />
@@ -514,6 +522,7 @@ export default function PortalSubmissions() {
                   onToggle={handleToggle}
                   buttonsDisabled={buttonsDisabled}
                   lockedTooltip={lockedTooltip}
+                  hideSelection={clerk}
                   onOpenRow={(id) => setDrawerId(id)}
                   onSandbox={handleSandboxRow}
                   onRetry={async (id) => { await retrySubmission.mutateAsync({ id }); invalidate(); }}
@@ -524,10 +533,10 @@ export default function PortalSubmissions() {
           )}
         </div>
 
-        {/* Right rail */}
+        {/* Right rail — clerks see no batch / queue / selection rail. */}
         <aside className="lg:col-span-4 space-y-4">
           <div className="lg:sticky lg:top-4 space-y-4">
-            {sharedBatch ? (
+            {clerk ? null : sharedBatch ? (
               <InFlightRail
                 sharedBatch={sharedBatch}
                 isMyBatch={isMyBatch}
@@ -836,7 +845,7 @@ function RunQueueRail({
 // =====================================================================
 function StatusGroupCard({
   status, rows, collapsed, onToggleCollapsed, checkedIds, onToggle,
-  buttonsDisabled, lockedTooltip, onOpenRow, onSandbox, onRetry, onCancel, onDiscardDraft,
+  buttonsDisabled, lockedTooltip, hideSelection, onOpenRow, onSandbox, onRetry, onCancel, onDiscardDraft,
 }: {
   status: string;
   rows: (PortalSubmissionResponse & { _displayStatus: string })[];
@@ -846,6 +855,7 @@ function StatusGroupCard({
   onToggle: (id: number) => void;
   buttonsDisabled: boolean;
   lockedTooltip?: string;
+  hideSelection?: boolean;
   onOpenRow: (id: number) => void;
   onSandbox: (id: number) => void;
   onRetry: (id: number) => void;
@@ -854,7 +864,7 @@ function StatusGroupCard({
 }) {
   const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.id));
   const partiallyChecked = !allChecked && rows.some(r => checkedIds.has(r.id));
-  const canBulkSelect = status === "draft" || status === "pending";
+  const canBulkSelect = !hideSelection && (status === "draft" || status === "pending");
   const draftsAlreadyDoneElsewhere = status === "draft" ? countDraftsAlreadyDoneElsewhere(rows) : 0;
 
   return (
@@ -904,6 +914,7 @@ function StatusGroupCard({
           onToggle={() => onToggle(row.id)}
           buttonsDisabled={buttonsDisabled}
           lockedTooltip={lockedTooltip}
+          hideSelection={hideSelection}
           onOpen={() => onOpenRow(row.id)}
           onOpenById={(id) => onOpenRow(id)}
           onSandbox={() => onSandbox(row.id)}
@@ -920,7 +931,7 @@ function StatusGroupCard({
 // One-line submission row
 // =====================================================================
 function SubmissionRow({
-  sub, checked, onToggle, buttonsDisabled, lockedTooltip,
+  sub, checked, onToggle, buttonsDisabled, lockedTooltip, hideSelection,
   onOpen, onOpenById, onSandbox, onRetry, onCancel, onDiscardDraft,
 }: {
   sub: PortalSubmissionResponse & { _displayStatus: string };
@@ -928,6 +939,7 @@ function SubmissionRow({
   onToggle: () => void;
   buttonsDisabled: boolean;
   lockedTooltip?: string;
+  hideSelection?: boolean;
   onOpen: () => void;
   onOpenById: (id: number) => void;
   onSandbox: () => void;
@@ -936,7 +948,7 @@ function SubmissionRow({
   onDiscardDraft: () => void;
 }) {
   const isQueued = sub._displayStatus === "queued";
-  const showCheckbox = sub.status === "pending" || sub.status === "draft";
+  const showCheckbox = !hideSelection && (sub.status === "pending" || sub.status === "draft");
   const canSandbox = ["draft", "pending", "failed", "dry_run"].includes(sub.status) && !isQueued;
   const canRetry = sub.status === "failed";
   const canCancel = (sub.status === "draft" || sub.status === "pending") && !isQueued;

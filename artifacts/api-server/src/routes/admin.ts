@@ -4,6 +4,10 @@ import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
+// Note: the existing `requireAdmin` already covers clerks (admin-only ⇒
+// not-clerk). The audit-logs CSV export below additionally calls out
+// `denyClerk` in a comment so future loosenings of `requireAdmin`
+// don't accidentally expose a bulk export to clerks.
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { isDayConcluded, tryEmitDayCompletedCelebration } from "../lib/day-complete";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";

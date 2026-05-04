@@ -3,8 +3,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { errorTypesTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
+import { denyClerk } from "../middlewares/denyClerk";
 
 const router: IRouter = Router();
+
+// Read-only GETs stay open so clerk views can render error-type labels;
+// write endpoints below are gated with denyClerk.
 
 function parseId(raw: string | string[]): number {
   const s = Array.isArray(raw) ? raw[0] : raw;
@@ -16,7 +20,7 @@ router.get("/error-types", asyncHandler(async (_req, res): Promise<void> => {
   res.json(types);
 }));
 
-router.post("/error-types", asyncHandler(async (req, res): Promise<void> => {
+router.post("/error-types", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const body = req.body;
   if (!body.name) { res.status(400).json({ error: "name is required" }); return; }
 
@@ -49,7 +53,7 @@ router.get("/error-types/:id", asyncHandler(async (req, res): Promise<void> => {
   res.json(errorType);
 }));
 
-router.patch("/error-types/:id", asyncHandler(async (req, res): Promise<void> => {
+router.patch("/error-types/:id", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -77,7 +81,7 @@ router.patch("/error-types/:id", asyncHandler(async (req, res): Promise<void> =>
   res.json(errorType);
 }));
 
-router.delete("/error-types/:id", asyncHandler(async (req, res): Promise<void> => {
+router.delete("/error-types/:id", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 

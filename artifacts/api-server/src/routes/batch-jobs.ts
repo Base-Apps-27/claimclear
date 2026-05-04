@@ -17,6 +17,7 @@ import {
 } from "../lib/batch-processor";
 import { addGlobalBatchClient } from "../lib/sse";
 import { PORTAL_BATCH_SWEEPER } from "../lib/cron-schedule";
+import { denyClerk } from "../middlewares/denyClerk";
 
 // Locked sweeper schedule — single source of truth shared with index.ts
 // (the actual `cron.schedule(...)` registration) and the system-health
@@ -64,7 +65,7 @@ router.get("/portal-submissions/active-batch", asyncHandler(async (_req, res): P
 // Playwright sessions. If the body includes a non-empty `submissionIds`
 // array, only those rows (filtered to pending + due) are claimed; otherwise
 // the full pending queue is processed.
-router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): Promise<void> => {
+router.post("/portal-submissions/batch-process", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const triggeredBy = req.user?.displayName || req.user?.email || "Admin";
   const triggeredByEmail = req.user?.email ?? null;
 
@@ -111,7 +112,7 @@ router.post("/portal-submissions/batch-process", asyncHandler(async (req, res): 
 // cancellation flag that processSequentially polls between rows; the worker
 // then releases any still-claimed rows and broadcasts batch_aborted on the
 // shared SSE channel so every viewer's UI updates.
-router.post("/portal-submissions/batch-abort/:batchId", asyncHandler(async (req, res): Promise<void> => {
+router.post("/portal-submissions/batch-abort/:batchId", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const requester = {
     displayName: req.user?.displayName || req.user?.email || "",
     isAdmin: req.user?.role === "admin",

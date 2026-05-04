@@ -48,6 +48,7 @@ import {
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { HideForClerk } from "@/lib/role";
 import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
@@ -626,9 +627,11 @@ export function ClaimDetailV2({ claimId }: Props) {
                       · {claim.errorTypeName}
                     </span>
                   ) : null}
-                  <span className="text-xs font-medium mono" style={{ color: "var(--cc-fg)" }}>
-                    · {formatCurrency(claim.claimAmount ?? "0")}
-                  </span>
+                  <HideForClerk>
+                    <span className="text-xs font-medium mono" style={{ color: "var(--cc-fg)" }}>
+                      · {formatCurrency(claim.claimAmount ?? "0")}
+                    </span>
+                  </HideForClerk>
                   {claim.date ? (
                     <span className="text-xs mono" style={{ color: "var(--cc-muted-fg)" }}>
                       · DOS {claim.date}
@@ -1312,7 +1315,7 @@ export function ClaimDetailV2({ claimId }: Props) {
                 <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
                   {parentGroup.rideCount ?? 0} {parentGroup.rideCount === 1 ? "leg" : "legs"}
                   {parentGroup.totalAmount
-                    ? <> · <span className="mono">{formatCurrency(parentGroup.totalAmount)}</span> total exposure</>
+                    ? <HideForClerk> · <span className="mono">{formatCurrency(parentGroup.totalAmount)}</span> total exposure</HideForClerk>
                     : null}
                 </div>
                 <div className="space-y-1">

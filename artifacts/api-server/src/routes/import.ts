@@ -6,8 +6,12 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { normalizeServiceDate } from "../lib/dates";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
+import { denyClerk } from "../middlewares/denyClerk";
 
 const router: IRouter = Router();
+
+// Bulk CSV import is a many-record operation — clerks are denied.
+router.use(denyClerk);
 
 // Per-row reason for an import rejection. Surfaced verbatim in the
 // import response so the operator can fix the source CSV without

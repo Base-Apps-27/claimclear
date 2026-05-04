@@ -191,9 +191,12 @@ export default function Settings() {
     }
   };
 
-  const handleToggleRole = async (userId: string, currentRole: string) => {
+  // The old binary "Make Admin / Remove Admin" toggle was replaced by
+  // a Select with all three values so admins can promote/demote users
+  // through every supported role transition without leaving the page.
+  const handleSetRole = async (userId: string, newRole: string) => {
+    if (!["admin", "user", "clerk"].includes(newRole)) return;
     setActionLoading(userId);
-    const newRole = currentRole === "admin" ? "user" : "admin";
     try {
       await fetch(`/api/admin/users/${userId}/role`, {
         method: "PATCH",
@@ -331,7 +334,13 @@ export default function Settings() {
                             <p className="text-sm font-medium">{getUserDisplayName(u)}</p>
                             <p className="text-xs text-muted-foreground">{u.email}</p>
                           </div>
-                          <WrapTooltip content={u.role === "admin" ? "This user has admin privileges: user management, daily briefs, and full platform access." : "Standard user with access to claim processing features."}>
+                          <WrapTooltip content={
+                            u.role === "admin"
+                              ? "Admin: user management, daily briefs, and full platform access."
+                              : u.role === "clerk"
+                                ? "Clerk: per-claim work only. No money values, no setup pages, no bulk actions."
+                                : "Standard user: claim processing, bulk actions, and money visibility."
+                          }>
                             <Badge variant={u.role === "admin" ? "default" : "outline"} className="cursor-help">{u.role}</Badge>
                           </WrapTooltip>
                           <NotificationTogglesRow userId={u.id} />
@@ -359,17 +368,24 @@ export default function Settings() {
                           )}
                           {u.id !== user?.id && (
                             <>
-                              <WrapTooltip content={u.role === "admin" ? "Downgrade this user to a standard role. They will lose access to user management and admin features." : "Promote this user to admin. They will be able to manage users, trigger daily briefs, and access all features."}>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleToggleRole(u.id, u.role)}
-                                  disabled={actionLoading === u.id}
-                                  className="gap-1"
-                                >
-                                  <Shield className="h-3 w-3" />
-                                  {u.role === "admin" ? "Remove Admin" : "Make Admin"}
-                                </Button>
+                              <WrapTooltip content="Set this user's role. Admin = full access. User = claims + bulk + money. Clerk = per-claim work only, no money or setup.">
+                                <div className="flex items-center gap-1">
+                                  <Shield className="h-3 w-3 text-muted-foreground" />
+                                  <Select
+                                    value={u.role}
+                                    onValueChange={(v) => handleSetRole(u.id, v)}
+                                    disabled={actionLoading === u.id}
+                                  >
+                                    <SelectTrigger className="h-8 w-[110px]" data-testid={`select-role-${u.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="admin">Admin</SelectItem>
+                                      <SelectItem value="user">User</SelectItem>
+                                      <SelectItem value="clerk">Clerk</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </WrapTooltip>
                               <WrapTooltip content="Revoke this user's access to the platform. They will no longer be able to log in.">
                                 <Button

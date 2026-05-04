@@ -10,6 +10,7 @@ import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { requireAuth } from "../middlewares/requireAuth";
+import { denyClerk } from "../middlewares/denyClerk";
 import { CronExpressionParser } from "cron-parser";
 import { logger } from "../lib/logger";
 import {
@@ -260,7 +261,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
 // data — so widening read access is safe. Per-component detail endpoints
 // (/admin/system-health/cron-runs, /worker-activity, /connectors, /bounces)
 // remain admin-only.
-router.get("/admin/system-health/rollup", requireAuth, asyncHandler(async (_req, res): Promise<void> => {
+router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(async (_req, res): Promise<void> => {
   // Connector health
   const connectors = await db.select().from(connectorHealthTable);
 

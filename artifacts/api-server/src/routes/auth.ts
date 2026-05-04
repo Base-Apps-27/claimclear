@@ -71,11 +71,13 @@ async function upsertUser(claims: Record<string, unknown>) {
   const [{ value: userCount }] = await db.select({ value: count() }).from(usersTable);
   const isFirstUser = userCount === 0;
 
+  // New users default to `clerk` (lowest privilege). First-ever user
+  // bootstraps to admin/approved so initial setup is possible.
   const [user] = await db
     .insert(usersTable)
     .values({
       ...userData,
-      role: isFirstUser ? "admin" : "user",
+      role: isFirstUser ? "admin" : "clerk",
       status: isFirstUser ? "approved" : "pending",
     })
     .onConflictDoUpdate({
@@ -214,8 +216,8 @@ router.patch("/admin/users/:userId/deny", requireAdmin, asyncHandler(async (req:
 router.patch("/admin/users/:userId/role", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.params.userId as string;
   const { role } = req.body;
-  if (!role || !["admin", "user"].includes(role)) {
-    res.status(400).json({ error: "Invalid role. Must be 'admin' or 'user'" });
+  if (!role || !["admin", "user", "clerk"].includes(role)) {
+    res.status(400).json({ error: "Invalid role. Must be 'admin', 'user', or 'clerk'" });
     return;
   }
   const [user] = await db

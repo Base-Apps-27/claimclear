@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { useRole } from "@/lib/role";
 import { Link, useLocation } from "wouter";
 import { Filter, Tag, X, Loader2, CheckCircle2, Inbox, Download, MoreHorizontal, Sparkles, FileText, FolderOpen, Activity, FileCheck, AlertCircle, Calendar as CalendarIcon, DollarSign, Clock } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -162,6 +163,7 @@ export default function ClaimsList() {
 
   const activeTab: ClaimsTabKey = deriveActiveTab(filterStatuses);
 
+  const { isClerk: clerk } = useRole();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkAssignSuccess, setBulkAssignSuccess] = useState("");
   // External "open the picker" trigger from the right-rail action; the
@@ -467,7 +469,9 @@ export default function ClaimsList() {
         />
       ),
     },
-    {
+    // Amount facet is hidden for clerks — they cannot see money on rows
+    // and the server strips amountMin/amountMax from their queries.
+    ...(clerk ? [] : [{
       id: "amount",
       label: "Amount",
       icon: DollarSign,
@@ -492,8 +496,9 @@ export default function ClaimsList() {
           testIdPrefix="facet-amount"
         />
       ),
-    },
+    }]),
   ], [
+    clerk,
     statusCount, outcomeCount, errorTypeCount, serviceDateCount,
     createdDateCount, amountCount, deadlineCount,
     statusOptions, outcomeOptions, errorTypeOptions,
@@ -505,7 +510,7 @@ export default function ClaimsList() {
   ]);
 
   const visibleColumnKeys = ALL_COLUMNS.filter(c => visibleCols.has(c.key)).map(c => c.key);
-  const colCount = visibleColumnKeys.length + 1;
+  const colCount = visibleColumnKeys.length + (clerk ? 0 : 1);
 
   const csvParams = {
     ...listParams,
@@ -608,12 +613,14 @@ export default function ClaimsList() {
                 />
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
-                <a href={csvUrl} download>
-                  <Button variant="outline" size="sm" data-testid="button-export-csv">
-                    <Download className="mr-2 h-4 w-4" />
-                    Export CSV
-                  </Button>
-                </a>
+                {!clerk && (
+                  <a href={csvUrl} download>
+                    <Button variant="outline" size="sm" data-testid="button-export-csv">
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </a>
+                )}
               </>
             }
           >
@@ -628,9 +635,11 @@ export default function ClaimsList() {
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3 w-10">
-                        <Checkbox checked={allSelected} onCheckedChange={handleSelectAll} aria-label="Select all" />
-                      </th>
+                      {!clerk && (
+                        <th className="px-4 py-3 w-10">
+                          <Checkbox checked={allSelected} onCheckedChange={handleSelectAll} aria-label="Select all" />
+                        </th>
+                      )}
                       {visibleCols.has("confNumber") && (
                         <th className="px-4 py-3 font-medium">
                           <div className="flex items-center gap-1">
@@ -671,7 +680,7 @@ export default function ClaimsList() {
                           </div>
                         </th>
                       )}
-                      {visibleCols.has("claimAmount") && (
+                      {!clerk && visibleCols.has("claimAmount") && (
                         <th className="px-4 py-3 font-medium">
                           <div className="flex items-center gap-1">
                             <SortableHeader label="Amount" sortKey="claimAmount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
@@ -749,9 +758,11 @@ export default function ClaimsList() {
                             style={isSel ? { background: blueRowTint } : undefined}
                             data-testid={`row-claim-${claim.id}`}
                           >
-                            <td className={`px-4 ${tdPy}`}>
-                              <Checkbox checked={isSel} onCheckedChange={() => handleToggle(claim.id)} aria-label={`Select claim ${claim.confNumber}`} />
-                            </td>
+                            {!clerk && (
+                              <td className={`px-4 ${tdPy}`}>
+                                <Checkbox checked={isSel} onCheckedChange={() => handleToggle(claim.id)} aria-label={`Select claim ${claim.confNumber}`} />
+                              </td>
+                            )}
                             {visibleCols.has("confNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.blue.fg }}>
                                 <div className="flex items-center gap-2">
@@ -778,7 +789,7 @@ export default function ClaimsList() {
                                 {claim.errorTypeName || <span className="text-muted-foreground italic">Unassigned</span>}
                               </td>
                             )}
-                            {visibleCols.has("claimAmount") && (
+                            {!clerk && visibleCols.has("claimAmount") && (
                               <td className={`px-4 ${tdPy} font-medium tabular-nums whitespace-nowrap`}>{formatCurrency(claim.claimAmount)}</td>
                             )}
                             {visibleCols.has("status") && (
@@ -842,9 +853,9 @@ export default function ClaimsList() {
           <ActionsRail
             title="What you can do"
             variant="claim"
-            meta={someSelected ? `${selectedIds.size} selected` : undefined}
+            meta={!clerk && someSelected ? `${selectedIds.size} selected` : undefined}
           >
-            {someSelected ? (
+            {!clerk && someSelected ? (
               <BulkAssignErrorTypeAction
                 selectedCount={selectedIds.size}
                 errorTypes={errorTypes}
@@ -877,6 +888,7 @@ export default function ClaimsList() {
               />
             )}
 
+            {!clerk && (
             <RailActionGroup label="On selection">
               <ActionRow
                 icon={<Tag className="w-3.5 h-3.5" />}
@@ -895,7 +907,9 @@ export default function ClaimsList() {
                 testId="rail-action-clear-selection"
               />
             </RailActionGroup>
+            )}
 
+            {!clerk && (
             <RailActionGroup label="Bulk edit">
               <ActionRow
                 icon={<FileText className="w-3.5 h-3.5" />}
@@ -912,7 +926,9 @@ export default function ClaimsList() {
                 disabledReason="Coming soon."
               />
             </RailActionGroup>
+            )}
 
+            {!clerk && (
             <RailActionGroup label="Selection">
               {/*
                 "Open Queue" intentionally NOT repeated here — the rail's
@@ -935,6 +951,7 @@ export default function ClaimsList() {
                 onClick={() => navigate("/invoice-groups")}
               />
             </RailActionGroup>
+            )}
           </ActionsRail>
         </aside>
       </div>
