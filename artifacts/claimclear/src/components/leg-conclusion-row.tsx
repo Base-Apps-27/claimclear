@@ -375,7 +375,7 @@ export function LegConclusionList({
   if (claims.length === 0) {
     return (
       <p className="text-sm text-muted-foreground italic px-2 py-3">
-        No legs included in the dispute for this group.
+        No legs in this invoice group.
       </p>
     );
   }

@@ -393,8 +393,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
   }, [group?.createdAt]);
 
-  /* ---- Disputed-only filter ---- */
-  const [disputedOnly, setDisputedOnly] = useState(true);
+  /* ---- Disputed-only filter ----
+     Default to showing ALL legs so excluded ones (e.g. Non-issue) still
+     appear — greyed out via `opacity-60` on the row — instead of being
+     silently dropped. The KPI strip and group header both claim N legs
+     exist, so the table needs to match. The operator can still toggle
+     "Disputed only" to focus the table on actionable legs. */
+  const [disputedOnly, setDisputedOnly] = useState(false);
   const visibleRides = disputedOnly ? disputedRides : allRides;
 
   /* ---- Notes / Audit (from detail payload) ---- */

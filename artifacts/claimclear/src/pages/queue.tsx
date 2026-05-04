@@ -1368,8 +1368,14 @@ function InlineGroupWorkspace({
     );
   }
   const detail = group as InvoiceGroupDetailResponse;
-  const allRides: ClaimResponse[] = detail.rides ?? [];
-  const rides = allRides.filter((r) => r.includedInDispute !== false);
+  // Show every leg in the group, including ones that were excluded
+  // (e.g. concluded as Non-issue / Non-contestable). The
+  // LegConclusionRow renders excluded legs as the "processed" variant
+  // with a muted card background and a "Non-issue" sub-status pill, so
+  // the operator still sees the leg is part of the invoice — it just
+  // can't be acted on. Hiding the row entirely was misleading because
+  // the readiness card and group header still claimed N legs exist.
+  const rides: ClaimResponse[] = detail.rides ?? [];
 
   return (
     <div
