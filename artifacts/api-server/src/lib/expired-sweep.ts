@@ -21,7 +21,7 @@
 //     subset of pre-submit statuses; the override skips that check
 //     because the sweep itself is the authority on eligibility.
 //
-// Source: invoked by both the nightly cron (6 AM ET, registered in
+// Source: invoked by both the nightly cron (1 AM ET, registered in
 // `index.ts`) and the admin button (`POST /api/admin/expired-sweep`).
 // The function is idempotent — re-running it on a database with no
 // newly-eligible rows is a cheap no-op.

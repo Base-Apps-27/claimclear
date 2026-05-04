@@ -557,7 +557,7 @@ cron.schedule(OUTLOOK_HEARTBEAT.cron, async () => {
   });
 }, { timezone: OUTLOOK_HEARTBEAT.tz });
 
-// Nightly Expired sweep (6 AM ET). Retires every invoice group whose
+// Nightly Expired sweep (1 AM ET). Retires every invoice group whose
 // 30-day filing deadline has slipped while still in a pre-submit
 // status, so the morning queue does not lead with corpses. Operators
 // can also trigger this on demand via `POST /api/admin/expired-sweep`.

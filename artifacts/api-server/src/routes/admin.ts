@@ -345,7 +345,7 @@ router.post("/admin/day-complete-celebration", requireAdmin, asyncHandler(async 
 // Admin button companion to the nightly Expired sweep cron.
 //
 // Re-runs the same `sweepExpiredGroups` helper so the admin can retire
-// freshly-eligible rows without waiting for tomorrow morning's 6 AM ET
+// freshly-eligible rows without waiting for tomorrow morning's 1 AM ET
 // tick. The helper is idempotent — calling this when nothing is
 // eligible returns `expired=0` and is safe.
 //

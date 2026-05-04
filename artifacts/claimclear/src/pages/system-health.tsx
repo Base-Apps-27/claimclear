@@ -55,7 +55,7 @@ function relTime(iso: string | null | undefined) {
 export default function SystemHealth() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  // Manual companion to the nightly 6 AM ET Expired sweep cron. Useful
+  // Manual companion to the nightly 1 AM ET Expired sweep cron. Useful
   // when an operator notices stale past-deadline rows mid-day and
   // wants to retire them without waiting for the next tick.
   const expiredSweep = useRunExpiredSweep({
@@ -151,7 +151,7 @@ export default function SystemHealth() {
             <CalendarOff className="h-5 w-5 text-stone-600" /> Expired Sweep
           </CardTitle>
           <CardDescription>
-            Retires invoice groups whose 30-day filing deadline has slipped while still in a pre-submit status (New, Needs Evidence, On Hold, Generating Email). Runs nightly at 6 AM ET; trigger here to catch up immediately.
+            Retires invoice groups whose 30-day filing deadline has slipped while still in a pre-submit status (New, Needs Evidence, On Hold, Generating Email). Runs nightly at 1 AM ET; trigger here to catch up immediately.
           </CardDescription>
         </CardHeader>
         <CardContent>

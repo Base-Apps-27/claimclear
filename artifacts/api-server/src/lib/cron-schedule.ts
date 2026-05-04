@@ -68,14 +68,14 @@ export const URGENT_SNAPSHOT: CronJobSchedule = {
   tz: "America/New_York",
 };
 
-// Nightly Expired sweep. Fires once at 6 AM ET so eligible rows are
+// Nightly Expired sweep. Fires once at 1 AM ET so eligible rows are
 // retired before the office opens — operators see a clean "today"
 // queue when they sit down. Past-due rows remain visible (badged
 // red) between the moment their effective deadline lands today and
 // the next morning's sweep, by design (see `lib/expired-sweep.ts`).
 export const EXPIRED_SWEEP: CronJobSchedule = {
   name: "expired_sweep",
-  cron: "0 6 * * *",
+  cron: "0 1 * * *",
   tz: "America/New_York",
 };
 
