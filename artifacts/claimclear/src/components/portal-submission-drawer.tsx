@@ -47,22 +47,12 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-// `attachmentUrls` is the bot worker's flat URL list — historically stored
-// as an array of strings, but legacy rows may still hold `EvidenceFileRef`-
-// shaped objects. The OpenAPI schema for `attachmentUrls` is still a loose
-// JSONB record (untyped — see audit notes on Task #384), so we narrow at
-// runtime and accept either shape.
-function extractAttachmentUrls(raw: unknown): string[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw
-    .map((v): string | null => {
-      if (typeof v === "string") return v;
-      if (v && typeof v === "object" && "url" in v && typeof (v as { url: unknown }).url === "string") {
-        return (v as { url: string }).url;
-      }
-      return null;
-    })
-    .filter((v): v is string => typeof v === "string" && v.length > 0);
+// `attachmentUrls` is the bot worker's flat URL list. Task #389 tightened
+// the OpenAPI / Drizzle types to `string[] | null`, so we just need to
+// guard against null and empty entries.
+function extractAttachmentUrls(raw: string[] | null | undefined): string[] {
+  if (!raw) return [];
+  return raw.filter((v): v is string => typeof v === "string" && v.length > 0);
 }
 
 function findSizeForUrl(evidenceFiles: EvidenceFileRef[] | null | undefined, url: string): number | null {
@@ -211,7 +201,7 @@ export function PortalSubmissionDrawer({
     : processNowDisabledReason;
   const processNowAvailable = submission?.status === "pending" && !submission.claimedByBatchId;
 
-  const attachments = extractAttachmentUrls(submission?.attachmentUrls);
+  const attachments = extractAttachmentUrls(submission?.attachmentUrls ?? null);
   const description = submission?.descriptionHtml || "";
   const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(description);
   const sanitizedHtml = looksLikeHtml

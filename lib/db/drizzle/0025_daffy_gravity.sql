@@ -1,0 +1,1 @@
+ALTER TABLE "portal_submissions" DROP COLUMN "workflow_history";

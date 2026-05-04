@@ -9,7 +9,7 @@ export interface LintResult {
 export interface LintSubmission {
   descriptionHtml?: string | null;
   confNumber?: string | null;
-  attachmentUrls?: unknown;
+  attachmentUrls?: string[] | null;
 }
 
 export interface LintClaim {

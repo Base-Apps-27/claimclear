@@ -931,9 +931,7 @@ async function processDirectEmail(
   const recipientTo = settingsMap["direct_email_recipient"] || "";
   const recipientCc = settingsMap["direct_email_cc"] || "";
 
-  const attachmentUrls = Array.isArray(sub.attachmentUrls)
-    ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
-    : [];
+  const attachmentUrls = (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string");
 
   const subject = sub.subject
     || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`;
@@ -1046,9 +1044,7 @@ async function processViaExternalBot(
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
-    attachmentUrls: Array.isArray(sub.attachmentUrls)
-      ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
-      : [],
+    attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
   };
 
   logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
@@ -1161,9 +1157,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       descriptionHtml: sub.descriptionHtml || "",
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",
-      attachmentUrls: Array.isArray(sub.attachmentUrls)
-        ? (sub.attachmentUrls as string[]).filter((u): u is string => typeof u === "string")
-        : [],
+      attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
     };
 
     logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");

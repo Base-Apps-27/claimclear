@@ -12,11 +12,9 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { EvidenceFileRef } from "./evidenceFileRef";
-import type { PortalSubmissionResponseAttachmentUrls } from "./portalSubmissionResponseAttachmentUrls";
 import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
 import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
-import type { PortalSubmissionResponseWorkflowHistory } from "./portalSubmissionResponseWorkflowHistory";
 
 export interface PortalSubmissionResponse {
   id: number;
@@ -44,8 +42,11 @@ export interface PortalSubmissionResponse {
   descriptionEditorName?: string | null;
   /** @nullable */
   descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
-  /** @nullable */
-  attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
+  /**
+   * Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker / direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.
+   * @nullable
+   */
+  attachmentUrls?: string[] | null;
   /** @nullable */
   confNumber?: string | null;
   /** @nullable */
@@ -86,8 +87,6 @@ export interface PortalSubmissionResponse {
    * @nullable
    */
   evidenceFiles?: EvidenceFileRef[] | null;
-  /** @nullable */
-  workflowHistory?: PortalSubmissionResponseWorkflowHistory;
   /** @nullable */
   portalTicketId?: string | null;
   /** @nullable */

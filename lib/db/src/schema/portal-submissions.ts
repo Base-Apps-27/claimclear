@@ -22,7 +22,11 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   descriptionEditorEmail: text("description_editor_email"),
   descriptionEditorName: text("description_editor_name"),
   descriptionHistory: jsonb("description_history").$type<Array<{ description: string; generatedAt: string; editorEmail?: string | null; editorName?: string | null }>>().default([]),
-  attachmentUrls: jsonb("attachment_urls"),
+  // Flat URL list snapshotted from `collectGroupEvidenceUrls(...)` at draft
+  // time and consumed by both the bot worker (`batch-worker.ts`) and the
+  // direct-email dispatcher (`direct-email-dispatch.ts`). Always a string
+  // array on rows produced after Task #389; legacy rows may be null.
+  attachmentUrls: jsonb("attachment_urls").$type<string[]>(),
   confNumber: text("conf_number"),
   serviceDate: text("service_date"),
   refNumber: text("ref_number"),
@@ -46,7 +50,6 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   // Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles`
   // at draft time. Schema mirrors `EvidenceFileRef` in `lib/api-spec/openapi.yaml`.
   evidenceFiles: jsonb("evidence_files").$type<Array<{ url: string; name?: string | null; size?: number | null }>>(),
-  workflowHistory: jsonb("workflow_history"),
   portalTicketId: text("portal_ticket_id"),
   screenshotUrl: text("screenshot_url"),
   errorMessage: text("error_message"),

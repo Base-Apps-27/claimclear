@@ -255,9 +255,6 @@ interface SubmissionSnapshot {
   // Mirrors invoiceGroups.evidenceFiles / portalSubmissions.evidenceFiles —
   // see EvidenceFileRef in lib/api-spec/openapi.yaml.
   evidenceFiles: Array<{ url: string; name?: string | null; size?: number | null }> | null;
-  // workflowHistory was retired in Task #195; the snapshot field is kept
-  // (always null) only because the bot worker still reads it as opaque.
-  workflowHistory: null;
   subjectFallback: string;
 }
 
@@ -281,12 +278,6 @@ function buildSnapshot(ctx: GroupContext): SubmissionSnapshot {
     errorDetails: group.errorDetails || "",
     evidenceNotes: group.evidenceNotes || "",
     evidenceFiles: group.evidenceFiles || null,
-    // workflowHistory was once a per-claim JSONB blob carried into the
-    // submission snapshot. The blob was retired in Task #195 (per-leg
-    // foundation) in favour of discrete `sop_answers` / `lifecycle_phase`
-    // columns; the snapshot field is kept (null) only because the bot
-    // worker still reads it as an opaque pass-through.
-    workflowHistory: null,
     subjectFallback: subject,
   };
 }
@@ -767,7 +758,6 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles,
-    workflowHistory: snap.workflowHistory,
     attempts: 0,
   }).returning();
 
@@ -1280,7 +1270,6 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles,
-    workflowHistory: snap.workflowHistory,
     attempts: 0,
   }).returning();
 

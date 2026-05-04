@@ -828,20 +828,6 @@ export type PortalSubmissionResponseDescriptionHistoryItem = {
 };
 
 /**
- * @nullable
- */
-export type PortalSubmissionResponseAttachmentUrls = {
-  [key: string]: unknown;
-} | null;
-
-/**
- * @nullable
- */
-export type PortalSubmissionResponseWorkflowHistory = {
-  [key: string]: unknown;
-} | null;
-
-/**
  * Populated when a *different* portal_submissions row sharing the same
 `invoiceGroupId` has reached status='submitted'. Lets the UI render
 an inline "Already submitted in run #N" pill on draft / cancelled /
@@ -897,8 +883,11 @@ export interface PortalSubmissionResponse {
   descriptionEditorName?: string | null;
   /** @nullable */
   descriptionHistory?: PortalSubmissionResponseDescriptionHistoryItem[] | null;
-  /** @nullable */
-  attachmentUrls?: PortalSubmissionResponseAttachmentUrls;
+  /**
+   * Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker / direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.
+   * @nullable
+   */
+  attachmentUrls?: string[] | null;
   /** @nullable */
   confNumber?: string | null;
   /** @nullable */
@@ -939,8 +928,6 @@ export interface PortalSubmissionResponse {
    * @nullable
    */
   evidenceFiles?: EvidenceFileRef[] | null;
-  /** @nullable */
-  workflowHistory?: PortalSubmissionResponseWorkflowHistory;
   /** @nullable */
   portalTicketId?: string | null;
   /** @nullable */

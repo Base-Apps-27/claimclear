@@ -6701,7 +6701,10 @@ components:
               - description
               - generatedAt
         attachmentUrls:
-          type: ["object", "null"]
+          type: ["array", "null"]
+          items:
+            type: string
+          description: "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker / direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null."
         confNumber:
           type: ["string", "null"]
         serviceDate:
@@ -6736,8 +6739,6 @@ components:
           items:
             $ref: "#/components/schemas/EvidenceFileRef"
           description: "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments."
-        workflowHistory:
-          type: ["object", "null"]
         portalTicketId:
           type: ["string", "null"]
         screenshotUrl:

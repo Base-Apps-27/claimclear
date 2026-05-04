@@ -1355,7 +1355,12 @@ export const GetInvoiceGroupResponse = zod
                 }),
               )
               .nullish(),
-            attachmentUrls: zod.object({}).passthrough().nullish(),
+            attachmentUrls: zod
+              .array(zod.string())
+              .nullish()
+              .describe(
+                "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+              ),
             confNumber: zod.string().nullish(),
             serviceDate: zod.string().nullish(),
             refNumber: zod.string().nullish(),
@@ -1414,7 +1419,6 @@ export const GetInvoiceGroupResponse = zod
               .describe(
                 "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
               ),
-            workflowHistory: zod.object({}).passthrough().nullish(),
             portalTicketId: zod.string().nullish(),
             screenshotUrl: zod.string().nullish(),
             errorMessage: zod.string().nullish(),
@@ -17672,7 +17676,12 @@ export const ListPortalSubmissionsResponseItem = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -17731,7 +17740,6 @@ export const ListPortalSubmissionsResponseItem = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -17865,7 +17873,12 @@ export const GetPortalSubmissionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -17924,7 +17937,6 @@ export const GetPortalSubmissionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18021,7 +18033,12 @@ export const RetryPortalSubmissionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18080,7 +18097,6 @@ export const RetryPortalSubmissionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18177,7 +18193,12 @@ export const CancelPortalSubmissionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18236,7 +18257,6 @@ export const CancelPortalSubmissionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18360,7 +18380,12 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18419,7 +18444,6 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18558,7 +18582,12 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18617,7 +18646,6 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18714,7 +18742,12 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18773,7 +18806,6 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -18878,7 +18910,12 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -18937,7 +18974,6 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -19057,7 +19093,12 @@ export const ConfirmPortalSubmissionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -19116,7 +19157,6 @@ export const ConfirmPortalSubmissionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
@@ -19213,7 +19253,12 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
       }),
     )
     .nullish(),
-  attachmentUrls: zod.object({}).passthrough().nullish(),
+  attachmentUrls: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Flat list of object-storage URLs snapshotted at draft time and consumed by the bot worker \/ direct-email dispatcher. Always a string array on rows produced after Task #389; older legacy rows may be null.",
+    ),
   confNumber: zod.string().nullish(),
   serviceDate: zod.string().nullish(),
   refNumber: zod.string().nullish(),
@@ -19272,7 +19317,6 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
     .describe(
       "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
     ),
-  workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),

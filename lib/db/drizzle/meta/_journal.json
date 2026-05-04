@@ -176,6 +176,13 @@
       "when": 1777825733650,
       "tag": "0024_tour_version_seen",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1777886843648,
+      "tag": "0025_daffy_gravity",
+      "breakpoints": true
     }
   ]
 }
