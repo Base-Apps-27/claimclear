@@ -1383,43 +1383,61 @@ function InlineGroupWorkspace({
       data-testid="inline-group-workspace"
     >
       {/* Legs section (above) — thin strips, one per leg. Each strip
-          opens the worktree (SOP) inline. Per-leg context is captured
-          inside the worktree as the operator advances, not via a
-          standalone field on the strip. */}
-      <Card data-testid="legs-panel">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" /> Legs
-          </CardTitle>
-          <CardDescription>
-            Walk each leg through its worktree to conclude it.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <LegConclusionList
-            claims={rides}
-            groupId={groupId}
-            expandedClaimId={expandedLegId}
-            onExpandedChange={(id) => {
-              setExpandedLegId(id);
-              if (highlightLegId != null) setHighlightLegId(null);
-            }}
-            highlightClaimId={highlightLegId}
-            lockReason={lockReason}
-          />
-        </CardContent>
-      </Card>
+          opens the worktree (SOP) inline.
 
-      {/* Submission preview (below) — editable AI write-up. */}
-      <InvoiceGroupSubmissionGauntlet
-        group={detail}
-        groupId={groupId}
-        lockReason={lockReason}
-        onJumpToLeg={(claimId) => {
-          setExpandedLegId(claimId);
-          setHighlightLegId(claimId);
-        }}
-      />
+          Submission-preview element is built once and forwarded into
+          the actively-expanded leg's worktree (so it sits directly
+          under the SOP walk — operator flow is "walk → confirm
+          preview"). When no leg is expanded, it falls back to its
+          standalone spot below the legs panel so the operator can
+          still review and submit without opening a leg. */}
+      {(() => {
+        const submissionPreview = (
+          <InvoiceGroupSubmissionGauntlet
+            group={detail}
+            groupId={groupId}
+            lockReason={lockReason}
+            onJumpToLeg={(claimId) => {
+              setExpandedLegId(claimId);
+              setHighlightLegId(claimId);
+            }}
+          />
+        );
+        return (
+          <>
+            <Card data-testid="legs-panel">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Legs
+                </CardTitle>
+                <CardDescription>
+                  Walk each leg through its worktree to conclude it.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <LegConclusionList
+                  claims={rides}
+                  groupId={groupId}
+                  expandedClaimId={expandedLegId}
+                  onExpandedChange={(id) => {
+                    setExpandedLegId(id);
+                    if (highlightLegId != null) setHighlightLegId(null);
+                  }}
+                  highlightClaimId={highlightLegId}
+                  lockReason={lockReason}
+                  submissionSlot={submissionPreview}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Standalone submission preview — only when no leg is
+                expanded. With a leg open, the same preview is
+                rendered inline under the worktree, and showing it
+                twice would be redundant. */}
+            {expandedLegId == null ? submissionPreview : null}
+          </>
+        );
+      })()}
     </div>
   );
 }

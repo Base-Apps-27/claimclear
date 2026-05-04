@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -83,6 +84,11 @@ interface RowProps {
   initiallyExpanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   highlight?: boolean;
+  // Optional content (e.g. the group-level submission preview) that
+  // ClaimDetailV2 will render directly below the worktree when this
+  // row is expanded. Only the actively-expanded row should be given a
+  // slot — see LegConclusionList for the gating.
+  submissionSlot?: ReactNode;
 }
 
 export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
@@ -94,6 +100,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
       initiallyExpanded = false,
       onExpandedChange,
       highlight = false,
+      submissionSlot,
     },
     ref,
   ) {
@@ -344,7 +351,16 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
               className="border-t bg-background"
               data-testid={`leg-conclusion-body-${claim.id}`}
             >
-              <ClaimDetailV2 claimId={claim.id} />
+              {/* Embedded mode trims the chrome (no Back button, no
+                  parent-invoice / verdict cards) and accepts a
+                  submission-preview slot rendered directly under the
+                  worktree, so the inline expansion reads as an active
+                  workspace instead of a mini claim page. */}
+              <ClaimDetailV2
+                claimId={claim.id}
+                embedded
+                submissionSlot={submissionSlot}
+              />
             </div>
           )}
         </CardContent>
@@ -362,6 +378,12 @@ interface ListProps {
   onExpandedChange: (claimId: number | null) => void;
   highlightClaimId?: number | null;
   lockReason?: string | null;
+  // Optional slot (typically the group-level submission preview)
+  // forwarded into the actively-expanded row's ClaimDetailV2 so it
+  // renders directly below the worktree. Only the expanded row gets
+  // the slot; the others render without it to avoid duplicating the
+  // group-scoped surface multiple times.
+  submissionSlot?: ReactNode;
 }
 
 export function LegConclusionList({
@@ -371,6 +393,7 @@ export function LegConclusionList({
   onExpandedChange,
   highlightClaimId,
   lockReason,
+  submissionSlot,
 }: ListProps) {
   if (claims.length === 0) {
     return (
@@ -403,6 +426,13 @@ export function LegConclusionList({
           expandedClaimId={expandedClaimId}
           onExpandedChange={onExpandedChange}
           highlightClaimId={highlightClaimId ?? null}
+          submissionSlot={
+            // Only the actively-expanded row receives the slot — the
+            // submission preview is group-scoped and we never want
+            // multiple copies stacked when the operator hops between
+            // legs.
+            expandedClaimId === c.id ? submissionSlot : undefined
+          }
         />
       ))}
     </div>
@@ -416,6 +446,7 @@ function LegConclusionListItem({
   expandedClaimId,
   onExpandedChange,
   highlightClaimId,
+  submissionSlot,
 }: {
   claim: ClaimResponse;
   groupId: number;
@@ -423,6 +454,7 @@ function LegConclusionListItem({
   expandedClaimId: number | null;
   onExpandedChange: (claimId: number | null) => void;
   highlightClaimId: number | null;
+  submissionSlot?: ReactNode;
 }) {
   const ref = useRef<LegConclusionRowHandle>(null);
   const isExpanded = expandedClaimId === claim.id;
@@ -445,6 +477,7 @@ function LegConclusionListItem({
       lockReason={lockReason}
       initiallyExpanded={isExpanded}
       highlight={isHighlight}
+      submissionSlot={submissionSlot}
       onExpandedChange={(next) => {
         onExpandedChange(next ? claim.id : null);
       }}

@@ -81,6 +81,30 @@ import {
 
 interface Props {
   claimId: number;
+  // When true, this surface is being rendered inside another page (e.g.
+  // the queue's inline leg expansion) rather than as the standalone
+  // /claims/:id page. Embedded mode trims the chrome down to an
+  // active-work surface:
+  //   - the BackBar's "Back" button is dropped (only the breadcrumb
+  //     stays so the operator can still jump to the parent invoice if
+  //     they need to);
+  //   - the right-rail "Parent invoice" and "Latest payor verdict"
+  //     cards are hidden — they're already visible on the surrounding
+  //     queue/group surface;
+  //   - the outer `min-h-screen p-6` page wrapper collapses so the
+  //     content sits flush inside the host card;
+  //   - "Notes" is relabeled "Internal notes" (operator-only emphasis
+  //     for the queue context) and "Audit timeline" becomes the
+  //     friendlier "Activity history". The standalone /claims/:id
+  //     page keeps the original labels so other surfaces are
+  //     untouched.
+  embedded?: boolean;
+  // Optional content rendered immediately below the Investigation walk
+  // (worktree). The queue uses this slot to put the group-level
+  // submission preview right under the active worktree, so the
+  // operator's flow is "walk SOP → confirm submission preview"
+  // without leaving the surface.
+  submissionSlot?: ReactNode;
 }
 
 const SUB_STATUS_TO_TONE: Record<string, Tone> = {
@@ -220,7 +244,7 @@ function groupStatusTone(status: string | undefined): Tone {
   }
 }
 
-export function ClaimDetailV2({ claimId }: Props) {
+export function ClaimDetailV2({ claimId, embedded = false, submissionSlot }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: claim, isLoading } = useGetClaim(claimId, {
@@ -573,29 +597,73 @@ export function ClaimDetailV2({ claimId }: Props) {
   const masRequired = claim.masActionRequired === "cancel";
   const masCompleted = !!claim.masActionCompletedAt;
 
-  return (
-    <div className="cc-scope min-h-screen p-6" data-testid="claim-detail-v2">
-      <div className="max-w-[1180px] mx-auto space-y-4">
+  // Breadcrumb trail used in both standalone and embedded modes. In
+  // embedded mode we drop the BackBar's "Back" button (the operator is
+  // already inside the queue / invoice group surface — a Back button
+  // navigates them out of their own work) but keep the crumbs as a
+  // jump-to-parent affordance.
+  const crumbs = [
+    { label: "Claims", href: "/claims" },
+    ...(parentGroup
+      ? [{
+          label: `Invoice #${parentGroup.invoiceNumber || parentGroup.id}`,
+          href: `/invoice-groups/${parentGroup.id}`,
+          mono: true,
+        }]
+      : []),
+    { label: `Leg #${claim.id}`, mono: true },
+  ];
 
-        {/* Back + breadcrumb (hybrid). The crumb prefers the parent
-            invoice as the most useful context; /claims is the safety
-            net for deep-link landings on legs whose group hasn't
-            hydrated. */}
-        <BackBar
-          fallbackHref={parentGroup ? `/invoice-groups/${parentGroup.id}` : "/claims"}
-          crumbs={[
-            { label: "Claims", href: "/claims" },
-            ...(parentGroup
-              ? [{
-                  label: `Invoice #${parentGroup.invoiceNumber || parentGroup.id}`,
-                  href: `/invoice-groups/${parentGroup.id}`,
-                  mono: true,
-                }]
-              : []),
-            { label: `Leg #${claim.id}`, mono: true },
-          ]}
-          testId="claim-back-bar"
-        />
+  return (
+    <div
+      className={embedded ? "cc-scope" : "cc-scope min-h-screen p-6"}
+      data-testid="claim-detail-v2"
+      data-embedded={embedded ? "true" : undefined}
+    >
+      <div className={embedded ? "space-y-4" : "max-w-[1180px] mx-auto space-y-4"}>
+
+        {embedded ? (
+          // Crumb-only nav for embedded use. No "Back" button — the
+          // operator is already inside the queue and clicking Back
+          // would yank them out of the very work surface they just
+          // opened. The crumb still links to the parent invoice for
+          // anyone who needs to jump out of the leg.
+          <div
+            className="flex items-center gap-1.5 text-xs flex-wrap"
+            style={{ color: "var(--cc-muted-fg)" }}
+            data-testid="claim-embedded-crumbs"
+          >
+            {crumbs.map((c, i) => {
+              const isLast = i === crumbs.length - 1;
+              const content = c.mono ? (
+                <span className="mono">{c.label}</span>
+              ) : (
+                <span>{c.label}</span>
+              );
+              return (
+                <span key={`${i}-${c.label}`} className="inline-flex items-center gap-1.5">
+                  {i > 0 && <span>/</span>}
+                  {isLast || !c.href ? (
+                    <span style={{ color: "var(--cc-fg)" }}>{content}</span>
+                  ) : (
+                    <Link href={c.href} className="hover:underline">
+                      {content}
+                    </Link>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          // Standalone /claims/:id page — keep the full BackBar (Back
+          // button + crumb) since the user might have arrived here
+          // from a deep link or a search and needs a clear way out.
+          <BackBar
+            fallbackHref={parentGroup ? `/invoice-groups/${parentGroup.id}` : "/claims"}
+            crumbs={crumbs}
+            testId="claim-back-bar"
+          />
+        )}
 
         {/* Header — accent bar, eyebrow, identification + tight action set.
             Actions stay limited (reclassify / exclude / mark-or-unmark
@@ -1085,6 +1153,14 @@ export function ClaimDetailV2({ claimId }: Props) {
               )}
             </CcCard>
 
+            {/* Submission preview slot — embedded mode (queue inline
+                expansion) drops the group-level submission preview in
+                here so the operator's eye flows worktree → submission
+                preview without scrolling past evidence/notes. */}
+            {submissionSlot ? (
+              <div data-testid="claim-detail-submission-slot">{submissionSlot}</div>
+            ) : null}
+
             {/* Evidence — read-only list. Attachment workflows live on the
                 invoice group (we never collect leg-level evidence except
                 via SOP-walk evidence collectors). */}
@@ -1144,11 +1220,15 @@ export function ClaimDetailV2({ claimId }: Props) {
               )}
             </CcCard>
 
-            {/* Notes — leg-scoped, with composer */}
+            {/* Notes — leg-scoped, with composer. In embedded mode
+                (queue inline expansion) the title becomes "Internal
+                notes" so operators are reminded these are never
+                surfaced to payors; the standalone /claims/:id page
+                keeps the original "Notes" label. */}
             <CcCard
               title={
                 <>
-                  Notes
+                  {embedded ? "Internal notes" : "Notes"}
                   <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
                     · {visibleNotes.length}
                   </span>
@@ -1159,7 +1239,9 @@ export function ClaimDetailV2({ claimId }: Props) {
             >
               {visibleNotes.length === 0 ? (
                 <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No notes recorded for this leg yet.
+                  {embedded
+                    ? "No internal notes recorded for this leg yet."
+                    : "No notes recorded for this leg yet."}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1187,7 +1269,11 @@ export function ClaimDetailV2({ claimId }: Props) {
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                   rows={2}
-                  placeholder="Add a note for this leg…"
+                  placeholder={
+                    embedded
+                      ? "Add an internal note for this leg (operators only — never shared with payors)…"
+                      : "Add a note for this leg…"
+                  }
                   className="cc-input w-full text-xs"
                   style={{
                     background: "var(--cc-bg)",
@@ -1298,11 +1384,16 @@ export function ClaimDetailV2({ claimId }: Props) {
             </CcCard>
           </div>
 
-          {/* RIGHT — group rail (read-only mirrors of group-level state) */}
+          {/* RIGHT — group rail (read-only mirrors of group-level state).
+              Embedded mode hides the Parent invoice and Latest payor
+              verdict cards since both are already shown on the
+              surrounding queue / invoice group surface — repeating
+              them inside the worktree just turns an active workspace
+              into a data-review screen. */}
           <div className="col-span-12 lg:col-span-4 space-y-4">
 
             {/* Parent invoice */}
-            {parentGroup ? (
+            {!embedded && parentGroup ? (
               <CcCard
                 title="Parent invoice"
                 icon={<FileText className="w-3.5 h-3.5" />}
@@ -1339,7 +1430,10 @@ export function ClaimDetailV2({ claimId }: Props) {
               </CcCard>
             ) : null}
 
-            {/* Latest payor verdict (read-only) */}
+            {/* Latest payor verdict (read-only) — hidden in embedded
+                (queue inline) mode; the verdict is already visible on
+                the invoice group page. */}
+            {!embedded && (
             <CcCard
               title="Latest payor verdict"
               icon={<Gavel className="w-3.5 h-3.5" />}
@@ -1383,6 +1477,7 @@ export function ClaimDetailV2({ claimId }: Props) {
                 </>
               )}
             </CcCard>
+            )}
 
             {/* MAS action (read-only) */}
             {masRequired ? (
@@ -1421,16 +1516,22 @@ export function ClaimDetailV2({ claimId }: Props) {
               </CcCard>
             ) : null}
 
-            {/* Audit timeline */}
+            {/* Audit timeline / Activity history. Embedded mode (the
+                queue's inline expansion) shows it as a friendlier
+                "Activity history" feed; the standalone /claims/:id
+                page keeps the original "Audit timeline" framing.
+                Same data, same ordering — only the label changes. */}
             <CcCard
-              title="Audit timeline"
+              title={embedded ? "Activity history" : "Audit timeline"}
               icon={<Activity className="w-3.5 h-3.5" />}
               testId="leg-audit-timeline-card"
               padded={false}
             >
               {sortedAudit.length === 0 ? (
                 <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No audit events yet.
+                  {embedded
+                    ? "No activity recorded for this leg yet."
+                    : "No audit events yet."}
                 </div>
               ) : (
                 sortedAudit.slice(0, 12).map((e, i, arr) => (
