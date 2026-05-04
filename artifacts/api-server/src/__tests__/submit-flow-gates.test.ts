@@ -196,7 +196,12 @@ function submitBody(groupId: number, overrides?: Record<string, unknown>) {
   };
 }
 
-test("Operator submit when understandingReadbackAt is null returns 409 gate=readback", async () => {
+test("Operator submit when understandingReadbackAt is null no longer gates — readback is optional, falls through to next gate (preview)", async () => {
+  // Readback was previously a hard gate. It is now OPTIONAL: an operator
+  // who has nothing extra to add about the case overall can leave the
+  // notes blank and proceed. With both readback AND preview unset, the
+  // submission must now hit the PREVIEW gate (the next one in the
+  // pipeline) rather than the removed readback gate.
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({
     status: "Needs Evidence",
@@ -213,12 +218,12 @@ test("Operator submit when understandingReadbackAt is null returns 409 gate=read
   try {
     const res = await fetchJson("/api/portal-submissions", {
       method: "POST",
-      body: submitBody(group.id, { actorType: "operator" }),
+      body: submitBody(group.id, { actorType: "operator", understandingReadback: "" }),
     });
     assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
-    assert.equal(res.json.gate, "readback");
-    assert.equal(res.json.expectedState, "readback-confirmed");
-    assert.equal(res.json.actualState, "no-readback");
+    assert.equal(res.json.gate, "preview", `expected the preview gate to fire, not the removed readback gate (got ${JSON.stringify(res.json)})`);
+    assert.equal(res.json.expectedState, "preview-generated");
+    assert.equal(res.json.actualState, "no-preview");
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
@@ -282,7 +287,7 @@ test("Operator submit when one disputed leg is investigating returns 409 gate=le
   }
 });
 
-test("Bot submit with valid token bypasses readback+preview gates, emits audit+state_event", async () => {
+test("Bot submit with valid token bypasses the preview gate, emits audit+state_event", async () => {
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({
     status: "Needs Evidence",
@@ -312,7 +317,9 @@ test("Bot submit with valid token bypasses readback+preview gates, emits audit+s
     );
     assert.ok(audits.length >= 1, "expected submission_actor_bypass audit row");
     const meta = audits[0].metadata as any;
-    assert.deepStrictEqual(meta.bypassed, ["readback", "preview"]);
+    // Readback is no longer a gate (it's optional context), so the bot
+    // only needs to bypass the preview gate now.
+    assert.deepStrictEqual(meta.bypassed, ["preview"]);
     assert.equal(meta.actorType, "system");
 
     const events = await db.select().from(stateEventsTable).where(

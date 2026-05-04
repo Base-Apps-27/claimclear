@@ -1972,14 +1972,9 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
     });
     return;
   }
-  if (group.understandingReadbackAt == null) {
-    res.status(409).json({
-      error: "Readback must be confirmed before preview generation",
-      expectedState: "readback-confirmed",
-      actualState: "no-readback",
-    });
-    return;
-  }
+  // Note: the understanding readback is OPTIONAL and no longer gates
+  // preview generation. Operators can generate the preview as soon as
+  // every disputed leg is resolved.
   const { ok, unresolved } = await allDisputedLegsResolved(id);
   if (!ok) {
     res.status(409).json({

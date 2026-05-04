@@ -317,7 +317,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold">Understanding readback</h3>
+              <h3 className="text-sm font-semibold">Understanding notes</h3>
+              <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
               {/* Surface what the AI prompt sees on top of the dispute
                    reason: per-leg findings + sibling-duplicate rollups
                    (Task #311). Hidden when neither counter is non-zero. */}
@@ -326,7 +327,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
             <div className="flex items-center gap-2">
               {readbackConfirmed && (
                 <Badge variant="secondary" className="text-[10px]">
-                  Confirmed {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
+                  Saved {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
                 </Badge>
               )}
               <Button
@@ -347,16 +348,19 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 {confirmReadbackMutation.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                 ) : null}
-                Confirm readback
+                Save notes
               </Button>
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
+          </p>
           <Textarea
             value={readback}
             onChange={(e) => setReadback(e.target.value)}
             rows={3}
             disabled={!isPreSubmit || !allResolved || !!lockReason}
-            placeholder="Write what you understand the case to be. Confirming records the timestamp + author and unlocks preview generation."
+            placeholder="Optional — leave blank if there's nothing extra to add."
             data-testid="readback-input"
           />
           {lockReason && (
@@ -366,7 +370,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
           )}
           {isPreSubmit && !allResolved && (
             <p className="text-xs text-muted-foreground italic" data-testid="readback-locked-reason">
-              Readback unlocks once every disputed leg is resolved (ready, dropped, or excluded).
+              These notes unlock once every disputed leg is resolved (ready, dropped, or excluded).
             </p>
           )}
         </div>
@@ -397,9 +401,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                           .join(", ");
                         return `Disabled because ${unresolved.length} leg${unresolved.length === 1 ? "" : "s"} still owe action (${summary}).`;
                       })()
-                    : !readbackConfirmed
-                      ? "Disabled because the understanding readback hasn't been confirmed yet."
-                      : null;
+                    : null;
               const button = (
                 <Button
                   size="sm"
@@ -447,9 +449,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 ? `All legs reached a conclusion — ${conclusionCounts.sop} SOP, ${conclusionCounts.excluded} excluded`
                 : "All legs reached a conclusion"}
             </li>
-            <li className={readbackConfirmed ? "text-green-700" : "text-muted-foreground"}>
-              {readbackConfirmed ? "✓" : "○"} Understanding readback confirmed
-            </li>
+            {readbackConfirmed && (
+              <li className="text-green-700">
+                ✓ Understanding notes saved (optional)
+              </li>
+            )}
             {previewGenerated && (
               <li className="text-green-700">
                 ✓ Preview generated {group.previewGeneratedAt ? formatDateTime(group.previewGeneratedAt) : ""}
@@ -607,7 +611,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 {(() => {
                   const missingGates: string[] = [];
                   if (!allResolved) missingGates.push("legs");
-                  if (!readbackConfirmed) missingGates.push("readback");
                   if (!draftReviewed) missingGates.push("review");
                   const submitDisabledReason: string | null = lockReason
                     ? lockReason
@@ -696,7 +699,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
           <Sparkles className="h-4 w-4" /> Submission preview
         </CardTitle>
         <CardDescription>
-          Confirm the AI's read of the case, then generate the dispute
+          Optionally add any extra context for the AI, then generate the dispute
           submission preview.
         </CardDescription>
       </CardHeader>

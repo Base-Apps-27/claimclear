@@ -750,13 +750,9 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   }
   const trimmedSpecial = (specialCircumstances || "").trim();
   const trimmedReadback = (understandingReadback || "").trim();
-  // Universal gate: a confirmed AI understanding readback is required before
-  // any draft is generated, even when no special circumstances were supplied.
-  // The operator must have seen and approved the AI's restatement first.
-  if (trimmedReadback.length === 0) {
-    res.status(400).json({ error: "understandingReadback is required to generate a draft. Run /portal-submissions/preflight-understanding first." });
-    return;
-  }
+  // Understanding readback is OPTIONAL — when the operator has nothing
+  // extra to add about the case overall, an empty readback is a valid
+  // signal and the AI prompt simply omits that section.
 
   const rawCtx = await resolveContext({ invoiceGroupId });
   if (!rawCtx) { res.status(404).json({ error: "Invoice group not found" }); return; }
@@ -1022,18 +1018,10 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
 
-  // Universal preflight gate: a confirmed AI understanding readback is
-  // required for any draft generation, including regenerate. The original
-  // draft was created with a confirmed readback; if context was later edited
-  // without a fresh re-check, update-draft cleared the readback and this
-  // guard rejects the regenerate.
+  // The understanding readback is OPTIONAL — regenerate uses whatever
+  // saved readback the operator typed (or none at all). The AI prompt
+  // handles a null/empty readback by simply omitting that section.
   const savedReadback = (existing.understandingReadback || "").trim();
-  if (savedReadback.length === 0) {
-    res.status(400).json({
-      error: "understandingReadback is required to regenerate the draft. Re-confirm AI understanding from the Special Circumstances panel first.",
-    });
-    return;
-  }
   const savedSpecial = (existing.specialCircumstances || "").trim();
   // Task #307 guard #10: data inconsistency still surfaces loud here.
   // Task #398: LLM API errors return 502 (no silent template fallback) so
@@ -1224,12 +1212,9 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
 
   const trimmedSpecial = (specialCircumstances || "").trim();
   const trimmedReadback = (understandingReadback || "").trim();
-  // Universal preflight gate: a confirmed AI understanding readback is required
-  // for any new draft, regardless of whether special circumstances were given.
-  if (trimmedReadback.length === 0) {
-    res.status(400).json({ error: "understandingReadback is required to generate a draft. Run /portal-submissions/preflight-understanding first." });
-    return;
-  }
+  // Understanding readback is now OPTIONAL — only persisted/used in the
+  // prompt when the operator types something. An empty readback is a
+  // valid "nothing extra to add" signal and is no longer a gate.
 
   const ctx = await resolveContext({ invoiceGroupId });
   if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
@@ -1255,16 +1240,9 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     }
 
     if (!isBot) {
-      if (ctx.group.understandingReadbackAt == null) {
-        res.status(409).json({
-          error: "Understanding readback not confirmed",
-          expectedState: "readback-confirmed",
-          actualState: "no-readback",
-          gate: "readback",
-        });
-        return;
-      }
-
+      // Note: the understanding readback is OPTIONAL — no gate here. The
+      // preview gate is still enforced so the operator has at least seen
+      // and reviewed the AI-generated dispute write-up before it ships.
       if (ctx.group.previewGeneratedAt == null) {
         res.status(409).json({
           error: "Preview not generated",
@@ -1290,14 +1268,14 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     if (isBot) {
       const bypassPayload = {
         actorType: "system" as const,
-        bypassed: ["readback", "preview"],
+        bypassed: ["preview"],
         requestor: submissionActor.identity,
       };
       await db.insert(auditLogsTable).values({
         claimId: ctx.primaryClaim.id,
         invoiceGroupId: ctx.group.id,
         action: "submission_actor_bypass",
-        details: `Bot submission bypassed readback+preview gates`,
+        details: `Bot submission bypassed preview gate`,
         metadata: bypassPayload,
         userEmail: null,
         userName: submissionActor.identity,

@@ -498,6 +498,18 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Step {steps.length + 1}{maxDepth > 0 ? ` of ~${maxDepth}` : ""}
         </span>
+        {steps.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleUndo}
+            className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground shrink-0"
+            data-testid="tree-go-back"
+            title="Undo the last answer and return to the previous question"
+          >
+            <Undo2 className="h-3 w-3" />Go back
+          </Button>
+        )}
       </div>
 
       {steps.length > 0 && <StepsBreadcrumb steps={steps} />}

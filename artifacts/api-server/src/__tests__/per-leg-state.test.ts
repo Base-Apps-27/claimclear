@@ -893,7 +893,10 @@ test("POST /invoice-groups/:id/understanding-readback succeeds once disputed leg
 
 // --- /invoice-groups/:id/preview-generated -----------------------------
 
-test("POST /invoice-groups/:id/preview-generated requires readback first", async () => {
+test("POST /invoice-groups/:id/preview-generated no longer requires readback — readback is optional", async () => {
+  // Readback was previously required to unlock preview generation. It is
+  // now OPTIONAL — the preview can be generated as soon as every disputed
+  // leg is resolved, regardless of whether the operator wrote notes.
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({ status: "Needs Evidence" });
   await createSeedClaim({
@@ -904,8 +907,8 @@ test("POST /invoice-groups/:id/preview-generated requires readback first", async
   });
   try {
     const res = await fetchJson(`/api/invoice-groups/${group.id}/preview-generated`, { method: "POST" });
-    assert.equal(res.status, 409);
-    assert.equal(res.json.expectedState, "readback-confirmed");
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.ok(res.json.previewGeneratedAt);
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
