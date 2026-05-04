@@ -1,0 +1,44 @@
+Scope addition for Task #430 — render the full re-attest walkthrough on the queue page
+
+Update the plan to include the structured per-leg instructional walkthrough on the Open tab's right pane, in addition to the MasActionChecklist reuse already in scope. This is the same checklist text the operator saw inside the Reattest modal when they queued the work — currently lost on the queue page (we only persist it as a flat string in attestationNote).
+
+What to add
+
+Render buildReattestChecklist output as the instructional header above the MasActionChecklist in the right pane. The function lives at artifacts/claimclear/src/components/whats-next/reattest-instruction-template.tsx and produces the canonical two-case list:
+
+Case 1 (no denied legs): a single item — "Re-attest the invoice."
+Case 2 (one or more denied legs): one MAS item per affected invoice number — "In MAS: cancel / accept GPS deviation for invoice #{X}." — followed by the single "Re-attest the invoice." closer. De-dupes when multiple denied legs share an invoice number.
+Use this exact function — do NOT rewrite the instruction strings or invent new copy. It's the single source of truth shared with the Reattest modal.
+
+Tie each instructional line to its corresponding action row in MasActionChecklist below. Visually pair them so the operator reads the instruction and sees the affordance for completing it on the same screen:
+
+Each "In MAS: cancel / accept GPS deviation for invoice #{X}" line corresponds to the per-leg cancel checkbox(es) for the leg(s) on that invoice number.
+The "Re-attest the invoice." line corresponds to the gated group-level "Re-attest confirmed in MAS" row.
+Either render the instructional list at the top of the right pane with a thin visual connector down to the matching checkbox row, OR inline each instruction sentence as the heading of its corresponding row in the checklist. Pick whichever reads cleaner once you have it on screen — the contract is "operator sees the instruction adjacent to the affordance," not the specific layout.
+Source the instructional list from live group data, not from the persisted attestationNote. Build it from the group's current deniedLegs (legs with verdictOutcome === "Denied") and the group's invoiceNumber, by calling buildReattestChecklist(deniedLegs, group.invoiceNumber) directly. Rationale: the persisted note is a frozen snapshot from queue time and may be stale if the verdict mix has shifted; the live derivation always matches what MasActionChecklist is actually offering as actions.
+
+Preserve the persisted attestationNote as a secondary "what was on screen when this was queued" disclosure. Render it in a collapsed-by-default section (e.g. a <details> or a small "Show original walkthrough" toggle) below the live checklist. Operators occasionally want the audit trail; they don't want it competing with the live instructions.
+
+Ordering and gating contract (re-stating for the agent's benefit, since this scope addition makes it explicit):
+
+The instructional walkthrough lists denied-leg MAS cancellations BEFORE the re-attest line — that's the workflow ordering.
+The MasActionChecklist's existing gating enforces it: the group-level re-attest checkbox stays disabled until every per-leg cancel checkbox is done.
+When the group has zero denied legs (Case 1), the instructional walkthrough is just one line and the checklist has no per-leg cancel rows — the group-level re-attest row is ungated and immediately actionable.
+When the group has multiple denied legs across multiple invoice numbers, render multiple MAS instruction lines (one per affected invoice number, deduped) and multiple per-leg cancel rows.
+Test additions to the existing #430 test plan
+
+Add three cases to the smoke test:
+
+(a) All-Approved group: instructional list renders one item ("Re-attest the invoice."), no MAS lines, no per-leg cancel rows, group-level re-attest row immediately actionable.
+(b) Mixed group, single denied invoice: instructional list renders one MAS line for that invoice + the re-attest closer; the per-leg cancel row pairs with the MAS instruction; the group-level re-attest row stays disabled until the cancel is checked.
+(c) Mixed group, multiple denied legs across two invoice numbers: instructional list renders two MAS lines (one per invoice number, deduped if two denied legs share an invoice) + the re-attest closer; two per-leg cancel rows; group re-attest row disabled until both cancels are checked.
+Out-of-scope clarifications (do NOT widen)
+
+Do not modify buildReattestChecklist itself or its instruction copy — reuse it verbatim.
+Do not modify MasActionChecklist — reuse it as-is.
+Do not change the persisted attestationNote schema or how the Reattest modal writes it; this task only changes how it's rendered on the queue page.
+Do not surface this instructional walkthrough on attestation-prompt.tsx or any non-queue surface.
+Files this scope addition touches (additive only)
+
+artifacts/claimclear/src/pages/attestation-queue.tsx — the new GroupReviewPane for the Open tab renders the instructional list above (or interleaved with) MasActionChecklist.
+artifacts/claimclear/src/components/whats-next/reattest-instruction-template.tsx — imported and called, not modified.

@@ -3,6 +3,17 @@ import { Link } from "wouter";
 import {
   useListAttestationPending,
   useGetInvoiceGroupAttestationHistory,
+  useGetInvoiceGroup,
+  useCompleteGroupReattest,
+  useAttestClaim,
+  useConfirmQueuedAttestation,
+  useCompleteLegMasAction,
+  getListAttestationPendingQueryKey,
+  getGetInvoiceGroupAttestationHistoryQueryKey,
+  getGetInvoiceGroupQueryKey,
+  getGetAttestationCountsQueryKey,
+  getGetDashboardSummaryQueryKey,
+  getGetClaimQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -10,9 +21,14 @@ import type {
   GroupAttestationHistoryEntry,
   GroupAttestationHistoryLeg,
   GetInvoiceGroupAttestationHistoryParams,
+  InvoiceGroupDetailResponse,
 } from "@workspace/api-client-react";
-import { AttestationPrompt } from "@/components/attestation-prompt";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { MasActionChecklist } from "@/components/mas-action-checklist";
+import { buildReattestChecklist } from "@/components/whats-next/reattest-instruction-template";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,7 +41,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { useUrlParams } from "@/lib/use-url-params";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import {
   ShieldCheck,
   FileText,
@@ -106,6 +122,59 @@ interface MergedRow {
   enteredAt: string | null;
 }
 
+interface GroupBucket {
+  /** Stable React key — `g:<groupId>` for grouped rows, `c:<claimId>` for orphans. */
+  key: string;
+  invoiceGroupId: number | null;
+  rows: MergedRow[];
+  earliestEnteredAt: string | null;
+  pendingCount: number;
+  queuedCount: number;
+}
+
+/**
+ * Aggregate the merged pending+queued legs by `invoiceGroupId`. Legs
+ * without a group fall into their own single-leg bucket so the rare
+ * orphan case still gets a row instead of being silently dropped.
+ * Buckets are sorted oldest-first by their earliest `enteredAt` to
+ * preserve the per-leg sort the spec calls out.
+ */
+function aggregateByGroup(rows: MergedRow[]): GroupBucket[] {
+  const byKey = new Map<string, GroupBucket>();
+  for (const row of rows) {
+    const id = row.claim.invoiceGroupId ?? null;
+    const key = id != null ? `g:${id}` : `c:${row.claim.id}`;
+    const bucket = byKey.get(key) ?? {
+      key,
+      invoiceGroupId: id,
+      rows: [],
+      earliestEnteredAt: null,
+      pendingCount: 0,
+      queuedCount: 0,
+    };
+    bucket.rows.push(row);
+    if (row.state === "pending") bucket.pendingCount += 1;
+    else bucket.queuedCount += 1;
+    if (row.enteredAt) {
+      const t = new Date(row.enteredAt).getTime();
+      if (
+        !bucket.earliestEnteredAt ||
+        t < new Date(bucket.earliestEnteredAt).getTime()
+      ) {
+        bucket.earliestEnteredAt = row.enteredAt;
+      }
+    }
+    byKey.set(key, bucket);
+  }
+  const buckets = [...byKey.values()];
+  buckets.sort((a, b) => {
+    const aT = a.earliestEnteredAt ? new Date(a.earliestEnteredAt).getTime() : 0;
+    const bT = b.earliestEnteredAt ? new Date(b.earliestEnteredAt).getTime() : 0;
+    return aT - bT;
+  });
+  return buckets;
+}
+
 function QueueWorkspace() {
   // Fire pending + queued in parallel and merge client-side. The
   // backend endpoint takes one state at a time, but the user-facing
@@ -115,7 +184,7 @@ function QueueWorkspace() {
 
   const isLoading = pending.isLoading || queued.isLoading;
 
-  const rows = useMemo<MergedRow[]>(() => {
+  const groups = useMemo<GroupBucket[]>(() => {
     const buildRows = (
       data: typeof pending.data,
       state: AttestationState,
@@ -138,30 +207,32 @@ function QueueWorkspace() {
       ...buildRows(pending.data, "pending"),
       ...buildRows(queued.data, "queued"),
     ];
-    // Oldest first so the longest-waiting work bubbles to the top.
-    merged.sort((a, b) => {
-      const aT = a.enteredAt ? new Date(a.enteredAt).getTime() : 0;
-      const bT = b.enteredAt ? new Date(b.enteredAt).getTime() : 0;
-      return aT - bT;
-    });
-    return merged;
+    return aggregateByGroup(merged);
   }, [pending.data, queued.data]);
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   // Keep the right-pane selection in sync with the visible list. If
-  // the selected claim disappears (it just got attested and the lists
+  // the selected group disappears (it just got attested and the lists
   // re-fetched), fall back to the top of the list so the operator
   // never stares at an empty pane.
   useEffect(() => {
-    if (rows.length === 0) {
-      setSelectedId(null);
+    if (groups.length === 0) {
+      setSelectedKey(null);
       return;
     }
-    if (selectedId == null || !rows.some((r) => r.claim.id === selectedId)) {
-      setSelectedId(rows[0].claim.id);
+    if (selectedKey == null || !groups.some((g) => g.key === selectedKey)) {
+      setSelectedKey(groups[0].key);
     }
-  }, [rows, selectedId]);
+  }, [groups, selectedKey]);
+
+  // SSR pass: useEffect doesn't fire, so derive the effective selection
+  // here so the detail pane renders on the first paint. Mirrors the
+  // approach used by the Completed tab below.
+  const effectiveSelectedKey =
+    selectedKey != null && groups.some((g) => g.key === selectedKey)
+      ? selectedKey
+      : groups[0]?.key ?? null;
 
   if (isLoading) {
     return (
@@ -172,12 +243,14 @@ function QueueWorkspace() {
     );
   }
 
-  if (rows.length === 0) {
+  if (groups.length === 0) {
     return (
       <Card>
         <CardContent className="py-10 text-center space-y-2">
           <ShieldCheck className="h-6 w-6 mx-auto text-emerald-500" />
-          <p className="font-medium text-sm">All caught up.</p>
+          <p className="font-medium text-sm" data-testid="open-empty">
+            All caught up.
+          </p>
           <p className="text-sm text-muted-foreground">
             Nothing waiting on attestation right now.
           </p>
@@ -186,69 +259,84 @@ function QueueWorkspace() {
     );
   }
 
-  const selectedRow = rows.find((r) => r.claim.id === selectedId) ?? null;
+  const selectedGroup = groups.find((g) => g.key === effectiveSelectedKey) ?? null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
       <Card className="lg:sticky lg:top-4">
         <ScrollArea className="h-[calc(100vh-220px)] max-h-[640px]">
           <ul className="divide-y" data-testid="queue-list">
-            {rows.map((row) => {
-              const { claim, extras, state } = row;
-              const isSel = claim.id === selectedId;
-              return (
-                <li key={claim.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(claim.id)}
-                    className={
-                      "w-full text-left px-4 py-3 transition-colors " +
-                      (isSel ? "bg-muted" : "hover:bg-muted/50")
-                    }
-                    data-testid={`queue-row-${claim.id}`}
-                  >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-sm font-medium">
-                        {claim.confNumber}
-                      </span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {claim.outcome}
-                      </Badge>
-                      <StateBadge state={state} />
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                      <InvoiceLine claim={claim} />
-                      {extras?.verdictRecordedAt && (
-                        <div>Verdict {formatDateTime(extras.verdictRecordedAt)}</div>
-                      )}
-                      {state === "queued" && claim.attestationQueuedBy && (
-                        <div className="truncate">
-                          Parked by {claim.attestationQueuedBy}
-                          {claim.attestationQueuedAt
-                            ? ` · ${formatDateTime(claim.attestationQueuedAt)}`
-                            : ""}
-                        </div>
-                      )}
-                      {claim.attestationNote && (
-                        <div className="italic truncate">"{claim.attestationNote}"</div>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
+            {groups.map((bucket) => (
+              <GroupListRow
+                key={bucket.key}
+                bucket={bucket}
+                isSelected={bucket.key === effectiveSelectedKey}
+                onSelect={() => setSelectedKey(bucket.key)}
+              />
+            ))}
           </ul>
         </ScrollArea>
       </Card>
 
-      {selectedRow && (
-        <ReviewPane
-          claim={selectedRow.claim}
-          extras={selectedRow.extras}
-          state={selectedRow.state}
-        />
-      )}
+      {selectedGroup && <GroupReviewPane bucket={selectedGroup} />}
     </div>
+  );
+}
+
+function GroupListRow({
+  bucket,
+  isSelected,
+  onSelect,
+}: {
+  bucket: GroupBucket;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const headLeg = bucket.rows[0].claim;
+  const invoice = pickInvoiceNumber(headLeg);
+  const payor = headLeg.clientNumber ?? "—";
+  const legCount = bucket.rows.length;
+  const summaryParts: string[] = [];
+  if (bucket.pendingCount > 0) {
+    summaryParts.push(`${bucket.pendingCount} owed by you`);
+  }
+  if (bucket.queuedCount > 0) {
+    summaryParts.push(`${bucket.queuedCount} parked`);
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={
+          "w-full text-left px-4 py-3 transition-colors " +
+          (isSelected ? "bg-muted" : "hover:bg-muted/50")
+        }
+        data-testid={`queue-row-${bucket.key}`}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-sm font-medium">{invoice}</span>
+          <Badge variant="outline" className="text-[10px]" data-testid={`queue-row-leg-count-${bucket.key}`}>
+            {legCount} leg{legCount === 1 ? "" : "s"}
+          </Badge>
+          <GroupStateBadge
+            pending={bucket.pendingCount}
+            queued={bucket.queuedCount}
+          />
+        </div>
+        <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+          <div className="truncate">Payor {payor}</div>
+          {bucket.earliestEnteredAt && (
+            <div>Oldest {formatDateTime(bucket.earliestEnteredAt)}</div>
+          )}
+          {summaryParts.length > 0 && (
+            <div data-testid={`queue-row-summary-${bucket.key}`}>
+              {summaryParts.join(" · ")}
+            </div>
+          )}
+        </div>
+      </button>
+    </li>
   );
 }
 
@@ -280,101 +368,417 @@ function StateBadge({ state }: { state: AttestationState }) {
   );
 }
 
-function ReviewPane({
-  claim,
-  extras,
-  state,
+/**
+ * Aggregated state pill for a group row. When the group has both
+ * pending and queued legs we render a single mixed-state pill so the
+ * operator can see the split at a glance; otherwise we fall back to the
+ * single-state pill so the look stays consistent with the rest of the
+ * surface.
+ */
+function GroupStateBadge({
+  pending,
+  queued,
 }: {
-  claim: ClaimResponse;
-  extras: AttestationPendingExtras | null;
-  state: AttestationState;
+  pending: number;
+  queued: number;
 }) {
+  if (pending > 0 && queued > 0) {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] border-amber-300 bg-gradient-to-r from-amber-50 to-blue-50 text-amber-900"
+        data-testid="state-badge-mixed"
+      >
+        Owed by you + parked
+      </Badge>
+    );
+  }
+  if (pending > 0) return <StateBadge state="pending" />;
+  return <StateBadge state="queued" />;
+}
+
+function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
+  // For grouped legs we pull the parent group detail so we can derive
+  // the live denied-leg list (the persisted attestationNote is a stale
+  // snapshot — see the Task #430 scope addition) and feed
+  // MasActionChecklist its `rides`. Orphan legs (no invoiceGroupId)
+  // skip the fetch and render a degraded single-leg view.
+  const groupId = bucket.invoiceGroupId;
+  const detailQuery = useGetInvoiceGroup(groupId ?? 0, {
+    query: {
+      queryKey: getGetInvoiceGroupQueryKey(groupId ?? 0),
+      enabled: groupId != null,
+    },
+  });
+  const detail: InvoiceGroupDetailResponse | null =
+    groupId != null ? detailQuery.data ?? null : null;
+
+  // Pick the most recent payor response across the legs in this
+  // bucket. The per-claim extras already carry the latest hit per
+  // claim; one max() over the bucket keeps the umbrella context
+  // honest when different legs surface different responses.
+  const lastResponse = useMemo(() => {
+    let best: AttestationPendingExtras | null = null;
+    for (const row of bucket.rows) {
+      const ex = row.extras;
+      if (!ex?.lastResponseAt) continue;
+      if (!best?.lastResponseAt || ex.lastResponseAt > best.lastResponseAt) {
+        best = ex;
+      }
+    }
+    return best;
+  }, [bucket.rows]);
+
+  const headLeg = bucket.rows[0].claim;
+  const invoiceNumber = detail?.invoiceNumber ?? pickInvoiceNumber(headLeg);
+  const payor = detail?.clientNumber ?? headLeg.clientNumber ?? "—";
+
+  // Live derivation: the instructional walkthrough comes from the
+  // current verdict mix, not from `attestationNote` (the persisted
+  // snapshot at queue time). Drives buildReattestChecklist directly so
+  // the lines on screen always match the actions MasActionChecklist is
+  // offering.
+  const deniedLegs = useMemo<readonly ClaimResponse[]>(() => {
+    const rides = detail?.rides ?? [];
+    return rides.filter((r) => r.outcome === "Denied");
+  }, [detail]);
+  const checklist = useMemo(
+    () => buildReattestChecklist(deniedLegs, invoiceNumber ?? null),
+    [deniedLegs, invoiceNumber],
+  );
+
+  // Persisted notes from queue time — surfaced under a collapsed
+  // disclosure so the audit trail is reachable but doesn't compete
+  // with the live walkthrough above.
+  const persistedNotes = useMemo(
+    () =>
+      bucket.rows
+        .map((r) => ({
+          claim: r.claim,
+          note: r.claim.attestationNote ?? null,
+        }))
+        .filter((n) => !!n.note),
+    [bucket.rows],
+  );
+
   return (
-    <Card data-testid={`review-pane-${claim.id}`}>
+    <Card data-testid={`group-review-pane-${bucket.key}`}>
       <CardContent className="p-5 space-y-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-mono text-lg font-semibold">{claim.confNumber}</h3>
-              <Badge variant="outline">{claim.outcome}</Badge>
-              <StateBadge state={state} />
+              <h3 className="font-mono text-lg font-semibold">
+                {invoiceNumber || "—"}
+              </h3>
+              <Badge variant="outline" className="text-[10px]">
+                {bucket.rows.length} leg{bucket.rows.length === 1 ? "" : "s"}
+              </Badge>
+              <GroupStateBadge
+                pending={bucket.pendingCount}
+                queued={bucket.queuedCount}
+              />
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              {claim.errorTypeName ?? "Unclassified"}
-              {claim.date ? ` · Service ${formatDate(claim.date)}` : ""}
+              Payor {payor}
             </div>
           </div>
-          <Link
-            href={`/claims/${claim.id}`}
-            className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-            data-testid={`review-pane-open-${claim.id}`}
-          >
-            Open full claim <ExternalLink className="h-3 w-3" />
-          </Link>
+          {groupId != null && (
+            <Link
+              href={`/invoice-groups/${groupId}`}
+              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              data-testid={`group-review-open-${groupId}`}
+            >
+              Open invoice group <ExternalLink className="h-3 w-3" />
+            </Link>
+          )}
         </div>
 
-        {/* Context grid */}
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          <Field label="Invoice">
-            <InvoiceLine claim={claim} />
-          </Field>
-          <Field label="Verdict recorded">
-            {extras?.verdictRecordedAt ? formatDateTime(extras.verdictRecordedAt) : "—"}
-          </Field>
-          <Field label="Claim amount">
-            {claim.claimAmount ? formatCurrency(claim.claimAmount) : "—"}
-          </Field>
-          <Field label="Approved amount">
-            {claim.approvedAmount ? formatCurrency(claim.approvedAmount) : "—"}
-          </Field>
-          {claim.attestationQueuedBy && (
-            <Field label="Parked by">
-              {claim.attestationQueuedBy}
-              {claim.attestationQueuedAt
-                ? ` · ${formatDateTime(claim.attestationQueuedAt)}`
-                : ""}
-            </Field>
-          )}
-        </dl>
-
-        {/* Last response */}
-        {extras?.lastResponseAt ? (
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        {/* Last response context */}
+        {lastResponse?.lastResponseAt ? (
+          <div
+            className="rounded-md border bg-muted/30 px-3 py-2 text-xs"
+            data-testid="group-last-response"
+          >
             <div className="flex items-center gap-1.5 font-medium text-muted-foreground">
-              {extras.lastResponseSource === "email" ? (
+              {lastResponse.lastResponseSource === "email" ? (
                 <Mail className="h-3.5 w-3.5" />
               ) : (
                 <FileText className="h-3.5 w-3.5" />
               )}
-              Last payor response · {formatDateTime(extras.lastResponseAt)}
-              {extras.lastResponseSource ? ` · ${extras.lastResponseSource}` : ""}
+              Why this is owed · last payor response{" "}
+              {formatDateTime(lastResponse.lastResponseAt)}
+              {lastResponse.lastResponseSource
+                ? ` · ${lastResponse.lastResponseSource}`
+                : ""}
             </div>
-            {extras.lastResponseSubject && (
-              <div className="mt-1 truncate">{extras.lastResponseSubject}</div>
+            {lastResponse.lastResponseSubject && (
+              <div className="mt-1 truncate">{lastResponse.lastResponseSubject}</div>
             )}
           </div>
         ) : (
           <div className="text-xs text-muted-foreground italic">
-            No payor response recorded for this claim yet.
+            No payor response recorded for this group yet.
           </div>
         )}
 
-        {/* Existing attestation note */}
-        {claim.attestationNote && (
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
-            <div className="font-medium text-muted-foreground">Note on file</div>
-            <div className="mt-1 whitespace-pre-wrap">{claim.attestationNote}</div>
-          </div>
-        )}
-
-        {/* Single confirm CTA via the shared prompt */}
-        <div className="pt-1">
-          <AttestationPrompt claim={claim} compact />
+        {/* Live instructional walkthrough — sourced from current verdict mix */}
+        <div data-testid="reattest-instructions">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+            Steps to take
+          </h4>
+          <ol className="space-y-1.5 text-sm" data-testid="reattest-instruction-list">
+            {checklist.map((item, idx) => (
+              <li
+                key={item.id}
+                className="flex items-start gap-2"
+                data-testid={`reattest-instruction-${item.id}`}
+              >
+                <span className="font-mono text-xs text-muted-foreground mt-0.5 shrink-0">
+                  {idx + 1}.
+                </span>
+                <span>{item.text}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Each line above maps to a row below — work top-to-bottom; the
+            re-attest box stays gated until every MAS cancel is checked.
+          </p>
         </div>
+
+        {/* Action checklist — gated re-attest CTA lives here */}
+        {detail ? (
+          <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
+        ) : groupId == null ? (
+          <div className="text-xs text-muted-foreground italic">
+            This leg isn't tied to an invoice group — confirm individually below.
+          </div>
+        ) : detailQuery.isLoading ? (
+          <Skeleton className="h-32 w-full" data-testid="group-detail-loading" />
+        ) : (
+          <div
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            data-testid="group-detail-error"
+          >
+            Couldn't load the invoice group's MAS checklist. Open the group
+            page for the full controls.
+          </div>
+        )}
+
+        {/* Per-leg breakdown with the per-leg "Confirm just this leg" affordance */}
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+            Legs in this group
+          </h4>
+          <ul className="space-y-2" data-testid="group-leg-breakdown">
+            {bucket.rows.map((row) => (
+              <PerLegRow
+                key={row.claim.id}
+                row={row}
+                invoiceGroupId={groupId}
+              />
+            ))}
+          </ul>
+        </div>
+
+        {/* Persisted attestation notes — collapsed disclosure */}
+        {persistedNotes.length > 0 && (
+          <details
+            className="text-xs"
+            data-testid="persisted-attestation-notes"
+          >
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              Show original walkthrough captured when this was queued
+            </summary>
+            <div className="mt-2 space-y-2">
+              {persistedNotes.map((n) => (
+                <div
+                  key={n.claim.id}
+                  className="rounded-md border bg-muted/20 px-3 py-2"
+                  data-testid={`persisted-note-${n.claim.id}`}
+                >
+                  <div className="font-mono text-[11px] text-muted-foreground">
+                    #{n.claim.confNumber}
+                  </div>
+                  <div className="mt-1 whitespace-pre-wrap">{n.note}</div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+function GroupActionChecklist({
+  detail,
+  bucketKey,
+}: {
+  detail: InvoiceGroupDetailResponse;
+  bucketKey: string;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const completeReattest = useCompleteGroupReattest();
+  const completeLegMas = useCompleteLegMasAction();
+
+  const invalidateAfterMutation = async () => {
+    await Promise.all([
+      qc.invalidateQueries({
+        queryKey: getGetInvoiceGroupQueryKey(detail.id),
+      }),
+      qc.invalidateQueries({
+        queryKey: getListAttestationPendingQueryKey({ state: "pending" }),
+      }),
+      qc.invalidateQueries({
+        queryKey: getListAttestationPendingQueryKey({ state: "queued" }),
+      }),
+      qc.invalidateQueries({
+        queryKey: getGetInvoiceGroupAttestationHistoryQueryKey(),
+      }),
+      qc.invalidateQueries({ queryKey: getGetAttestationCountsQueryKey() }),
+      qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }),
+    ]);
+  };
+
+  return (
+    <div data-testid={`group-action-checklist-${bucketKey}`}>
+      <MasActionChecklist
+        group={detail}
+        onCompleteLegMasAction={async (claimId, body) => {
+          await completeLegMas.mutateAsync({ id: claimId, data: body });
+          await invalidateAfterMutation();
+          toast({
+            title: "MAS cancellation recorded",
+            description: `Marked claim ${claimId} cancelled in MAS.`,
+          });
+        }}
+        onCompleteGroupReattest={async (body) => {
+          const invoiceLabel = detail.invoiceNumber ?? `#${detail.id}`;
+          const eligible = (detail.rides ?? []).filter(
+            (r) => r.outcome === "Approved" || r.outcome === "Partially Approved",
+          );
+          const blocked = eligible.filter(
+            (r) => r.masActionRequired === "cancel" && r.masActionCompletedAt == null,
+          );
+          try {
+            await completeReattest.mutateAsync({ id: detail.id, data: body });
+          } catch (err) {
+            const status = (err as { response?: { status?: number } } | null)?.response?.status;
+            if (status === 409 && blocked.length > 0) {
+              const refs = blocked.map((b) => b.confNumber).join(", ");
+              toast({
+                variant: "destructive",
+                title: "Re-attestation skipped some legs",
+                description: `${blocked.length} leg${blocked.length === 1 ? "" : "s"} on ${invoiceLabel} still need a MAS cancel before they can graduate: ${refs}.`,
+              });
+              return;
+            }
+            throw err;
+          }
+          await invalidateAfterMutation();
+          const total = eligible.length;
+          toast({
+            title: "Re-attestation confirmed",
+            description: `Confirmed re-attestation for invoice ${invoiceLabel} — ${total} leg${total === 1 ? "" : "s"} graduated.`,
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+function PerLegRow({
+  row,
+  invoiceGroupId,
+}: {
+  row: MergedRow;
+  invoiceGroupId: number | null;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const attest = useAttestClaim();
+  const confirm = useConfirmQueuedAttestation();
+  const { claim, state } = row;
+
+  const busy = attest.isPending || confirm.isPending;
+
+  const invalidate = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claim.id) }),
+      qc.invalidateQueries({
+        queryKey: getListAttestationPendingQueryKey({ state: "pending" }),
+      }),
+      qc.invalidateQueries({
+        queryKey: getListAttestationPendingQueryKey({ state: "queued" }),
+      }),
+      qc.invalidateQueries({ queryKey: getGetAttestationCountsQueryKey() }),
+      qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }),
+      ...(invoiceGroupId != null
+        ? [
+            qc.invalidateQueries({
+              queryKey: getGetInvoiceGroupQueryKey(invoiceGroupId),
+            }),
+          ]
+        : []),
+    ]);
+  };
+
+  const onConfirmJustThisLeg = async () => {
+    if (state === "pending") {
+      await attest.mutateAsync({ id: claim.id, data: {} });
+    } else {
+      await confirm.mutateAsync({ id: claim.id, data: {} });
+    }
+    await invalidate();
+    toast({
+      title: "Leg confirmed",
+      description: `Confirmed re-attestation for ${claim.confNumber}.`,
+    });
+  };
+
+  return (
+    <li
+      className="flex items-start gap-3 rounded-md border bg-muted/20 px-3 py-2 text-xs"
+      data-testid={`group-leg-row-${claim.id}`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-sm font-medium">{claim.confNumber}</span>
+          <Badge variant="outline" className="text-[10px]">
+            {claim.outcome}
+          </Badge>
+          <StateBadge state={state} />
+        </div>
+        {claim.attestationNote && (
+          <div className="text-muted-foreground italic mt-1 break-words">
+            "{claim.attestationNote}"
+          </div>
+        )}
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="text-[11px] h-7 px-2 shrink-0"
+        onClick={onConfirmJustThisLeg}
+        disabled={busy}
+        data-testid={`confirm-just-this-leg-${claim.id}`}
+      >
+        Confirm just this leg
+      </Button>
+    </li>
+  );
+}
+
+/** Pull the headline invoice number off a leg, falling back to "—". */
+function pickInvoiceNumber(claim: ClaimResponse): string {
+  const raw = (claim.invoiceNumbers ?? "").trim();
+  if (!raw) return "—";
+  const first = raw.split(/[,\s]+/).filter(Boolean)[0];
+  return first ?? "—";
 }
 
 // ─────────────────────────────────────────────────────────────────────

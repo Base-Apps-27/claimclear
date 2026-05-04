@@ -1,8 +1,8 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@workspace/replit-auth-web";
 import {
-  useGetAttestationCounts,
-  getGetAttestationCountsQueryKey,
+  useListAttestationPending,
+  getListAttestationPendingQueryKey,
   useGetResponsesAwaitingReviewCount,
   getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
@@ -100,20 +100,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // connection past sign-out.
   useSystemEvents({ enabled: isAuthenticated && user?.status === "active" });
 
-  // Nav badge for the Attestation Queue: pending = approved verdicts that
-  // landed and have not been actioned (amber, urgent), queued = parked for a
-  // user with portal access (blue, less urgent). We surface them as a single
-  // composite "amber+blue" pill, so the team always knows there's something
-  // owed off-system without the layout having to compute math.
-  const { data: attestationCounts } = useGetAttestationCounts({
-    query: {
-      queryKey: getGetAttestationCountsQueryKey(),
-      refetchInterval: 60_000,
-      enabled: isAuthenticated && user?.status === "active",
+  // Nav badge for the Attestation Queue. Task #430 changed the surface
+  // from per-leg rows to per-invoice-group rows, so the badge now
+  // counts distinct invoice groups across the pending+queued lists
+  // instead of raw leg counts. We hit the same two list endpoints the
+  // Open tab uses so the number on the rail always matches the number
+  // of rows the operator will land on.
+  const attestActive = isAuthenticated && user?.status === "active";
+  const { data: pendingList } = useListAttestationPending(
+    { state: "pending" },
+    {
+      query: {
+        queryKey: getListAttestationPendingQueryKey({ state: "pending" }),
+        refetchInterval: 60_000,
+        enabled: attestActive,
+      },
     },
-  });
-  const pendingAttest = attestationCounts?.pending ?? 0;
-  const queuedAttest = attestationCounts?.queued ?? 0;
+  );
+  const { data: queuedList } = useListAttestationPending(
+    { state: "queued" },
+    {
+      query: {
+        queryKey: getListAttestationPendingQueryKey({ state: "queued" }),
+        refetchInterval: 60_000,
+        enabled: attestActive,
+      },
+    },
+  );
+  const distinctAttestGroups = (() => {
+    const seen = new Set<string>();
+    for (const list of [pendingList, queuedList]) {
+      for (const c of list?.claims ?? []) {
+        const key = c.invoiceGroupId != null ? `g:${c.invoiceGroupId}` : `c:${c.id}`;
+        seen.add(key);
+      }
+    }
+    return seen.size;
+  })();
 
   // Live counter for the "Responses Awaiting Review" entry. Polls every
   // 60s — same cadence as attestation counts — and only when the user is
@@ -133,13 +156,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const responsesAwaitingReviewBadges: NavBadge[] = responsesAwaitingReview > 0
     ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
     : [];
-  // The Attestation Queue is single-bucket now (pending + queued share
-  // one list with per-row state badges), so we collapse the two
-  // sub-badges into a single "to re-attest" pill that mirrors what the
-  // user sees on the page itself.
-  const totalAttest = pendingAttest + queuedAttest;
-  const attestBadges: NavBadge[] = totalAttest > 0
-    ? [{ count: totalAttest, tone: "amber" as const, label: "To re-attest" }]
+  // Task #430: badge counts distinct invoice groups (the new row unit
+  // on the Open tab), not raw legs. One pill, amber, label drops the
+  // word "groups" so it stays readable at small widths.
+  const attestBadges: NavBadge[] = distinctAttestGroups > 0
+    ? [{ count: distinctAttestGroups, tone: "amber" as const, label: "Invoice groups to re-attest" }]
     : [];
 
   // Insights is shown to every approved user; clerks see it with money

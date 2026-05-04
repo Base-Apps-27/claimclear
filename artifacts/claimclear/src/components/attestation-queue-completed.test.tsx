@@ -151,6 +151,18 @@ const populatedPayload = {
   truncated: true,
 };
 
+const inertMutation = () => ({
+  mutate: () => {},
+  mutateAsync: async () => undefined,
+  isPending: false,
+  isError: false,
+  isSuccess: false,
+  isIdle: true,
+  error: null,
+  data: undefined,
+  reset: () => {},
+});
+
 mock.module("@workspace/api-client-react", {
   namedExports: {
     useListAttestationPending: () => inertQuery({ claims: [], extras: {} }),
@@ -162,6 +174,22 @@ mock.module("@workspace/api-client-react", {
           : { groups: [], truncated: false },
       );
     },
+    // Open-tab hooks — Open tab isn't rendered in this test (we drive
+    // ?tab=completed) so the empty list short-circuits before any of
+    // these are needed at render time, but the imports at module load
+    // still resolve. Stub them out so module replacement covers all
+    // named exports the page uses.
+    useGetInvoiceGroup: () => inertQuery(null),
+    useCompleteGroupReattest: inertMutation,
+    useAttestClaim: inertMutation,
+    useConfirmQueuedAttestation: inertMutation,
+    useCompleteLegMasAction: inertMutation,
+    getListAttestationPendingQueryKey: () => ["pending"],
+    getGetInvoiceGroupAttestationHistoryQueryKey: () => ["history"],
+    getGetInvoiceGroupQueryKey: () => ["invoice-group"],
+    getGetAttestationCountsQueryKey: () => ["attest-counts"],
+    getGetDashboardSummaryQueryKey: () => ["dashboard"],
+    getGetClaimQueryKey: () => ["claim"],
   },
 });
 
