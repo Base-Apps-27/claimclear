@@ -115,6 +115,14 @@ interface Props {
   // operator's flow is "walk SOP → confirm submission preview"
   // without leaving the surface.
   submissionSlot?: ReactNode;
+  // Monotonically-increasing token from the queue strip. When this
+  // value increases, ClaimDetailV2 will scroll/focus the error-type
+  // picker anchor as soon as it mounts (or immediately if it's
+  // already mounted). This is what lets the queue strip's "Classify"
+  // primary action land the operator on the picker even when the
+  // embedded leg detail is still fetching at click time. See
+  // LegConclusionRow.handlePrimary.
+  focusErrorTypePickerSignal?: number;
 }
 
 const SUB_STATUS_TO_TONE: Record<string, Tone> = {
@@ -254,12 +262,52 @@ function groupStatusTone(status: string | undefined): Tone {
   }
 }
 
-export function ClaimDetailV2({ claimId, embedded = false, lockReason, submissionSlot }: Props) {
+export function ClaimDetailV2({
+  claimId,
+  embedded = false,
+  lockReason,
+  submissionSlot,
+  focusErrorTypePickerSignal,
+}: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: claim, isLoading } = useGetClaim(claimId, {
     query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId },
   });
+
+  // Owns the "land the operator on the error-type picker" effect for
+  // the queue strip's Classify primary action. We watch for the parent
+  // bumping `focusErrorTypePickerSignal` AND for the picker anchor
+  // being in the DOM (which only happens once `claim` has loaded and
+  // `!claim.errorTypeId`). Doing it here instead of from the strip
+  // means we can't lose the race against async data — the effect will
+  // fire as soon as both conditions hold, even seconds after the
+  // click.
+  const lastHandledFocusSignal = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (focusErrorTypePickerSignal === undefined) return;
+    if (lastHandledFocusSignal.current === focusErrorTypePickerSignal) return;
+    if (!claim) return; // wait for fetch to settle
+    if (claim.errorTypeId) return; // picker only renders when no errorType
+    const anchorId = `leg-error-type-picker-${claim.id}`;
+    const tryFocus = (attempt = 0) => {
+      const el = document.getElementById(anchorId);
+      if (el) {
+        lastHandledFocusSignal.current = focusErrorTypePickerSignal;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (typeof (el as HTMLElement).focus === "function") {
+          (el as HTMLElement).focus({ preventScroll: true });
+        }
+        return;
+      }
+      // Cap retries at ~3s to avoid leaking a long-lived loop if the
+      // picker never mounts (e.g. claim flips to errorTypeId mid-flight).
+      if (attempt < 60) {
+        window.setTimeout(() => tryFocus(attempt + 1), 50);
+      }
+    };
+    window.requestAnimationFrame(() => tryFocus(0));
+  }, [focusErrorTypePickerSignal, claim]);
 
   const parentGroupId = claim?.invoiceGroupId ?? null;
   const { data: parentGroup } = useGetInvoiceGroup(parentGroupId ?? 0, {
@@ -1107,9 +1155,17 @@ export function ClaimDetailV2({ claimId, embedded = false, lockReason, submissio
                 />
               ) : null}
               {!isDuplicate && !claim.errorTypeId && (
+                // Stable anchor (`leg-error-type-picker-<id>`) so the
+                // queue strip's "Classify" primary action can scroll
+                // and focus the operator straight onto the entry point
+                // for picking an error type. See LegConclusionRow's
+                // focusErrorTypePicker for the consumer side.
                 <div
-                  className="text-xs flex items-start gap-2 p-3 rounded"
+                  id={`leg-error-type-picker-${claim.id}`}
+                  tabIndex={-1}
+                  className="text-xs flex items-start gap-2 p-3 rounded scroll-mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
+                  data-testid={`leg-error-type-picker-${claim.id}`}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                   <span>This leg has no error type yet. Pick one from the queue or use the legacy classifier.</span>

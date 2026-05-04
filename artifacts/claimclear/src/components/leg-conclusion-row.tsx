@@ -25,6 +25,7 @@ import {
   PauseCircle,
   Loader2,
   Workflow,
+  Tag,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
@@ -38,10 +39,19 @@ import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 // LegConclusionRow — the Queue Panel A row.
 //
 // Design intent (restored): each leg is a thin strip. The strip carries
-// identity + status, and ONE primary action: a button that opens the
-// worktree (SOP) inline beneath the strip. Per-leg context is NOT
-// captured here as a free-text field — it is derived and persisted as
-// the operator walks the worktree (see SopAdvancePlayer).
+// identity + status, and ONE primary action whose label tracks the
+// leg's first ask:
+//   • No error type yet (needs_classification) → "Classify" with a tag
+//     icon. Click expands the strip AND scrolls to the embedded leg
+//     detail's error-type entry point so the operator lands on the
+//     classifier instead of staring at a blocked SOP.
+//   • Error type assigned, SOP not started → "Process" with the
+//     workflow icon. Opens the worktree inline beneath the strip.
+//   • Error type assigned, SOP in progress → "Continue" with the
+//     workflow icon. Resumes the worktree.
+// Per-leg context is NOT captured here as a free-text field — it is
+// derived and persisted as the operator walks the worktree (see
+// SopAdvancePlayer).
 //
 // Quick-conclude buttons (Non-issue / Non-contestable) are only shown
 // when the leg has NO error type defined. With an error type set, the
@@ -224,7 +234,42 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     const concluding = concludeLegMutation.isPending;
     const hasErrorType = !!claim.errorTypeId;
     const sopStarted = !!claim.sopNodeId;
-    const sopButtonLabel = sopStarted ? "Continue" : "Process";
+    // Primary-action label tracks the leg's first ask. Without an error
+    // type the SOP can't advance ("Pick an error type before walking the
+    // SOP."), so a "Process" label is misleading — surface "Classify"
+    // instead and route the click to the picker (see handlePrimary).
+    const needsClassify = !hasErrorType;
+    const primaryLabel = needsClassify
+      ? "Classify"
+      : sopStarted
+        ? "Continue"
+        : "Process";
+    const PrimaryIcon = needsClassify ? Tag : Workflow;
+    const primaryTitle =
+      lockReason ??
+      (needsClassify
+        ? "Pick an error type for this leg"
+        : sopStarted
+          ? "Continue walking the SOP"
+          : "Open the SOP for this leg");
+
+    // Signal we hand to the embedded ClaimDetailV2 so it knows to
+    // scroll/focus the error-type picker as soon as the picker actually
+    // mounts. The ClaimDetailV2 effect handles the async-mount race —
+    // the strip just bumps the counter on each Classify click. Stays
+    // undefined until the operator actually clicks Classify so an
+    // initially-expanded unclassified row doesn't auto-scroll on mount.
+    const [focusPickerSignal, setFocusPickerSignal] = useState<number | undefined>(undefined);
+
+    function handlePrimary() {
+      if (!expanded) {
+        setExpanded(true);
+        onExpandedChange?.(true);
+      }
+      if (needsClassify) {
+        setFocusPickerSignal((n) => (n ?? 0) + 1);
+      }
+    }
 
     return (
       <Card
@@ -294,18 +339,15 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
               <Button
                 type="button"
                 size="sm"
-                onClick={() => {
-                  if (!expanded) {
-                    setExpanded(true);
-                    onExpandedChange?.(true);
-                  }
-                }}
+                onClick={handlePrimary}
                 disabled={!!lockReason}
-                title={lockReason ?? undefined}
+                title={primaryTitle}
+                aria-label={primaryLabel}
                 data-testid={`leg-conclude-sop-${claim.id}`}
+                data-action={needsClassify ? "classify" : sopStarted ? "continue" : "process"}
               >
-                <Workflow className="h-3.5 w-3.5 mr-1" />
-                {sopButtonLabel}
+                <PrimaryIcon className="h-3.5 w-3.5 mr-1" />
+                {primaryLabel}
               </Button>
 
               {!hasErrorType && (
@@ -361,6 +403,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                 embedded
                 lockReason={lockReason}
                 submissionSlot={submissionSlot}
+                focusErrorTypePickerSignal={focusPickerSignal}
               />
             </div>
           )}
