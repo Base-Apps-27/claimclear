@@ -9,7 +9,12 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SopAdvancePlayer, isReqSatisfied, extractClipboardFiles } from "./sop-advance-player";
+import {
+  SopAdvancePlayer,
+  isReqSatisfied,
+  extractClipboardFiles,
+  pasteFromClipboard,
+} from "./sop-advance-player";
 import type { DecisionTree, EvidenceReq } from "./types";
 
 void React;
@@ -204,7 +209,24 @@ test("SopAdvancePlayer: image-accepting evidence rows expose a clipboard paste z
   // The image-accepting requirement (`gps_screenshot`) MUST mount a
   // paste zone so the operator can drop a screenshot directly.
   assert.match(html, /data-testid="sop-evidence-req-gps_screenshot-paste-zone"/);
-  assert.match(html, /or paste a screenshot/);
+});
+
+// Task #415 — the redundant italic "or paste a screenshot" hint was
+// removed once the explicit Paste button was restored. If a future
+// edit re-introduces it the row will look noisy; this test pins the
+// removal.
+test("SopAdvancePlayer: the redundant 'or paste a screenshot' italic hint is gone (Task #415 cleanup)", () => {
+  const html = render(
+    <SopAdvancePlayer
+      leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
+      tree={richTree}
+    />,
+  );
+  assert.equal(
+    html.includes("or paste a screenshot"),
+    false,
+    "the italic hint should be replaced by the explicit Paste button",
+  );
 });
 
 function fakeDataTransfer(items: Array<{ kind: "file" | "string"; type: string; file?: File }>): DataTransfer {
@@ -257,4 +279,152 @@ test("extractClipboardFiles: PDF is in the allowlist (operators routinely paste 
 test("extractClipboardFiles: null/undefined DataTransfer → []", () => {
   assert.deepEqual(extractClipboardFiles(null), []);
   assert.deepEqual(extractClipboardFiles(undefined), []);
+});
+
+// ---------------------------------------------------------------------------
+// Task #415 — explicit one-click "Paste" button. The button uses the
+// Async Clipboard API (`navigator.clipboard.read`) so it can read a
+// screenshot the user has already copied to the OS clipboard, with no
+// drop-zone focus required. We test:
+//   (a) the button only renders when the API is available,
+//   (b)/(c)/(d) the click-handler logic via the pure `pasteFromClipboard`
+//       helper — image is uploaded, missing image fires the toast hook,
+//       disallowed MIME is ignored,
+//   (e) the button is disabled when the row is disabled.
+// renderToStaticMarkup can't fire DOM events, so the click logic is
+// tested through the pure helper (the same pattern `extractClipboardFiles`
+// uses for the keyboard-paste flow).
+// ---------------------------------------------------------------------------
+
+function withNavigator<T>(value: unknown, fn: () => T): T {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", {
+    value,
+    configurable: true,
+    writable: true,
+  });
+  try {
+    return fn();
+  } finally {
+    if (desc) Object.defineProperty(globalThis, "navigator", desc);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+}
+
+test("Paste button: hidden when navigator.clipboard.read is not available (Task #415, older-Safari fallback)", () => {
+  const html = withNavigator({ userAgent: "test" }, () =>
+    render(
+      <SopAdvancePlayer
+        leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
+        tree={richTree}
+      />,
+    ),
+  );
+  assert.equal(
+    html.includes("sop-evidence-req-gps_screenshot-paste-btn"),
+    false,
+    "Paste button must be hidden when navigator.clipboard.read isn't available",
+  );
+  // Upload still renders so users aren't stranded.
+  assert.match(html, /data-testid="sop-evidence-req-gps_screenshot-upload-btn"/);
+});
+
+test("Paste button: rendered when navigator.clipboard.read is available", () => {
+  const html = withNavigator(
+    { clipboard: { read: async () => [] } },
+    () =>
+      render(
+        <SopAdvancePlayer
+          leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
+          tree={richTree}
+        />,
+      ),
+  );
+  assert.match(html, /data-testid="sop-evidence-req-gps_screenshot-paste-btn"/);
+  // The Ctrl/Cmd+V power-user hint moves into the button's tooltip
+  // (HTML `title` attribute) instead of the noisy italic line.
+  assert.match(html, /title="Paste from clipboard \(Ctrl\/Cmd\+V\)"/);
+});
+
+test("Paste button: disabled when the evidence row is disabled (Task #415, gating parity with Upload)", () => {
+  const html = withNavigator(
+    { clipboard: { read: async () => [] } },
+    () =>
+      render(
+        <SopAdvancePlayer
+          leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
+          tree={richTree}
+          disabledReason="Locked by another user"
+        />,
+      ),
+  );
+  // Pull just the Paste button's tag and confirm `disabled` is on it.
+  // Using a non-greedy match so we don't slurp downstream buttons.
+  const m = html.match(
+    /<button[^>]*data-testid="sop-evidence-req-gps_screenshot-paste-btn"[^>]*>/,
+  );
+  assert.ok(m, "expected to find the Paste button tag in the rendered HTML");
+  assert.match(m![0], /\bdisabled\b/);
+});
+
+function fakeClipboardItem(entries: Array<{ mime: string; blob: Blob }>): ClipboardItem {
+  return {
+    types: entries.map((e) => e.mime),
+    getType: async (mime: string) => {
+      const hit = entries.find((e) => e.mime === mime);
+      if (!hit) throw new Error(`no entry for ${mime}`);
+      return hit.blob;
+    },
+  } as unknown as ClipboardItem;
+}
+
+test("pasteFromClipboard: allowed image on the clipboard → onUpload called with that file (Task #415 happy path)", async () => {
+  const png = new Blob(["x"], { type: "image/png" });
+  const uploads: File[] = [];
+  let nothingFoundCalls = 0;
+  await pasteFromClipboard({
+    read: async () => [fakeClipboardItem([{ mime: "image/png", blob: png }])],
+    onUpload: (f) => uploads.push(f),
+    onNothingFound: () => { nothingFoundCalls++; },
+  });
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].type, "image/png");
+  assert.equal(nothingFoundCalls, 0);
+});
+
+test("pasteFromClipboard: empty clipboard → friendly-toast hook fires, onUpload is NOT called", async () => {
+  const uploads: File[] = [];
+  let nothingFoundCalls = 0;
+  await pasteFromClipboard({
+    read: async () => [],
+    onUpload: (f) => uploads.push(f),
+    onNothingFound: () => { nothingFoundCalls++; },
+  });
+  assert.equal(uploads.length, 0);
+  assert.equal(nothingFoundCalls, 1);
+});
+
+test("pasteFromClipboard: clipboard MIME outside the SOP-evidence allowlist → onUpload NOT called", async () => {
+  const exe = new Blob(["x"], { type: "application/x-msdownload" });
+  const uploads: File[] = [];
+  let nothingFoundCalls = 0;
+  await pasteFromClipboard({
+    read: async () => [fakeClipboardItem([{ mime: "application/x-msdownload", blob: exe }])],
+    onUpload: (f) => uploads.push(f),
+    onNothingFound: () => { nothingFoundCalls++; },
+  });
+  assert.equal(uploads.length, 0);
+  assert.equal(nothingFoundCalls, 1);
+});
+
+test("pasteFromClipboard: a rejected clipboard.read (permission denied) routes to onNothingFound, not onUpload", async () => {
+  const uploads: File[] = [];
+  let nothingFoundCalls = 0;
+  await pasteFromClipboard({
+    read: async () => { throw new Error("blocked"); },
+    onUpload: (f) => uploads.push(f),
+    onNothingFound: () => { nothingFoundCalls++; },
+  });
+  assert.equal(uploads.length, 0);
+  assert.equal(nothingFoundCalls, 1);
 });

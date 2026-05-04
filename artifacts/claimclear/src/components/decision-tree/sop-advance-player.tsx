@@ -53,6 +53,7 @@ import {
   Upload,
   X,
   Paperclip,
+  ClipboardPaste,
 } from "lucide-react";
 import {
   terminalKindForLeg,
@@ -757,6 +758,10 @@ function EvidenceReqRow({
   const persistedImages = persisted.filter((p) => !!p.imageUrl);
   const persistedNote = persisted.find((p) => p.notes && p.notes.trim().length > 0)?.notes ?? "";
   const totalImages = persistedImages.length + pending.items.length;
+  // Capability check at render time — render is synchronous and the
+  // value is stable per environment, so a plain check (not a hook) is
+  // fine. See `isClipboardReadAvailable` for the rationale.
+  const clipboardReadAvailable = isClipboardReadAvailable();
 
   return (
     <div className="space-y-2 bg-white dark:bg-background rounded-md p-2 border" data-testid={`sop-evidence-req-${req.key}`}>
@@ -821,9 +826,42 @@ function EvidenceReqRow({
               <Upload className="h-3 w-3" />
               {totalImages > 0 ? "Add another" : "Upload image"}
             </Button>
-            <span className="text-[10px] text-muted-foreground italic">
-              or paste a screenshot
-            </span>
+            {/*
+              Task #415 — restore the explicit one-click Paste button
+              that originally shipped in Task #15 and was dropped in the
+              Task #372 SOP-player rebuild. Hidden in browsers without
+              the Async Clipboard API (older Safari, non-secure
+              contexts) so we don't show a control that can't work.
+              Keyboard paste (Ctrl/Cmd+V) on the drop zone or notes
+              textarea is unaffected.
+            */}
+            {clipboardReadAvailable && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  void pasteFromClipboard({
+                    read: () => navigator.clipboard.read(),
+                    onUpload,
+                    onNothingFound: () =>
+                      toast({
+                        title: "No image found in clipboard",
+                        description:
+                          "Copy a screenshot or image first, then paste here.",
+                        variant: "destructive",
+                      }),
+                  })
+                }
+                disabled={disabled}
+                title="Paste from clipboard (Ctrl/Cmd+V)"
+                className="gap-1.5 h-7 text-xs"
+                data-testid={`sop-evidence-req-${req.key}-paste-btn`}
+              >
+                <ClipboardPaste className="h-3 w-3" />
+                Paste
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -883,6 +921,69 @@ export function extractClipboardFiles(
     out.push(f);
   }
   return out;
+}
+
+/**
+ * Capability check for the explicit "Paste" button (Task #415). The
+ * Async Clipboard API (`navigator.clipboard.read`) isn't universally
+ * available — older Safari and most non-secure contexts don't expose
+ * it — so we hide the button entirely in those environments instead
+ * of showing a control that can't possibly work. Keyboard paste
+ * (Ctrl/Cmd+V) keeps working through the row's onPaste handlers.
+ */
+export function isClipboardReadAvailable(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard !== "undefined" &&
+    typeof navigator.clipboard.read === "function"
+  );
+}
+
+/**
+ * Pure-helper async read of the first SOP-evidence-allowed file from
+ * the Async Clipboard API. The `read` callback is injected so tests
+ * can drive every branch (image found, no image, disallowed MIME)
+ * without jsdom or a real `navigator.clipboard`.
+ *
+ * Returns the first File whose MIME passes `ALLOWED_EVIDENCE_TYPES`,
+ * or `null` if the clipboard has nothing usable.
+ */
+export async function readAllowedFileFromClipboard(
+  read: () => Promise<readonly ClipboardItem[]>,
+): Promise<File | null> {
+  const items = await read();
+  for (const item of items) {
+    for (const mime of item.types) {
+      if (!ALLOWED_EVIDENCE_TYPES.has(mime)) continue;
+      const blob = await item.getType(mime);
+      const ext = mime.split("/")[1] || "bin";
+      return new File([blob], `pasted.${ext}`, { type: mime });
+    }
+  }
+  return null;
+}
+
+/**
+ * Wrapper used by the Paste button's click handler. Reads from the
+ * clipboard, routes a found file to `onUpload`, and otherwise calls
+ * `onNothingFound` (the component shows a friendly toast there). The
+ * pure split keeps the test surface simple — see sop-advance-player
+ * tests for the (b)/(c)/(d) coverage.
+ */
+export async function pasteFromClipboard(opts: {
+  read: () => Promise<readonly ClipboardItem[]>;
+  onUpload: (file: File) => void;
+  onNothingFound: () => void;
+}): Promise<void> {
+  let file: File | null = null;
+  try {
+    file = await readAllowedFileFromClipboard(opts.read);
+  } catch {
+    opts.onNothingFound();
+    return;
+  }
+  if (file) opts.onUpload(file);
+  else opts.onNothingFound();
 }
 
 function PersistedThumbnail({ ev }: { ev: ClaimEvidenceResponse }) {
