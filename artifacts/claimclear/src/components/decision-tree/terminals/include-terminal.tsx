@@ -42,7 +42,12 @@ import { isLegacyDerivedContext } from "@workspace/leg-state";
 import type { TerminalCommonProps } from "./types";
 
 function apiBase(): string {
-  return import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  // Vite injects `import.meta.env` at build time; under the node:test
+  // runtime (jsdom-based component tests) it is undefined. Read defensively
+  // so the component is mountable in a jsdom test without throwing — empty
+  // string is the same value Vite emits for the root-mounted artifact.
+  const env = (import.meta as { env?: { BASE_URL?: string } }).env;
+  return env?.BASE_URL?.replace(/\/$/, "") || "";
 }
 
 // Editor mode state machine. Pure-helper testable below.
