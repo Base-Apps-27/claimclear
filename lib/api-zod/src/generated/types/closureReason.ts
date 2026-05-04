@@ -12,11 +12,19 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type CreateClosureRequestClosureReason =
-  (typeof CreateClosureRequestClosureReason)[keyof typeof CreateClosureRequestClosureReason];
+/**
+ * Canonical set of structured-closure reasons. Defined once here so
+every request schema that accepts a closure decision
+(UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,
+CreateClosureRequest) generates the exact same TypeScript union —
+a typo or drift between sites becomes a typecheck error instead
+of a silent coercion through `as` casts at the call site.
 
-export const CreateClosureRequestClosureReason = {
-  cannot_dispute: "cannot_dispute",
+ */
+export type ClosureReason = (typeof ClosureReason)[keyof typeof ClosureReason];
+
+export const ClosureReason = {
   denied_by_payor: "denied_by_payor",
+  cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
 } as const;

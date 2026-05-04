@@ -2722,7 +2722,10 @@ export const UpdateInvoiceGroupOutcomeBody = zod
     outcome: zod.string(),
     closureReason: zod
       .enum(["denied_by_payor", "cannot_dispute", "non_issue"])
-      .optional(),
+      .optional()
+      .describe(
+        "Canonical set of structured-closure reasons. Defined once here so\nevery request schema that accepts a closure decision\n(UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,\nCreateClosureRequest) generates the exact same TypeScript union —\na typo or drift between sites becomes a typecheck error instead\nof a silent coercion through `as` casts at the call site.\n",
+      ),
     approvedAmount: zod.string().optional(),
     closureCategory: zod.string().nullish(),
     closureCategoryOther: zod.string().nullish(),
@@ -9614,7 +9617,10 @@ export const UpdateClaimOutcomeBody = zod
     outcome: zod.string(),
     closureReason: zod
       .enum(["denied_by_payor", "cannot_dispute", "non_issue"])
-      .optional(),
+      .optional()
+      .describe(
+        "Canonical set of structured-closure reasons. Defined once here so\nevery request schema that accepts a closure decision\n(UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,\nCreateClosureRequest) generates the exact same TypeScript union —\na typo or drift between sites becomes a typecheck error instead\nof a silent coercion through `as` casts at the call site.\n",
+      ),
     approvedAmount: zod.string().optional(),
     invoiceNumbers: zod.string().optional(),
     closureCategory: zod.string().nullish(),

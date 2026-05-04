@@ -13,7 +13,7 @@ understanding readback / preview generation) instead.
  */
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
-import type { UpdateInvoiceGroupOutcomeBodyClosureReason } from "./updateInvoiceGroupOutcomeBodyClosureReason";
+import type { ClosureReason } from "./closureReason";
 
 /**
  * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
@@ -22,7 +22,7 @@ contract as `UpdateClaimOutcomeBody`.
  */
 export interface UpdateInvoiceGroupOutcomeBody {
   outcome: string;
-  closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
+  closureReason?: ClosureReason;
   approvedAmount?: string;
   /** @nullable */
   closureCategory?: string | null;

@@ -1242,10 +1242,18 @@ export interface UpdateClaimStatusBody {
   status: string;
 }
 
-export type UpdateClaimOutcomeBodyClosureReason =
-  (typeof UpdateClaimOutcomeBodyClosureReason)[keyof typeof UpdateClaimOutcomeBodyClosureReason];
+/**
+ * Canonical set of structured-closure reasons. Defined once here so
+every request schema that accepts a closure decision
+(UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,
+CreateClosureRequest) generates the exact same TypeScript union —
+a typo or drift between sites becomes a typecheck error instead
+of a silent coercion through `as` casts at the call site.
 
-export const UpdateClaimOutcomeBodyClosureReason = {
+ */
+export type ClosureReason = (typeof ClosureReason)[keyof typeof ClosureReason];
+
+export const ClosureReason = {
   denied_by_payor: "denied_by_payor",
   cannot_dispute: "cannot_dispute",
   non_issue: "non_issue",
@@ -1282,7 +1290,7 @@ validated by the canonical `CreateClosureRequest` payload.
  */
 export interface UpdateClaimOutcomeBody {
   outcome: string;
-  closureReason?: UpdateClaimOutcomeBodyClosureReason;
+  closureReason?: ClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
   /** @nullable */
@@ -1315,15 +1323,6 @@ export interface UpdateClaimOutcomeBody {
   closureReviewNotes?: string | null;
 }
 
-export type UpdateInvoiceGroupOutcomeBodyClosureReason =
-  (typeof UpdateInvoiceGroupOutcomeBodyClosureReason)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureReason];
-
-export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
-} as const;
-
 /**
  * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
 contract as `UpdateClaimOutcomeBody`.
@@ -1331,7 +1330,7 @@ contract as `UpdateClaimOutcomeBody`.
  */
 export interface UpdateInvoiceGroupOutcomeBody {
   outcome: string;
-  closureReason?: UpdateInvoiceGroupOutcomeBodyClosureReason;
+  closureReason?: ClosureReason;
   approvedAmount?: string;
   /** @nullable */
   closureCategory?: string | null;
@@ -1560,15 +1559,6 @@ export const CreateClosureRequestOutcome = {
   "Non-Issue": "Non-Issue",
 } as const;
 
-export type CreateClosureRequestClosureReason =
-  (typeof CreateClosureRequestClosureReason)[keyof typeof CreateClosureRequestClosureReason];
-
-export const CreateClosureRequestClosureReason = {
-  cannot_dispute: "cannot_dispute",
-  denied_by_payor: "denied_by_payor",
-  non_issue: "non_issue",
-} as const;
-
 /**
  * Canonical payload for filing a structured closure (Withdraw or
 Non-Issue). Used by `PATCH /claims/{id}/outcome` and
@@ -1589,7 +1579,7 @@ For `denied_by_payor`, the structured detail fields stay optional.
  */
 export interface CreateClosureRequest {
   outcome: CreateClosureRequestOutcome;
-  closureReason: CreateClosureRequestClosureReason;
+  closureReason: ClosureReason;
   /** @nullable */
   closureCategory?: string | null;
   /** @nullable */

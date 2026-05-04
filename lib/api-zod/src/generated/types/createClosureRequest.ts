@@ -13,7 +13,7 @@ understanding readback / preview generation) instead.
  */
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
-import type { CreateClosureRequestClosureReason } from "./createClosureRequestClosureReason";
+import type { ClosureReason } from "./closureReason";
 import type { CreateClosureRequestOutcome } from "./createClosureRequestOutcome";
 
 /**
@@ -36,7 +36,7 @@ For `denied_by_payor`, the structured detail fields stay optional.
  */
 export interface CreateClosureRequest {
   outcome: CreateClosureRequestOutcome;
-  closureReason: CreateClosureRequestClosureReason;
+  closureReason: ClosureReason;
   /** @nullable */
   closureCategory?: string | null;
   /** @nullable */

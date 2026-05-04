@@ -13,7 +13,7 @@ understanding readback / preview generation) instead.
  */
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
-import type { UpdateClaimOutcomeBodyClosureReason } from "./updateClaimOutcomeBodyClosureReason";
+import type { ClosureReason } from "./closureReason";
 
 /**
  * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
@@ -25,7 +25,7 @@ validated by the canonical `CreateClosureRequest` payload.
  */
 export interface UpdateClaimOutcomeBody {
   outcome: string;
-  closureReason?: UpdateClaimOutcomeBodyClosureReason;
+  closureReason?: ClosureReason;
   approvedAmount?: string;
   invoiceNumbers?: string;
   /** @nullable */

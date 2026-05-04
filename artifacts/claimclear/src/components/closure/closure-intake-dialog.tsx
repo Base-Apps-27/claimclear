@@ -13,9 +13,7 @@ import {
   getListInvoiceGroupEvidenceQueryKey,
   getListWithdrawalsQueryKey,
   type ClosureAccountabilityTag as ApiClosureAccountabilityTag,
-  type UpdateClaimOutcomeBodyClosureReason,
-  type UpdateInvoiceGroupOutcomeBodyClosureReason,
-  type AttachClosureEvidenceBodyClosureReasonAtAttach,
+  type ClosureReason as ApiClosureReason,
   type ClosurePersonRef,
 } from "@workspace/api-client-react";
 import {
@@ -52,18 +50,21 @@ import {
 
 /**
  * Compile-time guarantee that the frontend `ClosureReasonKey` union stays in
- * lockstep with the codegen `AttachClosureEvidenceBodyClosureReasonAtAttach`
- * union (modulo `null`, which only the optional request field allows). If
- * the OpenAPI spec ever adds, removes, or renames a closure reason, this
- * assertion fails to compile and forces an explicit reconciliation here
- * rather than letting drift silently break runtime behavior.
+ * lockstep with the codegen `ClosureReason` union — sourced from a single
+ * shared OpenAPI component (`#/components/schemas/ClosureReason`) that is
+ * `$ref`d by every request schema accepting a closure decision
+ * (UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,
+ * CreateClosureRequest). If the OpenAPI spec ever adds, removes, or renames
+ * a closure reason, this assertion fails to compile and forces an explicit
+ * reconciliation here rather than letting drift silently break runtime
+ * behavior — and because every consumer references the same component, a
+ * typo in the dialog can't quietly slip through a per-schema cast.
  */
-type _CodegenClosureReasonParity =
-  ClosureReasonKey extends NonNullable<AttachClosureEvidenceBodyClosureReasonAtAttach>
-    ? NonNullable<AttachClosureEvidenceBodyClosureReasonAtAttach> extends ClosureReasonKey
-      ? true
-      : never
-    : never;
+type _CodegenClosureReasonParity = ClosureReasonKey extends ApiClosureReason
+  ? ApiClosureReason extends ClosureReasonKey
+    ? true
+    : never
+  : never;
 const _closureReasonParityCheck: _CodegenClosureReasonParity = true;
 void _closureReasonParityCheck;
 
@@ -390,6 +391,12 @@ export function ClosureIntakeDialog({
     }
 
     const accountabilityTags: ApiClosureAccountabilityTag[] = tags;
+    // Both PATCH bodies pull `closureReason` from the shared
+    // `ClosureReason` component schema, so a single typed value flows into
+    // either mutation — no per-schema `as` cast and no place for a typo to
+    // sneak in unnoticed (the `_CodegenClosureReasonParity` check above
+    // pins this union to the frontend `ClosureReasonKey`).
+    const closureReason: ApiClosureReason = reason;
     const closureCategory = category;
     const closureCategoryOther = category === "other" ? categoryOther.trim() : null;
     const closureRootCause = category === "other" ? null : rootCause;
@@ -427,7 +434,7 @@ export function ClosureIntakeDialog({
           id: target.id,
           data: {
             outcome,
-            closureReason: reason as UpdateClaimOutcomeBodyClosureReason,
+            closureReason,
             closureCategory,
             closureCategoryOther,
             closureRootCause,
@@ -452,7 +459,7 @@ export function ClosureIntakeDialog({
           id: target.id,
           data: {
             outcome,
-            closureReason: reason as UpdateInvoiceGroupOutcomeBodyClosureReason,
+            closureReason,
             closureCategory,
             closureCategoryOther,
             closureRootCause,

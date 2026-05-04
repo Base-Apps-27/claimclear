@@ -5393,8 +5393,7 @@ components:
         outcome:
           type: string
         closureReason:
-          type: string
-          enum: ["denied_by_payor", "cannot_dispute", "non_issue"]
+          $ref: "#/components/schemas/ClosureReason"
         approvedAmount:
           type: string
         invoiceNumbers:
@@ -5446,8 +5445,7 @@ components:
         outcome:
           type: string
         closureReason:
-          type: string
-          enum: ["denied_by_payor", "cannot_dispute", "non_issue"]
+          $ref: "#/components/schemas/ClosureReason"
         approvedAmount:
           type: string
         closureCategory:
@@ -5515,6 +5513,20 @@ components:
         - our_staff
         - external_payor
         - other
+
+    ClosureReason:
+      type: string
+      description: |
+        Canonical set of structured-closure reasons. Defined once here so
+        every request schema that accepts a closure decision
+        (UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,
+        CreateClosureRequest) generates the exact same TypeScript union —
+        a typo or drift between sites becomes a typecheck error instead
+        of a silent coercion through `as` casts at the call site.
+      enum:
+        - denied_by_payor
+        - cannot_dispute
+        - non_issue
 
     EvidenceFileRef:
       type: object
@@ -5762,8 +5774,7 @@ components:
           type: string
           enum: ["Withdrawn", "Non-Issue"]
         closureReason:
-          type: string
-          enum: ["cannot_dispute", "denied_by_payor", "non_issue"]
+          $ref: "#/components/schemas/ClosureReason"
         closureCategory:
           type: ["string", "null"]
         closureCategoryOther:
