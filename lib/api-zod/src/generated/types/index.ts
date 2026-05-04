@@ -65,6 +65,7 @@ export * from "./claimResponseEvidenceChecklist";
 export * from "./claimResponseEvidenceFiles";
 export * from "./claimResponseMasActionRequired";
 export * from "./claimResponseOutcome";
+export * from "./claimResponseSopAnswersItem";
 export * from "./claimResponseSopOutcome";
 export * from "./claimResponseStatus";
 export * from "./claimsListResponse";

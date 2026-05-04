@@ -4741,6 +4741,24 @@ components:
         perLegContext:
           type: ["string", "null"]
           description: "Operator-authored narrative specific to this leg, used by the dispute write-up assembly."
+        sopAnswers:
+          type: array
+          description: "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript."
+          items:
+            type: object
+            properties:
+              nodeId:
+                type: string
+                description: "ID of the decision-tree node the operator answered."
+              answer:
+                type: string
+                description: "Operator's recorded answer, verbatim."
+              ts:
+                type: string
+                description: "ISO timestamp of when the answer was recorded. Optional on legacy rows."
+            required:
+              - nodeId
+              - answer
         masActionRequired:
           type: ["string", "null"]
           enum: ["cancel", "none", null]

@@ -305,14 +305,12 @@ export function ClaimDetailV2({ claimId }: Props) {
   // + the loaded decision tree by `buildSopTranscript`. A legacy
   // pre-#372 derived "• Q — A" perLegContext (when present) renders
   // beneath the transcript as a migration trail so nothing is lost.
-  // sopAnswers is a jsonb column on the leg row; the OpenAPI schema
-  // surfaces it as an arbitrary record (no per-field type yet) so we
-  // narrow at the helper boundary via `normalizeAnswers`. Cast to
-  // `unknown` here so TS doesn't gripe about the missing field on the
-  // generated ClaimResponse type — `buildSopTranscript` accepts
-  // `unknown` and rejects malformed payloads.
+  // sopAnswers is a jsonb column on the leg row, declared on the
+  // OpenAPI ClaimResponse schema (Task #378) so the generated type
+  // carries the field directly. `buildSopTranscript` still accepts
+  // `unknown` and rejects malformed payloads at the helper boundary.
   const transcriptLines: TranscriptLine[] = useMemo(
-    () => buildSopTranscript((claim as unknown as { sopAnswers?: unknown })?.sopAnswers, tree),
+    () => buildSopTranscript(claim?.sopAnswers, tree),
     [claim, tree],
   );
   const legacyDerivedTrail =

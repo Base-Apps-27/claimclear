@@ -1095,6 +1095,29 @@ export const GetInvoiceGroupResponse = zod
               .describe(
                 "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
               ),
+            sopAnswers: zod
+              .array(
+                zod.object({
+                  nodeId: zod
+                    .string()
+                    .describe(
+                      "ID of the decision-tree node the operator answered.",
+                    ),
+                  answer: zod
+                    .string()
+                    .describe("Operator's recorded answer, verbatim."),
+                  ts: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+                    ),
+                }),
+              )
+              .optional()
+              .describe(
+                "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+              ),
             masActionRequired: zod
               .union([
                 zod.literal("cancel"),
@@ -7580,6 +7603,27 @@ export const ListClaimsResponse = zod.object({
         .describe(
           "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
         ),
+      sopAnswers: zod
+        .array(
+          zod.object({
+            nodeId: zod
+              .string()
+              .describe("ID of the decision-tree node the operator answered."),
+            answer: zod
+              .string()
+              .describe("Operator's recorded answer, verbatim."),
+            ts: zod
+              .string()
+              .optional()
+              .describe(
+                "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+              ),
+          }),
+        )
+        .optional()
+        .describe(
+          "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+        ),
       masActionRequired: zod
         .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
         .nullish()
@@ -7900,6 +7944,25 @@ export const GetClaimResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -8186,6 +8249,25 @@ export const UpdateClaimResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -8501,6 +8583,25 @@ export const UpdateClaimStatusResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -8833,6 +8934,25 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -9114,6 +9234,27 @@ export const ListAttestationPendingResponse = zod.object({
         .nullish()
         .describe(
           "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+        ),
+      sopAnswers: zod
+        .array(
+          zod.object({
+            nodeId: zod
+              .string()
+              .describe("ID of the decision-tree node the operator answered."),
+            answer: zod
+              .string()
+              .describe("Operator's recorded answer, verbatim."),
+            ts: zod
+              .string()
+              .optional()
+              .describe(
+                "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+              ),
+          }),
+        )
+        .optional()
+        .describe(
+          "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
         ),
       masActionRequired: zod
         .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -9433,6 +9574,25 @@ export const AttestClaimResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -9711,6 +9871,25 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -9988,6 +10167,25 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -10346,6 +10544,25 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -10636,6 +10853,25 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -10909,6 +11145,25 @@ export const RemoveLegHoldResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -11178,6 +11433,25 @@ export const ClearLegHoldResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -11456,6 +11730,25 @@ export const ClassifyLegResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -11737,6 +12030,25 @@ export const SopAdvanceLegResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -12029,6 +12341,25 @@ export const ExcludeLegResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -12306,6 +12637,25 @@ export const IncludeLegResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -12602,6 +12952,25 @@ export const MarkLegDuplicateResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -12874,6 +13243,25 @@ export const UnmarkLegDuplicateResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -13148,6 +13536,25 @@ export const ReclassifyLegResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -13522,6 +13929,25 @@ export const SetLegContextResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -13809,6 +14235,25 @@ export const ConcludeLegResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -14090,6 +14535,25 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
     ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+    ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
     .nullish()
@@ -14366,6 +14830,25 @@ export const TriageClaimResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -14646,6 +15129,25 @@ export const PostResponseActionResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -14939,6 +15441,25 @@ export const GenerateClaimEmailResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])
@@ -19632,6 +20153,25 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .nullish()
     .describe(
       "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+    ),
+  sopAnswers: zod
+    .array(
+      zod.object({
+        nodeId: zod
+          .string()
+          .describe("ID of the decision-tree node the operator answered."),
+        answer: zod.string().describe("Operator's recorded answer, verbatim."),
+        ts: zod
+          .string()
+          .optional()
+          .describe(
+            "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
     ),
   masActionRequired: zod
     .union([zod.literal("cancel"), zod.literal("none"), zod.literal(null)])

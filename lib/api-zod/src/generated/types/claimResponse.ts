@@ -19,6 +19,7 @@ import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChec
 import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
 import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionRequired";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
+import type { ClaimResponseSopAnswersItem } from "./claimResponseSopAnswersItem";
 import type { ClaimResponseSopOutcome } from "./claimResponseSopOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
 import type { ClaimVerdictResponse } from "./claimVerdictResponse";
@@ -161,6 +162,8 @@ export interface ClaimResponse {
    * @nullable
    */
   perLegContext?: string | null;
+  /** Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript. */
+  sopAnswers?: ClaimResponseSopAnswersItem[];
   /**
    * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
    * @nullable

@@ -134,6 +134,15 @@ export const ClaimResponseDropReason = {
   non_issue: "non_issue",
 } as const;
 
+export type ClaimResponseSopAnswersItem = {
+  /** ID of the decision-tree node the operator answered. */
+  nodeId: string;
+  /** Operator's recorded answer, verbatim. */
+  answer: string;
+  /** ISO timestamp of when the answer was recorded. Optional on legacy rows. */
+  ts?: string;
+};
+
 /**
  * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
  * @nullable
@@ -311,6 +320,8 @@ export interface ClaimResponse {
    * @nullable
    */
   perLegContext?: string | null;
+  /** Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript. */
+  sopAnswers?: ClaimResponseSopAnswersItem[];
   /**
    * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
    * @nullable
