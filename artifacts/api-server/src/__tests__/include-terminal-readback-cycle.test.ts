@@ -1,10 +1,14 @@
 /**
- * Task #379 end-to-end test for the Include-terminal AI clarification gate.
+ * End-to-end test for the per-leg-context AI clarification gate.
  *
- * Drives the readback → Accept → save → hand-off cycle against the real
- * api-server endpoints in the same order the IncludeTerminal component
- * calls them in production, and asserts the audit trail + persistence
- * the operator UI relies on.
+ * Drives the readback → Accept → save cycle against the real api-server
+ * endpoints in the same order the `PerLegContextEditor` component calls
+ * them in production, and asserts the audit trail + persistence the
+ * operator UI relies on. The editor is now rendered inline during the
+ * SOP walk (and on the inline "Ready" surface inside SopAdvancePlayer
+ * when the leg lands at an include outcome) — the standalone Include
+ * terminal "I'm done — hand off" screen and its `canHandoff` gate have
+ * been retired, so this test no longer pins those UI invariants.
  *
  * What this pins:
  *
@@ -18,14 +22,6 @@
  *      the clarified text to `claims.per_leg_context` and emits a
  *      `leg_per_leg_context_set` audit row with `contextLength`. Source:
  *      same file, ~line 1953.
- *
- *   3. The IncludeTerminal `canHandoff` contract — the hand-off button
- *      stays disabled while typed text differs from `lastSavedRaw`, and
- *      becomes enabled on either an exact match or an empty box. Source
- *      of truth: `artifacts/claimclear/src/components/decision-tree
- *      /terminals/include-terminal.tsx` (canHandoff helper, ~line 74).
- *      Pinned here as part of the same scenario so a regression on
- *      either side surfaces in this single test.
  *
  * Test seam: the Anthropic SDK is stubbed via
  * `__setAnthropicClientForTesting` so the readback handler returns
@@ -205,28 +201,7 @@ async function cleanupSeed(seed: SeedHandle): Promise<void> {
   await db.delete(errorTypesTable).where(eq(errorTypesTable.id, seed.errorTypeId)).catch(() => undefined);
 }
 
-/**
- * Local mirror of the IncludeTerminal `canHandoff` contract. Source of
- * truth lives in `artifacts/claimclear/src/components/decision-tree
- * /terminals/include-terminal.tsx`; reproduced here so this test pins
- * the integration boundary the handler depends on (the button stays
- * disabled until the typed text matches `lastSavedRaw`, OR the box is
- * empty). If the React-side helper changes, its dedicated unit tests in
- * `include-terminal.test.tsx` will fail; if the API contract this test
- * exercises changes, this test will fail.
- */
-type IncludeEditorMode = "edit" | "checking" | "review" | "saving";
-function canHandoff(args: {
-  mode: IncludeEditorMode;
-  raw: string;
-  lastSavedRaw: string;
-}): boolean {
-  if (args.mode !== "edit") return false;
-  if (args.raw.trim().length === 0) return true;
-  return args.raw === args.lastSavedRaw;
-}
-
-test("Include-terminal readback → Accept → save → hand-off cycle drives the real api-server endpoints, writes the audit row, and pins the canHandoff disabled-while-diverged invariant", async () => {
+test("Per-leg-context editor readback → Accept → save cycle drives the real api-server endpoints and writes the expected audit rows", async () => {
   const seed = await seedPreSubmitLeg();
   const rawTyped = "driver waited like 47 min, member confirmed by phone before trip";
 
@@ -279,26 +254,9 @@ test("Include-terminal readback → Accept → save → hand-off cycle drives th
       .where(eq(claimsTable.id, seed.claimId));
     assert.equal(legAfterReadback.perLegContext, null, "readback alone must not persist anything");
 
-    // ─── Step 3: pin canHandoff DISABLED while the readback is on screen ───
-    // Mid-cycle (before Accept) the operator's typed text is `rawTyped`
-    // and `lastSavedRaw` is still empty. Hand-off must stay blocked.
-    assert.equal(
-      canHandoff({ mode: "edit", raw: rawTyped, lastSavedRaw: "" }),
-      false,
-      "hand-off must stay disabled while typed text differs from lastSavedRaw",
-    );
-    // Component is also briefly in `review` mode while the readback
-    // panel is open; non-edit modes always block hand-off.
-    assert.equal(
-      canHandoff({ mode: "review", raw: rawTyped, lastSavedRaw: "" }),
-      false,
-      "hand-off must stay disabled outside edit mode",
-    );
-
-    // ─── Step 4: operator clicks Accept → component POSTs the clarified text ───
-    // IncludeTerminal sends the AI's restatement (not the raw text) as
-    // the saved context, and bookmarks `lastSavedRaw = rawTyped` locally
-    // so the user's original wording is what gates the next hand-off.
+    // ─── Step 3: operator clicks Accept → component POSTs the clarified text ───
+    // PerLegContextEditor sends the AI's restatement (not the raw text)
+    // as the saved context.
     const acceptedContext = readbackRes.json.readback;
     const saveRes = await fetchJson<{ id: number; perLegContext: string | null }>(
       `/api/claims/${seed.claimId}/per-leg-context`,
@@ -315,7 +273,7 @@ test("Include-terminal readback → Accept → save → hand-off cycle drives th
       "server should echo back the persisted clarified text",
     );
 
-    // ─── Step 5: assert the per-leg-context-set audit row + DB state ───
+    // ─── Step 4: assert the per-leg-context-set audit row + DB state ───
     const setAuditRows = await db
       .select()
       .from(auditLogsTable)
@@ -336,30 +294,6 @@ test("Include-terminal readback → Accept → save → hand-off cycle drives th
       legAfterSave.perLegContext,
       acceptedContext,
       "leg.perLegContext must hold the clarified text after Accept",
-    );
-
-    // ─── Step 6: pin canHandoff at the boundary states post-save ───
-    // After Accept, the component sets `lastSavedRaw = rawTyped`
-    // (the operator's untouched typed text). Hand-off rules:
-    //   - typed text matches lastSavedRaw → ENABLED.
-    assert.equal(
-      canHandoff({ mode: "edit", raw: rawTyped, lastSavedRaw: rawTyped }),
-      true,
-      "hand-off must be enabled when typed text matches lastSavedRaw",
-    );
-    //   - operator edits the text after Accept → DISABLED again until
-    //     they re-run Check + Accept or revert.
-    assert.equal(
-      canHandoff({ mode: "edit", raw: `${rawTyped} (edit)`, lastSavedRaw: rawTyped }),
-      false,
-      "hand-off must re-disable when typed text diverges from lastSavedRaw post-save",
-    );
-    //   - operator clears the box entirely → ENABLED (the explicit
-    //     "nothing to add" path; doesn't touch the saved server state).
-    assert.equal(
-      canHandoff({ mode: "edit", raw: "", lastSavedRaw: rawTyped }),
-      true,
-      "hand-off must be enabled when the textarea is empty",
     );
   } finally {
     await cleanupSeed(seed);

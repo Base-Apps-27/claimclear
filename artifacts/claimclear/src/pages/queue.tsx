@@ -50,7 +50,6 @@ import {
 } from "@/lib/queue-urgency";
 import { countUrgentRows } from "@/lib/urgent-count";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
-import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -512,9 +511,10 @@ export default function Queue() {
   const newParams = { status: "New", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
   const needsEvidenceParams = { status: "Needs Evidence", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
   // `Generating Email` is a real, pre-submit, on-clock invoice-group
-  // status (set by `POST /invoice-groups/:id/package` when the operator
-  // clicks "Ready to package"). It satisfies the same urgency rule as
-  // `New` / `Needs Evidence` and folds into the Action Required lane so
+  // status. The dedicated package CTA was retired — the submission
+  // gauntlet's preview/submit path is now the only writer that flips a
+  // group into this status. Existing groups parked here pre-cutover (or
+  // the rare future writer) still need to fold into Action Required so
   // the Dashboard can never count an urgent group the operator has
   // nowhere to act on.
   const generatingEmailParams = { status: "Generating Email", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
@@ -1104,19 +1104,6 @@ export default function Queue() {
                 </div>
               </div>
               <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
-              {/*
-                Ready to package CTA — surfaces the pre-submit
-                "package this group" affordance alongside our inline
-                workspace. The CTA self-hides once the group is past
-                pre-submit, so it stays out of the way once a group
-                has progressed.
-              */}
-              {selectedWorkflowGroupSummary && (
-                <QueueReadyToPackageCta
-                  groupId={selectedWorkflowGroupSummary.id}
-                  groupStatusFromList={selectedWorkflowGroupSummary.status}
-                />
-              )}
               <InlineGroupWorkspace groupId={selectedWorkflowId} />
             </div>
           </div>

@@ -10,7 +10,6 @@ import {
   getGetInvoiceGroupQueryKey,
   useGetInvoiceGroupValidTransitions,
   getGetInvoiceGroupValidTransitionsQueryKey,
-  usePackageInvoiceGroup,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
@@ -32,7 +31,6 @@ import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
   PortalResponseItem,
-  GroupPackagingReadiness,
   AuditLogResponse,
   NoteResponse,
 } from "@workspace/api-client-react";
@@ -249,12 +247,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
   // ─────────────────────────────────────────────────────────────────────
   // "Invoice shipped" microinteraction (Task #325). When this group's
-  // status flips out of pre-submit (New / Needs Evidence / Processed)
-  // into in-flight (Portal Queued / Generating Email / Awaiting
-  // Response) while the page is mounted — either because the operator's
-  // own package mutation just landed, or because the SSE stream
-  // broadcast their action back to this tab — briefly draw a check
-  // inside the group's status pill. We deliberately suppress the
+  // status flips out of pre-submit (New / Needs Evidence) into in-flight
+  // (Portal Queued / Generating Email / Awaiting Response) while the
+  // page is mounted — driven by the submission gauntlet's submit-now
+  // path or by an SSE broadcast from a collaborator — briefly draw a
+  // check inside the group's status pill. We deliberately suppress the
   // animation when the change came from a different operator (so a
   // collaborator's submission doesn't feel like the current user's
   // win). Mirrors the leg-level "you finished a thing" flourish on
@@ -264,7 +261,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const prevGroupStatusRef = useRef<string | null | undefined>(undefined);
   const [justShipped, setJustShipped] = useState(false);
 
-  const packageMutation = usePackageInvoiceGroup();
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
@@ -333,7 +329,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   );
   const excludedCount = allRides.length - disputedRides.length;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
-  const packagingReadiness: GroupPackagingReadiness | undefined = detail?.packagingReadiness;
 
   useEffect(() => {
     const newStatus = group?.status;
@@ -448,35 +443,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
     qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-  }
-
-  function onClickPackage() {
-    packageMutation.mutate(
-      { id: groupId },
-      {
-        onSuccess: () => {
-          toast({
-            title: "Invoice packaged",
-            description: "Group moved to Generating Email — draft generation will pick up from here.",
-          });
-          invalidateGroup();
-        },
-        onError: (e: unknown) => {
-          let errorMsg = e instanceof Error ? e.message : String(e);
-          if (e != null && typeof e === "object" && "response" in e) {
-            const axiosErr = e as { response?: { data?: { error?: string } } };
-            const resp = axiosErr.response?.data;
-            if (resp?.error) errorMsg = resp.error;
-          }
-          toast({
-            title: "Cannot package yet",
-            description: errorMsg,
-            variant: "destructive",
-          });
-          invalidateGroup();
-        },
-      },
-    );
   }
 
   // Task #265 removed onSaveGroupContext — the group-aggregate-context
@@ -683,23 +649,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   data-testid="header-hold-button"
                 >
                   <PauseCircle className="w-3.5 h-3.5" /> Place group on hold
-                </button>
-              )}
-              {isPreSubmit && packagingReadiness && (
-                <button
-                  className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
-                  style={{ background: "var(--cc-purple-fg)", color: "white" }}
-                  onClick={onClickPackage}
-                  disabled={!packagingReadiness.ready || packageMutation.isPending}
-                  title={packagingReadiness.ready ? undefined : packagingReadiness.reason ?? undefined}
-                  data-testid="header-ready-to-package-button"
-                >
-                  {packageMutation.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  Ready to package
                 </button>
               )}
             </div>
@@ -1498,57 +1447,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-            )}
-
-            {/* Ready to package — surfaced separately when readiness payload exists */}
-            {isPreSubmit && packagingReadiness && (
-              <CcCard
-                title="Ready to package"
-                icon={<ClipboardCheck className="w-3.5 h-3.5" />}
-                testId="ready-to-package-card"
-              >
-                <div className="text-xs mb-2" style={{ color: "var(--cc-muted-fg)" }}>
-                  Move this invoice out of pre-submit once every leg's worktree is done.
-                </div>
-                <div className="flex flex-wrap gap-1 mb-2 text-[10px]">
-                  <span className="px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--cc-border)" }} data-testid="readiness-count-processed">
-                    {packagingReadiness.processedLegCount} processed
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--cc-border)" }} data-testid="readiness-count-unprocessed">
-                    {packagingReadiness.unprocessedLegCount} unprocessed
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--cc-border)" }} data-testid="readiness-count-excluded">
-                    {packagingReadiness.excludedLegCount} excluded
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--cc-border)" }} data-testid="readiness-count-held">
-                    {packagingReadiness.heldLegCount} on hold
-                  </span>
-                </div>
-                <p
-                  className="text-xs mb-2"
-                  style={{ color: packagingReadiness.ready ? "var(--cc-success)" : "var(--cc-muted-fg)" }}
-                  data-testid="readiness-reason"
-                >
-                  {packagingReadiness.ready
-                    ? "All worktree review complete. Click to advance into draft generation."
-                    : packagingReadiness.reason}
-                </p>
-                <button
-                  onClick={onClickPackage}
-                  disabled={!packagingReadiness.ready || packageMutation.isPending}
-                  title={packagingReadiness.ready ? undefined : packagingReadiness.reason ?? undefined}
-                  className="cc-btn w-full justify-center text-xs gap-1 inline-flex items-center py-2"
-                  style={{ background: "var(--cc-purple-fg)", color: "white" }}
-                  data-testid="ready-to-package-button"
-                >
-                  {packageMutation.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  Ready to package
-                </button>
-              </CcCard>
             )}
 
             {/* Notes */}

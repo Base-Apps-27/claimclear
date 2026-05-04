@@ -457,47 +457,6 @@ paths:
         "204":
           description: Deleted
 
-  /invoice-groups/{id}/package:
-    post:
-      operationId: packageInvoiceGroup
-      tags: [invoice-groups]
-      summary: Package an invoice group (operator-driven flip to Generating Email)
-      description: >
-        Operator-driven transition out of pre-submit. Gated by the
-        readiness rules in lib/group-packaging.ts: every non-held leg
-        must have a sop_outcome set and at least one leg must be
-        contestable (sop_outcome IN portal_dispute|dispute). On success
-        the group moves to Generating Email and the standard
-        downstream draft/submit flow takes over.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Group successfully packaged
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InvoiceGroupResponse"
-        "404":
-          description: Invoice group not found
-        "409":
-          description: Group is not ready to package (not pre-submit, has unprocessed legs, or no contestable legs)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                  packagingReadiness:
-                    $ref: "#/components/schemas/GroupPackagingReadiness"
-                required:
-                  - error
-
   /invoice-groups/{id}/status:
     patch:
       operationId: updateInvoiceGroupStatus

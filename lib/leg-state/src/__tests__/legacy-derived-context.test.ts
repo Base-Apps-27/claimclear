@@ -1,7 +1,7 @@
 // Task #372: helper that recognises the auto-derived "• Q — A"
 // breadcrumb the previous SOP-advance player wrote into per_leg_context.
 // Pinning the contract here so server (prompt-leg-inputs), client
-// (IncludeTerminal editor seed, SOP transcript card) all agree on
+// (PerLegContextEditor seed, SOP transcript card) all agree on
 // what counts as legacy-derived.
 
 import { test } from "node:test";

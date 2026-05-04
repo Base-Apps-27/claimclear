@@ -131,8 +131,10 @@ export interface LegForOutcomeRole {
 //   - the dispute write-up bot (`buildPromptLegInputs`) ignores them
 //     and never feeds the breadcrumb back to itself as "operator
 //     captured context";
-//   - the IncludeTerminal editor renders them as empty (the operator
-//     starts from a blank slate and authors fresh context if any);
+//   - the `PerLegContextEditor` (rendered inline during the SOP walk
+//     and on the inline "Ready" surface in SopAdvancePlayer) renders
+//     them as empty (the operator starts from a blank slate and
+//     authors fresh context if any);
 //   - the read-only SOP transcript card on the leg page can still
 //     surface them so nothing is lost in the migration.
 //

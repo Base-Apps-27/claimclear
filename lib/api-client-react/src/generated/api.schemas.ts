@@ -3776,11 +3776,6 @@ export const ExportInvoiceGroupsCsvExpiring = {
   stuck: "stuck",
 } as const;
 
-export type PackageInvoiceGroup409 = {
-  error: string;
-  packagingReadiness?: GroupPackagingReadiness;
-};
-
 export type UpdateInvoiceGroupStatusBody = {
   status: string;
   reason?: string;

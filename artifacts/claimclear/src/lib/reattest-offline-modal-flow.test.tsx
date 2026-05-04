@@ -22,7 +22,7 @@
 //      server side.
 //
 // We follow the project pattern established by
-// include-terminal.tsx → include-save-flow.test.ts: pure helpers are
+// per-leg-context-editor.tsx → per-leg-context-editor.test.tsx: pure helpers are
 // factored out of the React component (visibility gate, submit
 // predicate, payload builder) so the regression-relevant edges can be
 // exercised from node:test without spinning up jsdom. A render-side

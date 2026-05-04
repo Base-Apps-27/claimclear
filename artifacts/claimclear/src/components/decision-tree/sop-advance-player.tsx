@@ -18,8 +18,12 @@
 //     items the operator is still adding.
 //   - The pre-#372 autofill of `perLegContext` with a "• Q — A"
 //     breadcrumb is removed entirely. Per-leg unique context is now
-//     captured deliberately at the end-of-walk Include terminal with
-//     an AI-clarification gate.
+//     captured INLINE during the walk via the `PerLegContextEditor`
+//     panel (rendered below the question card on every step and on
+//     the inline "Ready" surface when the leg lands at an include
+//     outcome). The standalone "I'm done — hand off" Include terminal
+//     screen has been retired — the leg already lands in terminal
+//     state via the prior `/sop-advance` POST.
 
 import * as React from "react";
 import { useMemo, useState, useCallback, useRef } from "react";
@@ -50,8 +54,11 @@ import {
   X,
   Paperclip,
 } from "lucide-react";
-import { terminalKindForLeg } from "@/lib/sop-terminal-routing";
-import { IncludeTerminal } from "./terminals/include-terminal";
+import {
+  terminalKindForLeg,
+  channelHintForErrorType,
+  channelHintLabel,
+} from "@/lib/sop-terminal-routing";
 import { ClosedTerminal } from "./terminals/closed-terminal";
 import { HoldTerminal } from "./terminals/hold-terminal";
 import { DuplicateTerminal } from "./terminals/duplicate-terminal";
@@ -61,6 +68,7 @@ import {
 } from "./terminals/sibling-prompt";
 import type { TerminalLeg } from "./terminals/types";
 import type { ErrorTypeChannelInput } from "@/lib/sop-terminal-routing";
+import { PerLegContextEditor } from "./per-leg-context-editor";
 import {
   useListClaimEvidence,
   getListClaimEvidenceQueryKey,
@@ -474,8 +482,17 @@ export function SopAdvancePlayer({
 
   // Terminal dispatch — single switch on outcomeRole-derived terminal
   // kind (Guard #1: no parallel enum, no precedence ladder copy here).
+  //
+  // Closed/Hold/Duplicate keep their dedicated terminal screens (each
+  // captures information specific to that outcome). The Include
+  // terminal "I'm done — hand off" screen was retired — when a leg
+  // lands at include we render an inline "Ready" confirmation here
+  // (with the channel hint so the operator knows portal vs email vs
+  // unconfigured) and the same `PerLegContextEditor` that runs during
+  // the walk, so context can still be added/edited after terminal.
+  // The leg's existing status pill on the leg page carries the rest.
   const terminalKind = terminalKindForLeg(leg);
-  if (terminalKind !== "none") {
+  if (terminalKind !== "none" && terminalKind !== "include") {
     const terminalLeg: TerminalLeg = {
       id: leg.id,
       sopOutcome: leg.sopOutcome,
@@ -488,15 +505,6 @@ export function SopAdvancePlayer({
     return (
       <div className="space-y-3 min-w-0">
         {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
-        {terminalKind === "include" && (
-          <IncludeTerminal
-            leg={terminalLeg}
-            tree={tree}
-            disabledReason={disabledReason}
-            onAdvanced={onAdvanced}
-            errorType={errorType ?? null}
-          />
-        )}
         {terminalKind === "closed" && (
           <ClosedTerminal
             leg={terminalLeg}
@@ -521,6 +529,46 @@ export function SopAdvancePlayer({
             onAdvanced={onAdvanced}
           />
         )}
+      </div>
+    );
+  }
+
+  if (terminalKind === "include") {
+    const channelHint = channelHintForErrorType(errorType);
+    return (
+      <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
+        {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
+        <Card
+          className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-900"
+          data-testid="sop-include-ready-card"
+        >
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
+              <p
+                className="text-base font-semibold text-emerald-800 dark:text-emerald-200"
+                data-testid="sop-include-ready-label"
+              >
+                Ready
+              </p>
+            </div>
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="sop-include-channel-hint"
+            >
+              {channelHintLabel(channelHint)}
+            </p>
+            {disabled && disabledReason && (
+              <p className="text-xs text-muted-foreground italic">{disabledReason}</p>
+            )}
+          </CardContent>
+        </Card>
+        <PerLegContextEditor
+          legId={leg.id}
+          perLegContext={leg.perLegContext ?? null}
+          disabled={disabled}
+          disabledReason={disabledReason}
+        />
       </div>
     );
   }
@@ -670,6 +718,22 @@ export function SopAdvancePlayer({
           )}
         </CardContent>
       </Card>
+
+      {/*
+        Per-leg unique-context editor. Rendered inline on EVERY step of
+        the walk so operators can capture context as they go (the field
+        used to live on a separate "I'm done — hand off" Include
+        terminal screen that has been retired). The editor is optional;
+        an empty box is fine. The same component also renders on the
+        inline "Ready" surface above when the leg lands at an include
+        outcome, so context can still be added/edited post-terminal.
+      */}
+      <PerLegContextEditor
+        legId={leg.id}
+        perLegContext={leg.perLegContext ?? null}
+        disabled={disabled}
+        disabledReason={disabledReason}
+      />
     </div>
   );
 }

@@ -617,13 +617,15 @@ export function ClaimDetailV2({
   //      mutation endpoint (per-leg-context, per-leg-context-readback,
   //      change-error-type, set-hold, etc.) refuses with HTTP 409 once
   //      the parent group is in `in-flight` / `response-pending` /
-  //      `closed` / `on-hold` / etc. Without this guard the IncludeTerminal
-  //      stayed fully active on a packaged group: operator typed a note,
-  //      clicked "Check with AI", got a generic "AI clarification failed"
-  //      toast that hid the real phase-mismatch 409 underneath, and the
-  //      "I'm done — hand off" button (a pure refetch) did nothing — the
-  //      claim looked frozen end-to-end. Lock it explicitly with the
-  //      group's actual status so the operator can see why.
+  //      `closed` / `on-hold` / etc. Without this guard the
+  //      `PerLegContextEditor` (rendered inline during the SOP walk
+  //      and on the inline "Ready" surface) stayed fully active on a
+  //      packaged group: operator typed a note, clicked "Check with
+  //      AI", got a generic "AI clarification failed" toast that hid
+  //      the real phase-mismatch 409 underneath. Lock it explicitly
+  //      with the group's actual status so the operator can see why.
+  //      (The retired Include-terminal "I'm done — hand off" screen
+  //      had the same failure mode.)
   //   3. Substatus gates that pre-empt the SOP entirely (no error type,
   //      hold, excluded). These only apply when `canShowPlayer` is false.
   //

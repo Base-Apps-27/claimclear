@@ -1,10 +1,11 @@
 // Unit tests for `computeGroupReadiness` introduced in Task #231.
 //
-// The pure helper drives the "Ready to package" CTA on the invoice
-// group detail page and the 409 path on POST /invoice-groups/:id/package.
-// These tests cover every gate (status, empty, unprocessed,
-// no-contestable, ready) plus the count fields that the UI badges
-// render unconditionally.
+// The pure helper used to back both the "Ready to package" CTA and the
+// `POST /invoice-groups/:id/package` endpoint; both have been retired.
+// The helper survives because its output is still attached to the group
+// detail response as a passive `packagingReadiness` summary (every-leg
+// worktree-done signal). These tests cover every gate (status, empty,
+// unprocessed, no-contestable, ready) plus the count fields.
 
 import { test } from "node:test";
 import { strict as assert } from "node:assert";

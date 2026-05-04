@@ -2,7 +2,8 @@
 // so the right-rail offline re-attest override flow (Task #333) can be
 // regression-tested from node:test without spinning up jsdom.
 //
-// Mirrors the pattern set by include-terminal.tsx → include-save-flow.test.ts
+// Mirrors the pattern set by per-leg-context-editor.tsx →
+// per-leg-context-editor.test.tsx
 // (pure helpers exported from / imported by the React component, then
 // exercised from a sibling .test file).
 //

@@ -241,7 +241,6 @@ export * from "./needsClassificationInboxResponse";
 export * from "./noteResponse";
 export * from "./noteResponseType";
 export * from "./notificationPreferencesResponse";
-export * from "./packageInvoiceGroup409";
 export * from "./payorDenialReasonCode";
 export * from "./placeHoldBody";
 export * from "./pollSubmissionsBody";
