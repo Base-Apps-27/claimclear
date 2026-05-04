@@ -299,9 +299,11 @@ test("(a) parity: no per_leg_context, no duplicates — helper output is byte-id
   ];
   const result = buildPromptLegInputs({ legs: rides, groupLegs: rides });
 
-  // Legacy ride-line format (verbatim from portal-submissions before refactor).
+  // Task #398: dollar amounts are deliberately omitted from prompt rides
+  // — the dispute write-up never reasons about money. Pre-#398 the line
+  // ended `| Amount: $${claimAmount}`; the trailing field is gone now.
   const expectedRidesBlock = rides
-    .map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"} | Amount: $${r.claimAmount || "0.00"}`)
+    .map((r, i) => `  ${i + 1}. Conf #${r.confNumber} | Service date: ${r.date || "N/A"} | Client: ${r.clientNumber || "N/A"} | Car: ${r.carNumber || "N/A"}`)
     .join("\n");
 
   assert.equal(result.ridesBlock, expectedRidesBlock);
@@ -339,8 +341,14 @@ test("(a) parity: portal write-up prompt is byte-identical to the legacy assembl
   assert.equal(prompt.includes("Per-leg finding:"), false);
   assert.equal(prompt.includes("rolled under this primary"), false);
   assert.equal(prompt.includes("the trip-overriding finding lives there"), false);
-  // The legacy rides block must still be present verbatim.
-  assert.match(prompt, /  1\. Conf #ABC123 \| Service date: 2026-01-15 \| Client: C100 \| Car: CAR-7 \| Amount: \$42\.50\n  2\. Conf #DEF456 \| Service date: 2026-01-16 \| Client: C100 \| Car: CAR-7 \| Amount: \$55\.00/);
+  // Task #398: rides block no longer carries the trailing `| Amount: $X`
+  // field — every prompt site asserts on the dollar-free shape now.
+  assert.match(prompt, /  1\. Conf #ABC123 \| Service date: 2026-01-15 \| Client: C100 \| Car: CAR-7\n  2\. Conf #DEF456 \| Service date: 2026-01-16 \| Client: C100 \| Car: CAR-7/);
+  // Defensive: the dollar sign must NOT appear anywhere in the rides
+  // block (even with a different label). Pin it so a regression putting
+  // `Total: $X` back trips this test.
+  assert.equal(prompt.includes("Amount: $"), false);
+  assert.equal(prompt.includes("Total invoice amount:"), false);
 });
 
 test("(a) parity: readback prompt is byte-identical to the legacy assembly", () => {
@@ -410,9 +418,9 @@ test("(b) every leg has per_leg_context — each leg's finding shows under the r
   assert.equal(result.siblingDuplicateCount, 0);
 
   const expectedRidesBlock =
-    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7\n` +
     `     Per-leg finding: Driver waited 47 min; member confirmed delay.\n` +
-    `  2. Conf #DEF456 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `  2. Conf #DEF456 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7\n` +
     `     Per-leg finding: GPS shows trip ended at 5:12pm, not 5:48pm as billed.`;
   assert.equal(result.ridesBlock, expectedRidesBlock);
 
@@ -521,7 +529,7 @@ test("(c) primary + 2 sibling duplicates — duplicates skipped from rides block
   // Rides block: only the primary appears (duplicates skipped — primary owns
   // the finding) and the sibling-coverage annotation lines are present.
   const expectedRidesBlock =
-    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7\n` +
     `     Per-leg finding: Trip started at member's home, not the address billed.\n` +
     `     This same trip-overriding finding also covers Conf #DEF456, Conf #GHI789 (rolled under this primary).`;
   assert.equal(result.ridesBlock, expectedRidesBlock);
@@ -775,7 +783,7 @@ test("Task #377: SOP transcript renders under each visible leg in the rides bloc
   const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
 
   const expectedRidesBlock =
-    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7\n` +
     `     SOP walk transcript:\n` +
     `       • Was GPS available? — Yes\n` +
     `       • Did breadcrumbs match the billed route? — No`;
@@ -814,7 +822,7 @@ test("Task #377: a leg with BOTH SOP transcript and per-leg finding renders both
   // narrative on top. Background → finding mirrors the order the operator
   // reads it on the leg page.
   const expectedRidesBlock =
-    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7\n` +
     `     SOP walk transcript:\n` +
     `       • Was GPS available? — Yes\n` +
     `       • Did breadcrumbs match the billed route? — No\n` +
@@ -910,7 +918,7 @@ test("Task #377: parity guard — no tree map → no transcript → rides block 
   const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride] });
 
   const expectedRidesBlock =
-    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50`;
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7`;
   assert.equal(result.ridesBlock, expectedRidesBlock);
   assert.deepEqual(result.perClaimAnnotationLines.get(501), []);
   assert.equal(result.hasSopTranscript, false);

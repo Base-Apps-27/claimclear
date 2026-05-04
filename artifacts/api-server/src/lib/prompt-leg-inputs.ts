@@ -154,7 +154,10 @@ const RIDE_ANNOTATION_INDENT = "     ";
 const RIDE_TRANSCRIPT_BULLET_INDENT = "       ";
 
 function ridesBlockHead(input: PromptLegInput, n: number): string {
-  return `${RIDE_LINE_INDENT}${n}. Conf #${input.confNumber} | Service date: ${input.date || "N/A"} | Client: ${input.clientNumber || "N/A"} | Car: ${input.carNumber || "N/A"} | Amount: $${input.claimAmount || "0.00"}`;
+  // Task #398: dollar amounts are deliberately omitted from prompt rides
+  // — the dispute write-up never reasons about money, and including them
+  // invites the model to make irrelevant cost-minimisation arguments.
+  return `${RIDE_LINE_INDENT}${n}. Conf #${input.confNumber} | Service date: ${input.date || "N/A"} | Client: ${input.clientNumber || "N/A"} | Car: ${input.carNumber || "N/A"}`;
 }
 
 function transcriptBulletLine(line: TranscriptLine, indent: string): string {

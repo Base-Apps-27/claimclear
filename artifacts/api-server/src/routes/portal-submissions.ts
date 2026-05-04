@@ -309,12 +309,14 @@ export function buildPortalDescriptionPrompt(opts: {
 
   const ridesBlock = promptLegInputs.ridesBlock;
 
+  // Task #398: dollar amounts are deliberately omitted from the prompt —
+  // the dispute write-up never reasons about money, and including totals
+  // invites cost-framing language that has no place in a portal note.
   const groupHeader = `This dispute is filed at the invoice level and covers ${rides.length} ride${rides.length === 1 ? "" : "s"} on a single invoice.
 
 Invoice details:
 - Invoice number: ${group.invoiceNumber}
 - Client number: ${group.clientNumber || "N/A"}
-- Total invoice amount: $${snap.claimAmount || "0.00"}
 - Error type: ${group.errorTypeName || "N/A"}
 - Group-level error details: ${group.errorDetails || "N/A"}
 
@@ -435,33 +437,46 @@ async function generatePortalDescription(
     ctx, errorType, disputeReason, settings, promptLegInputs, specialCircumstances,
   });
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    messages: [{ role: "user", content: prompt }],
-    system: systemPrompt,
-  });
+  const message = await callAnthropicWithRetry(
+    {
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+      system: systemPrompt,
+    },
+    { site: "portal_description", groupId: ctx.group.id },
+  );
 
   const textBlock = message.content.find((b: { type: string }) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("Empty LLM response");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new LLMUnavailableError("AI returned an empty response. Please try again in a moment.");
+  }
   return (textBlock as { type: "text"; text: string }).text.trim();
 }
 
+/**
+ * Hard-coded template description used ONLY when the caller provided no
+ * `disputeReason` and no `descriptionHtml` (the bot/admin "submit-now"
+ * bypass path with literally nothing to AI-generate from). NOT used as
+ * a silent fallback for failed LLM calls — Task #398 removed those: the
+ * routes now return 502 instead so the operator knows the AI is down
+ * rather than receiving a thin template they didn't ask for.
+ *
+ * Per Task #398, dollar amounts are also omitted here for shape parity
+ * with the LLM prompt (the portal Description field never reasons about
+ * money — the amount lives in the dedicated Claim Amount form field).
+ */
 function buildFallbackDescription(
   ctx: GroupContext,
   disputeReason: string,
   specialCircumstances?: string | null,
 ): string {
   const { group, rides } = ctx;
-  const snap = buildSnapshot(ctx);
-  // Lead with the operator's narrative-shaping context so a failed LLM call
-  // doesn't silently drop it from the write-up.
   const trimmedSpecial = (specialCircumstances || "").trim();
   const specialPrefix = trimmedSpecial ? `Special Circumstances: ${trimmedSpecial}\n\n` : "";
-  const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"} — $${r.claimAmount || "0.00"}`).join("\n");
+  const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"}`).join("\n");
   return `${specialPrefix}Dispute for Invoice Number: ${group.invoiceNumber}
 Client Number: ${group.clientNumber || "N/A"}
-Total Amount: $${snap.claimAmount || "0.00"}
 Error Type: ${group.errorTypeName || "N/A"}
 Error Details: ${group.errorDetails || "N/A"}
 
@@ -471,6 +486,64 @@ ${ridesBlock}
 Dispute Reason: ${disputeReason || "N/A"}
 
 Evidence Notes: ${group.evidenceNotes || "N/A"}`;
+}
+
+/**
+ * Task #398: surfaced when the LLM is unavailable after every retry
+ * attempt. Routes that catch this MUST return a 502 with the message —
+ * never substitute a template fallback (that's how operators ended up
+ * silently submitting thin write-ups to MAS).
+ */
+class LLMUnavailableError extends Error {
+  readonly cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "LLMUnavailableError";
+    this.cause = cause;
+  }
+}
+
+/**
+ * Wraps `anthropic.messages.create` with a small retry+backoff loop.
+ * Transient blips (rate limits, 5xx, network drops) recover invisibly
+ * within ~12s total; persistent failures throw `LLMUnavailableError`
+ * so the route can return a clean 502. NEVER returns successfully on
+ * a thrown call — the silent template fallback is gone (Task #398).
+ *
+ * Backoff schedule: 1s, 3s, 8s (4 total attempts).
+ *
+ * The return is narrowed to the non-streaming `Message` variant via
+ * `Extract` (the streaming variant has no `content` field) — every
+ * call site here passes non-streaming params, so this cast is sound.
+ */
+type AnthropicMessage = Extract<
+  Awaited<ReturnType<typeof anthropic.messages.create>>,
+  { content: unknown }
+>;
+async function callAnthropicWithRetry(
+  params: Parameters<typeof anthropic.messages.create>[0],
+  context: { site: string; groupId?: number },
+): Promise<AnthropicMessage> {
+  const delaysMs = [1000, 3000, 8000];
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return (await anthropic.messages.create(params)) as AnthropicMessage;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === delaysMs.length) break;
+      const delay = delaysMs[attempt];
+      logger.warn(
+        { err, attempt: attempt + 1, nextDelayMs: delay, site: context.site, groupId: context.groupId },
+        "Anthropic call failed, retrying",
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new LLMUnavailableError(
+    "AI is currently unavailable. Please try again in a moment.",
+    lastErr,
+  );
 }
 
 async function loadErrorTypeForContext(ctx: GroupContext): Promise<typeof errorTypesTable.$inferSelect | null> {
@@ -618,15 +691,28 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
   const { prompt, systemPrompt } = buildReadbackPrompt({ ctx, errorType, reason, specialCircumstances: trimmedSpecial, promptLegInputs });
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 400,
-    messages: [{ role: "user", content: prompt }],
-    system: systemPrompt,
-  });
+  let message: AnthropicMessage;
+  try {
+    message = await callAnthropicWithRetry(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }],
+        system: systemPrompt,
+      },
+      { site: "readback_preflight", groupId: ctx.group.id },
+    );
+  } catch (err) {
+    if (err instanceof LLMUnavailableError) {
+      logger.error({ err: err.cause, groupId: ctx.group.id }, "AI readback preflight failed after retries");
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   const textBlock = message.content.find((b: { type: string }) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
-    res.status(502).json({ error: "Empty AI response" });
+    res.status(502).json({ error: "AI returned an empty response. Please try again in a moment." });
     return;
   }
   const readback = (textBlock as { type: "text"; text: string }).text.trim();
@@ -711,18 +797,24 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   const issueType = determineIssueType(errorType);
   const snap = buildSnapshot(ctx);
 
-  // Build prompt-leg inputs OUTSIDE the try/catch so an inconsistent group
-  // surfaces loud (Task #307 guard #10) — the LLM-error fallback below must
-  // not mask data-shape problems.
+  // Task #307 guard #10: an inconsistent group surfaces loud here (before
+  // the LLM call) rather than being masked by retry. Task #398: there is
+  // no silent template fallback for LLM failures — a persistent outage
+  // returns 502 to the UI so the operator knows to retry, rather than
+  // ending up with a thin write-up they didn't ask for.
   const rides = ctx.rides as PromptLegRowInput[];
   const treesByLegId = await loadDecisionTreesForLegs(rides);
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
-  let generatedDescription = "";
+  let generatedDescription: string;
   try {
     generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
   } catch (err) {
-    logger.warn({ err }, "AI portal description generation failed, using fallback");
-    generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
+    if (err instanceof LLMUnavailableError) {
+      logger.error({ err: err.cause, groupId: ctx.group.id }, "AI portal description generation failed after retries");
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
@@ -943,17 +1035,23 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     return;
   }
   const savedSpecial = (existing.specialCircumstances || "").trim();
-  // Pre-compute prompt-leg inputs (Task #307 guard #10): data inconsistency
-  // surfaces loud, while LLM API errors still fall back to the template.
+  // Task #307 guard #10: data inconsistency still surfaces loud here.
+  // Task #398: LLM API errors return 502 (no silent template fallback) so
+  // an outage doesn't quietly replace the operator's reviewed draft with
+  // boilerplate when they hit Regenerate.
   const rides = ctx.rides as PromptLegRowInput[];
   const treesByLegId = await loadDecisionTreesForLegs(rides);
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
-  let generatedDescription = "";
+  let generatedDescription: string;
   try {
     generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, promptLegInputs, savedSpecial || null);
   } catch (err) {
-    logger.warn({ err }, "AI portal description regeneration failed, using fallback");
-    generatedDescription = buildFallbackDescription(ctx, existing.disputeReason || "", savedSpecial || null);
+    if (err instanceof LLMUnavailableError) {
+      logger.error({ err: err.cause, groupId: ctx.group.id, submissionId: id }, "AI portal description regeneration failed after retries");
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 
   const previousDescription = existing.descriptionHtml || "";
@@ -1221,20 +1319,28 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
 
   let generatedDescription = descriptionHtml || "";
   if (!generatedDescription && reason) {
-    // Pre-compute prompt-leg inputs OUTSIDE the try/catch (Task #307 guard
-    // #10): inconsistent group data surfaces loud rather than being masked
-    // by the template fallback below.
+    // Task #307 guard #10: inconsistent group data surfaces loud here.
+    // Task #398: LLM API errors return 502 (no silent template fallback)
+    // so the bot/admin caller knows the draft couldn't be generated and
+    // can retry, rather than receiving boilerplate they didn't ask for.
     const rides = ctx.rides as PromptLegRowInput[];
     const treesByLegId = await loadDecisionTreesForLegs(rides);
     const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
     try {
       generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
     } catch (err) {
-      logger.warn({ err }, "AI portal description generation failed, using fallback");
-      generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
+      if (err instanceof LLMUnavailableError) {
+        logger.error({ err: err.cause, groupId: ctx.group.id }, "AI portal description generation failed after retries (POST /portal-submissions)");
+        res.status(502).json({ error: err.message });
+        return;
+      }
+      throw err;
     }
   }
   if (!generatedDescription) {
+    // True no-input case: caller provided neither descriptionHtml nor a
+    // disputeReason, so there was nothing to AI-generate from. Use the
+    // hard template — this is NOT an LLM-failure fallback.
     generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
   }
 
