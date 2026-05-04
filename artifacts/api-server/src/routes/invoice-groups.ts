@@ -31,6 +31,12 @@ import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, 
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
 import { denyClerk } from "../middlewares/denyClerk";
 import {
+  generatePortalDraftForGroup,
+  GroupNotFoundError,
+  LLMUnavailableError,
+  NoEligibleLegsError,
+} from "./portal-submissions";
+import {
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
 } from "./dashboard";
@@ -1884,11 +1890,29 @@ router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (re
   res.json(updated);
 }));
 
-// POST /invoice-groups/:id/preview-generated — stamps that the operator
-// has reviewed a preview. Does NOT transition the group. The transition
-// happens on POST /portal-submissions. Source-state: pre-submit AND
-// readback confirmed AND all legs resolved. Body is empty; the
-// timestamp/identity come from the request.
+// POST /invoice-groups/:id/preview-generated — generates the AI dispute
+// write-up for the group AND stamps that a preview is on file. One
+// click does both pieces of work because the gauntlet UI shows the
+// "Review & edit dispute write-up" textarea immediately once
+// `previewGeneratedAt` is set — if the timestamp is stamped without the
+// LLM having actually written anything, the textarea sits empty and
+// the operator has nothing to review (the bug Task #410-followup fixed).
+//
+// Source-state: pre-submit AND every disputed leg resolved. The
+// understanding readback is OPTIONAL and does not gate preview
+// generation. Body is empty; the timestamp/identity come from the
+// request and the optional context (specialCircumstances /
+// understandingReadback) is read off the group.
+//
+// On success, populates four columns on `invoice_groups`:
+//   - `previewGeneratedAt` / `previewGeneratedBy` — gate stamps.
+//   - `aiBaselineSubject` / `aiBaselineDescriptionHtml` — the raw AI
+//     output, used as the "regenerate-from" reference and as a fallback
+//     if the operator clears their edits.
+//   - `draftSubject` / `draftDescriptionHtml` — the editable draft the
+//     UI hydrates the textarea from. Initially equal to the baseline.
+// Also clears `draftReviewedAt` / `draftReviewedBy` because regenerating
+// the AI write-up invalidates any prior review (operator must re-mark).
 router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -1918,22 +1942,58 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
     return;
   }
 
+  let draft;
+  try {
+    draft = await generatePortalDraftForGroup(
+      {
+        invoiceGroupId: id,
+        understandingReadback: group.understandingReadback ?? null,
+      },
+      req,
+    );
+  } catch (err) {
+    if (err instanceof NoEligibleLegsError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof LLMUnavailableError) {
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    if (err instanceof GroupNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+
   const now = new Date();
   const [updated] = await db
     .update(invoiceGroupsTable)
     .set({
       previewGeneratedAt: now,
       previewGeneratedBy: req.user?.email ?? null,
+      draftSubject: draft.subject,
+      draftDescriptionHtml: draft.descriptionHtml,
+      aiBaselineSubject: draft.subject,
+      aiBaselineDescriptionHtml: draft.descriptionHtml,
+      draftEditedAt: now,
+      draftEditedBy: req.user?.email ?? null,
+      draftReviewedAt: null,
+      draftReviewedBy: null,
     })
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
 
-  await createGroupAuditLog(id, "group_preview_generated", "Dispute preview generated", req);
+  await createGroupAuditLog(id, "group_preview_generated", "Dispute preview generated", req, {
+    sourceSubmissionId: draft.submission.id,
+    descriptionLength: draft.descriptionHtml.length,
+  });
   await emitStateEvent({
     eventKey: "group.preview_generated",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: {},
+    metadata: { sourceSubmissionId: draft.submission.id },
   });
   emitGroupEvent(id, "preview_generated", req);
   res.json(updated);
@@ -2028,39 +2088,46 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
     return;
   }
 
-  // Source the AI-authored subject + body from the most recent
-  // portal-submissions draft (produced by /portal-submissions/generate-
-  // preview). That endpoint already knows how to talk to the LLM, build
-  // the snapshot subject, and assemble the HTML body — we reuse that
-  // pipeline rather than re-implementing it here.
-  const [latestDraft] = await db.select()
-    .from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.invoiceGroupId, id),
-      eq(portalSubmissionsTable.status, "draft"),
-    ))
-    .orderBy(desc(portalSubmissionsTable.createdAt))
-    .limit(1);
-
-  if (!latestDraft) {
-    res.status(409).json({
-      error: "No portal submission draft to regenerate from. Click \"Generate preview\" first.",
-      expectedState: "preview-generated",
-      actualState: "no-preview",
-    });
-    return;
+  // Run the LLM pipeline fresh. Previously this endpoint copied the
+  // subject/body off the most recent `portal_submissions` draft row,
+  // which made "Regenerate from preview" a no-op once the group's
+  // `aiBaseline*` columns were filled by `/preview-generated` (the
+  // last draft already holds the same text). Calling the helper means
+  // each click of "Regenerate from preview" actually produces a fresh
+  // AI take — which is what the button label promises.
+  let draft;
+  try {
+    draft = await generatePortalDraftForGroup(
+      {
+        invoiceGroupId: id,
+        understandingReadback: group.understandingReadback ?? null,
+      },
+      req,
+    );
+  } catch (err) {
+    if (err instanceof NoEligibleLegsError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof LLMUnavailableError) {
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    if (err instanceof GroupNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 
-  const subject = latestDraft.subject ?? null;
-  const description = latestDraft.descriptionHtml ?? null;
   const now = new Date();
   const [updated] = await db
     .update(invoiceGroupsTable)
     .set({
-      draftSubject: subject,
-      draftDescriptionHtml: description,
-      aiBaselineSubject: subject,
-      aiBaselineDescriptionHtml: description,
+      draftSubject: draft.subject,
+      draftDescriptionHtml: draft.descriptionHtml,
+      aiBaselineSubject: draft.subject,
+      aiBaselineDescriptionHtml: draft.descriptionHtml,
       draftEditedAt: now,
       draftEditedBy: req.user?.email ?? null,
       draftReviewedAt: null,
@@ -2070,13 +2137,13 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
     .returning();
 
   await createGroupAuditLog(id, "group_draft_regenerated", "Dispute draft regenerated from AI baseline", req, {
-    sourceSubmissionId: latestDraft.id,
+    sourceSubmissionId: draft.submission.id,
   });
   await emitStateEvent({
     eventKey: "group.draft_regenerated",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: { sourceSubmissionId: latestDraft.id },
+    metadata: { sourceSubmissionId: draft.submission.id },
   });
   emitGroupEvent(id, "draft_regenerated", req);
   res.json(updated);

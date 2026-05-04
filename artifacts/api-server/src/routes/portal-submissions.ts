@@ -494,12 +494,42 @@ Evidence Notes: ${group.evidenceNotes || "N/A"}`;
  * never substitute a template fallback (that's how operators ended up
  * silently submitting thin write-ups to MAS).
  */
-class LLMUnavailableError extends Error {
+export class LLMUnavailableError extends Error {
   readonly cause?: unknown;
   constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "LLMUnavailableError";
     this.cause = cause;
+  }
+}
+
+/**
+ * Surfaced by `generatePortalDraftForGroup` when the requested invoice
+ * group exists but has no rides eligible for inclusion in a fresh
+ * draft (everything is held or already submitted). Routes that catch
+ * this should translate to a 400 — it's an operator-actionable state
+ * (release a hold or wait for the existing submission to resolve).
+ */
+export class NoEligibleLegsError extends Error {
+  readonly excludedHeld: number;
+  readonly excludedAlreadySubmitted: number;
+  constructor(message: string, excludedHeld: number, excludedAlreadySubmitted: number) {
+    super(message);
+    this.name = "NoEligibleLegsError";
+    this.excludedHeld = excludedHeld;
+    this.excludedAlreadySubmitted = excludedAlreadySubmitted;
+  }
+}
+
+/**
+ * Surfaced by `generatePortalDraftForGroup` when the requested
+ * invoice group id does not resolve to a group with at least one ride.
+ * Routes that catch this should translate to a 404.
+ */
+export class GroupNotFoundError extends Error {
+  constructor(message = "Invoice group not found") {
+    super(message);
+    this.name = "GroupNotFoundError";
   }
 }
 
@@ -737,25 +767,54 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   res.json({ readback });
 }));
 
-router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
-    invoiceGroupId?: number;
-    disputeReason?: string;
-    specialCircumstances?: string;
-    understandingReadback?: string;
-  };
-  if (!invoiceGroupId) {
-    res.status(400).json({ error: "invoiceGroupId is required" });
-    return;
-  }
-  const trimmedSpecial = (specialCircumstances || "").trim();
-  const trimmedReadback = (understandingReadback || "").trim();
+/**
+ * Shared LLM-driven draft pipeline for an invoice group. Used by the
+ * standalone `/portal-submissions/generate-preview` endpoint AND by the
+ * gauntlet's `/invoice-groups/:id/preview-generated` and `/draft/regenerate`
+ * handlers so a single Generate-preview click in the UI both creates the
+ * portal_submissions draft row AND populates the group's draft fields.
+ *
+ * Behavior:
+ *   - Loads the group + rides, filters out held + already-submitted legs.
+ *   - Cancels any existing draft rows for the group (keeps a single
+ *     latest-draft semantic for downstream readers like the bot worker).
+ *   - Calls the LLM with the same prompt the legacy route used.
+ *   - Inserts a new draft row in `portal_submissions` (status="draft").
+ *   - Writes the `portal_draft_created` audit row (preserves the audit
+ *     contract pinned by `audit-prompt-leg-counters.test.ts`).
+ *   - Returns the inserted row + its subject/description so callers can
+ *     mirror those values onto `invoice_groups.draftSubject`/etc.
+ *
+ * Error contract — callers MUST translate:
+ *   - `GroupNotFoundError`     → 404
+ *   - `NoEligibleLegsError`    → 400
+ *   - `LLMUnavailableError`    → 502 (never silently swallow — Task #398)
+ */
+export interface GeneratePortalDraftOpts {
+  invoiceGroupId: number;
+  disputeReason?: string;
+  specialCircumstances?: string | null;
+  understandingReadback?: string | null;
+}
+
+export interface GeneratePortalDraftResult {
+  submission: typeof portalSubmissionsTable.$inferSelect;
+  subject: string;
+  descriptionHtml: string;
+}
+
+export async function generatePortalDraftForGroup(
+  opts: GeneratePortalDraftOpts,
+  req: { user?: { email?: string | null; displayName?: string | null } | null },
+): Promise<GeneratePortalDraftResult> {
+  const trimmedSpecial = (opts.specialCircumstances || "").trim();
+  const trimmedReadback = (opts.understandingReadback || "").trim();
   // Understanding readback is OPTIONAL — when the operator has nothing
   // extra to add about the case overall, an empty readback is a valid
   // signal and the AI prompt simply omits that section.
 
-  const rawCtx = await resolveContext({ invoiceGroupId });
-  if (!rawCtx) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  const rawCtx = await resolveContext({ invoiceGroupId: opts.invoiceGroupId });
+  if (!rawCtx) throw new GroupNotFoundError();
 
   const groupId = rawCtx.group.id;
   const totalLegs = rawCtx.rides.length;
@@ -769,10 +828,11 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     const reasons: string[] = [];
     if (heldCount > 0) reasons.push(`${heldCount} on hold`);
     if (subCount > 0) reasons.push(`${subCount} already submitted`);
-    res.status(400).json({
-      error: `Nothing to submit — every leg is excluded (${reasons.join(", ") || "no eligible legs"}). Remove a hold or wait for the existing submission to resolve.`,
-    });
-    return;
+    throw new NoEligibleLegsError(
+      `Nothing to submit — every leg is excluded (${reasons.join(", ") || "no eligible legs"}). Remove a hold or wait for the existing submission to resolve.`,
+      heldCount,
+      subCount,
+    );
   }
   const ctx: GroupContext = { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] };
   const isPartialSubmission = filtered.rides.length < totalLegs;
@@ -789,34 +849,35 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
 
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
-  const reason = disputeReason || "";
+  const reason = opts.disputeReason || "";
   const issueType = determineIssueType(errorType);
   const snap = buildSnapshot(ctx);
 
   // Task #307 guard #10: an inconsistent group surfaces loud here (before
   // the LLM call) rather than being masked by retry. Task #398: there is
   // no silent template fallback for LLM failures — a persistent outage
-  // returns 502 to the UI so the operator knows to retry, rather than
-  // ending up with a thin write-up they didn't ask for.
+  // bubbles up `LLMUnavailableError` so route handlers can return 502 to
+  // the UI rather than hand the operator a thin write-up they didn't ask
+  // for.
   const rides = ctx.rides as PromptLegRowInput[];
   const treesByLegId = await loadDecisionTreesForLegs(rides);
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
-  let generatedDescription: string;
-  try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
-  } catch (err) {
-    if (err instanceof LLMUnavailableError) {
-      logger.error({ err: err.cause, groupId: ctx.group.id }, "AI portal description generation failed after retries");
-      res.status(502).json({ error: err.message });
-      return;
-    }
-    throw err;
-  }
+  const generatedDescription = await generatePortalDescription(
+    ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null,
+  );
 
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
 
-  logger.info({ groupId: ctx.group.id, primaryClaimId: ctx.primaryClaim.id, attachmentCount: attachmentUrls.length, gpsBreadcrumbs, issueType, rideCount: ctx.rides.length, hasSpecialCircumstances: trimmedSpecial.length > 0 }, "Portal draft: evidence and GPS resolved");
+  logger.info({
+    groupId: ctx.group.id,
+    primaryClaimId: ctx.primaryClaim.id,
+    attachmentCount: attachmentUrls.length,
+    gpsBreadcrumbs,
+    issueType,
+    rideCount: ctx.rides.length,
+    hasSpecialCircumstances: trimmedSpecial.length > 0,
+  }, "Portal draft: evidence and GPS resolved");
 
   const [submission] = await db.insert(portalSubmissionsTable).values({
     invoiceGroupId: ctx.group.id,
@@ -871,7 +932,47 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     userName: req.user?.displayName ?? null,
   });
 
-  res.json(submission);
+  return {
+    submission,
+    subject: submission.subject ?? snap.subjectFallback,
+    descriptionHtml: generatedDescription,
+  };
+}
+
+router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
+  const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
+    invoiceGroupId?: number;
+    disputeReason?: string;
+    specialCircumstances?: string;
+    understandingReadback?: string;
+  };
+  if (!invoiceGroupId) {
+    res.status(400).json({ error: "invoiceGroupId is required" });
+    return;
+  }
+
+  try {
+    const { submission } = await generatePortalDraftForGroup(
+      { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback },
+      req,
+    );
+    res.json(submission);
+  } catch (err) {
+    if (err instanceof GroupNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof NoEligibleLegsError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof LLMUnavailableError) {
+      logger.error({ err: err.cause, groupId: invoiceGroupId }, "AI portal description generation failed after retries");
+      res.status(502).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 }));
 
 router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res): Promise<void> => {
