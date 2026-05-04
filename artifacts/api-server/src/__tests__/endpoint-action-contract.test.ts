@@ -10,6 +10,7 @@ import claimsRouter from "../routes/claims";
 import notesRouter from "../routes/notes";
 import anthropicRouter from "../routes/anthropic";
 import claimEvidenceRouter from "../routes/claim-evidence";
+import { ObjectStorageService } from "../lib/objectStorage";
 import {
   db,
   pool,
@@ -57,6 +58,20 @@ let baseUrl: string;
 
 const TEST_USER = { email: "endpoint-contract-tester@example.com", displayName: "Endpoint Contract Tester" };
 
+// Task #413: spy on the orphan-blob cleanup so the integration tests
+// can deterministically assert that a row-insert failure on the
+// claim-evidence write path triggers a best-effort blob delete with
+// the same `imageUrl` the caller passed. The spy returns true to
+// simulate a successful delete (real GCS isn't reachable in tests),
+// and records every call in `tryDeleteCalls` so each test can scope
+// its assertions to the blob path it created.
+const tryDeleteCalls: string[] = [];
+const originalTryDeleteObjectEntity = ObjectStorageService.prototype.tryDeleteObjectEntity;
+ObjectStorageService.prototype.tryDeleteObjectEntity = async function (objectPath: string): Promise<boolean> {
+  tryDeleteCalls.push(objectPath);
+  return true;
+};
+
 before(async () => {
   process.env.BOT_SERVICE_TOKEN = TEST_BOT_TOKEN;
 
@@ -91,6 +106,7 @@ before(async () => {
 });
 
 after(async () => {
+  ObjectStorageService.prototype.tryDeleteObjectEntity = originalTryDeleteObjectEntity;
   server.closeAllConnections?.();
   await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
   await pool.end().catch(() => undefined);
@@ -620,5 +636,147 @@ test("Tier 5: removed orphan DELETE endpoints are absent from the API surface", 
   } finally {
     await cleanupGroup(group.id);
     await cleanupClaim(claim.id);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Task #413 — atomic upload: row-insert failure must clean up the orphan blob.
+//
+// Evidence upload is a two-step flow: PUT /storage/uploads finalizes the
+// blob, then POST /claims/:id/evidence inserts the `claim_evidence` row
+// pointing at it. If the second step fails, the blob would otherwise be
+// orphaned in object storage forever (paying GCS rent with no UI surface
+// referencing it). The route wraps the insert in a try/catch and calls
+// `objectStorageService.tryDeleteObjectEntity(imageUrl)` on failure, BUT
+// only if no other `claim_evidence` row already references that blob —
+// otherwise we'd nuke a blob a different leg is legitimately reusing.
+//
+// The tests below exercise all three corners of that contract end-to-end
+// via the live HTTP server and DB, with the storage delete spied so we
+// don't need a real GCS connection.
+// ---------------------------------------------------------------------------
+
+test("Task #413: POST /claims/:claimId/evidence row-insert failure triggers best-effort orphan blob cleanup with the same imageUrl", async () => {
+  // Force a row-insert failure deterministically: claim_id is a FK to
+  // claims.id (ON DELETE CASCADE), so a non-existent claim id makes
+  // the insert raise a FK violation. This is the realistic shape of
+  // the failure the post-ingest audit (Task #411) flagged: the blob
+  // is already finalized in storage by the time the row insert dies.
+  const phantomClaimId = 9_000_000 + Math.floor(Math.random() * 1e6);
+  const fakeBlob = `/objects/uploads/task-413-orphan-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
+
+  const callsBefore = tryDeleteCalls.length;
+  const res = await fetchJson(`/api/claims/${phantomClaimId}/evidence`, {
+    method: "POST",
+    body: {
+      evidenceTypeName: "Task 413 Orphan Test",
+      imageUrl: fakeBlob,
+    },
+  });
+
+  assert.equal(res.status, 500, `expected 500 from FK-violating insert, got ${res.status} (${JSON.stringify(res.json)})`);
+
+  const newCalls = tryDeleteCalls.slice(callsBefore);
+  assert.deepEqual(
+    newCalls,
+    [fakeBlob],
+    `row-insert failure must trigger exactly one best-effort blob delete with the caller's imageUrl, got ${JSON.stringify(newCalls)}`,
+  );
+
+  // No orphan claim_evidence row may have been written for the phantom
+  // claim id, and no row pointing at the orphan blob may exist anywhere
+  // in the table — the storage finalize and the row insert must either
+  // both land or neither land.
+  const phantomRows = await db.select().from(claimEvidenceTable).where(eq(claimEvidenceTable.claimId, phantomClaimId));
+  assert.equal(phantomRows.length, 0, "no claim_evidence row may exist for the phantom claim id after a 500");
+  const blobRows = await db.select().from(claimEvidenceTable).where(eq(claimEvidenceTable.imageUrl, fakeBlob));
+  assert.equal(blobRows.length, 0, "no claim_evidence row may reference the orphan blob after a 500");
+});
+
+test("Task #413: successful POST /claims/:claimId/evidence makes the file visible in GET /claims/:id/evidence immediately (no cleanup attempted)", async () => {
+  // The "happy path" half of the atomic-upload contract: a 2xx
+  // response means the row landed and the leg's evidence list must
+  // reflect the new file on the very next read. This guards against
+  // any future refactor that defers the insert (e.g. into a queue) —
+  // such a change would break the "API returns 2xx → leg shows it"
+  // invariant the task explicitly calls out.
+  const claim = await createSeedClaim();
+  const realBlob = `/objects/uploads/task-413-happy-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
+  const callsBefore = tryDeleteCalls.length;
+  try {
+    const postRes = await fetchJson(`/api/claims/${claim.id}/evidence`, {
+      method: "POST",
+      body: {
+        evidenceTypeName: "Task 413 Happy Path",
+        imageUrl: realBlob,
+        notes: "uploaded by integration test",
+      },
+    });
+    assert.equal(postRes.status, 201, `expected 201 on happy path, got ${postRes.status} (${JSON.stringify(postRes.json)})`);
+    assert.equal(postRes.json.imageUrl, realBlob, "201 response must echo the persisted imageUrl");
+
+    // Cleanup must NOT have been invoked on the success path —
+    // the spy would have appended a call if it had been.
+    assert.equal(
+      tryDeleteCalls.length,
+      callsBefore,
+      `success path must not invoke orphan-blob cleanup, but ${tryDeleteCalls.length - callsBefore} call(s) were recorded`,
+    );
+
+    const listRes = await fetchJson(`/api/claims/${claim.id}/evidence`);
+    assert.equal(listRes.status, 200, `GET evidence list must succeed, got ${listRes.status}`);
+    const listed: Array<{ id: number; imageUrl: string | null }> = listRes.json.evidence;
+    assert.ok(
+      Array.isArray(listed) && listed.some((e) => e.imageUrl === realBlob),
+      `GET /claims/${claim.id}/evidence must include the just-uploaded blob immediately after the 201, got ${JSON.stringify(listed)}`,
+    );
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("Task #413: row-insert failure must NOT delete the blob when another claim_evidence row already references it (shared-blob safety)", async () => {
+  // The cleanup helper deliberately checks for existing references
+  // to the same `imageUrl` before calling tryDeleteObjectEntity —
+  // otherwise re-attaching an existing evidence file to a second
+  // leg, where the second insert fails, would silently destroy the
+  // blob the first leg still points at. This test pins that
+  // guard: an existing row with the same imageUrl must keep the
+  // blob safe even when a follow-up insert fails.
+  const sharedClaim = await createSeedClaim();
+  const sharedBlob = `/objects/uploads/task-413-shared-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
+  try {
+    // First, a successful insert that legitimately references the blob.
+    const firstRes = await fetchJson(`/api/claims/${sharedClaim.id}/evidence`, {
+      method: "POST",
+      body: { evidenceTypeName: "Shared Blob Owner", imageUrl: sharedBlob },
+    });
+    assert.equal(firstRes.status, 201, `seed insert must succeed, got ${firstRes.status} (${JSON.stringify(firstRes.json)})`);
+
+    const callsBefore = tryDeleteCalls.length;
+
+    // Now a second insert against a phantom claim id that fails on
+    // FK violation, but uses the SAME blob path.
+    const phantomClaimId = 9_000_000 + Math.floor(Math.random() * 1e6);
+    const failRes = await fetchJson(`/api/claims/${phantomClaimId}/evidence`, {
+      method: "POST",
+      body: { evidenceTypeName: "Shared Blob Reattach", imageUrl: sharedBlob },
+    });
+    assert.equal(failRes.status, 500, `phantom-claim insert must fail with 500, got ${failRes.status} (${JSON.stringify(failRes.json)})`);
+
+    const newCalls = tryDeleteCalls.slice(callsBefore);
+    assert.deepEqual(
+      newCalls,
+      [],
+      `cleanup must SKIP the delete when another row already references the blob, but it was called with ${JSON.stringify(newCalls)}`,
+    );
+
+    // The owning row must still be there (the failed second insert
+    // must not have collateral-damaged the first leg's evidence).
+    const stillThere = await db.select().from(claimEvidenceTable).where(eq(claimEvidenceTable.imageUrl, sharedBlob));
+    assert.equal(stillThere.length, 1, "the original owning row must remain after the failed second insert");
+    assert.equal(stillThere[0].claimId, sharedClaim.id, "the surviving row must be the original owning leg's");
+  } finally {
+    await cleanupClaim(sharedClaim.id);
   }
 });
