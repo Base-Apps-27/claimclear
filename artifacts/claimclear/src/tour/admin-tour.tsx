@@ -59,6 +59,13 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const autoStartedRef = useRef(false);
+  // Tracks whether at least one tour step has actually rendered for this run.
+  // Joyride emits EVENTS.TOOLTIP whenever a step's tooltip mounts in the DOM —
+  // we only flip this true on that signal. The DB write that records "user
+  // has seen this version" is GATED on this ref, so a tour that aborts before
+  // the user ever sees a step (e.g. TARGET_NOT_FOUND on first mount) cannot
+  // silently brick auto-start by marking the version "seen" without proof.
+  const sawAtLeastOneStepRef = useRef(false);
 
   const steps = useMemo(() => TOUR_STEPS.map(buildJoyrideStep), []);
 
@@ -68,6 +75,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     if (!tourState) return;
     if (tourState.tourVersionSeen === CURRENT_TOUR_VERSION) return;
     autoStartedRef.current = true;
+    sawAtLeastOneStepRef.current = false;
     setStepIndex(0);
     setRun(true);
   }, [enabled, tourState]);
@@ -98,43 +106,86 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     const t = window.setInterval(() => {
       const el = document.querySelector(def.target);
       attempts += 1;
-      if (el || attempts > 60) {
+      if (el) {
         window.clearInterval(t);
         setRun(true);
+      } else if (attempts > 60) {
+        // Target never showed up. Quietly halt the tour at the previous
+        // step instead of resuming into a guaranteed TARGET_NOT_FOUND. We
+        // intentionally do NOT mark the version seen here — the user can
+        // replay manually from the sidebar, or auto-retry on next reload.
+        window.clearInterval(t);
       }
     }, 100);
     return () => window.clearInterval(t);
   }, [run, stepIndex, location]);
 
-  const finish = useCallback(() => {
+  const closeTour = useCallback(() => {
     setRun(false);
     setStepIndex(0);
+  }, []);
+
+  const finishAndMarkSeen = useCallback(() => {
+    closeTour();
     if (tourState?.tourVersionSeen !== CURRENT_TOUR_VERSION) {
       updateTourState.mutate({ data: { tourVersionSeen: CURRENT_TOUR_VERSION } });
     }
-  }, [tourState, updateTourState]);
+  }, [closeTour, tourState, updateTourState]);
 
   const handleEvent = useCallback(
     (data: EventData) => {
       const { action, index, status, type } = data;
-      if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-        finish();
+
+      // Joyride mounted a step's tooltip — proof that the user actually saw
+      // something. This is the gate for any "mark seen" write below.
+      if (type === EVENTS.TOOLTIP) {
+        sawAtLeastOneStepRef.current = true;
+      }
+
+      // Target not found: stop the tour quietly. Do NOT advance, do NOT mark
+      // seen. (Previously this branch incremented stepIndex, which cascaded
+      // through every step and ended in finish() — silently marking the user
+      // "done" without them ever seeing the tour. That's the bug that left
+      // existing users stranded with tourVersionSeen set to a version they
+      // never actually viewed.)
+      if (type === EVENTS.TARGET_NOT_FOUND) {
+        closeTour();
         return;
       }
-      if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
+
+      // Explicit completion or user-initiated skip from joyride status.
+      // Defensive: only persist "seen" if at least one step actually rendered.
+      if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+        if (sawAtLeastOneStepRef.current) {
+          finishAndMarkSeen();
+        } else {
+          closeTour();
+        }
+        return;
+      }
+
+      // Normal step transition (Next/Back/Close on a rendered step).
+      if (type === EVENTS.STEP_AFTER) {
         const next = index + (action === ACTIONS.PREV ? -1 : 1);
         if (next < 0 || next >= TOUR_STEPS.length) {
-          finish();
+          // Walked off an end. Forward exit on a real run = completion;
+          // anything else just closes without a DB write.
+          if (next >= TOUR_STEPS.length && sawAtLeastOneStepRef.current) {
+            finishAndMarkSeen();
+          } else {
+            closeTour();
+          }
           return;
         }
         setStepIndex(next);
       }
     },
-    [finish],
+    [closeTour, finishAndMarkSeen],
   );
 
   const startTour = useCallback(() => {
     autoStartedRef.current = true;
+    sawAtLeastOneStepRef.current = false;
     setStepIndex(0);
     setRun(true);
   }, []);
