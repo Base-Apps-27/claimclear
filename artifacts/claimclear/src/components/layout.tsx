@@ -393,6 +393,37 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarGroup>
               );
             })}
+            {/* Help section — discoverable manual trigger for the guided
+                walkthrough. Lives in the sidebar (not just the header)
+                because operators expect "replay the tour" to be a nav
+                item, not a tiny header icon. */}
+            {tourAvailable && (
+              <SidebarGroup>
+                <SidebarGroupLabel className="uppercase tracking-wider text-[10px] text-sidebar-foreground/50">
+                  Help
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <WrapTooltip
+                        content="Replay the guided walkthrough — the same tour new teammates see on their first sign-in."
+                        side="right"
+                      >
+                        <SidebarMenuButton
+                          onClick={() => startTour()}
+                          tooltip="Take the tour"
+                          data-tour="sidebar-take-tour"
+                          data-testid="sidebar-take-tour"
+                        >
+                          <HelpCircle className="w-5 h-5" />
+                          <span className="flex-1">Take the tour</span>
+                        </SidebarMenuButton>
+                      </WrapTooltip>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border p-4">
             <div className="flex items-center justify-between w-full">
@@ -431,7 +462,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   data-testid="header-take-tour"
                 >
                   <HelpCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">Take the tour</span>
+                  <span>Take the tour</span>
                 </Button>
               )}
               <BatchStatusPill />

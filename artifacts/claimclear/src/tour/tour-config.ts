@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-03.v3";
+export const CURRENT_TOUR_VERSION = "2026-05-04.v4";
 
 export type TourStepDef = {
   // Element selector or "body" for an unanchored center modal.
@@ -137,11 +137,14 @@ export const TOUR_STEPS: TourStepDef[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-tour="header-take-tour"]',
+    // Anchor on the sidebar Help entry — that's where operators look
+    // for "replay the tour" first. The header button stays as a
+    // backup but isn't the primary discovery surface anymore.
+    target: '[data-tour="sidebar-take-tour"]',
     route: "/dashboard",
-    placement: "bottom",
+    placement: "right",
     title: "Replay anytime",
-    body: "That's the whole loop, and the whole tour. You can re-launch it whenever you want from this button in the header — handy when onboarding a new teammate. Welcome aboard.",
+    body: "That's the whole loop, and the whole tour. You can re-launch it whenever you want from the Help section in the sidebar — handy when onboarding a new teammate. Welcome aboard.",
     disableBeacon: true,
   },
 ];
