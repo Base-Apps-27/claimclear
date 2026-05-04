@@ -158,12 +158,12 @@ export default function AdminUserActivity() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <a href={exportUrl}>
-              <Button variant="outline" size="sm" className="gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <a href={exportUrl}>
                 <Download className="h-4 w-4" />
                 Export CSV
-              </Button>
-            </a>
+              </a>
+            </Button>
             {(userEmail || category !== "all" || from || to) && (
               <Button
                 variant="ghost"

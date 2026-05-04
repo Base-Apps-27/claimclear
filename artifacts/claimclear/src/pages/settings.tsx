@@ -259,12 +259,12 @@ export default function Settings() {
               )}
               <div className="ml-auto flex items-center gap-2">
                 <WrapTooltip content="Download a CSV of audit log entries across all users.">
-                  <a href={getAdminExportAuditLogsCsvUrl()}>
-                    <Button size="sm" variant="outline" className="gap-1">
+                  <Button asChild size="sm" variant="outline" className="gap-1">
+                    <a href={getAdminExportAuditLogsCsvUrl()}>
                       <Download className="h-3 w-3" />
                       Export all activity
-                    </Button>
-                  </a>
+                    </a>
+                  </Button>
                 </WrapTooltip>
               </div>
             </CardTitle>
@@ -349,20 +349,20 @@ export default function Settings() {
                           {u.email && (
                             <>
                               <WrapTooltip content="View this user's audit log activity, with filters and CSV export.">
-                                <Link href={`/admin/users/activity?email=${encodeURIComponent(u.email)}`}>
-                                  <Button size="sm" variant="outline" className="gap-1">
+                                <Button asChild size="sm" variant="outline" className="gap-1">
+                                  <Link href={`/admin/users/activity?email=${encodeURIComponent(u.email)}`}>
                                     <Activity className="h-3 w-3" />
                                     Activity
-                                  </Button>
-                                </Link>
+                                  </Link>
+                                </Button>
                               </WrapTooltip>
                               <WrapTooltip content="Download a CSV of this user's audit log entries.">
-                                <a href={getAdminExportAuditLogsCsvUrl({ userEmail: u.email })}>
-                                  <Button size="sm" variant="outline" className="gap-1">
+                                <Button asChild size="sm" variant="outline" className="gap-1">
+                                  <a href={getAdminExportAuditLogsCsvUrl({ userEmail: u.email })}>
                                     <Download className="h-3 w-3" />
                                     Export
-                                  </Button>
-                                </a>
+                                  </a>
+                                </Button>
                               </WrapTooltip>
                             </>
                           )}
