@@ -294,48 +294,121 @@ interface SimplifyItem {
   shortLabel?: boolean;
 }
 
+interface SimplifyRow {
+  id: string;
+  kind: string;
+  text: string;
+  shortLabel?: boolean;
+}
+
+interface SimplifyStep {
+  stepNumber?: number;
+  breadcrumb?: string;
+  parentQuestion?: string;
+  rows: SimplifyRow[];
+}
+
+interface PromptStep {
+  step: number;
+  breadcrumb: string;
+  parentQuestion: string;
+  rows: { id: string; kind: string; shortLabel: boolean; text: string }[];
+}
+
 router.post("/error-types/simplify-text", asyncHandler(async (req, res): Promise<void> => {
-  const items = req.body?.items as SimplifyItem[] | undefined;
-  if (!Array.isArray(items) || items.length === 0) {
-    res.status(400).json({ error: "items array is required" });
+  // Accept either the new grouped `steps` payload (rich context per
+  // decision step) or the legacy flat `items` payload (one snippet at a
+  // time, no neighbor context). The server normalizes both into a
+  // grouped shape so the prompt is uniform.
+  const rawSteps = req.body?.steps as SimplifyStep[] | undefined;
+  const rawItems = req.body?.items as SimplifyItem[] | undefined;
+
+  let promptSteps: PromptStep[] = [];
+
+  if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+    promptSteps = rawSteps
+      .map((s, idx) => {
+        const rows = Array.isArray(s.rows)
+          ? s.rows
+              .filter(r => r && typeof r.id === "string" && typeof r.text === "string" && r.text.trim().length > 0)
+              .map(r => ({
+                id: r.id,
+                kind: typeof r.kind === "string" ? r.kind : "",
+                shortLabel: !!r.shortLabel,
+                text: r.text,
+              }))
+          : [];
+        return {
+          step: typeof s.stepNumber === "number" ? s.stepNumber : idx + 1,
+          breadcrumb: typeof s.breadcrumb === "string" ? s.breadcrumb : `Step ${idx + 1}`,
+          parentQuestion: typeof s.parentQuestion === "string" ? s.parentQuestion : "",
+          rows,
+        };
+      })
+      .filter(s => s.rows.length > 0);
+  } else if (Array.isArray(rawItems) && rawItems.length > 0) {
+    // Backward-compatible path for in-flight clients still posting the
+    // old flat shape. We bundle every item into a single synthetic step
+    // with no parent-question context — the new prompt still works,
+    // just without the per-step grouping signal.
+    const cleanItems = rawItems
+      .filter(it => it && typeof it.id === "string" && typeof it.text === "string" && it.text.trim().length > 0)
+      .map(it => ({
+        id: it.id,
+        kind: typeof it.field === "string" ? it.field : "",
+        shortLabel: !!it.shortLabel,
+        text: it.text,
+      }));
+    if (cleanItems.length > 0) {
+      promptSteps = [{
+        step: 1,
+        breadcrumb: "All fields",
+        parentQuestion: "",
+        rows: cleanItems,
+      }];
+    }
+  } else {
+    res.status(400).json({ error: "steps or items array is required" });
     return;
   }
 
-  const cleanItems = items
-    .filter(it => it && typeof it.id === "string" && typeof it.text === "string" && it.text.trim().length > 0)
-    .map(it => ({
-      id: it.id,
-      field: typeof it.field === "string" ? it.field : "",
-      text: it.text,
-      shortLabel: !!it.shortLabel,
-    }));
-
-  if (cleanItems.length === 0) {
+  if (promptSteps.length === 0) {
     res.json({ suggestions: [] });
     return;
   }
 
-  const prompt = `You are rewriting text for a software workflow used by NEMT (Non-Emergency Medical Transportation) claims staff. Many readers are ESL (English as a Second Language) speakers.
+  const prompt = `You are rewriting decision-tree text for a software workflow used by NEMT (Non-Emergency Medical Transportation) claims staff. Many readers are ESL (English as a Second Language) speakers and tired by the time they reach this screen.
 
-Rewrite each text item below to a 6th-grade U.S. reading level. Rules:
-- Use short, simple sentences (aim for 12-18 words).
-- Use common, everyday words. Replace jargon when you can, but PRESERVE these domain terms exactly: "GPS", "MAS", "NEMT", "portal", "attestation", "dispatch", "invoice", "breadcrumb", "drop-off", "pickup", "dispute", "claim", "leg".
-- PRESERVE proper nouns, email addresses, URLs, button names, menu paths, and any text in quotes.
-- Use active voice. Keep instructions in command form ("Open the portal", not "The portal should be opened").
-- Keep the same meaning. Do NOT add new facts. Do NOT remove required steps or evidence references.
-- For items marked "shortLabel": true, return at most 6 words and no trailing punctuation. These are button or option labels.
-- If the text is already clear and at a 6th-grade level, return it unchanged.
-- Never invent content for empty input. (We've already filtered those out.)
+You will see one decision STEP at a time. Each step has a parent question and a list of rows beneath it (the question itself, optional help text, instructions, link labels, the option labels that branch from the question, outcome labels for terminal options, and evidence labels). Treat each step as a coherent unit and rewrite EVERY row in that step — not just the long ones.
+
+GOALS — apply BOTH on every row:
+1. Plain language. Aim for a 6th-grade U.S. reading level. Short sentences (12-18 words). Common, everyday words. Active voice. Command form for instructions ("Open the portal", not "The portal should be opened").
+2. Shorter when verbose. Actively cut length when the original is padded, repetitive, or full of filler. Merge sentences. Drop redundant clauses. Inside an "Instructions" row you may convert dense prose into a short numbered list of actions when that's easier to scan. Don't rephrase a 60-word instruction as 60 different words — make it meaningfully shorter when shorter is clearer. Truly information-dense rows can stay roughly the same length even at simpler vocabulary.
+
+Reconsider every row, INCLUDING short labels. The bar is "can a tired ESL reader scan this row in five seconds and know what it means?" — if a short label can be made clearer, rewrite it; do not skip it just because it is already short.
+
+CONSISTENCY ACROSS A STEP: rows in the same step must read consistently with the rewritten parent question. If you rephrase the question to focus on a particular concept (e.g., "pickup GPS evidence"), the option labels, outcome labels, and evidence labels in that step should use the same wording — not their own isolated synonyms.
+
+HARD PRESERVATION RULES — never violate, even when shortening:
+- No new facts. No removed required steps. No removed evidence references.
+- Preserve these domain terms exactly: "GPS", "MAS", "NEMT", "portal", "attestation", "dispatch", "invoice", "breadcrumb", "drop-off", "pickup", "dispute", "claim", "leg".
+- Preserve proper nouns, URLs, email addresses, button names, menu paths, and any text in quotes — verbatim.
+- Items marked "shortLabel": true must be at most 6 words and have no trailing punctuation. They render on buttons.
+- Outcome labels render on a button — keep them short enough to fit (a short sentence at most).
+
+If a row is already plain language AND already appropriately short, return it unchanged. Never invent content for empty input (we've already filtered those out).
 
 Respond with ONLY a JSON object in this exact shape, no prose, no code fences:
 {
   "suggestions": [
-    { "id": "<original id>", "text": "<rewritten text>" }
+    { "id": "<original row id>", "text": "<rewritten text>" }
   ]
 }
 
-Items to rewrite:
-${JSON.stringify(cleanItems.map(it => ({ id: it.id, field: it.field, shortLabel: it.shortLabel, text: it.text })), null, 2)}`;
+The "suggestions" array must include one entry for every row id you were given (return the original text unchanged if no improvement is needed).
+
+Steps to rewrite:
+${JSON.stringify(promptSteps, null, 2)}`;
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",

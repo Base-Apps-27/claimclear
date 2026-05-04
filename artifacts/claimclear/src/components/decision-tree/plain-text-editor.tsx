@@ -329,11 +329,35 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
     setError(null);
     setInfo(null);
     try {
-      const items = fields
-        .map(f => ({ id: f.id, field: f.fieldLabel, text: currentValue(f), shortLabel: f.shortLabel }))
-        .filter(it => it.text.trim().length > 0);
+      // Group by step so the model sees each decision step as a coherent
+      // bundle: parent question (current text, including pending edits) on
+      // top, then every non-empty row underneath. The model can then keep
+      // wording consistent across the question, its option labels, outcome
+      // labels, and evidence labels — and reconsider every row, not just
+      // the long ones.
+      const steps = fieldsByNode
+        .map(group => {
+          const rows = group.items
+            .map(f => ({
+              id: f.id,
+              kind: f.fieldLabel,
+              text: currentValue(f),
+              shortLabel: f.shortLabel,
+            }))
+            .filter(r => r.text.trim().length > 0);
+          const questionField = group.items.find(f => f.kind === "question");
+          const parentQuestion = questionField ? currentValue(questionField).trim() : "";
+          return {
+            stepNumber: group.nodeNumber,
+            breadcrumb: group.breadcrumb,
+            parentQuestion,
+            rows,
+          };
+        })
+        .filter(s => s.rows.length > 0);
 
-      if (items.length === 0) {
+      const totalRows = steps.reduce((acc, s) => acc + s.rows.length, 0);
+      if (totalRows === 0) {
         setInfo("No text to simplify.");
         return;
       }
@@ -341,7 +365,7 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
       const res = await fetch("/api/error-types/simplify-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ steps }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
