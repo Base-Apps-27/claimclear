@@ -34,7 +34,7 @@ import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { useAuth } from "@workspace/replit-auth-web";
-import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
+import { buildLegResolvedIndex } from "@/lib/leg-resolved";
 
 // ─────────────────────────────────────────────────────────────────────────
 // LegConclusionRow — the Queue Panel A row.
@@ -59,12 +59,6 @@ import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 // leg is contestable by definition and must go through the worktree.
 // ─────────────────────────────────────────────────────────────────────────
 
-const PROCESSED_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set([
-  "ready",
-  "dropped",
-  "excluded",
-]);
-
 const CLOSED_OUTCOMES = new Set([
   "Approved",
   "Denied",
@@ -74,10 +68,18 @@ const CLOSED_OUTCOMES = new Set([
 
 type LegVariant = "active" | "processed" | "terminal";
 
-function classifyVariant(claim: ClaimResponse): LegVariant {
+// Variant classifier needs the sibling list so `duplicate` legs can be
+// resolved against their primary's terminal sub-status — same rule as
+// the backend (`evaluateDisputedLegsResolved`). The rule lives in
+// `lib/leg-resolved` so this surface and the submission gauntlet stay
+// in sync; do not re-inline a "resolved" set here.
+function classifyVariant(
+  claim: ClaimResponse,
+  siblings: readonly ClaimResponse[],
+): LegVariant {
   if (claim.outcome && CLOSED_OUTCOMES.has(claim.outcome)) return "terminal";
-  const sub = deriveLegSubStatus(claim);
-  if (PROCESSED_SUB_STATUSES.has(sub)) return "processed";
+  const index = buildLegResolvedIndex(siblings);
+  if (index.isLegResolved(claim)) return "processed";
   return "active";
 }
 
@@ -89,6 +91,11 @@ export interface LegConclusionRowHandle {
 interface RowProps {
   claim: ClaimResponse;
   groupId: number;
+  // Full leg list for this invoice group (the same `claims` the
+  // LegConclusionList renders). Threaded down so the row can resolve a
+  // `duplicate` leg against its primary's sub-status — same rule as the
+  // backend's `evaluateDisputedLegsResolved`.
+  siblings: readonly ClaimResponse[];
   initiallyExpanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   highlight?: boolean;
@@ -104,6 +111,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     {
       claim,
       groupId,
+      siblings,
       initiallyExpanded = false,
       onExpandedChange,
       highlight = false,
@@ -126,9 +134,22 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
       },
     }));
 
-    const variant = classifyVariant(claim);
-    const subStatus = deriveLegSubStatus(claim);
-    const isResolved = PROCESSED_SUB_STATUSES.has(subStatus);
+    // Build the resolved-leg index once per render across the full
+    // sibling list. The index pre-computes every leg's sub-status so a
+    // `duplicate` leg's primary lookup is O(1) — same shape as the
+    // backend's pre-computation in `evaluateDisputedLegsResolved`.
+    const resolvedIndex = useMemo(
+      () => buildLegResolvedIndex(siblings),
+      [siblings],
+    );
+    const variant: LegVariant =
+      claim.outcome && CLOSED_OUTCOMES.has(claim.outcome)
+        ? "terminal"
+        : resolvedIndex.isLegResolved(claim)
+          ? "processed"
+          : "active";
+    const subStatus = resolvedIndex.subStatusOf(claim);
+    const isResolved = variant === "processed";
     const isOpen = !isResolved && variant !== "terminal";
 
     // ─────────────────────────────────────────────────────────────────────
@@ -447,8 +468,11 @@ export function LegConclusionList({
       processed: 1,
       terminal: 2,
     };
-    const va = classifyVariant(a);
-    const vb = classifyVariant(b);
+    // Pass the full `claims` list so a sibling-duplicate leg with a
+    // terminal primary correctly classifies as `processed` and sinks
+    // below the open legs — same rule the row itself applies.
+    const va = classifyVariant(a, claims);
+    const vb = classifyVariant(b, claims);
     if (order[va] !== order[vb]) return order[va] - order[vb];
     return a.id - b.id;
   });
@@ -459,6 +483,7 @@ export function LegConclusionList({
         <LegConclusionListItem
           key={c.id}
           claim={c}
+          siblings={claims}
           groupId={groupId}
           expandedClaimId={expandedClaimId}
           onExpandedChange={onExpandedChange}
@@ -478,6 +503,7 @@ export function LegConclusionList({
 
 function LegConclusionListItem({
   claim,
+  siblings,
   groupId,
   expandedClaimId,
   onExpandedChange,
@@ -485,6 +511,7 @@ function LegConclusionListItem({
   submissionSlot,
 }: {
   claim: ClaimResponse;
+  siblings: readonly ClaimResponse[];
   groupId: number;
   expandedClaimId: number | null;
   onExpandedChange: (claimId: number | null) => void;
@@ -508,6 +535,7 @@ function LegConclusionListItem({
     <LegConclusionRow
       ref={ref}
       claim={claim}
+      siblings={siblings}
       groupId={groupId}
       initiallyExpanded={isExpanded}
       highlight={isHighlight}

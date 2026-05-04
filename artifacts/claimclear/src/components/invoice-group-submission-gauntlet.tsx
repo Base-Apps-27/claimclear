@@ -32,10 +32,8 @@ import {
 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
-import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
-
-const RESOLVED_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set(["ready", "dropped", "excluded"]);
+import { buildLegResolvedIndex } from "@/lib/leg-resolved";
 
 // Submission gauntlet — readback → preview → submit, extracted from
 // invoice-group-detail-v2 so the inline queue workspace renders the same
@@ -107,31 +105,46 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
     () => allRides.filter((r) => r.includedInDispute !== false),
     [allRides],
   );
-  const legSubStatuses = useMemo(() => rides.map((r) => deriveLegSubStatus(r)), [rides]);
+  // Build the resolved-leg index across the FULL leg list (including
+  // excluded primaries, not just disputed). A `duplicate` leg is
+  // resolved iff its primary is in a terminal sub-status — same rule
+  // as the backend's `evaluateDisputedLegsResolved`. Source of truth
+  // lives in `lib/leg-resolved`; do not re-inline a "resolved" set.
+  const resolvedIndex = useMemo(
+    () => buildLegResolvedIndex(allRides),
+    [allRides],
+  );
 
   // First unresolved leg id (if any) — drives the gauntlet's
-  // "jump to next unprocessed leg" affordance.
-  const firstUnresolvedLegId = useMemo(() => {
-    for (const r of rides) {
-      if (!RESOLVED_SUB_STATUSES.has(deriveLegSubStatus(r))) return r.id;
-    }
-    return null;
-  }, [rides]);
+  // "jump to next unprocessed leg" affordance. Sibling-duplicate legs
+  // whose primary is terminal are skipped (they're concluded).
+  const firstUnresolvedLegId = useMemo(
+    () => resolvedIndex.firstUnresolvedLegId(rides),
+    [rides, resolvedIndex],
+  );
 
-  const allResolved = legSubStatuses.length > 0 && legSubStatuses.every((s) => RESOLVED_SUB_STATUSES.has(s));
+  const unresolvedRides = useMemo(
+    () => rides.filter((r) => !resolvedIndex.isLegResolved(r)),
+    [rides, resolvedIndex],
+  );
+
+  const allResolved = rides.length > 0 && unresolvedRides.length === 0;
   // Buckets used by the Task #265 conclusion-summary checklist row.
   // SOP-resolved = legs that walked the SOP tree (ready) plus those
   // dropped via Non-issue / Non-contestable. Excluded = legs the
-  // operator removed from the dispute entirely.
+  // operator removed from the dispute entirely. A sibling-duplicate
+  // leg that resolves via its primary is NOT counted here — it rolls
+  // up under the primary's own bucket so we don't double-count.
   const conclusionCounts = useMemo(() => {
     let sop = 0;
     let excluded = 0;
-    for (const subStatus of legSubStatuses) {
+    for (const r of rides) {
+      const subStatus = resolvedIndex.subStatusOf(r);
       if (subStatus === "excluded") excluded += 1;
       else if (subStatus === "ready" || subStatus === "dropped") sop += 1;
     }
     return { sop, excluded };
-  }, [legSubStatuses]);
+  }, [rides, resolvedIndex]);
   const readbackConfirmed = !!group?.understandingReadbackAt;
   const previewGenerated = !!group?.previewGeneratedAt;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
@@ -375,17 +388,24 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                   ? "Disabled because this group has no legs included in the dispute."
                   : !allResolved
                     ? (() => {
-                        const unresolved = legSubStatuses.filter(
-                          (s) => !RESOLVED_SUB_STATUSES.has(s),
-                        );
-                        const counts = unresolved.reduce<Record<string, number>>(
-                          (acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }),
+                        // Bucket unresolved legs by their derived
+                        // sub-status. A `duplicate` leg that resolves
+                        // via a terminal primary has already been
+                        // filtered out by `unresolvedRides`, so it
+                        // won't show up here as "owing action" — only
+                        // duplicates whose primary is still mid-walk
+                        // (or missing) remain.
+                        const counts = unresolvedRides.reduce<Record<string, number>>(
+                          (acc, r) => {
+                            const s = resolvedIndex.subStatusOf(r);
+                            return { ...acc, [s]: (acc[s] ?? 0) + 1 };
+                          },
                           {},
                         );
                         const summary = Object.entries(counts)
                           .map(([s, n]) => `${n} ${s.replace("_", " ")}`)
                           .join(", ");
-                        return `Disabled because ${unresolved.length} leg${unresolved.length === 1 ? "" : "s"} still owe action (${summary}).`;
+                        return `Disabled because ${unresolvedRides.length} leg${unresolvedRides.length === 1 ? "" : "s"} still owe action (${summary}).`;
                       })()
                     : null;
               const button = (
