@@ -619,23 +619,41 @@ export function ClaimDetailV2({
     subStatus === "investigating" ||
     subStatus === "ready" ||
     subStatus === "dropped";
-  // Presence/activity lock takes precedence over the substatus-derived
-  // hint so the operator sees the "someone else is editing" message
-  // (which is actionable — wait or coordinate) instead of a stale gate
-  // copy. When the player IS allowed to render but a lock is in effect,
-  // we still want it disabled, so this same string is also forwarded
-  // to `SopAdvancePlayer` as `disabledReason` further down.
+  // Reason ladder for disabling the SOP player + every terminal
+  // (Include / Hold / Closed / Duplicate). Order matters — the most
+  // operator-actionable reason wins:
+  //
+  //   1. Presence/activity lock — "someone else is editing", actionable
+  //      by waiting or coordinating directly.
+  //   2. Group phase has advanced past `pre-submit` — every leg-level
+  //      mutation endpoint (per-leg-context, per-leg-context-readback,
+  //      change-error-type, set-hold, etc.) refuses with HTTP 409 once
+  //      the parent group is in `in-flight` / `response-pending` /
+  //      `closed` / `on-hold` / etc. Without this guard the IncludeTerminal
+  //      stayed fully active on a packaged group: operator typed a note,
+  //      clicked "Check with AI", got a generic "AI clarification failed"
+  //      toast that hid the real phase-mismatch 409 underneath, and the
+  //      "I'm done — hand off" button (a pure refetch) did nothing — the
+  //      claim looked frozen end-to-end. Lock it explicitly with the
+  //      group's actual status so the operator can see why.
+  //   3. Substatus gates that pre-empt the SOP entirely (no error type,
+  //      hold, excluded). These only apply when `canShowPlayer` is false.
+  //
+  // The result is forwarded to `SopAdvancePlayer` as `disabledReason`
+  // further down, which propagates into every terminal's CTAs and inputs.
   const playerDisabledReason = lockReason
     ? lockReason
-    : canShowPlayer
-      ? null
-      : subStatus === "blocked"
-        ? "Leg is on hold — clear the hold to advance the SOP."
-        : subStatus === "excluded"
-          ? "Leg is excluded from the dispute."
-          : subStatus === "needs_classification"
-            ? "Pick an error type before walking the SOP."
-            : null;
+    : parentGroup && !groupIsPreSubmit
+      ? `Leg-level edits are no longer accepted — this invoice is "${parentGroup.status}". Open the invoice thread to track progress.`
+      : canShowPlayer
+        ? null
+        : subStatus === "blocked"
+          ? "Leg is on hold — clear the hold to advance the SOP."
+          : subStatus === "excluded"
+            ? "Leg is excluded from the dispute."
+            : subStatus === "needs_classification"
+              ? "Pick an error type before walking the SOP."
+              : null;
 
   const canReclassify =
     !isDuplicate && (
