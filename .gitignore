@@ -59,3 +59,9 @@ artifacts/mockup-sandbox/src/.generated/
 # Playwright generated artifacts (test runs, traces, HTML reports).
 test-results/
 playwright-report/
+
+# Playwright browser binaries. The deploy build re-installs these into
+# ./pw-browsers via the api-server production.build chain, so they must
+# never be committed — they're ~600 MB of binaries that bloat the repo
+# upload to the deployer and can fail the publish step on size/timeout.
+pw-browsers/
