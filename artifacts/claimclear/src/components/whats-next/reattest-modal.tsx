@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useCompleteGroupReattest,
-  useQueueAttestationForClaim,
+  useBulkQueueGroupReattest,
   useMarkAwaitingPayorAgain,
 } from "@workspace/api-client-react";
 import type { ClaimResponse, InvoiceGroupResponse } from "@workspace/api-client-react";
@@ -109,7 +109,14 @@ export function ReattestModal({
 }: Props) {
   const { toast } = useToast();
   const completeReattest = useCompleteGroupReattest();
-  const queueAttestation = useQueueAttestationForClaim();
+  // Group-level atomic queue. Replaced the per-leg
+  // `useQueueAttestationForClaim` fan-out the modal used to do — that
+  // loop tripped on the Task #196 attestation gate when the group's
+  // MAS re-attest hadn't been stamped yet (legs sat at not_required,
+  // /attest/queue requires source state = pending). The new endpoint
+  // also stamps awaiting_payor_again_at in the same transaction, so
+  // we no longer need a separate markWaiting call on the queue path.
+  const bulkQueueReattest = useBulkQueueGroupReattest();
   const markWaiting = useMarkAwaitingPayorAgain();
 
   const checklist = useMemo<ReattestInstructionItem[]>(
@@ -159,7 +166,7 @@ export function ReattestModal({
   const busy =
     promoting ||
     completeReattest.isPending ||
-    queueAttestation.isPending ||
+    bulkQueueReattest.isPending ||
     markWaiting.isPending;
 
   const handleReattestNow = async () => {
@@ -221,14 +228,17 @@ export function ReattestModal({
     }
     setPromoting(false);
     try {
-      for (const leg of approvedLegs) {
-        await queueAttestation.mutateAsync({
-          id: leg.id,
-          data: { note: fullNote },
-        });
-      }
+      // Single atomic call: queues every eligible leg and stamps
+      // awaiting_payor_again_at on the group in one transaction. A
+      // partial failure now rolls back instead of leaving half the
+      // group queued and the other half not.
+      const result = await bulkQueueReattest.mutateAsync({
+        id: group.id,
+        data: { note: fullNote },
+      });
+      const queuedCount = result.queuedLegIds.length;
       onAfterAction(
-        `Queued ${approvedLegs.length} leg${approvedLegs.length === 1 ? "" : "s"} for re-attestation.`,
+        `Queued ${queuedCount} leg${queuedCount === 1 ? "" : "s"} for re-attestation.`,
       );
       close();
     } catch (err: unknown) {

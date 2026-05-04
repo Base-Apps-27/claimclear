@@ -1123,6 +1123,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /invoice-groups/{id}/reattest/queue:
+    post:
+      operationId: bulkQueueGroupReattest
+      tags: [invoice-groups]
+      summary: Atomically queue every Approved/Partial leg on the group for re-attestation later
+      description: |
+        Group-level analogue of `POST /claims/{id}/attest/queue`, but
+        designed for the "Queue for re-attest later" path of the Re-attest
+        modal. In a single transaction it:
+
+          * promotes every disputed leg whose latest verdict is
+            `operator_confirmed` Approved/Partial to
+            `attestation_state = 'queued'` (skipping the per-leg Task #196
+            pending gate — the queue action IS the operator commit);
+          * stamps the group's `awaiting_payor_again_at` so it drops off
+            Responses Awaiting Review while a portal user works the queue;
+          * writes one `attestation_queued` audit row + state event per
+            leg, plus one umbrella `group_reattest_queued_bulk` audit row
+            + state event on the group.
+
+        Replaces the old per-leg loop the modal used to fan out, so a
+        partial failure rolls back instead of leaving half the group in
+        the queue.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttestationActionBody"
+      responses:
+        "200":
+          description: Group queued for re-attestation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkQueueGroupReattestResponse"
+        "404":
+          description: Invoice group not found
+        "409":
+          description: |
+            No eligible legs to queue (group has no Approved/Partial
+            operator-confirmed legs that are still owed an attestation),
+            or the group is not in `Needs Review` / has no payor response
+            on file yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateConflictResponse"
+
   /invoice-groups/{id}/email-thread:
     get:
       operationId: getInvoiceGroupEmailThread
@@ -6066,11 +6121,29 @@ components:
     AttestationActionBody:
       type: object
       description: |
-        Optional metadata for any of the `/claims/{id}/attest*` endpoints.
-        `note` is free-form text recorded on the claim and audit log.
+        Optional metadata for any of the `/claims/{id}/attest*` endpoints
+        and for `POST /invoice-groups/{id}/reattest/queue`. `note` is
+        free-form text recorded on the claim/group and audit log.
       properties:
         note:
           type: ["string", "null"]
+
+    BulkQueueGroupReattestResponse:
+      type: object
+      required: [group, queuedLegIds]
+      description: |
+        Response payload for `POST /invoice-groups/{id}/reattest/queue`.
+        Carries the updated group (so the caller can refresh derived state
+        like `awaitingPayorAgainAt`) plus the list of leg ids that were
+        moved into `attestation_state = 'queued'` in the same transaction.
+      properties:
+        group:
+          $ref: "#/components/schemas/InvoiceGroupResponse"
+        queuedLegIds:
+          type: array
+          description: Claim ids whose attestation_state was flipped to `queued` by this call.
+          items:
+            type: integer
 
     AttestationCountsResponse:
       type: object

@@ -2527,4 +2527,230 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
   res.json(updated);
 }));
 
+// POST /invoice-groups/:id/reattest/queue — atomic group-level
+// "Queue for re-attest later" path used by the Re-attest modal.
+//
+// Replaces the per-leg fan-out the modal used to do (loop calling
+// `POST /claims/:id/attest/queue` for every Approved leg, then a
+// separate `awaiting-payor-again` flip). The fan-out tripped on
+// the Task #196 attestation gate — when the group's MAS re-attest
+// hasn't been stamped yet, every leg sits at `attestation_state =
+// 'not_required'`, and the per-leg `/attest/queue` endpoint requires
+// the source state to be `pending` (ALLOWED_SOURCE_STATES in
+// claims.ts). The queue action IS the operator commit, so this
+// endpoint flips eligible legs straight to `queued` without going
+// through the gate.
+//
+// In one transaction:
+//   * find every disputed leg whose latest verdict is
+//     `operator_confirmed` Approved/Partial and whose
+//     attestation_state is still owed (not `completed` or `queued`);
+//   * set attestation_state='queued' + queued_at + queued_by + note
+//     on each;
+//   * stamp `awaiting_payor_again_at = now` on the group so it drops
+//     off Responses Awaiting Review;
+//   * write one `attestation_queued` audit row + state event per
+//     leg, plus one umbrella `group_reattest_queued_bulk` audit row
+//     + state event on the group.
+//
+// Per-leg `/claims/:id/attest/queue` stays the source of truth for
+// the Attestation Queue page's per-row queue action.
+router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  // Optional operator note. Same shape as the per-leg /attest/queue
+  // (AttestationActionBody): trim, drop pure-whitespace.
+  const rawNote = (req.body ?? {}) as { note?: unknown };
+  const noteForDb = (() => {
+    if (typeof rawNote.note !== "string") return null;
+    const trimmed = rawNote.note.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  })();
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  // Same source-state contract as `/awaiting-payor-again`: this is
+  // the "drop the group off Responses Awaiting Review" leg of the
+  // operation, so the group must be in Needs Review with at least
+  // one inbound payor response on file. Without these guards the
+  // bulk-queue would silently re-stamp `awaitingPayorAgainAt` on a
+  // group whose state doesn't justify it.
+  if (group.status !== "Needs Review") {
+    res.status(409).json({
+      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review.",
+      expectedState: "status=Needs Review",
+      actualState: `status=${group.status}`,
+    });
+    return;
+  }
+  const hasResponse = await groupHasResponse(id);
+  if (!hasResponse) {
+    res.status(409).json({
+      error: "Group cannot be bulk-queued for re-attestation before any payor response has arrived.",
+      expectedState: "at least one inbound portal_responses row for the group",
+      actualState: "no inbound responses on file",
+    });
+    return;
+  }
+
+  const actor = actorFromReq(req);
+  const actorIdentity = actor.userEmail || actor.userName || "unknown";
+  const now = new Date();
+
+  // Find every leg in the group that's eligible for the bulk queue.
+  // Eligibility:
+  //   * outcome is Approved or Partially Approved (the only outcomes
+  //     where attestation is meaningful — matches applyAttestationAction);
+  //   * latest claim_verdict row is `source = 'operator_confirmed'`
+  //     with outcome Approved/Partial (the operator has actually
+  //     committed the verdict, not just left a draft);
+  //   * attestation_state is NOT already `completed` (one-way street;
+  //     applyAttestationAction enforces the same rule) and NOT already
+  //     `queued` (no point re-stamping a row that's already on the
+  //     queue with the prior queued_at/by).
+  const candidateLegs = await db
+    .select()
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, id),
+      isNotNull(claimsTable.errorTypeId),
+      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+    ));
+
+  const eligibleLegs: typeof claimsTable.$inferSelect[] = [];
+  for (const leg of candidateLegs) {
+    if (leg.attestationState === "completed" || leg.attestationState === "queued") continue;
+    const [latestVerdict] = await db
+      .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
+      .from(claimVerdictTable)
+      .where(eq(claimVerdictTable.claimId, leg.id))
+      .orderBy(desc(claimVerdictTable.createdAt))
+      .limit(1);
+    if (
+      latestVerdict
+      && latestVerdict.source === "operator_confirmed"
+      && (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
+    ) {
+      eligibleLegs.push(leg);
+    }
+  }
+
+  if (eligibleLegs.length === 0) {
+    res.status(409).json({
+      error: "No eligible legs to queue — the group has no Approved/Partial operator-confirmed legs still owing an attestation.",
+      expectedState: "at least one disputed leg with operator_confirmed Approved/Partial verdict and attestation_state in (not_required, pending)",
+      actualState: `${candidateLegs.length}-candidate legs, 0 eligible`,
+    });
+    return;
+  }
+
+  // All-or-nothing: a partial failure mid-loop would leave half the
+  // group queued and the other half not, plus stamp awaiting_payor_again
+  // on a group whose legs only partly moved. Wrap every write in a
+  // single drizzle transaction so a failure rolls all of them back.
+  const updatedGroup = await db.transaction(async (tx) => {
+    for (const leg of eligibleLegs) {
+      await tx.update(claimsTable)
+        .set({
+          attestationState: "queued",
+          attestationQueuedAt: now,
+          attestationQueuedBy: actorIdentity,
+          attestationNote: noteForDb,
+        })
+        .where(eq(claimsTable.id, leg.id));
+
+      await tx.insert(auditLogsTable).values({
+        claimId: leg.id,
+        action: "attestation_queued",
+        details: noteForDb
+          ? `Queued for re-attestation by ${actorIdentity} (bulk via group #${id}) — ${noteForDb}`
+          : `Queued for re-attestation by ${actorIdentity} (bulk via group #${id})`,
+        metadata: {
+          from: leg.attestationState,
+          to: "queued",
+          note: noteForDb,
+          bulk: true,
+          source: "group_reattest_queue",
+          invoiceGroupId: id,
+        },
+        userEmail: actor.userEmail,
+        userName: actor.userName,
+      });
+
+      await emitStateEvent({
+        eventKey: "leg.attestation_queued",
+        claimId: leg.id,
+        invoiceGroupId: id,
+        actorUserId: actor.userEmail,
+        metadata: {
+          from: leg.attestationState,
+          to: "queued",
+          bulk: true,
+          source: "group_reattest_queue",
+        },
+      }, tx);
+    }
+
+    const [g] = await tx.update(invoiceGroupsTable)
+      .set({ awaitingPayorAgainAt: now })
+      .where(eq(invoiceGroupsTable.id, id))
+      .returning();
+
+    const queuedLegIds = eligibleLegs.map((l) => l.id);
+    await tx.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "group_reattest_queued_bulk",
+      details: noteForDb
+        ? `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation and flipped the group back to awaiting payor — Note: ${noteForDb}`
+        : `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation and flipped the group back to awaiting payor.`,
+      metadata: {
+        queuedLegIds,
+        legCount: queuedLegIds.length,
+        previousAwaitingPayorAgainAt: group.awaitingPayorAgainAt
+          ? group.awaitingPayorAgainAt.toISOString()
+          : null,
+        newAwaitingPayorAgainAt: now.toISOString(),
+        note: noteForDb,
+      },
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+
+    await emitStateEvent({
+      eventKey: "group.reattest_queued_bulk",
+      invoiceGroupId: id,
+      actorUserId: actor.userEmail,
+      metadata: {
+        queuedLegIds,
+        legCount: queuedLegIds.length,
+        note: noteForDb,
+      },
+    }, tx);
+
+    return g;
+  });
+
+  // Post-commit fan-out: SSE broadcasts and denormalized-cache refresh.
+  // These run after the transaction commits because (a) SSE listeners
+  // shouldn't be told a row moved before its row is actually visible,
+  // and (b) the cache refresh helpers issue their own queries that
+  // would race the not-yet-committed writes.
+  for (const leg of eligibleLegs) {
+    broadcastClaimEvent({
+      type: "attestation_updated",
+      claimId: leg.id,
+      userName: req.user?.displayName ?? null,
+      userEmail: req.user?.email ?? null,
+      timestamp: now.toISOString(),
+    });
+  }
+  emitGroupEvent(id, "group_reattest_queued_bulk", req);
+  emitGroupEvent(id, "group_awaiting_payor_again", req);
+  await refreshGroupDerivedFields(id);
+
+  res.json({ group: updatedGroup, queuedLegIds: eligibleLegs.map((l) => l.id) });
+}));
+
 export default router;

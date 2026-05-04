@@ -46,6 +46,7 @@ import type {
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
+  BulkQueueGroupReattestResponse,
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -2914,6 +2915,116 @@ export const useCompleteGroupReattest = <
   TContext
 > => {
   return useMutation(getCompleteGroupReattestMutationOptions(options));
+};
+
+/**
+ * Group-level analogue of `POST /claims/{id}/attest/queue`, but
+designed for the "Queue for re-attest later" path of the Re-attest
+modal. In a single transaction it:
+
+  * promotes every disputed leg whose latest verdict is
+    `operator_confirmed` Approved/Partial to
+    `attestation_state = 'queued'` (skipping the per-leg Task #196
+    pending gate — the queue action IS the operator commit);
+  * stamps the group's `awaiting_payor_again_at` so it drops off
+    Responses Awaiting Review while a portal user works the queue;
+  * writes one `attestation_queued` audit row + state event per
+    leg, plus one umbrella `group_reattest_queued_bulk` audit row
+    + state event on the group.
+
+Replaces the old per-leg loop the modal used to fan out, so a
+partial failure rolls back instead of leaving half the group in
+the queue.
+
+ * @summary Atomically queue every Approved/Partial leg on the group for re-attestation later
+ */
+export const getBulkQueueGroupReattestUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/reattest/queue`;
+};
+
+export const bulkQueueGroupReattest = async (
+  id: number,
+  attestationActionBody?: AttestationActionBody,
+  options?: RequestInit,
+): Promise<BulkQueueGroupReattestResponse> => {
+  return customFetch<BulkQueueGroupReattestResponse>(
+    getBulkQueueGroupReattestUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(attestationActionBody),
+    },
+  );
+};
+
+export const getBulkQueueGroupReattestMutationOptions = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkQueueGroupReattest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
+    { id: number; data: BodyType<AttestationActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return bulkQueueGroupReattest(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkQueueGroupReattestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkQueueGroupReattest>>
+>;
+export type BulkQueueGroupReattestMutationBody =
+  BodyType<AttestationActionBody>;
+export type BulkQueueGroupReattestMutationError =
+  ErrorType<void | StateConflictResponse>;
+
+/**
+ * @summary Atomically queue every Approved/Partial leg on the group for re-attestation later
+ */
+export const useBulkQueueGroupReattest = <
+  TError = ErrorType<void | StateConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
+    TError,
+    { id: number; data: BodyType<AttestationActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
+  TError,
+  { id: number; data: BodyType<AttestationActionBody> },
+  TContext
+> => {
+  return useMutation(getBulkQueueGroupReattestMutationOptions(options));
 };
 
 /**

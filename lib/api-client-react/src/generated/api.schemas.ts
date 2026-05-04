@@ -1935,13 +1935,27 @@ standard checklist.
 }
 
 /**
- * Optional metadata for any of the `/claims/{id}/attest*` endpoints.
-`note` is free-form text recorded on the claim and audit log.
+ * Optional metadata for any of the `/claims/{id}/attest*` endpoints
+and for `POST /invoice-groups/{id}/reattest/queue`. `note` is
+free-form text recorded on the claim/group and audit log.
 
  */
 export interface AttestationActionBody {
   /** @nullable */
   note?: string | null;
+}
+
+/**
+ * Response payload for `POST /invoice-groups/{id}/reattest/queue`.
+Carries the updated group (so the caller can refresh derived state
+like `awaitingPayorAgainAt`) plus the list of leg ids that were
+moved into `attestation_state = 'queued'` in the same transaction.
+
+ */
+export interface BulkQueueGroupReattestResponse {
+  group: InvoiceGroupResponse;
+  /** Claim ids whose attestation_state was flipped to `queued` by this call. */
+  queuedLegIds: number[];
 }
 
 export interface AttestationCountsResponse {

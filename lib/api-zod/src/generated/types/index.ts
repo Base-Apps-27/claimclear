@@ -53,6 +53,7 @@ export * from "./bulkAssignInvoiceGroupErrorTypeBody";
 export * from "./bulkAssignResult";
 export * from "./bulkAssignResultSkippedItem";
 export * from "./bulkAssignResultUpdatedItemsItem";
+export * from "./bulkQueueGroupReattestResponse";
 export * from "./checkEmailResponsesBody";
 export * from "./claimEvidenceResponse";
 export * from "./claimEvidenceResponseClosureReasonAtAttach";
