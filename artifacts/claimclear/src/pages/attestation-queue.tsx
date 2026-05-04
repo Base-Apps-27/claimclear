@@ -319,10 +319,6 @@ function GroupListRow({
           <Badge variant="outline" className="text-[10px]" data-testid={`queue-row-leg-count-${bucket.key}`}>
             {legCount} leg{legCount === 1 ? "" : "s"}
           </Badge>
-          <GroupStateBadge
-            pending={bucket.pendingCount}
-            queued={bucket.queuedCount}
-          />
         </div>
         <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
           <div className="truncate">Payor {payor}</div>
@@ -338,63 +334,6 @@ function GroupListRow({
       </button>
     </li>
   );
-}
-
-/**
- * Per-row indicator that tells the operator which bucket this claim is
- * in without forcing a tab choice up front. Pending = on you. Queued =
- * parked for the teammate with portal access.
- */
-function StateBadge({ state }: { state: AttestationState }) {
-  if (state === "pending") {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] border-amber-300 bg-amber-50 text-amber-800"
-        data-testid="state-badge-pending"
-      >
-        Owed by you
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="text-[10px] border-blue-300 bg-blue-50 text-blue-800"
-      data-testid="state-badge-queued"
-    >
-      Parked for portal user
-    </Badge>
-  );
-}
-
-/**
- * Aggregated state pill for a group row. When the group has both
- * pending and queued legs we render a single mixed-state pill so the
- * operator can see the split at a glance; otherwise we fall back to the
- * single-state pill so the look stays consistent with the rest of the
- * surface.
- */
-function GroupStateBadge({
-  pending,
-  queued,
-}: {
-  pending: number;
-  queued: number;
-}) {
-  if (pending > 0 && queued > 0) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-[10px] border-amber-300 bg-gradient-to-r from-amber-50 to-blue-50 text-amber-900"
-        data-testid="state-badge-mixed"
-      >
-        Owed by you + parked
-      </Badge>
-    );
-  }
-  if (pending > 0) return <StateBadge state="pending" />;
-  return <StateBadge state="queued" />;
 }
 
 function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
@@ -474,10 +413,6 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
               <Badge variant="outline" className="text-[10px]">
                 {bucket.rows.length} leg{bucket.rows.length === 1 ? "" : "s"}
               </Badge>
-              <GroupStateBadge
-                pending={bucket.pendingCount}
-                queued={bucket.queuedCount}
-              />
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               Payor {payor}
@@ -750,7 +685,6 @@ function PerLegRow({
           <Badge variant="outline" className="text-[10px]">
             {claim.outcome}
           </Badge>
-          <StateBadge state={state} />
         </div>
         {claim.attestationNote && (
           <div className="text-muted-foreground italic mt-1 break-words">
