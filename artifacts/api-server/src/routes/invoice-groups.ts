@@ -774,6 +774,124 @@ router.get("/invoice-groups/needs-classification", asyncHandler(async (_req, res
   res.json(inbox);
 }));
 
+// GET /invoice-groups/attestation-history — feeds the "Completed
+// re-attestations" tab on the Attestation Queue page. Returns groups
+// whose `reattest_completed_at` falls within the requested trailing
+// window (7d / 30d / all), sorted most-recent-first, with each group's
+// per-leg attestation outcomes pre-classified into one of four buckets
+// (`attested`, `mas_cancelled`, `queued`, `not_required`).
+//
+// Capped at 200 groups; `truncated=true` flags an over-cap window so
+// the UI can hint the operator to narrow the range. We sort + cap at
+// the SQL layer so the leg fan-out only runs against the row set the
+// UI will actually render.
+const ATTESTATION_HISTORY_CAP = 200;
+router.get("/invoice-groups/attestation-history", asyncHandler(async (req, res): Promise<void> => {
+  // Auth gate. The shared `requireAuth` middleware runs at the app
+  // level in production, but mounting this router in isolation (tests)
+  // must still 401 unauthenticated callers. `req.isAuthenticated` is
+  // injected by passport in production and by the test harness in
+  // tests; the literal `false` check is intentional so a missing fn
+  // doesn't accidentally lock callers out.
+  if (typeof req.isAuthenticated === "function" && req.isAuthenticated() === false) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const rawRange = (req.query.range ?? "7d") as string;
+  const range = rawRange === "30d" || rawRange === "all" ? rawRange : "7d";
+
+  const conditions: SQL[] = [isNotNull(invoiceGroupsTable.reattestCompletedAt)];
+  if (range !== "all") {
+    const days = range === "30d" ? 30 : 7;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    conditions.push(gte(invoiceGroupsTable.reattestCompletedAt, cutoff));
+  }
+  const where = conditions.length === 1 ? conditions[0] : and(...conditions);
+
+  // Pull cap+1 so we can detect "more rows than the cap" without a
+  // separate COUNT(*) query.
+  const groupRows = await db
+    .select()
+    .from(invoiceGroupsTable)
+    .where(where)
+    .orderBy(desc(invoiceGroupsTable.reattestCompletedAt))
+    .limit(ATTESTATION_HISTORY_CAP + 1);
+
+  const truncated = groupRows.length > ATTESTATION_HISTORY_CAP;
+  const visibleGroups = truncated ? groupRows.slice(0, ATTESTATION_HISTORY_CAP) : groupRows;
+
+  if (visibleGroups.length === 0) {
+    res.json({ groups: [], truncated: false });
+    return;
+  }
+
+  // One leg-fetch covering every visible group so we don't N+1 over
+  // the queried groups.
+  const groupIds = visibleGroups.map((g) => g.id);
+  const legRows = await db
+    .select()
+    .from(claimsTable)
+    .where(inArray(claimsTable.invoiceGroupId, groupIds));
+
+  // Group legs by parent invoice group id once, then assemble the
+  // ordered response in a single pass over `visibleGroups` so the
+  // server preserves the SQL-imposed sort order.
+  const legsByGroup = new Map<number, typeof claimsTable.$inferSelect[]>();
+  for (const leg of legRows) {
+    if (leg.invoiceGroupId == null) continue;
+    const bucket = legsByGroup.get(leg.invoiceGroupId);
+    if (bucket) bucket.push(leg);
+    else legsByGroup.set(leg.invoiceGroupId, [leg]);
+  }
+
+  const entries = visibleGroups.map((rawGroup) => {
+    const group = scrubMoneyFields(rawGroup, req.user);
+    const legs = (legsByGroup.get(rawGroup.id) ?? []).map((rawLeg) => {
+      const claim = scrubMoneyFields(rawLeg, req.user);
+      // Classify per-leg outcome. Order matters: `attested` is the
+      // strongest signal (operator confirmed the re-attestation in the
+      // payor portal), then `mas_cancelled` for legs that resolved via
+      // a MAS cancel instead of an attestation, then `queued` for legs
+      // still parked for a portal user, falling back to `not_required`
+      // for everything else (e.g. non-Approved siblings that rode
+      // along with the disputed legs).
+      let attestationOutcome: "attested" | "mas_cancelled" | "queued" | "not_required";
+      let outcomeAt: Date | null = null;
+      let outcomeBy: string | null = null;
+      let outcomeNote: string | null = null;
+      if (rawLeg.attestedAt) {
+        attestationOutcome = "attested";
+        outcomeAt = rawLeg.attestedAt;
+        outcomeBy = rawLeg.attestedBy ?? null;
+        outcomeNote = rawLeg.attestationNote ?? null;
+      } else if (rawLeg.masActionRequired === "cancel" && rawLeg.masActionCompletedAt) {
+        attestationOutcome = "mas_cancelled";
+        outcomeAt = rawLeg.masActionCompletedAt;
+        outcomeBy = rawLeg.masActionCompletedBy ?? null;
+        outcomeNote = rawLeg.masActionNote ?? null;
+      } else if (rawLeg.attestationState === "queued") {
+        attestationOutcome = "queued";
+        outcomeAt = rawLeg.attestationQueuedAt ?? null;
+        outcomeBy = rawLeg.attestationQueuedBy ?? null;
+        outcomeNote = rawLeg.attestationNote ?? null;
+      } else {
+        attestationOutcome = "not_required";
+      }
+      return {
+        claim,
+        attestationOutcome,
+        outcomeAt: outcomeAt ? outcomeAt.toISOString() : null,
+        outcomeBy,
+        outcomeNote,
+      };
+    });
+    return { group, legs };
+  });
+
+  res.json({ groups: entries, truncated });
+}));
+
 router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

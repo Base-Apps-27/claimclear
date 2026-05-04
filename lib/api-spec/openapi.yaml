@@ -400,6 +400,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/NeedsClassificationInboxResponse"
 
+  /invoice-groups/attestation-history:
+    get:
+      operationId: getInvoiceGroupAttestationHistory
+      tags: [invoice-groups]
+      summary: Completed re-attestations history grouped by invoice group
+      description: |
+        Returns invoice groups whose `reattestCompletedAt` falls within the
+        requested window, with each group's per-leg attestation outcomes.
+        Drives the "Completed re-attestations" tab on the Attestation Queue
+        page. Sorted by `reattestCompletedAt DESC` (most-recently-completed
+        first). Capped at 200 groups; `truncated=true` flags an over-cap
+        window so the UI can hint the operator to narrow the range.
+      parameters:
+        - name: range
+          in: query
+          description: |
+            Trailing window for `reattestCompletedAt`. `7d` (default) covers
+            the last 7 days, `30d` the last 30 days, and `all` skips the
+            window filter entirely (still capped at 200 groups).
+          schema:
+            type: string
+            enum: ["7d", "30d", "all"]
+            default: "7d"
+      responses:
+        "200":
+          description: Completed re-attestation history payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupAttestationHistoryResponse"
+        "401":
+          description: Not authenticated
+
   /invoice-groups/{id}:
     get:
       operationId: getInvoiceGroup
@@ -6225,6 +6258,75 @@ components:
           type: ["string", "null"]
           enum: ["email", "portal", "manual", null]
           description: Channel the latest payor response came in on.
+
+    GroupAttestationHistoryLeg:
+      type: object
+      description: |
+        Per-leg row in the completed re-attestation history. Each leg is
+        classified into one of four `attestationOutcome` buckets so the
+        UI can label what actually happened to the leg without the
+        operator having to open the claim detail page.
+      required: [claim, attestationOutcome]
+      properties:
+        claim:
+          $ref: "#/components/schemas/ClaimResponse"
+        attestationOutcome:
+          type: string
+          enum: ["attested", "mas_cancelled", "queued", "not_required"]
+          description: |
+            Per-leg outcome at the moment the parent group's MAS
+            re-attestation was confirmed. `attested` = leg has an
+            `attestedAt` stamp; `mas_cancelled` = leg has
+            `masActionCompletedAt` with `masActionRequired='cancel'`;
+            `queued` = leg sits at attestation_state='queued';
+            `not_required` = anything else (typically a non-Approved
+            sibling that rode along with disputed legs).
+        outcomeAt:
+          type: ["string", "null"]
+          format: date-time
+          description: |
+            Timestamp matching the chosen outcome bucket — `attestedAt`,
+            `masActionCompletedAt`, `attestationQueuedAt`, or null when
+            no relevant stamp exists.
+        outcomeBy:
+          type: ["string", "null"]
+          description: |
+            Operator email matching the chosen outcome bucket
+            (`attestedBy`, `masActionCompletedBy`, `attestationQueuedBy`)
+            or null when not recorded.
+        outcomeNote:
+          type: ["string", "null"]
+          description: |
+            Free-form note matching the chosen outcome bucket
+            (`attestationNote` for attested/queued, `masActionNote` for
+            mas_cancelled). Null when no note was recorded.
+
+    GroupAttestationHistoryEntry:
+      type: object
+      required: [group, legs]
+      properties:
+        group:
+          $ref: "#/components/schemas/InvoiceGroupResponse"
+        legs:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupAttestationHistoryLeg"
+
+    GroupAttestationHistoryResponse:
+      type: object
+      required: [groups, truncated]
+      description: |
+        Payload for `GET /invoice-groups/attestation-history`. `groups` is
+        ordered by `reattestCompletedAt DESC` and capped at 200 entries;
+        `truncated=true` indicates the requested window had more matches
+        than the cap.
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupAttestationHistoryEntry"
+        truncated:
+          type: boolean
 
     TriageClaimBody:
       type: object

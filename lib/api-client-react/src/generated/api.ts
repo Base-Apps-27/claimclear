@@ -96,10 +96,12 @@ import type {
   GetDashboardRepeatOffendersParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
+  GetInvoiceGroupAttestationHistoryParams,
   GetInvoiceGroupEmailThread404,
   GetMyProcessedTodayParams,
   GetSystemHealthBouncesParams,
   GetSystemHealthClassifierStatsParams,
+  GroupAttestationHistoryResponse,
   HealthStatus,
   HoldInvoiceGroupBody,
   ImportClaimsBody,
@@ -871,6 +873,123 @@ export function useGetNeedsClassificationInbox<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetNeedsClassificationInboxQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns invoice groups whose `reattestCompletedAt` falls within the
+requested window, with each group's per-leg attestation outcomes.
+Drives the "Completed re-attestations" tab on the Attestation Queue
+page. Sorted by `reattestCompletedAt DESC` (most-recently-completed
+first). Capped at 200 groups; `truncated=true` flags an over-cap
+window so the UI can hint the operator to narrow the range.
+
+ * @summary Completed re-attestations history grouped by invoice group
+ */
+export const getGetInvoiceGroupAttestationHistoryUrl = (
+  params?: GetInvoiceGroupAttestationHistoryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invoice-groups/attestation-history?${stringifiedParams}`
+    : `/api/invoice-groups/attestation-history`;
+};
+
+export const getInvoiceGroupAttestationHistory = async (
+  params?: GetInvoiceGroupAttestationHistoryParams,
+  options?: RequestInit,
+): Promise<GroupAttestationHistoryResponse> => {
+  return customFetch<GroupAttestationHistoryResponse>(
+    getGetInvoiceGroupAttestationHistoryUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetInvoiceGroupAttestationHistoryQueryKey = (
+  params?: GetInvoiceGroupAttestationHistoryParams,
+) => {
+  return [
+    `/api/invoice-groups/attestation-history`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetInvoiceGroupAttestationHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>,
+  TError = ErrorType<void>,
+>(
+  params?: GetInvoiceGroupAttestationHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetInvoiceGroupAttestationHistoryQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>
+  > = ({ signal }) =>
+    getInvoiceGroupAttestationHistory(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInvoiceGroupAttestationHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>
+>;
+export type GetInvoiceGroupAttestationHistoryQueryError = ErrorType<void>;
+
+/**
+ * @summary Completed re-attestations history grouped by invoice group
+ */
+
+export function useGetInvoiceGroupAttestationHistory<
+  TData = Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>,
+  TError = ErrorType<void>,
+>(
+  params?: GetInvoiceGroupAttestationHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInvoiceGroupAttestationHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInvoiceGroupAttestationHistoryQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

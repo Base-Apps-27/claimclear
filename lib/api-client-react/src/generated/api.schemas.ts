@@ -2042,6 +2042,87 @@ export interface AttestationPendingExtras {
   lastResponseSource?: AttestationPendingExtrasLastResponseSource;
 }
 
+/**
+ * Per-leg outcome at the moment the parent group's MAS
+re-attestation was confirmed. `attested` = leg has an
+`attestedAt` stamp; `mas_cancelled` = leg has
+`masActionCompletedAt` with `masActionRequired='cancel'`;
+`queued` = leg sits at attestation_state='queued';
+`not_required` = anything else (typically a non-Approved
+sibling that rode along with disputed legs).
+
+ */
+export type GroupAttestationHistoryLegAttestationOutcome =
+  (typeof GroupAttestationHistoryLegAttestationOutcome)[keyof typeof GroupAttestationHistoryLegAttestationOutcome];
+
+export const GroupAttestationHistoryLegAttestationOutcome = {
+  attested: "attested",
+  mas_cancelled: "mas_cancelled",
+  queued: "queued",
+  not_required: "not_required",
+} as const;
+
+/**
+ * Per-leg row in the completed re-attestation history. Each leg is
+classified into one of four `attestationOutcome` buckets so the
+UI can label what actually happened to the leg without the
+operator having to open the claim detail page.
+
+ */
+export interface GroupAttestationHistoryLeg {
+  claim: ClaimResponse;
+  /** Per-leg outcome at the moment the parent group's MAS
+re-attestation was confirmed. `attested` = leg has an
+`attestedAt` stamp; `mas_cancelled` = leg has
+`masActionCompletedAt` with `masActionRequired='cancel'`;
+`queued` = leg sits at attestation_state='queued';
+`not_required` = anything else (typically a non-Approved
+sibling that rode along with disputed legs).
+ */
+  attestationOutcome: GroupAttestationHistoryLegAttestationOutcome;
+  /**
+   * Timestamp matching the chosen outcome bucket — `attestedAt`,
+`masActionCompletedAt`, `attestationQueuedAt`, or null when
+no relevant stamp exists.
+
+   * @nullable
+   */
+  outcomeAt?: string | null;
+  /**
+   * Operator email matching the chosen outcome bucket
+(`attestedBy`, `masActionCompletedBy`, `attestationQueuedBy`)
+or null when not recorded.
+
+   * @nullable
+   */
+  outcomeBy?: string | null;
+  /**
+   * Free-form note matching the chosen outcome bucket
+(`attestationNote` for attested/queued, `masActionNote` for
+mas_cancelled). Null when no note was recorded.
+
+   * @nullable
+   */
+  outcomeNote?: string | null;
+}
+
+export interface GroupAttestationHistoryEntry {
+  group: InvoiceGroupResponse;
+  legs: GroupAttestationHistoryLeg[];
+}
+
+/**
+ * Payload for `GET /invoice-groups/attestation-history`. `groups` is
+ordered by `reattestCompletedAt DESC` and capped at 200 entries;
+`truncated=true` indicates the requested window had more matches
+than the cap.
+
+ */
+export interface GroupAttestationHistoryResponse {
+  groups: GroupAttestationHistoryEntry[];
+  truncated: boolean;
+}
+
 export type TriageClaimBodyAction =
   (typeof TriageClaimBodyAction)[keyof typeof TriageClaimBodyAction];
 
@@ -3802,6 +3883,25 @@ export const ExportInvoiceGroupsCsvExpiring = {
   soon: "soon",
   urgent: "urgent",
   stuck: "stuck",
+} as const;
+
+export type GetInvoiceGroupAttestationHistoryParams = {
+  /**
+ * Trailing window for `reattestCompletedAt`. `7d` (default) covers
+the last 7 days, `30d` the last 30 days, and `all` skips the
+window filter entirely (still capped at 200 groups).
+
+ */
+  range?: GetInvoiceGroupAttestationHistoryRange;
+};
+
+export type GetInvoiceGroupAttestationHistoryRange =
+  (typeof GetInvoiceGroupAttestationHistoryRange)[keyof typeof GetInvoiceGroupAttestationHistoryRange];
+
+export const GetInvoiceGroupAttestationHistoryRange = {
+  "7d": "7d",
+  "30d": "30d",
+  all: "all",
 } as const;
 
 export type UpdateInvoiceGroupStatusBody = {
