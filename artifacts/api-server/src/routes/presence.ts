@@ -17,6 +17,15 @@ function parseResourceType(raw: unknown): PresenceResourceType | null {
     : null;
 }
 
+// Identity normalization for the presence path. The IdP can return the same
+// human's email in different cases between sessions, and Postgres text
+// equality is byte-exact. Normalizing on every write/read makes the unique
+// constraint and the self-exclusion filter behave consistently regardless
+// of historical casing.
+function normalizeEmail(e: string | null | undefined): string {
+  return (e ?? "").trim().toLowerCase();
+}
+
 router.post("/presence/heartbeat", asyncHandler(async (req, res): Promise<void> => {
   if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -27,7 +36,7 @@ router.post("/presence/heartbeat", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const userEmail = req.user.email!;
+  const userEmail = normalizeEmail(req.user.email);
   const userName = req.user.displayName ?? null;
 
   const existing = await db.select({ id: presenceLogsTable.id })
@@ -35,16 +44,33 @@ router.post("/presence/heartbeat", asyncHandler(async (req, res): Promise<void> 
     .where(and(
       eq(presenceLogsTable.resourceType, resourceType),
       eq(presenceLogsTable.resourceId, resourceId),
-      eq(presenceLogsTable.userEmail, userEmail),
+      sql`LOWER(${presenceLogsTable.userEmail}) = ${userEmail}`,
       gt(presenceLogsTable.lastHeartbeat, new Date(Date.now() - 45 * 1000))
     ));
 
-  await db.execute(
-    sql`INSERT INTO presence_logs (resource_type, resource_id, user_email, user_name, last_heartbeat)
-        VALUES (${resourceType}, ${resourceId}, ${userEmail}, ${userName}, NOW())
-        ON CONFLICT (resource_type, resource_id, user_email) DO UPDATE
-        SET last_heartbeat = NOW(), user_name = EXCLUDED.user_name`
-  );
+  // Try the normalized upsert first. If a legacy mixed-case row already
+  // exists for the same (resource_type, resource_id, user) but a different
+  // case, the unique constraint is on the raw column so the ON CONFLICT
+  // target won't match and the INSERT raises 23505. Fall back to a
+  // case-insensitive UPDATE that touches the existing legacy row in place.
+  try {
+    await db.execute(
+      sql`INSERT INTO presence_logs (resource_type, resource_id, user_email, user_name, last_heartbeat)
+          VALUES (${resourceType}, ${resourceId}, ${userEmail}, ${userName}, NOW())
+          ON CONFLICT (resource_type, resource_id, user_email) DO UPDATE
+          SET last_heartbeat = NOW(), user_name = EXCLUDED.user_name`
+    );
+  } catch (err: unknown) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code !== "23505") throw err;
+    await db.execute(
+      sql`UPDATE presence_logs
+          SET last_heartbeat = NOW(), user_name = ${userName}
+          WHERE resource_type = ${resourceType}
+            AND resource_id = ${resourceId}
+            AND LOWER(user_email) = ${userEmail}`
+    );
+  }
 
   if (existing.length === 0) {
     broadcastPresenceEvent({
@@ -70,30 +96,47 @@ router.post("/presence/leave", asyncHandler(async (req, res): Promise<void> => {
     return;
   }
 
-  const userEmail = req.user.email!;
+  const userEmail = normalizeEmail(req.user.email);
   const userName = req.user.displayName ?? null;
 
-  await db.delete(presenceLogsTable).where(
-    and(
-      eq(presenceLogsTable.resourceType, resourceType),
-      eq(presenceLogsTable.resourceId, resourceId),
-      eq(presenceLogsTable.userEmail, userEmail)
-    )
+  // Race-safe leave: if the same user just heartbeat-ed for the same
+  // resource (e.g. queue ↔ detail navigation, where the unmounting page
+  // fires `leave` after the mounting page has already fired `heartbeat`
+  // for the same tuple), skip the delete so the live row stays put.
+  // Using LOWER() for the email match also reaps any legacy mixed-case
+  // rows the user previously left behind.
+  const deleted = await db.execute(
+    sql`DELETE FROM presence_logs
+        WHERE resource_type = ${resourceType}
+          AND resource_id = ${resourceId}
+          AND LOWER(user_email) = ${userEmail}
+          AND last_heartbeat < NOW() - INTERVAL '2 seconds'
+        RETURNING id`
   );
 
-  broadcastPresenceEvent({
-    type: "viewer_left",
-    resourceType,
-    resourceId,
-    userName,
-    userEmail,
-    timestamp: new Date().toISOString(),
-  });
+  // node-postgres surfaces the affected row count as `rowCount`; Drizzle's
+  // `db.execute` forwards the underlying result. Fall back to the rows
+  // array if rowCount isn't exposed by the driver.
+  const result = deleted as unknown as { rowCount?: number | null; rows?: unknown[] };
+  const removed = (result.rowCount ?? result.rows?.length ?? 0) > 0;
+
+  if (removed) {
+    broadcastPresenceEvent({
+      type: "viewer_left",
+      resourceType,
+      resourceId,
+      userName,
+      userEmail,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   res.json({ success: true });
 }));
 
 router.get("/presence/:resourceType/:resourceId", asyncHandler(async (req, res): Promise<void> => {
+  if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const rawType = Array.isArray(req.params.resourceType) ? req.params.resourceType[0] : req.params.resourceType;
   const resourceType = parseResourceType(rawType);
   if (!resourceType) { res.status(400).json({ error: "Invalid resourceType" }); return; }
@@ -102,8 +145,12 @@ router.get("/presence/:resourceType/:resourceId", asyncHandler(async (req, res):
   const resourceId = parseInt(rawId, 10);
   if (isNaN(resourceId)) { res.status(400).json({ error: "Invalid resourceId" }); return; }
 
+  const currentUserEmail = normalizeEmail(req.user.email);
   const staleThreshold = new Date(Date.now() - 45 * 1000);
 
+  // Self-exclusion happens server-side so the API can never return the
+  // requester to themselves. This structurally eliminates the "I'm
+  // viewing myself" symptom regardless of any client-side filter bug.
   const viewers = await db.select({
     userEmail: presenceLogsTable.userEmail,
     userName: presenceLogsTable.userName,
@@ -112,7 +159,8 @@ router.get("/presence/:resourceType/:resourceId", asyncHandler(async (req, res):
     .where(and(
       eq(presenceLogsTable.resourceType, resourceType),
       eq(presenceLogsTable.resourceId, resourceId),
-      gt(presenceLogsTable.lastHeartbeat, staleThreshold)
+      gt(presenceLogsTable.lastHeartbeat, staleThreshold),
+      sql`LOWER(${presenceLogsTable.userEmail}) <> ${currentUserEmail}`
     ));
 
   const botActivity: Array<{

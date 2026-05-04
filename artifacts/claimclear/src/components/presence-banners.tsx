@@ -213,7 +213,15 @@ export function HumanPresenceBanner({
   resourceLabel?: "claim" | "group";
 }) {
   const { user } = useAuth();
-  const otherViewers = viewers.filter(v => v.userEmail !== user?.email);
+  // While `useAuth` is still hydrating after a remount, `user?.email` is
+  // undefined and the previous filter (`!== undefined`) let every viewer
+  // through — including the current user. Default to an empty list in
+  // that window and lowercase both sides so a case-mismatch between the
+  // IdP and a stored row still recognizes self.
+  const myEmail = user?.email?.toLowerCase();
+  const otherViewers = myEmail
+    ? viewers.filter(v => v.userEmail.toLowerCase() !== myEmail)
+    : [];
   const { mounted, animating } = useAnimatedVisibility(otherViewers.length > 0);
   const transitions = usePresenceTransitions(otherViewers);
 
@@ -293,7 +301,12 @@ export function BotPresenceBanner({ botActivity }: { botActivity: BotPresenceEnt
 
 export function PresenceAvatars({ viewers }: { viewers: PresenceViewer[] }) {
   const { user } = useAuth();
-  const otherViewers = viewers.filter(v => v.userEmail !== user?.email);
+  // Same hydration-safe + case-insensitive self-exclusion as
+  // HumanPresenceBanner above.
+  const myEmail = user?.email?.toLowerCase();
+  const otherViewers = myEmail
+    ? viewers.filter(v => v.userEmail.toLowerCase() !== myEmail)
+    : [];
   const transitions = usePresenceTransitions(otherViewers);
 
   if (transitions.length === 0) return null;

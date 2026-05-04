@@ -92,12 +92,11 @@ interface Props {
   //     cards are hidden — they're already visible on the surrounding
   //     queue/group surface;
   //   - the outer `min-h-screen p-6` page wrapper collapses so the
-  //     content sits flush inside the host card;
-  //   - "Notes" is relabeled "Internal notes" (operator-only emphasis
-  //     for the queue context) and "Audit timeline" becomes the
-  //     friendlier "Activity history". The standalone /claims/:id
-  //     page keeps the original labels so other surfaces are
-  //     untouched.
+  //     content sits flush inside the host card.
+  // The "Internal notes" and "Activity history" labels are used in
+  // both standalone and embedded modes — they were renamed globally
+  // to make it explicit those fields are operator-only and never
+  // surfaced to payors.
   embedded?: boolean;
   // Optional content rendered immediately below the Investigation walk
   // (worktree). The queue uses this slot to put the group-level
@@ -1220,15 +1219,15 @@ export function ClaimDetailV2({ claimId, embedded = false, submissionSlot }: Pro
               )}
             </CcCard>
 
-            {/* Notes — leg-scoped, with composer. In embedded mode
-                (queue inline expansion) the title becomes "Internal
-                notes" so operators are reminded these are never
-                surfaced to payors; the standalone /claims/:id page
-                keeps the original "Notes" label. */}
+            {/* Internal notes — leg-scoped, with composer. Renamed from
+                "Notes" to make it explicit these are operator-only and
+                are never surfaced to payors in any communication.
+                Used in both standalone and embedded (queue inline)
+                modes so the framing is consistent everywhere. */}
             <CcCard
               title={
                 <>
-                  {embedded ? "Internal notes" : "Notes"}
+                  Internal notes
                   <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
                     · {visibleNotes.length}
                   </span>
@@ -1239,9 +1238,7 @@ export function ClaimDetailV2({ claimId, embedded = false, submissionSlot }: Pro
             >
               {visibleNotes.length === 0 ? (
                 <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  {embedded
-                    ? "No internal notes recorded for this leg yet."
-                    : "No notes recorded for this leg yet."}
+                  No internal notes recorded for this leg yet.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1269,11 +1266,7 @@ export function ClaimDetailV2({ claimId, embedded = false, submissionSlot }: Pro
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                   rows={2}
-                  placeholder={
-                    embedded
-                      ? "Add an internal note for this leg (operators only — never shared with payors)…"
-                      : "Add a note for this leg…"
-                  }
+                  placeholder="Add an internal note for this leg (operators only — never shared with payors)…"
                   className="cc-input w-full text-xs"
                   style={{
                     background: "var(--cc-bg)",
@@ -1516,22 +1509,21 @@ export function ClaimDetailV2({ claimId, embedded = false, submissionSlot }: Pro
               </CcCard>
             ) : null}
 
-            {/* Audit timeline / Activity history. Embedded mode (the
-                queue's inline expansion) shows it as a friendlier
-                "Activity history" feed; the standalone /claims/:id
-                page keeps the original "Audit timeline" framing.
-                Same data, same ordering — only the label changes. */}
+            {/* Activity history — was "Audit timeline". Renamed to read
+                like a standard per-claim activity feed (what happened,
+                when, by whom) instead of a system-audit log. Used in
+                both standalone and embedded (queue inline) modes. The
+                data shape is unchanged — same audit-log entries, same
+                ordering — only the framing is operator-friendly. */}
             <CcCard
-              title={embedded ? "Activity history" : "Audit timeline"}
+              title="Activity history"
               icon={<Activity className="w-3.5 h-3.5" />}
               testId="leg-audit-timeline-card"
               padded={false}
             >
               {sortedAudit.length === 0 ? (
                 <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  {embedded
-                    ? "No activity recorded for this leg yet."
-                    : "No audit events yet."}
+                  No activity recorded for this leg yet.
                 </div>
               ) : (
                 sortedAudit.slice(0, 12).map((e, i, arr) => (

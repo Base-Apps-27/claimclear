@@ -1642,16 +1642,20 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               </div>
             </CcCard>
 
-            {/* Audit timeline */}
+            {/* Activity history — was "Audit timeline". Renamed to read
+                like a standard activity feed (what happened, when, by
+                whom) instead of a system-audit log; data shape is
+                unchanged. Kept in sync with the per-leg surface in
+                claim-detail-v2.tsx. */}
             <CcCard
-              title="Audit timeline"
+              title="Activity history"
               icon={<Activity className="w-3.5 h-3.5" />}
               testId="audit-timeline-card"
               padded={false}
             >
               {sortedAudit.length === 0 ? (
                 <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No audit events yet.
+                  No activity recorded for this invoice yet.
                 </div>
               ) : (
                 sortedAudit.slice(0, 12).map((e, i, arr) => {

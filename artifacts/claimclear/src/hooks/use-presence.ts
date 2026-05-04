@@ -21,9 +21,16 @@ export function usePresence(resourceType: PresenceResourceType, resourceId: numb
 
   const viewers = data?.viewers ?? [];
   const botActivity = data?.botActivity ?? [];
-  const otherViewers = user?.email
-    ? viewers.filter(v => v.userEmail !== user.email)
-    : viewers;
+  // While `useAuth` hydrates after a remount, `user?.email` is briefly
+  // undefined. Treat that window as "no other viewers" rather than
+  // showing every viewer (including yourself) — the server already
+  // excludes the requester, so this is belt-and-suspenders against the
+  // auth-hydration race. Comparison is lowercased so a case-mismatch
+  // between auth claims and a stored row still recognizes self.
+  const myEmail = user?.email?.toLowerCase();
+  const otherViewers = myEmail
+    ? viewers.filter(v => v.userEmail.toLowerCase() !== myEmail)
+    : [];
   const othersPresent = otherViewers.length > 0;
 
   useEffect(() => {
