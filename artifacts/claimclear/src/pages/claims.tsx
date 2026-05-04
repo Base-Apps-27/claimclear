@@ -614,12 +614,12 @@ export default function ClaimsList() {
                 <DensityToggle density={density} onToggle={() => setDensity(d => d === "comfortable" ? "compact" : "comfortable")} />
                 <ColumnVisibilityMenu columns={ALL_COLUMNS} visibleColumns={visibleCols} onToggle={toggleCol} />
                 {!clerk && (
-                  <a href={csvUrl} download>
-                    <Button variant="outline" size="sm" data-testid="button-export-csv">
+                  <Button asChild variant="outline" size="sm" data-testid="button-export-csv">
+                    <a href={csvUrl} download>
                       <Download className="mr-2 h-4 w-4" />
                       Export CSV
-                    </Button>
-                  </a>
+                    </a>
+                  </Button>
                 )}
               </>
             }

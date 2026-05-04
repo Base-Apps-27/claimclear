@@ -426,11 +426,11 @@ export default function WithdrawalsPage() {
         totalApplied={totalAppliedFilters}
         onClearAllFilters={clearFilters}
         extras={
-          <a href={csvUrl} download>
-            <Button variant="outline" size="sm" data-testid="withdrawals-export-csv">
+          <Button asChild variant="outline" size="sm" data-testid="withdrawals-export-csv">
+            <a href={csvUrl} download>
               <Download className="mr-2 h-4 w-4" /> Export CSV
-            </Button>
-          </a>
+            </a>
+          </Button>
         }
       >
         <Card>
