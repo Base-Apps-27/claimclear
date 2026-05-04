@@ -13,6 +13,7 @@
 // (Task #298). When there is nothing to say (no snapshots and no
 // activity), the component renders nothing.
 
+import { useState } from "react";
 import { Link } from "wouter";
 import {
   useGetDashboardUrgentTodayTransitions,
@@ -32,6 +33,16 @@ interface Props {
   urgentCountOverride?: number;
   /** Optional test id to scope the rendered Why-line. */
   testid?: string;
+  /**
+   * Task #410 — when the panel is mounted on the Queue, the host can pass
+   * its `selectWorkflow` callback so clicking a currently-urgent row
+   * selects that group inside the Queue's inline workspace instead of
+   * navigating away to the standalone invoice-group detail page. When
+   * omitted (e.g. the Dashboard hero), rows fall back to a `/queue?group=<id>`
+   * link so the operator still lands on the Queue with the group preselected
+   * rather than on the detail page.
+   */
+  onSelectUrgentGroup?: (id: number) => void;
 }
 
 const toneFg: Record<Tone, string> = {
@@ -86,7 +97,12 @@ function Sparkline({ points, tone }: { points: { urgentCount: number }[]; tone: 
   );
 }
 
-export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid }: Props) {
+export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid, onSelectUrgentGroup }: Props) {
+  // Task #410 — Sheet open state is controlled here so the inner panel
+  // can close it after a row click without depending on Radix's
+  // SheetClose context (which is incompatible with the panel being
+  // unit-tested in isolation).
+  const [open, setOpen] = useState(false);
   const { data, isLoading } = useGetDashboardUrgentTodayTransitions({
     query: {
       queryKey: getGetDashboardUrgentTodayTransitionsQueryKey(),
@@ -130,7 +146,7 @@ export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid }: Props)
   const summary = decision.summary;
 
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button
           type="button"
@@ -145,7 +161,10 @@ export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid }: Props)
           <ChevronRight className="h-3 w-3 opacity-70" />
         </button>
       </SheetTrigger>
-      <UrgentTodayActivityPanel />
+      <UrgentTodayActivityPanel
+        onSelectUrgentGroup={onSelectUrgentGroup}
+        onClose={() => setOpen(false)}
+      />
     </Sheet>
   );
 }
@@ -153,9 +172,57 @@ export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid }: Props)
 /**
  * Sheet body. Exported separately so a future caller can mount it from
  * a different trigger (e.g. a keyboard shortcut). Today only the
- * `UrgentTodayWhyLine` mounts it, so it requires the surrounding `Sheet`.
+ * `UrgentTodayWhyLine` mounts it.
+ *
+ * `onSelectUrgentGroup` (Task #410): when provided, currently-urgent rows
+ * become an in-page selection action — used by the Queue to jump into its
+ * inline workspace. When omitted (Dashboard hero), the rows fall back to
+ * a `/queue?group=<id>` link so the operator still lands on the Queue
+ * with the chosen group preselected, never on the standalone
+ * invoice-group detail page.
+ *
+ * `onClose` (Task #410): the parent passes a setter that closes the
+ * surrounding Sheet so a row click both jumps and dismisses the panel.
+ * Defaults to a noop so the panel can be unit-tested standalone.
  */
-export function UrgentTodayActivityPanel() {
+export function UrgentTodayActivityPanel({
+  onSelectUrgentGroup,
+  onClose,
+}: {
+  onSelectUrgentGroup?: (id: number) => void;
+  onClose?: () => void;
+} = {}) {
+  return (
+    <SheetContent className="sm:max-w-md flex flex-col gap-4 overflow-y-auto" data-testid="urgent-today-panel">
+      <SheetHeader>
+        <SheetTitle className="flex items-center gap-2">
+          <Activity className="h-4 w-4" /> File-today activity
+        </SheetTitle>
+      </SheetHeader>
+      <UrgentTodayActivityPanelBody
+        onSelectUrgentGroup={onSelectUrgentGroup}
+        onClose={onClose}
+      />
+    </SheetContent>
+  );
+}
+
+/**
+ * Pure panel body — does the data fetch and renders the lists, but
+ * does NOT mount Radix Dialog primitives (SheetContent / SheetHeader).
+ * Exported for unit tests so the rendering of the currently-urgent
+ * vs. cleared-today rows can be asserted without paying for the full
+ * Dialog/Portal/focus-scope dance in jsdom. Production callers should
+ * use `UrgentTodayActivityPanel` (which wraps this body in SheetContent
+ * + SheetHeader).
+ */
+export function UrgentTodayActivityPanelBody({
+  onSelectUrgentGroup,
+  onClose,
+}: {
+  onSelectUrgentGroup?: (id: number) => void;
+  onClose?: () => void;
+} = {}) {
   const { data } = useGetDashboardUrgentTodayTransitions({
     query: {
       queryKey: getGetDashboardUrgentTodayTransitionsQueryKey(),
@@ -165,24 +232,14 @@ export function UrgentTodayActivityPanel() {
   });
 
   if (!data) {
-    return (
-      <SheetContent className="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>File-today activity</SheetTitle>
-        </SheetHeader>
-        <div className="text-sm text-muted-foreground p-4">Loading…</div>
-      </SheetContent>
-    );
+    return <div className="text-sm text-muted-foreground p-4">Loading…</div>;
   }
 
   return (
-    <SheetContent className="sm:max-w-md flex flex-col gap-4 overflow-y-auto" data-testid="urgent-today-panel">
-      <SheetHeader>
-        <SheetTitle className="flex items-center gap-2">
-          <Activity className="h-4 w-4" /> File-today activity · {data.today}
-        </SheetTitle>
-      </SheetHeader>
-
+    <>
+      <div className="text-xs text-muted-foreground -mt-2" data-testid="urgent-today-panel-date">
+        {data.today}
+      </div>
       <section data-testid="urgent-today-panel-currently">
         <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
           Currently urgent ({data.urgentCount} of {data.totalActionable})
@@ -193,13 +250,38 @@ export function UrgentTodayActivityPanel() {
           <ul className="space-y-1">
             {data.currentlyUrgent.slice(0, 20).map((g: UrgentTodayTransitions["currentlyUrgent"][number]) => (
               <li key={g.id} className="text-sm flex items-center justify-between gap-2 border-b border-border/50 py-1">
-                <Link
-                  href={`/invoice-groups/${g.id}`}
-                  className="font-mono hover:underline truncate"
-                  data-testid={`urgent-today-current-${g.id}`}
-                >
-                  {g.invoiceNumber}
-                </Link>
+                {onSelectUrgentGroup ? (
+                  // Queue-mounted: in-page jump that selects the group in
+                  // the inline workspace and closes the Sheet. The host's
+                  // `selectWorkflow` callback owns both the URL
+                  // `?group=<id>` write and the scroll-into-view, so we
+                  // don't duplicate that here.
+                  <button
+                    type="button"
+                    className="font-mono hover:underline truncate text-left bg-transparent p-0 border-0 cursor-pointer"
+                    data-testid={`urgent-today-current-${g.id}`}
+                    onClick={() => {
+                      onSelectUrgentGroup(g.id);
+                      onClose?.();
+                    }}
+                    style={{ color: "inherit" }}
+                  >
+                    {g.invoiceNumber}
+                  </button>
+                ) : (
+                  // Dashboard-mounted (no inline workspace to jump into):
+                  // land the operator on the Queue with the group already
+                  // selected via the same `?group=<id>` param the Queue
+                  // uses for its inline workspace selection.
+                  <Link
+                    href={`/queue?group=${g.id}`}
+                    className="font-mono hover:underline truncate"
+                    data-testid={`urgent-today-current-${g.id}`}
+                    onClick={() => onClose?.()}
+                  >
+                    {g.invoiceNumber}
+                  </Link>
+                )}
                 <span className="text-xs text-muted-foreground shrink-0">
                   {g.status}
                 </span>
@@ -291,6 +373,6 @@ export function UrgentTodayActivityPanel() {
           </div>
         </section>
       )}
-    </SheetContent>
+    </>
   );
 }

@@ -85,12 +85,17 @@ function QueueUrgencyHero({
   stuckCount,
   soonCount,
   filter,
+  onSelectUrgentGroup,
 }: {
   urgentCount: number;
   /** Task #352 — Portal Queued groups whose deadline slipped without ack. */
   stuckCount: number;
   soonCount: number;
   filter: ExpiringFilter;
+  /** Task #410 — Queue's `selectWorkflow`, threaded down to the
+   *  File-today activity panel so currently-urgent rows jump to the
+   *  inline workspace instead of leaving the Queue. */
+  onSelectUrgentGroup: (id: number) => void;
 }) {
   // Task #352 — "stuck after submission" filter state. Amber-orange tone
   // distinct from the pre-submit urgency red — the action here is "chase
@@ -153,7 +158,11 @@ function QueueUrgencyHero({
             </span>
             <span className="text-sm">due in the next 3 days · stay ahead of the clock</span>
           </div>
-          <UrgentTodayWhyLine tone="amber" testid="queue-urgent-today-why-amber" />
+          <UrgentTodayWhyLine
+            tone="amber"
+            testid="queue-urgent-today-why-amber"
+            onSelectUrgentGroup={onSelectUrgentGroup}
+          />
         </div>
       </div>
     );
@@ -198,6 +207,7 @@ function QueueUrgencyHero({
             tone="red"
             urgentCountOverride={urgentCount}
             testid="queue-urgent-today-why-red"
+            onSelectUrgentGroup={onSelectUrgentGroup}
           />
         </div>
       </div>
@@ -238,7 +248,12 @@ function QueueUrgencyHero({
             </span>
           </div>
         </div>
-        <UrgentTodayWhyLine tone="green" urgentCountOverride={0} testid="queue-urgent-today-why-green" />
+        <UrgentTodayWhyLine
+          tone="green"
+          urgentCountOverride={0}
+          testid="queue-urgent-today-why-green"
+          onSelectUrgentGroup={onSelectUrgentGroup}
+        />
         {stuckCount > 0 && (
           <div
             className="mt-1 flex items-center gap-1.5 text-xs font-medium"
@@ -882,6 +897,7 @@ export default function Queue() {
         stuckCount={stuckCount}
         soonCount={visibleFilteredCount}
         filter={expiringFilter}
+        onSelectUrgentGroup={selectWorkflow}
       />
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
