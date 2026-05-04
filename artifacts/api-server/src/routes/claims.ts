@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, LEG_EXCLUSION_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { asyncHandler } from "../lib/asyncHandler";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { broadcastClaimEvent } from "../lib/sse";
 import {
   transitionClaimStatus,
@@ -2007,6 +2008,96 @@ router.post("/claims/:id/per-leg-context", asyncHandler(async (req, res): Promis
   emitClaimEvent(id, "per_leg_context_set", req);
 
   res.json(updated);
+}));
+
+// POST /claims/:id/per-leg-context-readback — Task #372 AI clarification
+// gate. The operator's raw, unstructured per-leg note is sent to Claude;
+// the model returns a cleaned-up restatement that the operator can
+// review side-by-side and Accept (which then persists via
+// `/per-leg-context`). No DB writes happen here — only an audit row so
+// the activity feed shows the readback was performed. This mirrors the
+// preflight-understanding pattern used at the group submission gate
+// (portal-submissions.ts: `preflight-understanding`).
+//
+// We deliberately keep this endpoint simple: there is no state to read
+// beyond the raw text from the operator. The leg's existing context
+// stays untouched until the operator clicks Accept on the clarified
+// output.
+router.post("/claims/:id/per-leg-context-readback", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const raw = (req.body?.context ?? "") as string;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    res.status(400).json({ error: "context (non-empty string) is required" });
+    return;
+  }
+
+  // Resolve the leg to (a) confirm it exists, (b) feed identifying
+  // metadata into the prompt so the model can reference it naturally,
+  // and (c) gate the call on pre-submit phase (a leg whose group has
+  // already been submitted shouldn't be re-clarifying its context).
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  if (leg.invoiceGroupId == null) {
+    res.status(409).json({
+      error: "Per-leg context requires the leg to belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "no-group",
+    });
+    return;
+  }
+  const [parentGroup] = await db
+    .select()
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+  if (!parentGroup) {
+    res.status(409).json({
+      error: "Per-leg context requires the leg to belong to an invoice group",
+      expectedState: "has-group",
+      actualState: "missing-group",
+    });
+    return;
+  }
+  const phase = getGroupMacroPhase(parentGroup);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Per-leg context can only be clarified in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const errorTypeName = leg.errorTypeName || "Unclassified";
+  const confNumber = leg.confNumber || `CLM-${leg.id}`;
+  const systemPrompt =
+    "You are an operator-assist for an NEMT claims dispute team. The operator just typed a quick, unstructured per-leg note explaining what's special about a single leg of a multi-leg invoice. Your job is to restate the same facts in a single tight paragraph (2 to 4 sentences) suitable for handing to the dispute write-up bot. Do not invent facts or speculate. Preserve every concrete detail (times, distances, amounts, names) verbatim. Drop filler and shorthand. If the note is internally contradictory or genuinely ambiguous, restate it faithfully and add a single bracketed clarification request at the end (e.g. '[Operator: which trip leg does \"the second pickup\" refer to?]'). Return only the restatement — no preamble, no JSON.";
+  const prompt = `Leg ${confNumber} (error type: ${errorTypeName}).
+Operator's raw per-leg note:
+${raw.trim()}
+
+Restate the note as described in the system prompt.`;
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 400,
+    messages: [{ role: "user", content: prompt }],
+    system: systemPrompt,
+  });
+  const textBlock = message.content.find((b: { type: string }) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    res.status(502).json({ error: "Empty AI response" });
+    return;
+  }
+  const readback = (textBlock as { type: "text"; text: string }).text.trim();
+
+  await createAuditLog(id, "leg_per_leg_context_readback", "Per-leg context readback returned", req, {
+    rawLength: raw.length,
+    readbackLength: readback.length,
+  });
+
+  res.json({ readback });
 }));
 
 // POST /claims/:id/exclude — mark a needs_classification leg as "not a

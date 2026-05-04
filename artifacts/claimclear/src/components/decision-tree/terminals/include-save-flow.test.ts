@@ -1,96 +1,117 @@
-// Pure-helper coverage for the include terminal's per-leg-context save
-// flow. The handleBlur guard and the SaveStatus indicator state machine
-// are factored out of the React component so we can exercise the
-// regression-relevant edges without spinning up jsdom.
+// Pure-helper coverage for the include terminal's AI-clarification
+// gate (Task #372). The state machine and gate predicates are
+// factored out of the React component so the regression-relevant
+// edges can be exercised without spinning up jsdom.
 
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import {
-  shouldSaveContextDraft,
-  saveStatusTestId,
+  canHandoff,
+  canRequestReadback,
+  readbackStatusTestId,
+  type IncludeEditorMode,
 } from "./include-terminal";
 
-test("shouldSaveContextDraft fires when the operator typed something new", () => {
+// ---------------------------------------------------------------------------
+// canHandoff — the central guarantee: hand-off is blocked while the
+// operator has unsaved typed text or is mid-clarification, and allowed
+// when the input is empty (nothing to add) OR the input matches the
+// raw text whose clarification has just been accepted.
+// ---------------------------------------------------------------------------
+
+test("canHandoff: empty input + saved-blank → allowed (the 'nothing to add' path)", () => {
+  assert.equal(canHandoff({ mode: "edit", raw: "", lastSavedRaw: "" }), true);
+});
+
+test("canHandoff: typed text not yet accepted → blocked (the central guard of #372)", () => {
+  // Operator typed something but hasn't run Check + Accept. Handing
+  // off here would lose the note silently.
   assert.equal(
-    shouldSaveContextDraft({
-      draft: "Patient was reauthed on 04/12.",
-      lastSaved: "",
-      disabled: false,
-      saving: false,
-    }),
+    canHandoff({ mode: "edit", raw: "Driver waited 47 min", lastSavedRaw: "" }),
+    false,
+  );
+});
+
+test("canHandoff: typed text equals lastSavedRaw → allowed (post-Accept resting state)", () => {
+  // After Accept lands, raw stays in the textarea and lastSavedRaw is
+  // updated to match — so handoff trips immediately without forcing
+  // the operator to clear the box.
+  const txt = "Driver waited 47 min";
+  assert.equal(canHandoff({ mode: "edit", raw: txt, lastSavedRaw: txt }), true);
+});
+
+test("canHandoff: clear-after-Accept (raw=='' but lastSavedRaw!='') → allowed (review feedback fix)", () => {
+  // Code-review regression guard: if the operator runs Check+Accept
+  // ONCE (so lastSavedRaw is non-empty) and then clears the textarea,
+  // canHandoff must STILL return true — empty input is always
+  // handoff-eligible. Previously this was a dead-end (empty !==
+  // lastSavedRaw blocked handoff and Check was disabled on empty).
+  // To erase the SAVED context the operator uses the explicit
+  // "Clear saved" button (see clearSaved mutation in include-terminal).
+  assert.equal(
+    canHandoff({ mode: "edit", raw: "", lastSavedRaw: "Driver waited 47 min" }),
+    true,
+  );
+  // Whitespace-only counts as empty.
+  assert.equal(
+    canHandoff({ mode: "edit", raw: "   \n   ", lastSavedRaw: "Driver waited 47 min" }),
     true,
   );
 });
 
-test("shouldSaveContextDraft does NOT fire when draft equals last-saved (idempotent blur)", () => {
+test("canHandoff: blocked while checking (mid-readback)", () => {
   assert.equal(
-    shouldSaveContextDraft({
-      draft: "• step — answer",
-      lastSaved: "• step — answer",
-      disabled: false,
-      saving: false,
-    }),
+    canHandoff({ mode: "checking", raw: "anything", lastSavedRaw: "" }),
     false,
   );
 });
 
-test("shouldSaveContextDraft does NOT re-fire while a save is already in flight", () => {
-  // Operator blurs, mutation starts (saving=true), operator clicks
-  // somewhere else triggering another blur — we must NOT enqueue a
-  // second POST. Guard #5: no optimistic-only writes.
+test("canHandoff: blocked while review pane is up (operator must Accept or Edit first)", () => {
   assert.equal(
-    shouldSaveContextDraft({
-      draft: "newer text",
-      lastSaved: "",
-      disabled: false,
-      saving: true,
-    }),
+    canHandoff({ mode: "review", raw: "anything", lastSavedRaw: "" }),
     false,
   );
 });
 
-test("shouldSaveContextDraft does NOT fire when the parent surface has disabled the editor", () => {
-  // Submitted groups disable the editor — blurring then must be a no-op
-  // even if the operator typed something before the lock landed.
+test("canHandoff: blocked while accept POST is in flight", () => {
   assert.equal(
-    shouldSaveContextDraft({
-      draft: "stale edit",
-      lastSaved: "",
-      disabled: true,
-      saving: false,
-    }),
+    canHandoff({ mode: "saving", raw: "anything", lastSavedRaw: "" }),
     false,
   );
 });
 
-test("saveStatusTestId: in-flight wins over saved/dirty", () => {
-  assert.equal(
-    saveStatusTestId({ saving: true, saved: false, dirty: true }),
-    "sop-include-context-saving",
-  );
-  assert.equal(
-    saveStatusTestId({ saving: true, saved: true, dirty: false }),
-    "sop-include-context-saving",
-  );
+// ---------------------------------------------------------------------------
+// canRequestReadback — the "Check with AI" button is enabled only
+// when there is non-empty raw text to send, and only in edit mode.
+// ---------------------------------------------------------------------------
+
+test("canRequestReadback: empty raw → disabled", () => {
+  assert.equal(canRequestReadback({ mode: "edit", raw: "" }), false);
+  assert.equal(canRequestReadback({ mode: "edit", raw: "   \n   " }), false);
 });
 
-test("saveStatusTestId: Saved indicator renders after a successful save", () => {
-  assert.equal(
-    saveStatusTestId({ saving: false, saved: true, dirty: false }),
-    "sop-include-context-saved",
-  );
+test("canRequestReadback: non-empty raw in edit mode → enabled", () => {
+  assert.equal(canRequestReadback({ mode: "edit", raw: "x" }), true);
 });
 
-test("saveStatusTestId: dirty indicator before the operator blurs", () => {
-  assert.equal(
-    saveStatusTestId({ saving: false, saved: false, dirty: true }),
-    "sop-include-context-dirty",
-  );
+test("canRequestReadback: any non-edit mode → disabled (avoid duplicate POSTs)", () => {
+  for (const mode of ["checking", "review", "saving"] as IncludeEditorMode[]) {
+    assert.equal(canRequestReadback({ mode, raw: "x" }), false);
+  }
 });
 
-test("saveStatusTestId: nothing rendered in the steady-state (clean editor)", () => {
-  assert.equal(
-    saveStatusTestId({ saving: false, saved: false, dirty: false }),
-    null,
-  );
+// ---------------------------------------------------------------------------
+// readbackStatusTestId — purely for the inline status indicator. The
+// "edit" mode shows no inline indicator (the testarea + Check button
+// is the indicator).
+// ---------------------------------------------------------------------------
+
+test("readbackStatusTestId: edit → null", () => {
+  assert.equal(readbackStatusTestId("edit"), null);
+});
+
+test("readbackStatusTestId: checking/review/saving each produce a distinct testid", () => {
+  assert.equal(readbackStatusTestId("checking"), "sop-include-readback-checking");
+  assert.equal(readbackStatusTestId("review"), "sop-include-readback-review");
+  assert.equal(readbackStatusTestId("saving"), "sop-include-readback-saving");
 });

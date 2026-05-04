@@ -106,6 +106,42 @@ export interface LegForOutcomeRole {
   duplicateOfClaimId?: number | null;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Legacy auto-derived per-leg context detection (Task #372). Before this
+// task the SOP-advance player auto-filled `claims.per_leg_context` with
+// a "• Question — Answer" bullet list of the operator's worktree
+// breadcrumb. The new contract treats per-leg context as a deliberate,
+// AI-clarified narrative captured ONLY at the end-of-walk Include
+// terminal — the SOP transcript is rendered separately on the leg page
+// and never written into the field. Existing rows from the old player
+// look like a bullet list; this helper recognises them so:
+//
+//   - the dispute write-up bot (`buildPromptLegInputs`) ignores them
+//     and never feeds the breadcrumb back to itself as "operator
+//     captured context";
+//   - the IncludeTerminal editor renders them as empty (the operator
+//     starts from a blank slate and authors fresh context if any);
+//   - the read-only SOP transcript card on the leg page can still
+//     surface them so nothing is lost in the migration.
+//
+// A value is considered legacy-derived iff it is non-empty and EVERY
+// non-empty line begins with "• " — the exact prefix the previous
+// `deriveContextFromAnswers` produced. A real operator note that
+// happens to start with a single bullet (e.g. "• follow-up needed")
+// won't accidentally match because the helper requires that EVERY
+// non-empty line start with that prefix; freeform notes virtually
+// never satisfy that.
+// ─────────────────────────────────────────────────────────────────────
+
+export function isLegacyDerivedContext(s: string | null | undefined): boolean {
+  if (s == null) return false;
+  const trimmed = s.trim();
+  if (trimmed.length === 0) return false;
+  const lines = trimmed.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return false;
+  return lines.every((l) => l.startsWith("• "));
+}
+
 export function outcomeRole(leg: LegForOutcomeRole): OutcomeRole {
   if (leg.duplicateOfClaimId != null) return "duplicate";
   switch (leg.sopOutcome) {

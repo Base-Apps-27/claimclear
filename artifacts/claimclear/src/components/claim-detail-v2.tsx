@@ -23,7 +23,6 @@ import {
   getListClaimEvidenceQueryKey,
   useGetClaimEmailThread,
   getGetClaimEmailThreadQueryKey,
-  useSetLegContext,
 } from "@workspace/api-client-react";
 import type {
   ErrorTypeResponse,
@@ -43,9 +42,11 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
-  Edit2, Save, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
-  Gavel, Stamp, Clock, Send, CheckCircle2,
+  Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
+  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks,
 } from "lucide-react";
+import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
+import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
@@ -283,7 +284,6 @@ export function ClaimDetailV2({ claimId }: Props) {
   const excludeMutation = useExcludeLeg();
   const markDuplicateMutation = useMarkLegDuplicate();
   const unmarkDuplicateMutation = useUnmarkLegDuplicate();
-  const setContextMutation = useSetLegContext();
   const createNoteMutation = useCreateClaimNote();
 
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
@@ -298,20 +298,27 @@ export function ClaimDetailV2({ claimId }: Props) {
   const [duplicateNote, setDuplicateNote] = useState("");
   const [unmarkDuplicateOpen, setUnmarkDuplicateOpen] = useState(false);
 
-  // Per-leg context editor state. Kept in local state so the operator
-  // can edit, see the dirty indicator, and explicitly Save (mirrors the
-  // group context editor). Initial value comes from the leg payload and
-  // is reseeded whenever the server value changes (e.g. SSE refetch).
-  const [contextDraft, setContextDraft] = useState<string>("");
-  const lastSeededContextRef = useRef<string | null>(null);
-  useEffect(() => {
-    const incoming = claim?.perLegContext ?? "";
-    if (lastSeededContextRef.current === incoming) return;
-    lastSeededContextRef.current = incoming;
-    setContextDraft(incoming);
-  }, [claim?.perLegContext]);
-  const contextDirty = (claim?.perLegContext ?? "") !== contextDraft;
-  const contextBreath = useBreath();
+  // Task #372: per-leg unique context moved out of the top-of-leg
+  // editor and into the end-of-walk Include terminal (with an AI
+  // clarification gate). The leg page now renders a read-only SOP
+  // walk transcript in this slot — derived purely from `sopAnswers`
+  // + the loaded decision tree by `buildSopTranscript`. A legacy
+  // pre-#372 derived "• Q — A" perLegContext (when present) renders
+  // beneath the transcript as a migration trail so nothing is lost.
+  // sopAnswers is a jsonb column on the leg row; the OpenAPI schema
+  // surfaces it as an arbitrary record (no per-field type yet) so we
+  // narrow at the helper boundary via `normalizeAnswers`. Cast to
+  // `unknown` here so TS doesn't gripe about the missing field on the
+  // generated ClaimResponse type — `buildSopTranscript` accepts
+  // `unknown` and rejects malformed payloads.
+  const transcriptLines: TranscriptLine[] = useMemo(
+    () => buildSopTranscript((claim as unknown as { sopAnswers?: unknown })?.sopAnswers, tree),
+    [claim, tree],
+  );
+  const legacyDerivedTrail =
+    claim?.perLegContext && isLegacyDerivedContext(claim.perLegContext)
+      ? claim.perLegContext
+      : null;
 
   // Note composer state.
   const [newNote, setNewNote] = useState("");
@@ -483,24 +490,6 @@ export function ClaimDetailV2({ claimId }: Props) {
         },
         onError: (e: unknown) => toast({
           title: "Unmark failed",
-          description: String((e as Error).message),
-          variant: "destructive",
-        }),
-      },
-    );
-  }
-
-  function onSaveContext() {
-    if (!contextDirty || setContextMutation.isPending) return;
-    setContextMutation.mutate(
-      { id: claimId, data: { context: contextDraft } },
-      {
-        onSuccess: () => {
-          contextBreath.trigger();
-          invalidateLeg();
-        },
-        onError: (e: unknown) => toast({
-          title: "Couldn't save per-leg context",
           description: String((e as Error).message),
           variant: "destructive",
         }),
@@ -934,51 +923,75 @@ export function ClaimDetailV2({ claimId }: Props) {
           {/* LEFT — investigation workspace */}
           <div className="col-span-12 lg:col-span-8 space-y-4">
 
-            {/* Per-leg context — leg-scoped narrative used by the dispute write-up */}
+            {/* Task #372: SOP walk transcript — read-only "Question →
+                Answer" trail derived from the persisted sopAnswers and
+                the live decision tree. This replaces the editable
+                per-leg-context card; the optional unique-context input
+                lives at the end-of-walk Include terminal now, gated by
+                the AI-clarification readback. */}
             <CcCard
-              title="Per-leg context"
-              icon={<Edit2 className="w-3.5 h-3.5" />}
-              testId="per-leg-context-card"
-              action={
-                <button
-                  type="button"
-                  onClick={onSaveContext}
-                  disabled={!contextDirty || setContextMutation.isPending || contextBreath.breathing}
-                  className={cn("cc-btn text-xs gap-1 inline-flex items-center px-2 py-1", contextBreath.className)}
-                  style={{
-                    background: "var(--cc-blue-fg)",
-                    color: "white",
-                    opacity: !contextDirty || setContextMutation.isPending ? 0.6 : 1,
-                  }}
-                  data-testid="per-leg-context-save"
-                >
-                  {setContextMutation.isPending ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Save className="w-3 h-3" />
-                  )}
-                  Save
-                </button>
-              }
+              title="SOP walk transcript"
+              icon={<ListChecks className="w-3.5 h-3.5" />}
+              testId="sop-walk-transcript-card"
             >
-              <textarea
-                value={contextDraft}
-                onChange={(e) => setContextDraft(e.target.value)}
-                rows={3}
-                placeholder="Add notes that describe what's special about this leg (e.g. driver reroute, disputed reading)…"
-                className="w-full text-sm rounded p-2"
-                style={{
-                  border: "1px solid var(--cc-border)",
-                  background: "var(--cc-card)",
-                  color: "var(--cc-fg)",
-                  fontFamily: "inherit",
-                  resize: "vertical",
-                }}
-                data-testid="per-leg-context-textarea"
-              />
-              <div className="text-xs mt-2" style={{ color: "var(--cc-muted-fg)" }}>
-                Legs-only context. The group context is shared by all legs and edited on the group page.
-              </div>
+              {transcriptLines.length === 0 && !legacyDerivedTrail ? (
+                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                  Walk hasn't started yet — answers you record below will appear here as a read-only trail.
+                </div>
+              ) : (
+                <>
+                  {transcriptLines.length > 0 && (
+                    <ul className="space-y-1.5 text-sm" data-testid="sop-walk-transcript-list">
+                      {transcriptLines.map((line, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start gap-2"
+                          data-testid={`sop-walk-transcript-line-${i}`}
+                          data-resolved={line.resolved ? "true" : "false"}
+                        >
+                          <span
+                            className="text-xs mt-0.5"
+                            style={{ color: line.resolved ? "var(--cc-muted-fg)" : "var(--cc-amber-fg)" }}
+                            aria-hidden
+                          >
+                            •
+                          </span>
+                          <span className="flex-1">
+                            <span
+                              className={cn("text-xs", !line.resolved && "italic")}
+                              style={{ color: "var(--cc-muted-fg)" }}
+                            >
+                              {line.question}
+                              {!line.resolved && " (node removed from tree)"}
+                            </span>
+                            <span className="mx-1.5 text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                              —
+                            </span>
+                            <span className="text-sm font-medium">{line.answer}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {legacyDerivedTrail && (
+                    <div
+                      className="mt-3 pt-3 text-xs space-y-1"
+                      style={{ borderTop: "1px dashed var(--cc-border)" }}
+                      data-testid="sop-walk-transcript-legacy-trail"
+                    >
+                      <div className="font-medium" style={{ color: "var(--cc-muted-fg)" }}>
+                        Legacy auto-derived per-leg context (pre-#372 migration)
+                      </div>
+                      <pre
+                        className="whitespace-pre-wrap"
+                        style={{ color: "var(--cc-muted-fg)", fontFamily: "inherit" }}
+                      >
+                        {legacyDerivedTrail}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              )}
             </CcCard>
 
             {/* Investigation walk (SOP) — the entire purpose of this surface */}

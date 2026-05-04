@@ -28,7 +28,7 @@
 
 import { db, claimsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { outcomeRole } from "@workspace/leg-state";
+import { outcomeRole, isLegacyDerivedContext } from "@workspace/leg-state";
 
 export type PromptLegRole = "primary" | "duplicate" | "none";
 
@@ -175,6 +175,15 @@ export function buildPromptLegInputs(ctx: PromptLegInputsContext): PromptLegInpu
       carNumber: leg.carNumber,
       claimAmount: leg.claimAmount,
     };
+    // Task #372: drop legacy auto-derived "• Q — A" breadcrumbs at the
+    // helper boundary. Pre-#372 SOP-advance writes look like genuine
+    // captured context but are really the bot reading its own walk back
+    // to itself. A `null` here makes them invisible to every downstream
+    // consumer (rides block annotations, per-claim annotations, audit
+    // counters) without altering the stored value.
+    const effectivePerLegContext = isLegacyDerivedContext(leg.perLegContext)
+      ? null
+      : leg.perLegContext;
     if (role === "duplicate") {
       const primaryId = leg.duplicateOfClaimId!;
       const primaryRef = refsById.get(primaryId);
@@ -193,12 +202,12 @@ export function buildPromptLegInputs(ctx: PromptLegInputsContext): PromptLegInpu
     if (siblings.length > 0) {
       return {
         ...base,
-        perLegContext: leg.perLegContext,
+        perLegContext: effectivePerLegContext,
         role: "primary" as const,
         siblingDuplicateRefs: siblings.map((sid) => refsById.get(sid) ?? `#${sid}`),
       };
     }
-    return { ...base, perLegContext: leg.perLegContext, role: "none" as const };
+    return { ...base, perLegContext: effectivePerLegContext, role: "none" as const };
   });
 
   // ridesBlock — group write-up: skip duplicates, render head + annotations.

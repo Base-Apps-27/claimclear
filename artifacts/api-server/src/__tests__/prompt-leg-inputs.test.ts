@@ -673,6 +673,43 @@ test("Task #312: promptLegAuditCounters reflects sibling-duplicate roll-up (prim
   });
 });
 
+test("Task #372: legacy auto-derived '• Q — A' breadcrumb is treated as empty (write-up bot can't read its own walk back to itself)", () => {
+  // Pre-#372, the SOP-advance player auto-filled `per_leg_context` with
+  // a bullet-list of the operator's worktree. Those rows still exist in
+  // prod; the helper must drop them at the boundary so the dispute
+  // write-up never sees them as "captured operator context", and the
+  // audit counters under-count them as missing per-leg context (which
+  // they effectively are — they're a derivation of the walk, not a
+  // human-authored finding).
+  const legacy = [
+    "• Was GPS available? — Yes",
+    "• Did breadcrumbs match? — No",
+    "• Reasonable explanation? — Yes",
+  ].join("\n");
+  const ride = makeLeg({ id: 901, confNumber: "LEG-001", perLegContext: legacy });
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride] });
+  // The bullet-list never makes it into the rides block.
+  assert.equal(result.ridesBlock.includes("•"), false, "bullet-list must not leak into the rides block");
+  assert.equal(result.ridesBlock.includes("Was GPS available"), false);
+  // And the audit counters reflect "no per-leg context captured".
+  assert.deepEqual(promptLegAuditCounters(result), {
+    hasPerLegContext: false,
+    perLegContextLegCount: 0,
+    siblingDuplicateCount: 0,
+  });
+});
+
+test("Task #372: a real prose perLegContext that happens to start with one bullet is NOT swallowed", () => {
+  // Defensive: an operator note that begins with "• follow-up needed"
+  // followed by prose is genuine captured context. The detector
+  // requires EVERY non-empty line to start with "• ", so this stays.
+  const prose = "• follow-up needed\nDriver confirmed late pickup at 9:15.";
+  const ride = makeLeg({ id: 902, confNumber: "LEG-002", perLegContext: prose });
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride] });
+  assert.equal(result.hasPerLegContext, true);
+  assert.equal(result.ridesBlock.includes("Driver confirmed late pickup"), true);
+});
+
 test("Task #312: promptLegAuditCounters on a duplicate-only slice — primary owns the finding, counters reflect the slice", () => {
   const primary = makeLeg({ id: 501, confNumber: "ABC123", perLegContext: "Primary owns the finding." });
   const dup = makeLeg({ id: 502, confNumber: "DEF456", duplicateOfClaimId: 501 });
