@@ -98,17 +98,6 @@ interface Props {
   // to make it explicit those fields are operator-only and never
   // surfaced to payors.
   embedded?: boolean;
-  // Optional presence/activity lock forwarded by the surrounding host
-  // (e.g. the queue inline workspace). When set, every mutating control
-  // inside the leg — including the SOP player and its terminal CTAs
-  // (Hand off, Place on hold, etc.) and the per-leg context input —
-  // is disabled with this string as the disabled-reason hint, matching
-  // the strip-level lock the host already applies to the Process /
-  // quick-conclude buttons. Without this prop the embedded leg surface
-  // would silently bypass the lock and let an operator click a hand-off
-  // button or type into the per-leg context box while a teammate is
-  // editing the same group.
-  lockReason?: string | null;
   // Optional content rendered immediately below the Investigation walk
   // (worktree). The queue uses this slot to put the group-level
   // submission preview right under the active worktree, so the
@@ -265,7 +254,6 @@ function groupStatusTone(status: string | undefined): Tone {
 export function ClaimDetailV2({
   claimId,
   embedded = false,
-  lockReason,
   submissionSlot,
   focusErrorTypePickerSignal,
 }: Props) {
@@ -641,19 +629,17 @@ export function ClaimDetailV2({
   //
   // The result is forwarded to `SopAdvancePlayer` as `disabledReason`
   // further down, which propagates into every terminal's CTAs and inputs.
-  const playerDisabledReason = lockReason
-    ? lockReason
-    : parentGroup && !groupIsPreSubmit
-      ? `Leg-level edits are no longer accepted — this invoice is "${parentGroup.status}". Open the invoice thread to track progress.`
-      : canShowPlayer
-        ? null
-        : subStatus === "blocked"
-          ? "Leg is on hold — clear the hold to advance the SOP."
-          : subStatus === "excluded"
-            ? "Leg is excluded from the dispute."
-            : subStatus === "needs_classification"
-              ? "Pick an error type before walking the SOP."
-              : null;
+  const playerDisabledReason = parentGroup && !groupIsPreSubmit
+    ? `Leg-level edits are no longer accepted — this invoice is "${parentGroup.status}". Open the invoice thread to track progress.`
+    : canShowPlayer
+      ? null
+      : subStatus === "blocked"
+        ? "Leg is on hold — clear the hold to advance the SOP."
+        : subStatus === "excluded"
+          ? "Leg is excluded from the dispute."
+          : subStatus === "needs_classification"
+            ? "Pick an error type before walking the SOP."
+            : null;
 
   const canReclassify =
     !isDuplicate && (
@@ -1214,12 +1200,14 @@ export function ClaimDetailV2({
                     perLegContext: claim.perLegContext,
                   }}
                   tree={tree}
-                  // Forward the presence/activity lock so the player and
+                  // Forward the phase-based disable so the player and
                   // its terminals (Hand off, Hold, Duplicate, Closed)
-                  // disable their CTAs and show the "someone else is
-                  // editing" tooltip — instead of looking active and
-                  // silently no-op'ing on click.
-                  disabledReason={lockReason ?? null}
+                  // surface the "this invoice is past pre-submit"
+                  // tooltip and refuse to fire mutations that would
+                  // 409 server-side. Presence is intentionally NOT a
+                  // source for this — see the queue.tsx comment on
+                  // `usePresence` for context.
+                  disabledReason={playerDisabledReason}
                   onAdvanced={invalidateLeg}
                   errorType={
                     errorType

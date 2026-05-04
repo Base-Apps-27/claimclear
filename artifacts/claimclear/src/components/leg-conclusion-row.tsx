@@ -88,9 +88,6 @@ export interface LegConclusionRowHandle {
 interface RowProps {
   claim: ClaimResponse;
   groupId: number;
-  // Group-level lock (presence). Disables every mutating control with a
-  // tooltip-friendly hint.
-  lockReason?: string | null;
   initiallyExpanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   highlight?: boolean;
@@ -106,7 +103,6 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     {
       claim,
       groupId,
-      lockReason,
       initiallyExpanded = false,
       onExpandedChange,
       highlight = false,
@@ -245,13 +241,11 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         ? "Continue"
         : "Process";
     const PrimaryIcon = needsClassify ? Tag : Workflow;
-    const primaryTitle =
-      lockReason ??
-      (needsClassify
-        ? "Pick an error type for this leg"
-        : sopStarted
-          ? "Continue walking the SOP"
-          : "Open the SOP for this leg");
+    const primaryTitle = needsClassify
+      ? "Pick an error type for this leg"
+      : sopStarted
+        ? "Continue walking the SOP"
+        : "Open the SOP for this leg";
 
     // Signal we hand to the embedded ClaimDetailV2 so it knows to
     // scroll/focus the error-type picker as soon as the picker actually
@@ -340,7 +334,6 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                 type="button"
                 size="sm"
                 onClick={handlePrimary}
-                disabled={!!lockReason}
                 title={primaryTitle}
                 aria-label={primaryLabel}
                 data-testid={`leg-conclude-sop-${claim.id}`}
@@ -360,8 +353,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                     size="sm"
                     variant="outline"
                     onClick={() => onConclude("non_issue")}
-                    disabled={!!lockReason || concluding}
-                    title={lockReason ?? undefined}
+                    disabled={concluding}
                     data-testid={`leg-conclude-non-issue-${claim.id}`}
                   >
                     {concluding ? (
@@ -374,8 +366,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                     size="sm"
                     variant="outline"
                     onClick={() => onConclude("cannot_dispute")}
-                    disabled={!!lockReason || concluding}
-                    title={lockReason ?? undefined}
+                    disabled={concluding}
                     data-testid={`leg-conclude-cannot-dispute-${claim.id}`}
                   >
                     {concluding ? (
@@ -401,7 +392,6 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
               <ClaimDetailV2
                 claimId={claim.id}
                 embedded
-                lockReason={lockReason}
                 submissionSlot={submissionSlot}
                 focusErrorTypePickerSignal={focusPickerSignal}
               />
@@ -421,7 +411,6 @@ interface ListProps {
   expandedClaimId: number | null;
   onExpandedChange: (claimId: number | null) => void;
   highlightClaimId?: number | null;
-  lockReason?: string | null;
   // Optional slot (typically the group-level submission preview)
   // forwarded into the actively-expanded row's ClaimDetailV2 so it
   // renders directly below the worktree. Only the expanded row gets
@@ -436,7 +425,6 @@ export function LegConclusionList({
   expandedClaimId,
   onExpandedChange,
   highlightClaimId,
-  lockReason,
   submissionSlot,
 }: ListProps) {
   if (claims.length === 0) {
@@ -466,7 +454,6 @@ export function LegConclusionList({
           key={c.id}
           claim={c}
           groupId={groupId}
-          lockReason={lockReason}
           expandedClaimId={expandedClaimId}
           onExpandedChange={onExpandedChange}
           highlightClaimId={highlightClaimId ?? null}
@@ -486,7 +473,6 @@ export function LegConclusionList({
 function LegConclusionListItem({
   claim,
   groupId,
-  lockReason,
   expandedClaimId,
   onExpandedChange,
   highlightClaimId,
@@ -494,7 +480,6 @@ function LegConclusionListItem({
 }: {
   claim: ClaimResponse;
   groupId: number;
-  lockReason?: string | null;
   expandedClaimId: number | null;
   onExpandedChange: (claimId: number | null) => void;
   highlightClaimId: number | null;
@@ -518,7 +503,6 @@ function LegConclusionListItem({
       ref={ref}
       claim={claim}
       groupId={groupId}
-      lockReason={lockReason}
       initiallyExpanded={isExpanded}
       highlight={isHighlight}
       submissionSlot={submissionSlot}

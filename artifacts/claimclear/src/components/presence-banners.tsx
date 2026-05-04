@@ -243,10 +243,15 @@ export function HumanPresenceBanner({
         <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
           {nameList} {otherViewers.length === 1 ? "is" : "are"} also viewing this {resourceLabel}
         </p>
+        {/* Presence is informational only — every control on the page
+            is still live for both viewers. The earlier "actions
+            disabled to prevent conflicts" copy was scrapped together
+            with the lock behavior; coordinate verbally if you're both
+            about to mutate the same group. */}
         <p className="text-xs text-blue-600 dark:text-blue-400">
           {otherViewers.length === 1 && otherViewers[0].lastHeartbeat
-            ? `Viewing since ${timeAgo(otherViewers[0].lastHeartbeat)} — actions disabled to prevent conflicts`
-            : `Also viewing this ${resourceLabel} — actions disabled to prevent conflicts`}
+            ? `Viewing since ${timeAgo(otherViewers[0].lastHeartbeat)} — coordinate so you don't step on each other`
+            : `Heads up — coordinate so you don't step on each other`}
         </p>
       </div>
       <div className="flex -space-x-2 shrink-0">

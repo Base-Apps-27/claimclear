@@ -45,11 +45,6 @@ const RESOLVED_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set(["ready", "drop
 interface Props {
   group: InvoiceGroupDetailResponse;
   groupId: number;
-  // Optional lock — when present, every mutating control (readback,
-  // generate preview, submit) is disabled with the lock as the
-  // disabled-reason hint. Used by the Queue inline workspace to honour
-  // presence-based locks.
-  lockReason?: string | null;
   // Optional callback: when the operator clicks "Jump to next
   // unprocessed leg" on a gate-failed submit, the gauntlet computes the
   // next leg id that still owes action and hands it to the parent. The
@@ -66,7 +61,7 @@ interface Props {
   bare?: boolean;
 }
 
-export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJumpToLeg, bare }: Props) {
+export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, bare }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -336,13 +331,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                 onClick={onConfirmReadback}
                 disabled={
                   !isPreSubmit ||
-                  !!lockReason ||
                   !allResolved ||
                   confirmReadbackMutation.isPending ||
                   !readback.trim() ||
                   readback === (group.understandingReadback ?? "")
                 }
-                title={lockReason ?? undefined}
                 data-testid="readback-confirm"
               >
                 {confirmReadbackMutation.isPending ? (
@@ -359,15 +352,10 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
             value={readback}
             onChange={(e) => setReadback(e.target.value)}
             rows={3}
-            disabled={!isPreSubmit || !allResolved || !!lockReason}
+            disabled={!isPreSubmit || !allResolved}
             placeholder="Optional — leave blank if there's nothing extra to add."
             data-testid="readback-input"
           />
-          {lockReason && (
-            <p className="text-xs text-muted-foreground italic" data-testid="gauntlet-lock-reason">
-              {lockReason}
-            </p>
-          )}
           {isPreSubmit && !allResolved && (
             <p className="text-xs text-muted-foreground italic" data-testid="readback-locked-reason">
               These notes unlock once every disputed leg is resolved (ready, dropped, or excluded).
@@ -381,9 +369,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Generate preview</h3>
             {(() => {
-              const previewDisabledReason: string | null = lockReason
-                ? lockReason
-                : !isPreSubmit
+              const previewDisabledReason: string | null = !isPreSubmit
                 ? `Disabled because the group is past pre-submit (${group.status}).`
                 : rides.length === 0
                   ? "Disabled because this group has no legs included in the dispute."
@@ -497,8 +483,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                     size="sm"
                     variant="ghost"
                     onClick={onRegenerateDraft}
-                    disabled={!!lockReason || regenDraftMutation.isPending}
-                    title={lockReason ?? undefined}
+                    disabled={regenDraftMutation.isPending}
                     data-testid="draft-regenerate"
                   >
                     {regenDraftMutation.isPending ? (
@@ -512,10 +497,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                     size="sm"
                     variant="outline"
                     onClick={onSaveDraft}
-                    disabled={
-                      !!lockReason || !draftDirty || saveDraftMutation.isPending
-                    }
-                    title={lockReason ?? undefined}
+                    disabled={!draftDirty || saveDraftMutation.isPending}
                     breathTrigger={draftSaveBreath}
                     data-testid="draft-save"
                   >
@@ -530,13 +512,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                     size="sm"
                     onClick={onMarkReviewed}
                     disabled={
-                      !!lockReason ||
                       draftBodyEmpty ||
                       markReviewedMutation.isPending ||
                       saveDraftMutation.isPending ||
                       draftReviewed
                     }
-                    title={lockReason ?? undefined}
                     data-testid="draft-mark-reviewed"
                   >
                     {markReviewedMutation.isPending ? (
@@ -560,7 +540,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                   id="draft-subject"
                   value={draftSubject}
                   onChange={(e) => setDraftSubject(e.target.value)}
-                  disabled={!!lockReason}
                   placeholder="Dispute subject line"
                   data-testid="draft-subject-input"
                 />
@@ -578,7 +557,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
                   rows={10}
-                  disabled={!!lockReason}
                   placeholder="HTML/plain-text body the dispute will send. Edit freely; Save then Mark reviewed to unlock Submit."
                   data-testid="draft-body-input"
                 />
@@ -612,9 +590,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, lockReason, onJ
                   const missingGates: string[] = [];
                   if (!allResolved) missingGates.push("legs");
                   if (!draftReviewed) missingGates.push("review");
-                  const submitDisabledReason: string | null = lockReason
-                    ? lockReason
-                    : missingGates.length > 0
+                  const submitDisabledReason: string | null =
+                    missingGates.length > 0
                       ? `Cannot ${isDirectEmail ? "send" : "submit"} — missing gate${missingGates.length > 1 ? "s" : ""}: ${missingGates.join(", ")}.`
                       : null;
                   const button = (

@@ -54,7 +54,6 @@ import { QueueReadyToPackageCta } from "@/components/queue-ready-to-package-cta"
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
-import { formatViewerNames } from "@/components/presence-lock";
 import { useUrlParams } from "@/lib/use-url-params";
 import {
   NeedsEngagementToggle,
@@ -437,10 +436,17 @@ export default function Queue() {
   const [successMessage, setSuccessMessage] = useState("");
 
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
-  const { viewers, otherViewers, othersPresent } = usePresence("invoice_group", selectedWorkflowId ?? undefined);
-  const lockReason = othersPresent
-    ? `Disabled — ${formatViewerNames(otherViewers)} ${otherViewers.length === 1 ? "is" : "are"} currently working on this group. Wait for them to leave or coordinate directly.`
-    : null;
+  // Presence is intentionally informational-only: the `viewers` array
+  // feeds the HumanPresenceBanner so an operator can see who else is
+  // looking at the group, but presence NEVER disables any control. The
+  // previous "lock everything when another viewer is present" behavior
+  // caused mutual deadlocks (each viewer locked the other out, neither
+  // could advance the invoice) and was scrapped in favor of a soft
+  // visual badge. See HumanPresenceBanner copy for the user-facing
+  // wording. The downstream gauntlet / leg row / claim detail no
+  // longer accept a `lockReason` prop at all — phase guards and
+  // resolution checks are now the only things that disable controls.
+  const { viewers } = usePresence("invoice_group", selectedWorkflowId ?? undefined);
 
   const workflowPanelRef = useRef<HTMLDivElement>(null);
 
@@ -1099,14 +1105,11 @@ export default function Queue() {
               </div>
               <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
               {/*
-                Ready to package CTA — surfaces the new pre-submit
-                "package this group" affordance from main alongside our
-                inline workspace. The CTA self-hides once the group is
-                past pre-submit, so it stays out of the way once a
-                group has progressed. The lockReason is forwarded into
-                InlineGroupWorkspace (which renders read-only banners
-                in its subcomponents) instead of being shown as a
-                separate Card to avoid duplication.
+                Ready to package CTA — surfaces the pre-submit
+                "package this group" affordance alongside our inline
+                workspace. The CTA self-hides once the group is past
+                pre-submit, so it stays out of the way once a group
+                has progressed.
               */}
               {selectedWorkflowGroupSummary && (
                 <QueueReadyToPackageCta
@@ -1114,7 +1117,7 @@ export default function Queue() {
                   groupStatusFromList={selectedWorkflowGroupSummary.status}
                 />
               )}
-              <InlineGroupWorkspace groupId={selectedWorkflowId} lockReason={lockReason} />
+              <InlineGroupWorkspace groupId={selectedWorkflowId} />
             </div>
           </div>
         )}
@@ -1342,10 +1345,8 @@ function ClassificationInboxRow({
 // keep seeing the amber ring.
 function InlineGroupWorkspace({
   groupId,
-  lockReason,
 }: {
   groupId: number;
-  lockReason?: string | null;
 }) {
   const { get, set } = useUrlParams();
   const legParam = Number.parseInt(get("leg"), 10);
@@ -1396,7 +1397,6 @@ function InlineGroupWorkspace({
           <InvoiceGroupSubmissionGauntlet
             group={detail}
             groupId={groupId}
-            lockReason={lockReason}
             onJumpToLeg={(claimId) => {
               setExpandedLegId(claimId);
               setHighlightLegId(claimId);
@@ -1424,7 +1424,6 @@ function InlineGroupWorkspace({
                     if (highlightLegId != null) setHighlightLegId(null);
                   }}
                   highlightClaimId={highlightLegId}
-                  lockReason={lockReason}
                   submissionSlot={submissionPreview}
                 />
               </CardContent>
