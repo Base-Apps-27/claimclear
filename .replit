@@ -68,3 +68,11 @@ defaultBucketID = "replit-objstore-aa15283a-2ca4-4bf5-b949-fffbd7690c1c"
 
 [userenv.shared]
 MAS_PORTAL_URL = "https://tpissues.medanswering.com"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
