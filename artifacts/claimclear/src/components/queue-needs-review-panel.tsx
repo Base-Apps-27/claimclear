@@ -43,6 +43,7 @@ import {
   Plus,
   XCircle,
   Inbox,
+  Info,
 } from "lucide-react";
 
 // Per-claim Classification Inbox panel.
@@ -67,9 +68,25 @@ import {
 interface Props {
   inboxGroup: NeedsClassificationInboxGroup;
   onCompleted: (message: string) => void;
+  // Task #412: when set, the panel scopes to this single leg only —
+  // it shows that leg's row even if it's already classified (so the
+  // "Change" affordance from the detail page works), pre-fills the
+  // Select with the live errorTypeId, and does not collapse out
+  // other legs in the group. This is the entry point used by the
+  // leg-row Classify button and the detail-page Classify / Change
+  // buttons, where the operator already focused on a specific leg.
+  highlightLegId?: number;
+  // Pre-selected error type per leg id (used by the "Change"
+  // affordance to pre-load the current selection in the picker).
+  initialErrorTypeIds?: Record<number, string | null | undefined>;
 }
 
-export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
+export function QueueNeedsReviewPanel({
+  inboxGroup,
+  onCompleted,
+  highlightLegId,
+  initialErrorTypeIds,
+}: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -108,15 +125,25 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
   const inboxClaims = inboxGroup.claims;
   const remainingNeedsClassification = useMemo(() => {
     return inboxClaims.filter((c) => {
+      // Single-leg mode (Task #412): when an entry point opened the
+      // panel scoped to one leg, always render that leg's row — even
+      // if it's already classified (so the "Change" affordance works).
+      // In the inbox cohort mode, the panel collapses out classified
+      // rows so the operator sees only what's left.
+      if (highlightLegId === c.id) return true;
       const live = liveClaimById.get(c.id);
       if (!live) return true;
       return deriveLegSubStatus(live) === "needs_classification";
     });
-  }, [inboxClaims, liveClaimById]);
+  }, [inboxClaims, liveClaimById, highlightLegId]);
 
   // When everything in the inbox payload has been resolved, fire the
   // completion handler so the parent can drop its triage selection.
+  // Skipped in single-leg mode: a classify there closes the modal via
+  // the per-row callback, and the "auto-advance to Build Case" copy
+  // doesn't fit a one-off entry point.
   useEffect(() => {
+    if (highlightLegId !== undefined) return;
     if (
       inboxClaims.length > 0 &&
       remainingNeedsClassification.length === 0 &&
@@ -124,7 +151,7 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
     ) {
       onCompleted(`All claims for ${inboxGroup.invoiceNumber} resolved — moved to Build Case`);
     }
-  }, [remainingNeedsClassification.length, inboxClaims.length, groupDetail, inboxGroup.invoiceNumber, onCompleted]);
+  }, [remainingNeedsClassification.length, inboxClaims.length, groupDetail, inboxGroup.invoiceNumber, onCompleted, highlightLegId]);
 
   async function handleBulkExcludeAll() {
     if (bulkPending) return;
@@ -179,10 +206,14 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
           <div className="space-y-1 min-w-0">
             <CardTitle className="text-lg flex items-center gap-2">
               <Inbox className="h-4 w-4" />
-              Triage {inboxGroup.invoiceNumber}
+              {highlightLegId !== undefined
+                ? `Classify leg in ${inboxGroup.invoiceNumber}`
+                : `Triage ${inboxGroup.invoiceNumber}`}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {inboxGroup.allBlank ? (
+              {highlightLegId !== undefined ? (
+                <>Pick the Error Type that fits this leg.</>
+              ) : inboxGroup.allBlank ? (
                 <>
                   <strong>All blank descriptions.</strong> Confirm there's
                   nothing to dispute on the portal, then mark each leg
@@ -205,6 +236,28 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Task #412: persistent instruction banner. Shows on every
+            open of the modal — both inbox-cohort and single-leg use —
+            because the operator needs to verify the correct error
+            type against the source of truth (dispatch / MAS portal)
+            before clicking Classify. Info-tinted callout, not a
+            dismissible toast, so it can't be missed. */}
+        <div
+          className="rounded-md border p-3 text-xs flex items-start gap-2"
+          style={{
+            background: "hsl(var(--cc-blue-bg))",
+            borderColor: "hsl(var(--cc-blue-border))",
+            color: "hsl(var(--cc-blue-fg))",
+          }}
+          data-testid="classify-instruction-banner"
+          role="note"
+        >
+          <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Please check your dispatch platform or the MAS portal in
+            order to define what the correct error type is.
+          </span>
+        </div>
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div>
             <Label className="text-xs text-muted-foreground">Status</Label>
@@ -269,6 +322,12 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
                 key={c.id}
                 claim={c}
                 errorTypes={errorTypes}
+                isHighlighted={highlightLegId === c.id}
+                initialErrorTypeId={
+                  initialErrorTypeIds?.[c.id] ??
+                  liveClaimById.get(c.id)?.errorTypeId ??
+                  null
+                }
                 isPending={
                   classifyLeg.isPending && classifyLeg.variables?.id === c.id ||
                   excludeLeg.isPending && excludeLeg.variables?.id === c.id ||
@@ -327,6 +386,8 @@ function NeedsReviewClaimRow({
   claim,
   errorTypes,
   isPending,
+  isHighlighted = false,
+  initialErrorTypeId = null,
   onClassify,
   onExclude,
   onCreateErrorType,
@@ -335,12 +396,19 @@ function NeedsReviewClaimRow({
   claim: NeedsClassificationInboxClaim;
   errorTypes: ErrorTypeResponse[];
   isPending: boolean;
+  isHighlighted?: boolean;
+  initialErrorTypeId?: string | null;
   onClassify: (errorTypeId: string) => Promise<void>;
   onExclude: (reason: ExcludeLegBodyReason, note: string) => Promise<void>;
   onCreateErrorType: (input: { name: string; category: string; description: string }) => Promise<ErrorTypeResponse>;
   createPending: boolean;
 }) {
-  const [errorTypeId, setErrorTypeId] = useState("");
+  // Pre-fill from the live errorTypeId if the entry point opened the
+  // panel on a leg that's already classified ("Change" affordance from
+  // claim-detail-v2). Falls back to empty for the standard inbox flow.
+  const [errorTypeId, setErrorTypeId] = useState<string>(
+    initialErrorTypeId ? String(initialErrorTypeId) : "",
+  );
   const [excludeReason, setExcludeReason] = useState<ExcludeLegBodyReason | "">("");
   const [excludeNote, setExcludeNote] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -360,8 +428,11 @@ function NeedsReviewClaimRow({
 
   return (
     <div
-      className="rounded-md border bg-card p-3 space-y-3"
+      className={`rounded-md border bg-card p-3 space-y-3 ${
+        isHighlighted ? "ring-2 ring-primary border-primary" : ""
+      }`}
       data-testid={`needs-review-claim-${claim.id}`}
+      data-highlighted={isHighlighted ? "true" : undefined}
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 text-sm min-w-0">

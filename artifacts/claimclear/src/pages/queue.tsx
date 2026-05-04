@@ -15,12 +15,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StatusBadge } from "@/components/status-badge";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,7 +43,7 @@ import {
   type DeadlineTier,
 } from "@/lib/queue-urgency";
 import { countUrgentRows } from "@/lib/urgent-count";
-import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
+import { ClassifyDialog } from "@/components/classify-dialog";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -888,7 +882,7 @@ export default function Queue() {
       <div className="space-y-1">
         <h2 className="text-2xl font-bold tracking-tight">Invoice queue</h2>
         <p className="text-muted-foreground">
-          Operator workspace. Triage new imports in the <span className="font-medium">Classification Inbox</span> when something lands, then work the <span className="font-medium">Action Required</span> tab. Earliest service date first; red badges mark groups that must file today.
+          Operator workspace. Triage every group with an unclassified leg in the <span className="font-medium">Classification Inbox</span> (across all statuses), then work the <span className="font-medium">Action Required</span> tab. Earliest service date first; red badges mark groups that must file today.
         </p>
       </div>
 
@@ -943,45 +937,26 @@ export default function Queue() {
         onSelect={selectTriage}
       />
 
-      {/* Triage workspace dialog. Open whenever `?triage=<id>` matches
-          a row in the embedded inbox payload; closing it (Esc, overlay,
-          X) clears the URL param. Selection is URL-persisted so a
-          refresh, hot reload, or shared link reopens on the same row.
-          We re-find the inbox payload row each render so per-claim
-          mutations show their effect (the row is a derivation of the
-          embedded inbox payload, which the cache invalidate refetches
-          under the same query key). */}
-      <Dialog
-        open={selectedTriageId != null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedTriageId(null);
-        }}
-      >
-        <DialogContent
-          className="max-w-3xl max-h-[90vh] p-0 gap-0"
-          data-testid="triage-dialog"
-        >
-          <DialogTitle className="sr-only">Classification workspace</DialogTitle>
-          <DialogDescription className="sr-only">
-            Classify or exclude individual claims for the selected invoice group.
-          </DialogDescription>
-          <div className="overflow-y-auto max-h-[90vh] p-6 pt-10">
-            {selectedTriageId != null && (() => {
-              const row = inboxGroups.find((g) => g.id === selectedTriageId);
-              if (!row) return null;
-              return (
-                <QueueNeedsReviewPanel
-                  inboxGroup={row}
-                  onCompleted={(message) => {
-                    setSuccessMessage(message);
-                    invalidate();
-                  }}
-                />
-              );
-            })()}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Task #412: Triage workspace now uses the shared
+          ClassifyDialog so the queue, leg-row Classify button, and
+          claim-detail "Classify this leg" / "Change" all open the
+          exact same modal (with the persistent instruction banner +
+          identical UX). Selection is still URL-persisted via
+          `?triage=<id>` — the dialog opens whenever the URL holds a
+          triage id and clears the param when closed. */}
+      {selectedTriageId != null && (
+        <ClassifyDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelectedTriageId(null);
+          }}
+          groupId={selectedTriageId}
+          onCompleted={(message) => {
+            setSuccessMessage(message);
+            invalidate();
+          }}
+        />
+      )}
 
       <div className={`grid grid-cols-1 gap-6 ${selectedWorkflowId ? "lg:grid-cols-3" : ""}`}>
         <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>

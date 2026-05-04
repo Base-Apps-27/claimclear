@@ -30,6 +30,7 @@ import {
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
+import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { useAuth } from "@workspace/replit-auth-web";
@@ -247,21 +248,21 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         ? "Continue walking the SOP"
         : "Open the SOP for this leg";
 
-    // Signal we hand to the embedded ClaimDetailV2 so it knows to
-    // scroll/focus the error-type picker as soon as the picker actually
-    // mounts. The ClaimDetailV2 effect handles the async-mount race —
-    // the strip just bumps the counter on each Classify click. Stays
-    // undefined until the operator actually clicks Classify so an
-    // initially-expanded unclassified row doesn't auto-scroll on mount.
-    const [focusPickerSignal, setFocusPickerSignal] = useState<number | undefined>(undefined);
+    // Task #412: Classify primary action now opens the shared
+    // ClassifyDialog (the same modal the Queue's Classification Inbox
+    // uses) scoped to this leg, instead of expanding the row + scrolling
+    // to a read-only "pick one from the queue" banner. The expand /
+    // worktree path is still reachable through the row's own toggle.
+    const [classifyOpen, setClassifyOpen] = useState(false);
 
     function handlePrimary() {
+      if (needsClassify) {
+        setClassifyOpen(true);
+        return;
+      }
       if (!expanded) {
         setExpanded(true);
         onExpandedChange?.(true);
-      }
-      if (needsClassify) {
-        setFocusPickerSignal((n) => (n ?? 0) + 1);
       }
     }
 
@@ -393,11 +394,16 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                 claimId={claim.id}
                 embedded
                 submissionSlot={submissionSlot}
-                focusErrorTypePickerSignal={focusPickerSignal}
               />
             </div>
           )}
         </CardContent>
+        <ClassifyDialog
+          open={classifyOpen}
+          onOpenChange={setClassifyOpen}
+          groupId={groupId}
+          highlightLegId={claim.id}
+        />
       </Card>
     );
   },

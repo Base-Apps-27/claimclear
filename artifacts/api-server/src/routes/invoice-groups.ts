@@ -679,11 +679,13 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
     })
     .from(claimsTable)
     .innerJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    // Predicate scoped to Needs Review only — that's where unclassified
-    // groups live in the dispute lifecycle. New groups are still imports
-    // that may not have been triaged into the dispute pipeline yet, so
-    // they're explicitly excluded from the inbox.
-    .where(eq(invoiceGroupsTable.status, "Needs Review"))
+    // Task #412: broaden the inbox so any active leg with no Error Type
+    // surfaces, regardless of parent group status. Previously the
+    // predicate was scoped to `Needs Review` only, which hid legs whose
+    // parent group had already advanced to `Generating Email`,
+    // `Awaiting Response`, etc. — those legs were unreachable from the
+    // inbox even though they still needed an Error Type. Active-leg
+    // filtering still happens via `deriveLegSubStatus` below.
     .orderBy(asc(invoiceGroupsTable.id), asc(claimsTable.id));
 
   const groupIds = Array.from(new Set(candidateLegs.map((l) => l.invoiceGroupId).filter((x): x is number => x != null)));
@@ -743,9 +745,16 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
     });
   }
 
-  // Sort: groups with at least one qualifying sibling first (operator can
-  // act immediately on those), then all-blank groups (need manual triage).
+  // Sort (Task #412): `Needs Review` first (the original cohort —
+  // pre-pipeline groups that operators expect to triage in batches),
+  // then everything else by parent-group service date asc so urgent
+  // already-in-flight groups float to the top of the rest. Within each
+  // status bucket, all-blank groups fall to the bottom (they need
+  // manual triage with no qualifying-sibling shortcut).
   inboxGroups.sort((a, b) => {
+    const aNR = a.status === "Needs Review" ? 0 : 1;
+    const bNR = b.status === "Needs Review" ? 0 : 1;
+    if (aNR !== bNR) return aNR - bNR;
     if (a.allBlank !== b.allBlank) return a.allBlank ? 1 : -1;
     return a.id - b.id;
   });

@@ -48,8 +48,9 @@ import {
 import {
   Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
   Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
-  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2,
+  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2, Tag,
 } from "lucide-react";
+import { ClassifyDialog } from "@/components/classify-dialog";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -109,14 +110,6 @@ interface Props {
   // operator's flow is "walk SOP → confirm submission preview"
   // without leaving the surface.
   submissionSlot?: ReactNode;
-  // Monotonically-increasing token from the queue strip. When this
-  // value increases, ClaimDetailV2 will scroll/focus the error-type
-  // picker anchor as soon as it mounts (or immediately if it's
-  // already mounted). This is what lets the queue strip's "Classify"
-  // primary action land the operator on the picker even when the
-  // embedded leg detail is still fetching at click time. See
-  // LegConclusionRow.handlePrimary.
-  focusErrorTypePickerSignal?: number;
 }
 
 const SUB_STATUS_TO_TONE: Record<string, Tone> = {
@@ -260,7 +253,6 @@ export function ClaimDetailV2({
   claimId,
   embedded = false,
   submissionSlot,
-  focusErrorTypePickerSignal,
 }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -268,39 +260,12 @@ export function ClaimDetailV2({
     query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId },
   });
 
-  // Owns the "land the operator on the error-type picker" effect for
-  // the queue strip's Classify primary action. We watch for the parent
-  // bumping `focusErrorTypePickerSignal` AND for the picker anchor
-  // being in the DOM (which only happens once `claim` has loaded and
-  // `!claim.errorTypeId`). Doing it here instead of from the strip
-  // means we can't lose the race against async data — the effect will
-  // fire as soon as both conditions hold, even seconds after the
-  // click.
-  const lastHandledFocusSignal = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (focusErrorTypePickerSignal === undefined) return;
-    if (lastHandledFocusSignal.current === focusErrorTypePickerSignal) return;
-    if (!claim) return; // wait for fetch to settle
-    if (claim.errorTypeId) return; // picker only renders when no errorType
-    const anchorId = `leg-error-type-picker-${claim.id}`;
-    const tryFocus = (attempt = 0) => {
-      const el = document.getElementById(anchorId);
-      if (el) {
-        lastHandledFocusSignal.current = focusErrorTypePickerSignal;
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        if (typeof (el as HTMLElement).focus === "function") {
-          (el as HTMLElement).focus({ preventScroll: true });
-        }
-        return;
-      }
-      // Cap retries at ~3s to avoid leaking a long-lived loop if the
-      // picker never mounts (e.g. claim flips to errorTypeId mid-flight).
-      if (attempt < 60) {
-        window.setTimeout(() => tryFocus(attempt + 1), 50);
-      }
-    };
-    window.requestAnimationFrame(() => tryFocus(0));
-  }, [focusErrorTypePickerSignal, claim]);
+  // Task #412: Classify entry point on the detail page is the
+  // shared ClassifyDialog (same modal used by the queue strip and
+  // the Classification Inbox). State lives here so both the
+  // unclassified-state primary button and the "Change" affordance
+  // next to the Error Type badge feed the same dialog.
+  const [classifyOpen, setClassifyOpen] = useState(false);
 
   const parentGroupId = claim?.invoiceGroupId ?? null;
   const { data: parentGroup } = useGetInvoiceGroup(parentGroupId ?? 0, {
@@ -814,8 +779,24 @@ export function ClaimDetailV2({
                     {subStatusLabel}
                   </StatusPill>
                   {claim.errorTypeName ? (
-                    <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      · {claim.errorTypeName}
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                        · {claim.errorTypeName}
+                      </span>
+                      {/* Task #412: "Change" affordance opens the same
+                          ClassifyDialog the queue uses, pre-filled with
+                          the current Error Type so an operator can
+                          re-pick without leaving the detail page. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-1.5 text-xs"
+                        onClick={() => setClassifyOpen(true)}
+                        data-testid={`leg-change-error-type-${claim.id}`}
+                      >
+                        <Edit2 className="h-3 w-3 mr-1" />
+                        Change
+                      </Button>
                     </span>
                   ) : null}
                   <HideForClerk>
@@ -1212,20 +1193,29 @@ export function ClaimDetailV2({
                 />
               ) : null}
               {!isDuplicate && !claim.errorTypeId && (
-                // Stable anchor (`leg-error-type-picker-<id>`) so the
-                // queue strip's "Classify" primary action can scroll
-                // and focus the operator straight onto the entry point
-                // for picking an error type. See LegConclusionRow's
-                // focusErrorTypePicker for the consumer side.
+                // Task #412: Replaces the read-only amber "pick one
+                // from the queue" banner with a real entry point.
+                // Opens the shared ClassifyDialog scoped to this leg so
+                // the operator can assign an Error Type without leaving
+                // the detail page.
                 <div
-                  id={`leg-error-type-picker-${claim.id}`}
-                  tabIndex={-1}
-                  className="text-xs flex items-start gap-2 p-3 rounded scroll-mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex items-center justify-between gap-3 p-3 rounded"
                   style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
-                  data-testid={`leg-error-type-picker-${claim.id}`}
+                  data-testid={`leg-classify-prompt-${claim.id}`}
                 >
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>This leg has no error type yet. Pick one from the queue or use the legacy classifier.</span>
+                  <div className="flex items-start gap-2 text-xs">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <span>This leg has no error type yet. Classify it to start the SOP.</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setClassifyOpen(true)}
+                    data-testid={`leg-classify-this-${claim.id}`}
+                    className="flex-shrink-0"
+                  >
+                    <Tag className="h-3.5 w-3.5 mr-1.5" />
+                    Classify this leg
+                  </Button>
                 </div>
               )}
               {!isDuplicate && claim.errorTypeId && !tree && (
@@ -1740,6 +1730,27 @@ export function ClaimDetailV2({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Task #412: Shared classification dialog. Open from the
+          unclassified-state primary button or the "Change" affordance
+          next to the Error Type badge. */}
+      {claim ? (
+        <ClassifyDialog
+          open={classifyOpen}
+          onOpenChange={setClassifyOpen}
+          groupId={claim.invoiceGroupId ?? 0}
+          highlightLegId={claim.id}
+          onCompleted={(message) => {
+            toast({ title: message });
+            qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
+            if (claim.invoiceGroupId) {
+              qc.invalidateQueries({
+                queryKey: getGetInvoiceGroupQueryKey(claim.invoiceGroupId),
+              });
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
