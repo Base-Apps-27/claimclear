@@ -32,6 +32,7 @@ import {
 } from "@workspace/db";
 import {
   buildPromptLegInputs,
+  normalizeTree,
   promptLegAuditCounters,
   type PromptLegRowInput,
 } from "../lib/prompt-leg-inputs";
@@ -620,7 +621,7 @@ test("(d) duplicate-only with missing primary: helper throws (no silent fallback
 // audit-log metadata for the email-channel write-up + readback prompt sites)
 // ---------------------------------------------------------------------------
 
-test("Task #312: promptLegAuditCounters projects exactly the three traceability counters (parity case)", () => {
+test("Task #312: promptLegAuditCounters projects exactly the five traceability counters (parity case)", () => {
   const rides = [
     makeLeg({ id: 501, confNumber: "ABC123" }),
     makeLeg({ id: 502, confNumber: "DEF456" }),
@@ -629,18 +630,26 @@ test("Task #312: promptLegAuditCounters projects exactly the three traceability 
   const counters = promptLegAuditCounters(result);
 
   // Exact keys + values — the audit log shape is a contract for downstream
-  // analytics ("did the AI see the per-leg finding when it drafted this?").
+  // analytics. Two questions the audit log answers:
+  //   - did the AI see the operator's authored unique finding? (per-leg)
+  //   - did the AI see the SOP walk-through trail?           (transcript)
+  // These are deliberately distinct counters: a leg can carry one,
+  // the other, both, or neither.
   assert.deepEqual(counters, {
     hasPerLegContext: false,
     perLegContextLegCount: 0,
     siblingDuplicateCount: 0,
+    hasSopTranscript: false,
+    sopTranscriptLegCount: 0,
   });
   // No extra keys leak into the projection — spreading it into an audit
   // metadata object must NOT carry the prompt strings or input arrays.
   assert.deepEqual(Object.keys(counters).sort(), [
     "hasPerLegContext",
+    "hasSopTranscript",
     "perLegContextLegCount",
     "siblingDuplicateCount",
+    "sopTranscriptLegCount",
   ]);
 });
 
@@ -656,6 +665,8 @@ test("Task #312: promptLegAuditCounters reflects per_leg_context counts (all-con
     hasPerLegContext: true,
     perLegContextLegCount: 2,
     siblingDuplicateCount: 0,
+    hasSopTranscript: false,
+    sopTranscriptLegCount: 0,
   });
 });
 
@@ -670,6 +681,8 @@ test("Task #312: promptLegAuditCounters reflects sibling-duplicate roll-up (prim
     hasPerLegContext: true,
     perLegContextLegCount: 1,
     siblingDuplicateCount: 2,
+    hasSopTranscript: false,
+    sopTranscriptLegCount: 0,
   });
 });
 
@@ -696,6 +709,8 @@ test("Task #372: legacy auto-derived '• Q — A' breadcrumb is treated as empt
     hasPerLegContext: false,
     perLegContextLegCount: 0,
     siblingDuplicateCount: 0,
+    hasSopTranscript: false,
+    sopTranscriptLegCount: 0,
   });
 });
 
@@ -722,5 +737,317 @@ test("Task #312: promptLegAuditCounters on a duplicate-only slice — primary ow
     hasPerLegContext: false,
     perLegContextLegCount: 0,
     siblingDuplicateCount: 0,
+    hasSopTranscript: false,
+    sopTranscriptLegCount: 0,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Task #377: SOP walk transcript threading into the dispute write-up prompt
+// ---------------------------------------------------------------------------
+//
+// The transcript is derived from each leg's `sopAnswers` jsonb + the
+// matching decision tree (passed in via `treesByLegId`). The four
+// surfaces it has to thread through:
+//   - rides block (group write-up + readback)
+//   - per-claim annotations (per-claim email path)
+//   - audit counters (analytics question: did the AI see the walk?)
+//   - parity guard (no tree map → no transcript → byte-identical output)
+
+const transcriptTree = {
+  nodes: [
+    { id: "n1", question: "Was GPS available?" },
+    { id: "n2", question: "Did breadcrumbs match the billed route?" },
+  ],
+};
+
+test("Task #377: SOP transcript renders under each visible leg in the rides block", () => {
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [
+      { nodeId: "n1", answer: "Yes" },
+      { nodeId: "n2", answer: "No" },
+    ],
+  });
+  const treesByLegId = new Map([[501, transcriptTree]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+
+  const expectedRidesBlock =
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `     SOP walk transcript:\n` +
+    `       • Was GPS available? — Yes\n` +
+    `       • Did breadcrumbs match the billed route? — No`;
+  assert.equal(result.ridesBlock, expectedRidesBlock);
+
+  // Per-claim annotation: one bullet item whose body is the transcript
+  // block (children indented under the bullet so the LLM reads them as
+  // continuation of the same item).
+  assert.deepEqual(result.perClaimAnnotationLines.get(501), [
+    "- SOP walk transcript:\n  • Was GPS available? — Yes\n  • Did breadcrumbs match the billed route? — No",
+  ]);
+
+  // Counters: transcript is present, per-leg-context is not — the two
+  // are independent dimensions, the audit log answers them separately.
+  assert.equal(result.hasSopTranscript, true);
+  assert.equal(result.sopTranscriptLegCount, 1);
+  assert.equal(result.hasPerLegContext, false);
+});
+
+test("Task #377: a leg with BOTH SOP transcript and per-leg finding renders both, transcript first", () => {
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    perLegContext: "Driver waited 47 min; member confirmed delay.",
+    sopAnswers: [
+      { nodeId: "n1", answer: "Yes" },
+      { nodeId: "n2", answer: "No" },
+    ],
+  });
+  const treesByLegId = new Map([[501, transcriptTree]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+
+  // Order matters: the SOP walk gives the model the *background* (how we
+  // got to this conclusion); the per-leg finding is the *novel* operator
+  // narrative on top. Background → finding mirrors the order the operator
+  // reads it on the leg page.
+  const expectedRidesBlock =
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50\n` +
+    `     SOP walk transcript:\n` +
+    `       • Was GPS available? — Yes\n` +
+    `       • Did breadcrumbs match the billed route? — No\n` +
+    `     Per-leg finding: Driver waited 47 min; member confirmed delay.`;
+  assert.equal(result.ridesBlock, expectedRidesBlock);
+
+  assert.deepEqual(result.perClaimAnnotationLines.get(501), [
+    "- SOP walk transcript:\n  • Was GPS available? — Yes\n  • Did breadcrumbs match the billed route? — No",
+    "- Per-leg finding: Driver waited 47 min; member confirmed delay.",
+  ]);
+
+  // Both counters fire independently — this is the shape the audit log
+  // is designed to surface.
+  assert.deepEqual(promptLegAuditCounters(result), {
+    hasPerLegContext: true,
+    perLegContextLegCount: 1,
+    siblingDuplicateCount: 0,
+    hasSopTranscript: true,
+    sopTranscriptLegCount: 1,
+  });
+});
+
+test("Task #377: a transcript node removed from the tree (SOP edited) renders with the (node removed from tree) marker, still surfaced not silently dropped", () => {
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [
+      { nodeId: "n1", answer: "Yes" },
+      { nodeId: "n-deleted-7", answer: "Continue" },
+    ],
+  });
+  const treesByLegId = new Map([[501, transcriptTree]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+
+  // The unresolved row is kept (Guard #5: never silently mask
+  // operator-recorded steps) and tagged so the LLM knows the row is
+  // a stale reference rather than a live SOP question.
+  assert.match(result.ridesBlock, /• Was GPS available\? — Yes/);
+  assert.match(result.ridesBlock, /• n-deleted-7 \(node removed from tree\) — Continue/);
+  assert.equal(result.sopTranscriptLegCount, 1);
+});
+
+test("Task #377: duplicate's transcript is suppressed (primary owns the trip-bound finding)", () => {
+  const primary = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [{ nodeId: "n1", answer: "Yes" }],
+  });
+  const dup = makeLeg({
+    id: 502,
+    confNumber: "DEF456",
+    duplicateOfClaimId: 501,
+    errorTypeId: "11",
+    sopAnswers: [{ nodeId: "n1", answer: "Yes" }],
+  });
+  const treesByLegId = new Map([[501, transcriptTree], [502, transcriptTree]]);
+  const result = buildPromptLegInputs({
+    legs: [primary, dup],
+    groupLegs: [primary, dup],
+    treesByLegId,
+  });
+
+  // Primary's transcript surfaces; duplicate's row is skipped from the
+  // rides block entirely (no head row for it), and the duplicate's
+  // per-claim annotations contain ONLY the primary-pointer bullet
+  // (no transcript echo). Note: the primary's sibling-roll-up
+  // annotation does mention "Conf #DEF456" — that's expected, what
+  // matters is that there's no numbered head row for the duplicate.
+  assert.match(result.ridesBlock, /Conf #ABC123[\s\S]*SOP walk transcript:[\s\S]*• Was GPS available\? — Yes/);
+  assert.equal(result.ridesBlock.match(/^ {2}\d+\. /gm)?.length, 1, "only the primary should get a numbered head row");
+  assert.equal(result.ridesBlock.includes("2. Conf #DEF456"), false);
+  assert.deepEqual(result.perClaimAnnotationLines.get(502), [
+    "- Rolled under primary Conf #ABC123 (the trip-overriding finding lives on the primary; do not re-state it here).",
+  ]);
+  // Counter only credits the primary — the duplicate's transcript is
+  // not what the LLM saw (and re-feeding it would just echo the primary).
+  assert.equal(result.sopTranscriptLegCount, 1);
+});
+
+test("Task #377: parity guard — no tree map → no transcript → rides block byte-identical to legacy (audit counters zero)", () => {
+  // Caller hasn't been upgraded to thread `treesByLegId` yet. Even if
+  // the leg has `sopAnswers` populated, no transcript should leak into
+  // the prompt — preserves the parity guarantee for the four prompt
+  // sites until they all opt in.
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [{ nodeId: "n1", answer: "Yes" }],
+  });
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride] });
+
+  const expectedRidesBlock =
+    `  1. Conf #ABC123 | Service date: 2026-01-15 | Client: C100 | Car: CAR-7 | Amount: $42.50`;
+  assert.equal(result.ridesBlock, expectedRidesBlock);
+  assert.deepEqual(result.perClaimAnnotationLines.get(501), []);
+  assert.equal(result.hasSopTranscript, false);
+  assert.equal(result.sopTranscriptLegCount, 0);
+});
+
+test("Task #377: a leg with empty sopAnswers contributes no transcript even when its tree is loaded", () => {
+  // A leg that hasn't walked the SOP yet (or whose walk was reset) has
+  // an empty `sopAnswers` jsonb. Counters must reflect "no transcript"
+  // — otherwise a freshly-routed leg would inflate the analytics number.
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [],
+  });
+  const treesByLegId = new Map([[501, transcriptTree]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+
+  assert.equal(result.ridesBlock.includes("SOP walk transcript:"), false);
+  assert.equal(result.sopTranscriptLegCount, 0);
+  assert.equal(result.hasSopTranscript, false);
+});
+
+test("Task #377: readback prompt gates the per-leg findings block on transcript too — transcript-only group still gets the block (write-up↔readback parity)", () => {
+  // Pre-#377, the readback's gate was `hasPerLegContext ||
+  // siblingDuplicateCount > 0`. With transcripts now a first-class
+  // grounding source the write-up sees, the readback must see it too —
+  // otherwise the operator can't verify the AI used the walk correctly.
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [
+      { nodeId: "n1", answer: "Yes" },
+      { nodeId: "n2", answer: "No" },
+    ],
+  });
+  const treesByLegId = new Map([[501, transcriptTree]]);
+  const promptLegInputs = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+  // Sanity: this group has transcript but no operator-authored finding
+  // and no sibling-duplicates — pre-#377 the readback would have skipped
+  // the block entirely.
+  assert.equal(promptLegInputs.hasPerLegContext, false);
+  assert.equal(promptLegInputs.siblingDuplicateCount, 0);
+  assert.equal(promptLegInputs.hasSopTranscript, true);
+
+  const { prompt } = buildReadbackPrompt({
+    ctx: makeCtx([ride]),
+    errorType,
+    reason: "Mileage mismatch",
+    specialCircumstances: "",
+    promptLegInputs,
+  });
+  assert.match(prompt, /Per-leg findings the operator captured during the SOP walk/);
+  assert.match(prompt, /SOP walk transcript:\n {7}• Was GPS available\? — Yes\n {7}• Did breadcrumbs match the billed route\? — No/);
+});
+
+test("Task #377: normalizeTree returns null on malformed jsonb payloads — no nodeId leak through buildPromptLegInputs", () => {
+  // Pin the contract that protects the prompt from nodeId-leak when the
+  // `error_types.decision_tree` jsonb is malformed in the DB. Each of
+  // these cases must normalize to `null` so that the helper's
+  // `tree==null` short-circuit suppresses the leg's transcript entirely
+  // (rather than rendering rows like "n1 — Yes" that would just be
+  // gibberish to the LLM and would also bypass the explicit
+  // "(node removed from tree)" marker the operator-facing UI uses).
+  assert.equal(normalizeTree(null), null);
+  assert.equal(normalizeTree(undefined), null);
+  assert.equal(normalizeTree("not an object"), null);
+  assert.equal(normalizeTree({}), null, "missing nodes key");
+  assert.equal(normalizeTree({ nodes: "not an array" }), null);
+  // Nodes array is present but every entry is malformed (missing id /
+  // missing question / wrong types) — filter strips all of them.
+  // Returning `{nodes:[]}` here would have the helper render every row
+  // as unresolved "{nodeId} — {answer}"; returning null suppresses
+  // the transcript entirely.
+  assert.equal(
+    normalizeTree({
+      nodes: [
+        { id: 7, question: "wrong type" },
+        { question: "missing id" },
+        null,
+      ],
+    }),
+    null,
+  );
+
+  // Integration check: a leg whose tree normalizes to null must produce
+  // no transcript output and zero counter contribution — the no-leak
+  // contract is observable through the helper too.
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    errorTypeId: "11",
+    sopAnswers: [{ nodeId: "n1", answer: "Yes" }],
+  });
+  const treesByLegId = new Map([[501, normalizeTree({ nodes: [{ id: 7, question: "wrong" }] })]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+  assert.equal(result.ridesBlock.includes("SOP walk transcript:"), false);
+  assert.equal(result.ridesBlock.includes("n1"), false);
+  assert.equal(result.sopTranscriptLegCount, 0);
+});
+
+test("Task #377: normalizeTree keeps well-formed nodes intact (positive parity for the malformed-nodes guard)", () => {
+  // Defensive partner of the "malformed → null" test: a payload with
+  // *some* well-formed nodes still returns a tree (with only the valid
+  // entries kept) so a partial schema migration doesn't blow away
+  // every transcript surface.
+  const tree = normalizeTree({
+    nodes: [
+      { id: "n1", question: "Was GPS available?" },
+      { id: 7, question: "wrong type — dropped" },
+      { id: "n2", question: "Did breadcrumbs match?" },
+    ],
+  });
+  assert.deepEqual(tree, {
+    nodes: [
+      { id: "n1", question: "Was GPS available?" },
+      { id: "n2", question: "Did breadcrumbs match?" },
+    ],
+  });
+});
+
+test("Task #377: a leg whose tree entry is missing from the map (e.g., no errorTypeId) contributes no transcript (no nodeId leak into the prompt)", () => {
+  // Defensive: if a leg's tree couldn't be loaded (no errorTypeId, or
+  // the error_type was deleted), feeding raw nodeIds to the LLM would
+  // be gibberish. The helper drops the transcript entirely for that
+  // leg — better silent than wrong.
+  const ride = makeLeg({
+    id: 501,
+    confNumber: "ABC123",
+    sopAnswers: [{ nodeId: "n1", answer: "Yes" }],
+  });
+  const treesByLegId = new Map<number, typeof transcriptTree | null>([[501, null]]);
+  const result = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
+
+  assert.equal(result.ridesBlock.includes("SOP walk transcript:"), false);
+  assert.equal(result.ridesBlock.includes("n1"), false);
+  assert.equal(result.sopTranscriptLegCount, 0);
 });

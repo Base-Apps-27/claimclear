@@ -13,7 +13,7 @@ import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
-import { buildPromptLegInputs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
+import { buildPromptLegInputs, loadDecisionTreesForLegs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
 
 function sanitizeHtml(html: string): string {
   let safe = html.replace(/<(script|style|iframe|object|embed|form|link|meta|base)[\s\S]*?<\/\1>/gi, "");
@@ -409,10 +409,15 @@ export function buildReadbackPrompt(opts: {
   const specialLine = trimmedSpecial
     ? `\nOperator-supplied special circumstances (this may fundamentally change the framing — let it lead):\n${trimmedSpecial}`
     : "\nOperator-supplied special circumstances: (none)";
-  // Parity guard: only inject the per-leg findings block when the operator
-  // actually captured per-leg context or sibling-duplicate pointers exist
-  // on the group. Otherwise the prompt is byte-identical to the legacy.
-  const perLegBlock = (promptLegInputs.hasPerLegContext || promptLegInputs.siblingDuplicateCount > 0)
+  // Parity guard: only inject the per-leg findings block when the
+  // operator actually captured per-leg context, the SOP walk produced a
+  // transcript, or sibling-duplicate pointers exist on the group.
+  // Otherwise the prompt is byte-identical to the legacy. Including the
+  // transcript-only case here preserves the readback↔write-up parity
+  // promised at the top of this block — Task #377 added transcripts as a
+  // first-class context source, and the readback must see the same
+  // grounding the full draft will see.
+  const perLegBlock = (promptLegInputs.hasPerLegContext || promptLegInputs.hasSopTranscript || promptLegInputs.siblingDuplicateCount > 0)
     ? `\nPer-leg findings the operator captured during the SOP walk (lead with these where they reshape the surface read of the error type):\n${promptLegInputs.ridesBlock}`
     : "";
 
@@ -617,7 +622,9 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   // Pre-compute prompt-leg inputs (Task #307 guard #10): the readback sees
   // the same per-leg findings the full draft will see so the operator's
   // verification step can't be silently shorn of new context.
-  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
+  const rides = ctx.rides as PromptLegRowInput[];
+  const treesByLegId = await loadDecisionTreesForLegs(rides);
+  const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
   const { prompt, systemPrompt } = buildReadbackPrompt({ ctx, errorType, reason, specialCircumstances: trimmedSpecial, promptLegInputs });
 
   const message = await anthropic.messages.create({
@@ -716,7 +723,9 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   // Build prompt-leg inputs OUTSIDE the try/catch so an inconsistent group
   // surfaces loud (Task #307 guard #10) — the LLM-error fallback below must
   // not mask data-shape problems.
-  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
+  const rides = ctx.rides as PromptLegRowInput[];
+  const treesByLegId = await loadDecisionTreesForLegs(rides);
+  const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
   let generatedDescription = "";
   try {
     generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
@@ -946,7 +955,9 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   const savedSpecial = (existing.specialCircumstances || "").trim();
   // Pre-compute prompt-leg inputs (Task #307 guard #10): data inconsistency
   // surfaces loud, while LLM API errors still fall back to the template.
-  const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
+  const rides = ctx.rides as PromptLegRowInput[];
+  const treesByLegId = await loadDecisionTreesForLegs(rides);
+  const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
   let generatedDescription = "";
   try {
     generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, promptLegInputs, savedSpecial || null);
@@ -1223,7 +1234,9 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     // Pre-compute prompt-leg inputs OUTSIDE the try/catch (Task #307 guard
     // #10): inconsistent group data surfaces loud rather than being masked
     // by the template fallback below.
-    const promptLegInputs = buildPromptLegInputs({ legs: ctx.rides as PromptLegRowInput[], groupLegs: ctx.rides as PromptLegRowInput[] });
+    const rides = ctx.rides as PromptLegRowInput[];
+    const treesByLegId = await loadDecisionTreesForLegs(rides);
+    const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
     try {
       generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
     } catch (err) {

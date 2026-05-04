@@ -162,8 +162,8 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
   // Build prompt-leg inputs OUTSIDE the LLM try/catch (Task #307 guard #10).
   // Data-shape inconsistency must surface loud — the template fallback below
   // exists only for LLM/JSON parse failures, not for prompt-build failures.
-  const { claim: claimRow, groupLegs } = await loadGroupLegsForClaim(claim.id);
-  const promptLegInputs = buildPromptLegInputs({ legs: [claimRow], groupLegs });
+  const { claim: claimRow, groupLegs, treesByLegId } = await loadGroupLegsForClaim(claim.id);
+  const promptLegInputs = buildPromptLegInputs({ legs: [claimRow], groupLegs, treesByLegId });
 
   registerBotProcess("email_generation", id);
   broadcastPresenceEvent({

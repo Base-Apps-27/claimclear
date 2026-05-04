@@ -4,6 +4,18 @@
 // browser bundle. The DB package re-exports these symbols so existing
 // server-side imports stay valid.
 
+// Re-export the SOP transcript helper so both the React client (leg-detail
+// "SOP walk transcript" card) and the server (Task #377: dispute write-up
+// prompt) consume one source of truth without duplicating the logic.
+export {
+  buildSopTranscript,
+  normalizeAnswers,
+  type SopAnswerRow,
+  type TranscriptLine,
+  type SopTranscriptTree,
+  type SopTranscriptTreeNode,
+} from "./sop-transcript";
+
 export const LEG_SUB_STATUSES = [
   "excluded",
   "duplicate",
