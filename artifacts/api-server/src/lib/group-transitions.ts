@@ -285,6 +285,62 @@ async function autoExcludeBlankSiblingsOnPromote(
   }
 }
 
+// Safety net: when a group is being closed (Resolved / Denied / Expired)
+// any leg that is still flagged `includedInDispute = true` but never
+// received an `errorTypeId` is, by definition, going to be left in
+// limbo — it'll keep showing up in the Classification Inbox forever
+// even though its parent group is done. Auto-exclude those legs as
+// `non_issue` so the inbox tracks reality.
+//
+// This complements `autoExcludeBlankSiblingsOnPromote`, which only
+// fires on the Needs Review → Needs Evidence (auto_after_classify)
+// path. It does not catch a group that goes straight from New (or any
+// other pre-close state) to a terminal status without ever being
+// classified, which is how the 80-group / 126-leg backlog observed in
+// prod on 2026-05-04 piled up. Runs unconditionally on terminal
+// transitions; the helper is idempotent (the row update is guarded by
+// `includedInDispute = true`).
+const TERMINAL_CLOSE_STATUSES_FOR_AUTOEXCLUDE: string[] = ["Resolved", "Denied", "Expired"];
+async function autoExcludeUnclassifiedOnTerminalClose(
+  groupId: number,
+  oldStatus: string,
+  newStatus: string,
+  source: string,
+  actor: GroupTransitionActor,
+  ex: DbExecutor,
+): Promise<void> {
+  if (!TERMINAL_CLOSE_STATUSES_FOR_AUTOEXCLUDE.includes(newStatus)) return;
+  // Re-entering a terminal state from another terminal state has nothing
+  // new to clean up — skip the read.
+  if (TERMINAL_CLOSE_STATUSES_FOR_AUTOEXCLUDE.includes(oldStatus)) return;
+
+  const allLegs = await ex
+    .select()
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, groupId));
+
+  const stranded = allLegs.filter(
+    (l) =>
+      l.includedInDispute === true &&
+      (l.errorTypeId === null || l.errorTypeId === "") &&
+      l.duplicateOfClaimId === null,
+  );
+  if (stranded.length === 0) return;
+
+  for (const l of stranded) {
+    await excludeLegCore({
+      claimId: l.id,
+      reason: "non_issue",
+      note: null,
+      source: `auto_on_terminal_close:${source}`,
+      actor,
+      leg: l,
+      trustCallerStateGuard: true,
+      ex,
+    });
+  }
+}
+
 async function ensureNoHeldLegsBeforeClosure(groupId: number, newStatus: string, ex: DbExecutor): Promise<void> {
   if (!TERMINAL_STATUSES.includes(newStatus)) return;
   const held = await ex.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
@@ -376,6 +432,12 @@ export async function transitionGroupStatus(opts: {
     // Runs in the same executor so it shares the caller's transaction (when
     // present) or commits with the row update otherwise.
     await autoExcludeBlankSiblingsOnPromote(groupId, old.status, newStatus, source, actor, ex);
+
+    // Safety net for terminal closures: any leg still flagged as in-dispute
+    // but never classified would otherwise be left dangling in the
+    // Classification Inbox after the parent group is closed. See the
+    // helper's comment for the prod incident this prevents.
+    await autoExcludeUnclassifiedOnTerminalClose(groupId, old.status, newStatus, source, actor, ex);
 
     broadcastGroupEvent({
       type: "status_changed",

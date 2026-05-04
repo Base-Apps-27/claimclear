@@ -1764,6 +1764,67 @@ test("Needs Review → Needs Evidence is a no-op for the sibling-clear hook when
   }
 });
 
+// --- Safety net: closing a group auto-excludes still-unclassified included legs ---
+
+test("closing a group (Resolved) auto-excludes any still-unclassified included legs", async () => {
+  const group = await createSeedGroup({ status: "New" });
+  const stranded1 = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
+  const stranded2 = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
+  await db.update(claimsTable).set({ errorDetails: "blank-ish" }).where(eq(claimsTable.id, stranded1.id));
+  await db.update(claimsTable).set({ errorDetails: null }).where(eq(claimsTable.id, stranded2.id));
+
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/status`, {
+      method: "PATCH",
+      body: { status: "Resolved", reason: "Closed without classification" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const rows = await db.select().from(claimsTable).where(inArray(claimsTable.id, [stranded1.id, stranded2.id]));
+    for (const r of rows) {
+      assert.equal(r.includedInDispute, false, `leg ${r.id} must be auto-excluded when group closes`);
+    }
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, group.id));
+    type Meta = { source?: string; reason?: string } | null;
+    const autoAudits = audits.filter((a) => {
+      const src = (a.metadata as Meta)?.source ?? "";
+      return src.startsWith("auto_on_terminal_close:");
+    });
+    assert.equal(autoAudits.length, 2, `expected two leg_excluded audits with source=auto_on_terminal_close:*; got ${autoAudits.length}`);
+    for (const a of autoAudits) {
+      assert.equal(a.action, "leg_excluded");
+      assert.equal((a.metadata as Meta)?.reason, "non_issue");
+    }
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("closing a group leaves already-classified legs alone", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "New" });
+  const classified = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/status`, {
+      method: "PATCH",
+      body: { status: "Resolved", reason: "Closed after work done" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, classified.id));
+    assert.equal(row.includedInDispute, true, "classified leg must remain in dispute after group close");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
 // --- Task #232: extended LEG_EXCLUSION_REASONS accepts non_issue and cannot_dispute ---
 
 test("POST /claims/:id/exclude accepts reason=non_issue", async () => {
