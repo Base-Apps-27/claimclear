@@ -5,6 +5,7 @@ import {
   useGetSystemHealthWorkerActivity,
   useGetSystemHealthRollup,
   useGetSystemHealthClassifierStats,
+  useGetSystemHealthDailyBrief,
   useRunExpiredSweep,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
@@ -12,6 +13,7 @@ import {
   getGetSystemHealthWorkerActivityQueryKey,
   getGetSystemHealthRollupQueryKey,
   getGetSystemHealthClassifierStatsQueryKey,
+  getGetSystemHealthDailyBriefQueryKey,
   type ClassifierStatsResponse,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +107,13 @@ export default function SystemHealth() {
       },
     },
   );
+  // Per-recipient detail for the most recent daily_brief run.
+  const { data: briefDetail, isLoading: briefDetailLoading } = useGetSystemHealthDailyBrief({
+    query: {
+      queryKey: getGetSystemHealthDailyBriefQueryKey(),
+      refetchInterval: REFRESH_MS,
+    },
+  });
   const { data: rollupData } = useGetSystemHealthRollup({
     query: {
       queryKey: getGetSystemHealthRollupQueryKey(),
@@ -240,6 +249,109 @@ export default function SystemHealth() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No scheduled jobs have run yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-blue-600" /> Last Daily Brief
+          </CardTitle>
+          <CardDescription>
+            Per-recipient outcome of the most recent <span className="font-mono">daily_brief</span> run —
+            success rows carry the Outlook messageId, failure rows carry the error excerpt.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {briefDetailLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : !briefDetail?.lastRun ? (
+            <p className="text-sm text-muted-foreground">No daily brief has run yet.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {statusBadge(briefDetail.lastRun.status)}
+                <span className="text-xs text-muted-foreground">
+                  Started {relTime(briefDetail.lastRun.startedAt)}
+                </span>
+                <span className="text-xs">
+                  <span className="text-green-600 font-medium">{briefDetail.sentCount ?? 0}</span>
+                  {" / "}
+                  <span className="font-medium">{briefDetail.recipientCount ?? 0}</span>
+                  {" sent"}
+                  {briefDetail.failureCount && briefDetail.failureCount > 0 ? (
+                    <span className="text-rose-600 ml-1">({briefDetail.failureCount} failed)</span>
+                  ) : null}
+                </span>
+                {briefDetail.bounces && briefDetail.bounces.length > 0 ? (
+                  <Badge className="bg-amber-500 text-white">
+                    {briefDetail.bounces.length} bounce{briefDetail.bounces.length === 1 ? "" : "s"}
+                  </Badge>
+                ) : null}
+              </div>
+              {briefDetail.lastRun.message ? (
+                <p className="text-xs text-muted-foreground">{briefDetail.lastRun.message}</p>
+              ) : null}
+              {briefDetail.recipients.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-muted-foreground uppercase border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2">Recipient</th>
+                        <th className="text-left px-3 py-2">Variant</th>
+                        <th className="text-left px-3 py-2">Outcome</th>
+                        <th className="text-left px-3 py-2">Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {briefDetail.recipients.map((r) => (
+                        <tr key={r.outboundId} className="border-b last:border-0">
+                          <td className="px-3 py-2 font-mono text-xs">{r.email}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {r.roleVariant ? (
+                              <Badge variant="secondary">{r.roleVariant}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {r.ok ? (
+                              <Badge className="bg-green-600 text-white">sent</Badge>
+                            ) : (
+                              <Badge className="bg-rose-600 text-white">failed</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs max-w-md truncate" title={r.errorExcerpt ?? r.messageId ?? ""}>
+                            {r.ok ? (
+                              <span className="text-muted-foreground font-mono">{r.messageId ?? "(no id)"}</span>
+                            ) : (
+                              <span className="text-rose-600">{r.errorExcerpt ?? "Unknown send error"}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No per-recipient rows recorded for this run.
+                </p>
+              )}
+              {briefDetail.bounces && briefDetail.bounces.length > 0 ? (
+                <div className="border-t pt-3">
+                  <p className="text-xs font-medium mb-2">Bounces tied to this run:</p>
+                  <ul className="text-xs space-y-1">
+                    {briefDetail.bounces.slice(0, 8).map((b) => (
+                      <li key={b.id} className="font-mono text-amber-700 dark:text-amber-300">
+                        {b.recipientEmail ?? "(unknown)"} — {relTime(b.receivedAt)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
           )}
         </CardContent>
       </Card>

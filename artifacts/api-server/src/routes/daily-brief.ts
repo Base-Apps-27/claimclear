@@ -1,13 +1,20 @@
 import { Router, type IRouter } from "express";
-import { eq, or, and, sql, count, gte, lt, desc, inArray } from "drizzle-orm";
+import { eq, or, and, sql, count, gte, lt, lte, desc, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, cronRunsTable, auditLogsTable } from "@workspace/db";
+import {
+  claimsTable,
+  portalSubmissionsTable,
+  cronRunsTable,
+  auditLogsTable,
+  outboundEmailsTable,
+  emailBouncesTable,
+} from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 import { isOutlookConnected } from "../lib/outlook";
-import { sendEmailWithContext } from "../lib/email-send";
+import { sendEmailWithContext, recordDailyBriefAttempt, persistDailyBriefRow } from "../lib/email-send";
 import { getConnectorHealth } from "../lib/connector-health";
 import {
   OPEN_STATUSES,
@@ -20,7 +27,18 @@ import {
   type NeedsYouToday,
   type WeeklyDigest,
 } from "../lib/brief-personalization";
+import {
+  computeBriefOutcome,
+  evaluateBounceDowngrade,
+  safeClaimAmountAtRisk,
+  BOUNCE_RECHECK_WINDOW_MS,
+  type BriefRecipientResult,
+} from "../lib/daily-brief-outcome";
 import { logger } from "../lib/logger";
+
+// Cap on the actionable-claims select feeding the at-risk dollar reduce.
+// Hard cap to prevent a runaway query from OOM-ing the brief loop.
+const EXPIRING_CANDIDATES_LIMIT = 1000;
 
 const router: IRouter = Router();
 
@@ -351,7 +369,8 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
       status: claimsTable.status,
     })
     .from(claimsTable)
-    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`));
+    .where(and(expiringStatusFilter, sql`${claimsTable.date} IS NOT NULL`))
+    .limit(EXPIRING_CANDIDATES_LIMIT);
 
   const expiringNow = new Date();
   const expiring: ExpiringClaim[] = expiringCandidates
@@ -378,7 +397,8 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
     });
 
   const expired = expiring.filter(c => c.daysLeft <= 0);
-  const claimAmountAtRisk = expiring.reduce((sum, c) => sum + (parseFloat(c.claimAmount || "0") || 0), 0);
+  // Null/NaN-safe sum — never returns NaN.
+  const claimAmountAtRisk = safeClaimAmountAtRisk(expiring);
   const totalAtRisk = claimAmountAtRisk * (1 + VENDOR_PREPAY_RATE);
 
   // Portal submissions, scoped to the same yesterday window as the rest of the
@@ -521,135 +541,436 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
   return { openCount, expiring, expired, claimAmountAtRisk, totalAtRisk, submitted, failed, automation, outlookHealthy, outlookError, needsAttention, manualRequeues };
 }
 
+// Resilient wrappers around the gather steps: catch throws, log, and
+// return a placeholder so the brief still ships in degraded form rather
+// than 500-ing the whole cron.
+
+interface BriefDegradationNote {
+  source: "admin_metrics" | "yesterday_activity" | "weekly_digest" | "operator_needs";
+  message: string;
+}
+
+function emptyAdminMetrics(): AdminMetrics {
+  return {
+    openCount: 0,
+    expiring: [],
+    expired: [],
+    claimAmountAtRisk: 0,
+    totalAtRisk: 0,
+    submitted: 0,
+    failed: 0,
+    automation: { totalRuns: 0, failures: 0, byJob: [] },
+    outlookHealthy: false,
+    outlookError: "Metrics gather failed — outlook health unknown",
+    needsAttention: [],
+    manualRequeues: [],
+  };
+}
+
+function emptyYesterdayActivity(): YesterdayActivity {
+  return { claimsCreated: 0, draftsSubmitted: 0, responsesReceived: 0, decisionsLogged: 0 };
+}
+
+async function safeGatherAdminMetrics(
+  yesterdayStart: Date,
+  todayStart: Date,
+  notes: BriefDegradationNote[],
+): Promise<AdminMetrics> {
+  try {
+    return await gatherAdminMetrics(yesterdayStart, todayStart);
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.error({ err }, "[DAILY BRIEF] gatherAdminMetrics threw — using placeholder metrics");
+    notes.push({ source: "admin_metrics", message: msg.slice(0, 240) });
+    return emptyAdminMetrics();
+  }
+}
+
+async function safeGetYesterdayActivity(
+  yesterdayStart: Date,
+  todayStart: Date,
+  notes: BriefDegradationNote[],
+): Promise<YesterdayActivity> {
+  try {
+    return await getYesterdayActivity(yesterdayStart, todayStart);
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.error({ err }, "[DAILY BRIEF] getYesterdayActivity threw — zeroing tile");
+    notes.push({ source: "yesterday_activity", message: msg.slice(0, 240) });
+    return emptyYesterdayActivity();
+  }
+}
+
+async function safeGetWeeklyDigest(
+  now: Date,
+  notes: BriefDegradationNote[],
+): Promise<WeeklyDigest | null> {
+  try {
+    return await getWeeklyDigest(now);
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.error({ err }, "[DAILY BRIEF] getWeeklyDigest threw — dropping weekly section");
+    notes.push({ source: "weekly_digest", message: msg.slice(0, 240) });
+    return null;
+  }
+}
+
+async function safeGetNeedsYouToday(
+  email: string,
+  now: Date,
+  notes: BriefDegradationNote[],
+): Promise<NeedsYouToday> {
+  try {
+    return await getNeedsYouToday(email, now);
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.error({ err, email }, "[DAILY BRIEF] getNeedsYouToday threw — empty operator brief");
+    notes.push({ source: "operator_needs", message: `${email}: ${msg.slice(0, 200)}` });
+    return { recentlyTouched: [], unsubmittedDrafts: [], needsReview: [] };
+  }
+}
+
+// Retro-downgrade the prior daily_brief cron_run from "ok" → "degraded"
+// if the bounce-spike thresholds are tripped. Called by the dedicated
+// daily_brief_bounce_recheck cron and opportunistically at the start of
+// the next brief. Keyed by metadata.briefRunId (jsonb @>) with a
+// sentAt-window fallback for legacy rows; 7-day backstop guards against
+// ancient rows. Failures are logged and swallowed.
+export async function recheckPreviousRunBounces(): Promise<{ runId: number; downgrade: "ok" | "degraded" } | null> {
+  try {
+    const [prevRun] = await db
+      .select({
+        id: cronRunsTable.id,
+        startedAt: cronRunsTable.startedAt,
+        status: cronRunsTable.status,
+        message: cronRunsTable.message,
+        metadata: cronRunsTable.metadata,
+      })
+      .from(cronRunsTable)
+      .where(eq(cronRunsTable.jobName, "daily_brief"))
+      .orderBy(desc(cronRunsTable.startedAt))
+      .limit(1);
+    if (!prevRun) return null;
+    // Already-degraded / failed runs don't need re-downgrading.
+    if (prevRun.status !== "ok") return null;
+    // Defensive 7-day backstop: if the most recent ok run is older than
+    // a week, treat it as not-our-problem.
+    const ageMs = Date.now() - prevRun.startedAt.getTime();
+    if (ageMs > 7 * 24 * 60 * 60 * 1000) return null;
+    // The recheck window has to have elapsed before bounces could have
+    // landed; calling this earlier just no-ops cleanly.
+    if (ageMs < BOUNCE_RECHECK_WINDOW_MS) return null;
+
+    const briefRunId = (prevRun.metadata as Record<string, unknown> | null)?.briefRunId as string | undefined;
+
+    // PRIMARY: lookup attempted recipients by briefRunId (jsonb @>).
+    // FALLBACK: time window for legacy rows that predate the briefRunId
+    // stamp (rows written before this migration shipped).
+    const recipientRows = briefRunId
+      ? await db
+          .select({ recipients: outboundEmailsTable.recipients, subject: outboundEmailsTable.subject })
+          .from(outboundEmailsTable)
+          .where(and(
+            eq(outboundEmailsTable.kind, "daily_brief"),
+            sql`${outboundEmailsTable.metadata} @> ${JSON.stringify({ briefRunId })}::jsonb`,
+          ))
+      : await db
+          .select({ recipients: outboundEmailsTable.recipients, subject: outboundEmailsTable.subject })
+          .from(outboundEmailsTable)
+          .where(and(
+            eq(outboundEmailsTable.kind, "daily_brief"),
+            gte(outboundEmailsTable.sentAt, prevRun.startedAt),
+            lte(outboundEmailsTable.sentAt, new Date(prevRun.startedAt.getTime() + BOUNCE_RECHECK_WINDOW_MS)),
+          ));
+
+    const attemptedEmails = new Set<string>();
+    let attemptedSubject: string | null = null;
+    for (const r of recipientRows) {
+      attemptedSubject = attemptedSubject ?? (r.subject ?? null);
+      const list = (Array.isArray(r.recipients) ? r.recipients : []) as unknown[];
+      for (const e of list) {
+        if (typeof e === "string" && e.length > 0) attemptedEmails.add(e.toLowerCase());
+      }
+    }
+    if (attemptedEmails.size === 0) return null;
+
+    // Generous 1-hour bounce window (the spike-share threshold prevents a
+    // single late bounce from over-firing).
+    const bounceWindowEnd = new Date(prevRun.startedAt.getTime() + 60 * 60 * 1000);
+    const bounceRows = await db
+      .select({ recipientEmail: emailBouncesTable.recipientEmail, subject: emailBouncesTable.subject })
+      .from(emailBouncesTable)
+      .where(and(
+        gte(emailBouncesTable.receivedAt, prevRun.startedAt),
+        lte(emailBouncesTable.receivedAt, bounceWindowEnd),
+      ));
+    let bounceCount = 0;
+    for (const b of bounceRows) {
+      const email = (b.recipientEmail ?? "").toLowerCase();
+      if (!email) continue;
+      const subjectMatches = attemptedSubject ? (b.subject ?? "").includes(attemptedSubject.split(" - ")[0] ?? "") : true;
+      if (attemptedEmails.has(email) && subjectMatches) bounceCount += 1;
+    }
+
+    const downgrade = evaluateBounceDowngrade({ recipientCount: attemptedEmails.size, bounceCount });
+    if (downgrade === "degraded") {
+      const note = `Bounce spike: ${bounceCount} of ${attemptedEmails.size} recipients bounced within ${Math.round(BOUNCE_RECHECK_WINDOW_MS / 60000)}m of send`;
+      await db.update(cronRunsTable)
+        .set({
+          status: "degraded",
+          message: prevRun.message ? `${prevRun.message} | ${note}` : note,
+        })
+        .where(eq(cronRunsTable.id, prevRun.id));
+      logger.warn({ runId: prevRun.id, briefRunId, bounceCount, recipientCount: attemptedEmails.size }, "[DAILY BRIEF] retroactively downgraded prior run for bounce spike");
+    }
+    return { runId: prevRun.id, downgrade };
+  } catch (err) {
+    logger.error({ err }, "[DAILY BRIEF] bounce recheck failed (non-fatal)");
+    return null;
+  }
+}
+
 router.post("/", asyncHandler(async (req, res): Promise<void> => {
-  const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
+  // Top-level try/catch returns a structured outcome on every path so
+  // the cron handler always gets a status to record (no silent 500s).
+  const briefRunId = `brief-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const degradationNotes: BriefDegradationNote[] = [];
 
-  const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const yesterdayStart = new Date(todayStart);
-  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-  const metrics = await gatherAdminMetrics(yesterdayStart, todayStart);
+  try {
+    // Re-check the previous run's bounces opportunistically; this updates
+    // the prior cron_runs row out-of-band but never blocks the new send.
+    await recheckPreviousRunBounces();
 
-  const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const subject = `Agape ClaimClear Daily Brief - ${metrics.openCount} open claims, ${metrics.expired.length} expired`;
-  const outlookAvailable = await isOutlookConnected();
+    const recipientsOverride = typeof req.body?.recipients === "string" ? req.body.recipients : undefined;
 
-  // Legacy/shared mode: single brief to explicit recipients (smoke test path)
-  if (recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS) {
-    const recipients = recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS!;
-    const yesterday = await getYesterdayActivity(yesterdayStart, todayStart);
-    const weekly = isMondayInNewYork(now) ? await getWeeklyDigest(now) : null;
-    const html = briefShell(
-      "Agape ClaimClear Daily Brief",
-      dateLabel,
-      renderAdminBody(metrics, yesterday, weekly),
-      metrics.outlookHealthy,
-      metrics.outlookError,
-    );
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const metrics = await safeGatherAdminMetrics(yesterdayStart, todayStart, degradationNotes);
 
-    let emailSent = false;
-    let emailMethod = "none";
-    if (outlookAvailable && recipients) {
-      try {
-        await sendEmailWithContext({ to: recipients, subject, html }, { kind: "daily_brief" });
-        emailSent = true;
-        emailMethod = "outlook";
-      } catch (err) {
-        logger.error({ err }, "[DAILY BRIEF] Outlook send failed");
-      }
-    }
+    const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const subject = `Agape ClaimClear Daily Brief - ${metrics.openCount} open claims, ${metrics.expired.length} expired`;
+    const outlookAvailable = await isOutlookConnected();
 
-    if (!emailSent && process.env.SMTP_HOST && process.env.SMTP_USER && recipients) {
-      try {
-        const nodemailer = await import("nodemailer");
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: parseInt(process.env.SMTP_PORT || "587", 10),
-          secure: process.env.SMTP_SECURE === "true",
-          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        });
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM || process.env.SMTP_USER,
-          to: recipients,
-          subject,
-          html,
-        });
-        emailSent = true;
-        emailMethod = "smtp";
-      } catch (err) {
-        logger.error({ err }, "[DAILY BRIEF] SMTP send failed");
-      }
-    }
-
-    const message = `${metrics.openCount} open claims, ${metrics.expired.length} expired, $${metrics.totalAtRisk.toFixed(2)} at risk. ${metrics.submitted} submitted, ${metrics.failed} failed portal submissions.${emailSent ? ` Email sent via ${emailMethod}.` : " Email not sent (no provider configured or no recipients)."}`;
-    res.json({ sent: emailSent, method: emailMethod, message });
-    return;
-  }
-
-  // Personalized mode: one email per approved user
-  const recipients = await getBriefRecipients();
-  const isMonday = isMondayInNewYork(now);
-  const yesterday = await getYesterdayActivity(yesterdayStart, todayStart);
-  const weeklyDigest = isMonday ? await getWeeklyDigest(now) : null;
-
-  let totalSent = 0;
-  let totalSkipped = 0;
-  const failures: { email: string; error: string }[] = [];
-
-  if (!outlookAvailable) {
-    res.json({
-      sent: false,
-      method: "none",
-      message: `Outlook unavailable; skipped ${recipients.length} personalized briefs.`,
-    });
-    return;
-  }
-
-  for (const r of recipients) {
-    const includeWeekly = isMonday && r.weeklyDigestEnabled ? weeklyDigest : null;
-    const isAdmin = r.role === "admin";
-    let html: string;
-    if (isAdmin) {
-      html = briefShell(
+    // Override/shared mode: single brief layout sent to an explicit
+    // recipient list. Persists one outbound_emails row per recipient so
+    // System Health and bounce recheck behave identically to the
+    // personalized path.
+    if (recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS) {
+      const rawRecipients = recipientsOverride || process.env.DAILY_BRIEF_RECIPIENTS!;
+      const yesterday = await safeGetYesterdayActivity(yesterdayStart, todayStart, degradationNotes);
+      const weekly = isMondayInNewYork(now) ? await safeGetWeeklyDigest(now, degradationNotes) : null;
+      const html = briefShell(
         "Agape ClaimClear Daily Brief",
         dateLabel,
-        renderAdminBody(metrics, yesterday, includeWeekly),
+        renderAdminBody(metrics, yesterday, weekly),
         metrics.outlookHealthy,
         metrics.outlookError,
       );
-    } else {
-      const needs = await getNeedsYouToday(r.email, now);
-      html = briefShell(
-        "Your ClaimClear Worklist",
-        dateLabel,
-        renderOperatorBody(needs, includeWeekly),
-        metrics.outlookHealthy,
-        metrics.outlookError,
-      );
+
+      const recipientList: string[] = String(rawRecipients)
+        .split(/[,;]/)
+        .map((s: string) => s.trim())
+        .filter((s: string) => s.length > 0);
+
+      const overrideResults: BriefRecipientResult[] = [];
+      let usedOutlook = false;
+
+      if (outlookAvailable && recipientList.length > 0) {
+        for (const email of recipientList) {
+          const attempt = await recordDailyBriefAttempt({
+            recipientEmail: email,
+            subject,
+            html,
+            roleVariant: "admin",
+            briefRunId,
+          });
+          overrideResults.push({ email, ok: attempt.ok, errorExcerpt: attempt.errorExcerpt });
+          if (attempt.ok) usedOutlook = true;
+        }
+      }
+
+      // SMTP fallback when Outlook is unavailable. Persists one
+      // outbound_emails row per recipient via persistDailyBriefRow so
+      // the System Health detail panel sees this path identically.
+      if (!usedOutlook && process.env.SMTP_HOST && process.env.SMTP_USER && recipientList.length > 0) {
+        let smtpOk = false;
+        let smtpError: string | null = null;
+        let smtpMessageId: string | null = null;
+        try {
+          const nodemailer = await import("nodemailer");
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || "587", 10),
+            secure: process.env.SMTP_SECURE === "true",
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          const info = await transporter.sendMail({
+            from: process.env.SMTP_FROM || process.env.SMTP_USER,
+            to: recipientList.join(", "),
+            subject,
+            html,
+          });
+          smtpOk = true;
+          smtpMessageId = typeof info?.messageId === "string" ? info.messageId : null;
+        } catch (err) {
+          smtpError = (err instanceof Error ? `${err.name}: ${err.message}` : String(err)).slice(0, 200);
+          logger.error({ err }, "[DAILY BRIEF] SMTP send failed");
+        }
+
+        for (const email of recipientList) {
+          await persistDailyBriefRow({
+            recipientEmail: email,
+            subject,
+            html,
+            roleVariant: "admin",
+            briefRunId,
+            messageId: smtpOk ? smtpMessageId : null,
+            conversationId: null,
+            errorExcerpt: smtpOk ? null : smtpError,
+          });
+          const idx = overrideResults.findIndex((r) => r.email === email);
+          const next = { email, ok: smtpOk, errorExcerpt: smtpOk ? null : smtpError };
+          if (idx >= 0) overrideResults[idx] = next;
+          else overrideResults.push(next);
+        }
+      }
+
+      const overrideSummary = computeBriefOutcome({
+        recipientCount: recipientList.length,
+        results: overrideResults,
+      });
+      const method = overrideResults.some((r) => r.ok) ? (usedOutlook ? "outlook" : "smtp") : "none";
+      const message = `${overrideSummary.message}. ${metrics.openCount} open claims, ${metrics.expired.length} expired, $${metrics.totalAtRisk.toFixed(2)} at risk.`;
+      res.json({
+        outcome: overrideSummary.outcome,
+        sent: overrideSummary.sentCount > 0,
+        method,
+        message,
+        sentCount: overrideSummary.sentCount,
+        recipientCount: overrideSummary.recipientCount,
+        failedCount: overrideSummary.failureCount,
+        failures: overrideSummary.failures,
+        briefRunId,
+        degradationNotes,
+      });
+      return;
     }
 
+    // Personalized mode: one email per approved user.
+    let recipients: Awaited<ReturnType<typeof getBriefRecipients>> = [];
     try {
-      await sendEmailWithContext({ to: r.email, subject, html }, { kind: "daily_brief" });
-      totalSent++;
+      recipients = await getBriefRecipients();
     } catch (err) {
-      totalSkipped++;
-      const msg = err instanceof Error ? err.message : String(err);
-      failures.push({ email: r.email, error: msg.slice(0, 200) });
-      logger.error({ err, email: r.email }, "[DAILY BRIEF] per-user send failed");
+      logger.error({ err }, "[DAILY BRIEF] getBriefRecipients threw — failing brief outcome");
+      degradationNotes.push({
+        source: "admin_metrics",
+        message: `recipient query: ${err instanceof Error ? err.message : String(err)}`.slice(0, 240),
+      });
     }
-  }
+    const isMonday = isMondayInNewYork(now);
+    const yesterday = await safeGetYesterdayActivity(yesterdayStart, todayStart, degradationNotes);
+    const weeklyDigest = isMonday ? await safeGetWeeklyDigest(now, degradationNotes) : null;
 
-  const message = `Sent ${totalSent} personalized brief${totalSent === 1 ? "" : "s"}${totalSkipped > 0 ? `, ${totalSkipped} failed` : ""}. ${metrics.openCount} open claims, ${metrics.expired.length} expired.`;
-  res.json({
-    sent: totalSent > 0,
-    method: totalSent > 0 ? "outlook" : "none",
-    message,
-    recipientCount: recipients.length,
-    sentCount: totalSent,
-    failedCount: totalSkipped,
-    failures,
-  });
+    if (!outlookAvailable) {
+      // Outlook is the only send path in personalized mode. Treat this as
+      // top-level failure so the cron records "failed" rather than silently
+      // reporting 0/N sent as "ok".
+      const summary = computeBriefOutcome({
+        recipientCount: recipients.length,
+        results: [],
+        topLevelFailure: true,
+      });
+      res.json({
+        outcome: summary.outcome,
+        sent: false,
+        method: "none",
+        message: `Outlook unavailable; skipped ${recipients.length} personalized briefs.`,
+        sentCount: 0,
+        recipientCount: recipients.length,
+        failures: recipients.map((r) => ({ email: r.email, error: "Outlook connector unavailable" })),
+        briefRunId,
+        degradationNotes,
+      });
+      return;
+    }
+
+    const results: BriefRecipientResult[] = [];
+    for (const r of recipients) {
+      const includeWeekly = isMonday && r.weeklyDigestEnabled ? weeklyDigest : null;
+      const isAdmin = r.role === "admin";
+      let html: string;
+      if (isAdmin) {
+        html = briefShell(
+          "Agape ClaimClear Daily Brief",
+          dateLabel,
+          renderAdminBody(metrics, yesterday, includeWeekly),
+          metrics.outlookHealthy,
+          metrics.outlookError,
+        );
+      } else {
+        const needs = await safeGetNeedsYouToday(r.email, now, degradationNotes);
+        html = briefShell(
+          "Your ClaimClear Worklist",
+          dateLabel,
+          renderOperatorBody(needs, includeWeekly),
+          metrics.outlookHealthy,
+          metrics.outlookError,
+        );
+      }
+
+      // recordDailyBriefAttempt always writes one outbound_emails row per
+      // recipient — success rows carry the Graph messageId, failure rows
+      // carry error_excerpt. The brief loop never throws here.
+      const attempt = await recordDailyBriefAttempt({
+        recipientEmail: r.email,
+        subject,
+        html,
+        roleVariant: isAdmin ? "admin" : "operator",
+        briefRunId,
+      });
+      results.push({ email: r.email, ok: attempt.ok, errorExcerpt: attempt.errorExcerpt });
+      if (!attempt.ok) {
+        logger.error({ email: r.email, error: attempt.errorExcerpt }, "[DAILY BRIEF] per-user send failed");
+      }
+    }
+
+    const summary = computeBriefOutcome({
+      recipientCount: recipients.length,
+      results,
+      topLevelFailure: false,
+    });
+
+    res.json({
+      outcome: summary.outcome,
+      sent: summary.sentCount > 0,
+      method: summary.sentCount > 0 ? "outlook" : "none",
+      message: `${summary.message}. ${metrics.openCount} open claims, ${metrics.expired.length} expired.`,
+      sentCount: summary.sentCount,
+      recipientCount: summary.recipientCount,
+      failedCount: summary.failureCount,
+      failures: summary.failures,
+      briefRunId,
+      degradationNotes,
+    });
+  } catch (err) {
+    // Top-level guard: return 200 with outcome="failed" instead of 500.
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger.error({ err }, "[DAILY BRIEF] route threw at top level — degrading to failed outcome");
+    res.json({
+      outcome: "failed" as const,
+      sent: false,
+      method: "none",
+      message: `Daily brief failed before send: ${msg.slice(0, 240)}`,
+      sentCount: 0,
+      recipientCount: 0,
+      failures: [],
+      briefRunId,
+      degradationNotes,
+    });
+  }
 }));
 
 export default router;

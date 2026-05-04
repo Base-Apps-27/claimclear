@@ -40,6 +40,15 @@ export const DAILY_BRIEF: CronJobSchedule = {
   tz: "America/New_York",
 };
 
+// Deterministic post-send bounce recheck. Fires 15m after DAILY_BRIEF
+// so bounce-backs have time to land + be ingested. Downgrades the prior
+// "ok" daily_brief run to "degraded" when the spike thresholds trip.
+export const DAILY_BRIEF_BOUNCE_RECHECK: CronJobSchedule = {
+  name: "daily_brief_bounce_recheck",
+  cron: "15 7 * * 1-5",
+  tz: "America/New_York",
+};
+
 export const RESPONSE_TRACKER: CronJobSchedule = {
   name: "response_tracker",
   cron: "*/30 8-18 * * 1-5",
@@ -82,6 +91,7 @@ export const EXPIRED_SWEEP: CronJobSchedule = {
 export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
+  DAILY_BRIEF_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,

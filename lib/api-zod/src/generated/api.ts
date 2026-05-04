@@ -21671,6 +21671,60 @@ export const GetSystemHealthConnectorsResponse = zod.object({
 });
 
 /**
+ * Joins the most recent `daily_brief` cron_run row with the per-recipient
+`outbound_emails` rows that route persists (one row per attempted
+recipient, success OR failure). Lets the System Health "Last daily
+brief" panel show admin@ vs ops@ outcomes without re-running the cron.
+Includes any bounces that landed within an hour of the run for matched
+recipients — Task #398.
+
+ * @summary Last daily-brief send detail (admin only)
+ */
+export const GetSystemHealthDailyBriefResponse = zod.object({
+  lastRun: zod.union([
+    zod.object({
+      id: zod.number(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullable(),
+      status: zod.string(),
+      message: zod.string().nullable(),
+      metadata: zod.unknown().nullable(),
+    }),
+    zod.null(),
+  ]),
+  recipients: zod.array(
+    zod.object({
+      outboundId: zod.number(),
+      email: zod.string(),
+      ok: zod.boolean(),
+      messageId: zod.string().nullable(),
+      errorExcerpt: zod.string().nullable(),
+      roleVariant: zod
+        .string()
+        .nullable()
+        .describe(
+          "admin or operator — null for legacy rows that predate the per-role stamp.",
+        ),
+      sentAt: zod.string(),
+    }),
+  ),
+  bounces: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        recipientEmail: zod.string().nullable(),
+        subject: zod.string().nullable(),
+        receivedAt: zod.string(),
+        rawExcerpt: zod.string().nullable(),
+      }),
+    )
+    .optional(),
+  sentCount: zod.number().optional(),
+  failureCount: zod.number().optional(),
+  recipientCount: zod.number().optional(),
+});
+
+/**
  * @summary On-demand portal worker activity (admin only)
  */
 export const GetSystemHealthWorkerActivityResponse = zod.object({

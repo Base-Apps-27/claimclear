@@ -69,6 +69,7 @@ import type {
   CreateNoteBody,
   CreatePortalSubmissionBody,
   CronRunsResponse,
+  DailyBriefDetailResponse,
   DailyBriefResponse,
   DashboardActivity,
   DashboardRepeatOffenders,
@@ -12892,6 +12893,92 @@ export function useGetSystemHealthConnectors<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSystemHealthConnectorsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Joins the most recent `daily_brief` cron_run row with the per-recipient
+`outbound_emails` rows that route persists (one row per attempted
+recipient, success OR failure). Lets the System Health "Last daily
+brief" panel show admin@ vs ops@ outcomes without re-running the cron.
+Includes any bounces that landed within an hour of the run for matched
+recipients — Task #398.
+
+ * @summary Last daily-brief send detail (admin only)
+ */
+export const getGetSystemHealthDailyBriefUrl = () => {
+  return `/api/admin/system-health/daily-brief`;
+};
+
+export const getSystemHealthDailyBrief = async (
+  options?: RequestInit,
+): Promise<DailyBriefDetailResponse> => {
+  return customFetch<DailyBriefDetailResponse>(
+    getGetSystemHealthDailyBriefUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthDailyBriefQueryKey = () => {
+  return [`/api/admin/system-health/daily-brief`] as const;
+};
+
+export const getGetSystemHealthDailyBriefQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthDailyBrief>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthDailyBrief>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthDailyBriefQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthDailyBrief>>
+  > = ({ signal }) => getSystemHealthDailyBrief({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthDailyBrief>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthDailyBriefQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthDailyBrief>>
+>;
+export type GetSystemHealthDailyBriefQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Last daily-brief send detail (admin only)
+ */
+
+export function useGetSystemHealthDailyBrief<
+  TData = Awaited<ReturnType<typeof getSystemHealthDailyBrief>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthDailyBrief>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthDailyBriefQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

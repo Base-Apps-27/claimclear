@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { cronRunsTable, connectorHealthTable, emailBouncesTable, portalSubmissionsTable, portalResponsesTable } from "@workspace/db";
+import { cronRunsTable, connectorHealthTable, emailBouncesTable, portalSubmissionsTable, portalResponsesTable, outboundEmailsTable } from "@workspace/db";
 import { desc, gte, sql, eq, and, or, isNull, lte, count } from "drizzle-orm";
 import {
   computeClassifierStats,
@@ -124,6 +124,121 @@ router.get("/admin/system-health/cron-runs", requireAdmin, asyncHandler(async (_
   }));
 
   res.json({ jobs });
+}));
+
+// Detail panel for the most recent daily_brief cron_run: joins the run
+// to its per-recipient outbound_emails rows (success and failure) and
+// any matching bounces in the recheck window.
+router.get("/admin/system-health/daily-brief", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  const [lastRun] = await db
+    .select()
+    .from(cronRunsTable)
+    .where(eq(cronRunsTable.jobName, "daily_brief"))
+    .orderBy(desc(cronRunsTable.startedAt))
+    .limit(1);
+
+  if (!lastRun) {
+    res.json({ lastRun: null, recipients: [] });
+    return;
+  }
+
+  // Pull every outbound_emails row whose metadata.briefRunId matches this
+  // run, OR (as a fallback for runs predating the briefRunId stamp) whose
+  // sentAt is between the run's started_at and finished_at + small grace.
+  // The metadata path is the primary key — the time-window fallback only
+  // exists so the panel still renders something for runs from before this
+  // migration shipped.
+  const briefRunId = (lastRun.metadata as Record<string, unknown> | null)?.briefRunId as string | undefined;
+  const startedAt = lastRun.startedAt;
+  const windowEnd = lastRun.finishedAt ?? new Date(lastRun.startedAt.getTime() + 5 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      id: outboundEmailsTable.id,
+      messageId: outboundEmailsTable.messageId,
+      recipients: outboundEmailsTable.recipients,
+      subject: outboundEmailsTable.subject,
+      sentAt: outboundEmailsTable.sentAt,
+      errorExcerpt: outboundEmailsTable.errorExcerpt,
+      metadata: outboundEmailsTable.metadata,
+    })
+    .from(outboundEmailsTable)
+    .where(and(
+      eq(outboundEmailsTable.kind, "daily_brief"),
+      briefRunId
+        ? sql`${outboundEmailsTable.metadata} @> ${JSON.stringify({ briefRunId })}::jsonb`
+        : and(
+            gte(outboundEmailsTable.sentAt, startedAt),
+            lte(outboundEmailsTable.sentAt, windowEnd),
+          ),
+    ))
+    .orderBy(desc(outboundEmailsTable.sentAt))
+    .limit(200);
+
+  const recipients = rows.map((r) => {
+    const meta = (r.metadata as Record<string, unknown> | null) ?? {};
+    const recipientList = (Array.isArray(r.recipients) ? r.recipients : []) as string[];
+    return {
+      outboundId: r.id,
+      email: recipientList[0] ?? "(unknown)",
+      ok: r.errorExcerpt === null,
+      messageId: r.messageId,
+      errorExcerpt: r.errorExcerpt,
+      roleVariant: typeof meta.roleVariant === "string" ? meta.roleVariant : null,
+      sentAt: r.sentAt.toISOString(),
+    };
+  });
+
+  // Bounce cross-link: pull bounces that landed in the recheck window
+  // matching any recipient on this run, so the panel can flag rows that
+  // bounced even though Graph reported the send as successful at the
+  // time. Capped to keep the payload small.
+  const recipientEmails = new Set(recipients.map((r) => r.email.toLowerCase()).filter((e) => e !== "(unknown)"));
+  const bounceRows = recipientEmails.size > 0
+    ? await db
+        .select({
+          id: emailBouncesTable.id,
+          recipientEmail: emailBouncesTable.recipientEmail,
+          subject: emailBouncesTable.subject,
+          receivedAt: emailBouncesTable.receivedAt,
+          rawExcerpt: emailBouncesTable.rawExcerpt,
+        })
+        .from(emailBouncesTable)
+        .where(and(
+          gte(emailBouncesTable.receivedAt, startedAt),
+          lte(emailBouncesTable.receivedAt, new Date(startedAt.getTime() + 60 * 60 * 1000)),
+        ))
+        .orderBy(desc(emailBouncesTable.receivedAt))
+        .limit(50)
+    : [];
+  const bounces = bounceRows
+    .filter((b) => b.recipientEmail && recipientEmails.has(b.recipientEmail.toLowerCase()))
+    .map((b) => ({
+      id: b.id,
+      recipientEmail: b.recipientEmail,
+      subject: b.subject,
+      receivedAt: b.receivedAt.toISOString(),
+      rawExcerpt: b.rawExcerpt,
+    }));
+
+  const sentCount = recipients.filter((r) => r.ok).length;
+  const failureCount = recipients.length - sentCount;
+
+  res.json({
+    lastRun: {
+      id: lastRun.id,
+      startedAt: lastRun.startedAt.toISOString(),
+      finishedAt: lastRun.finishedAt?.toISOString() ?? null,
+      status: lastRun.status,
+      message: lastRun.message,
+      metadata: lastRun.metadata,
+    },
+    recipients,
+    bounces,
+    sentCount,
+    failureCount,
+    recipientCount: recipients.length,
+  });
 }));
 
 router.get("/admin/system-health/connectors", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {

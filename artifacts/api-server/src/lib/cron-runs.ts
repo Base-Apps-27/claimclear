@@ -4,11 +4,11 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface CronRunResult {
-  // status defaults to "ok". Use "degraded" when a run completed but
-  // produced partial failures or warnings worth surfacing on System Health
-  // without alerting as a hard failure (e.g. some submissions failed but
-  // others succeeded). A thrown error becomes status="failed".
-  status?: "ok" | "degraded";
+  // status defaults to "ok". Use "degraded" for partial failures worth
+  // surfacing without alerting, "failed" when the cron callee handles
+  // its own errors and returns a structured failure outcome. A thrown
+  // error also becomes status="failed".
+  status?: "ok" | "degraded" | "failed";
   message?: string;
   metadata?: Record<string, unknown>;
 }

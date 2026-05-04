@@ -3347,6 +3347,43 @@ export interface EmailBouncesResponse {
   bounces: EmailBounceRecord[];
 }
 
+export interface DailyBriefRecipientRow {
+  outboundId: number;
+  email: string;
+  ok: boolean;
+  messageId: string | null;
+  errorExcerpt: string | null;
+  /** admin or operator — null for legacy rows that predate the per-role stamp. */
+  roleVariant: string | null;
+  sentAt: string;
+}
+
+export interface DailyBriefBounceRow {
+  id: number;
+  recipientEmail: string | null;
+  subject: string | null;
+  receivedAt: string;
+  rawExcerpt: string | null;
+}
+
+export interface DailyBriefLastRun {
+  id: number;
+  startedAt: string;
+  finishedAt: string | null;
+  status: string;
+  message: string | null;
+  metadata: unknown | null;
+}
+
+export interface DailyBriefDetailResponse {
+  lastRun: DailyBriefLastRun | null;
+  recipients: DailyBriefRecipientRow[];
+  bounces?: DailyBriefBounceRow[];
+  sentCount?: number;
+  failureCount?: number;
+  recipientCount?: number;
+}
+
 export interface WorkerSubmissionEvent {
   submissionId: number;
   invoiceGroupId: number;

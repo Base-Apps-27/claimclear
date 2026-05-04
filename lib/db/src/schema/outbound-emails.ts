@@ -27,6 +27,17 @@ export const outboundEmailsTable = pgTable("outbound_emails", {
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   sentByUserEmail: text("sent_by_user_email"),
   sentByUserName: text("sent_by_user_name"),
+  // Task #398: short excerpt of the send error when the Outlook/SMTP
+  // attempt threw. Null when the send succeeded. Lets the daily-brief
+  // route persist one row per attempted recipient (success or failure)
+  // so the System Health "Last daily brief" panel can show what
+  // happened per recipient without re-running the cron.
+  errorExcerpt: text("error_excerpt"),
+  // Task #398: jsonb bag for kind-specific context. Daily-brief rows
+  // store `{ roleVariant: "admin"|"operator", briefRunId }` so the
+  // health detail panel can render the per-role outcome and tie rows
+  // back to a specific cron_runs row.
+  metadata: jsonb("metadata"),
 }, (table) => [
   index("outbound_emails_claim_id_idx").on(table.claimId),
   index("outbound_emails_invoice_group_id_idx").on(table.invoiceGroupId),

@@ -4174,6 +4174,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConnectorHealthResponse'
 
+  /admin/system-health/daily-brief:
+    get:
+      operationId: getSystemHealthDailyBrief
+      tags: [systemHealth]
+      summary: Last daily-brief send detail (admin only)
+      description: |
+        Joins the most recent `daily_brief` cron_run row with the per-recipient
+        `outbound_emails` rows that route persists (one row per attempted
+        recipient, success OR failure). Lets the System Health "Last daily
+        brief" panel show admin@ vs ops@ outcomes without re-running the cron.
+        Includes any bounces that landed within an hour of the run for matched
+        recipients — Task #398.
+      responses:
+        '200':
+          description: Last daily brief detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyBriefDetailResponse'
+
   /admin/system-health/worker-activity:
     get:
       operationId: getSystemHealthWorkerActivity
@@ -8584,6 +8604,89 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EmailBounceRecord'
+
+    DailyBriefRecipientRow:
+      type: object
+      required: [outboundId, email, ok, messageId, errorExcerpt, roleVariant, sentAt]
+      properties:
+        outboundId:
+          type: integer
+        email:
+          type: string
+        ok:
+          type: boolean
+        messageId:
+          type: string
+          nullable: true
+        errorExcerpt:
+          type: string
+          nullable: true
+        roleVariant:
+          type: string
+          nullable: true
+          description: "admin or operator — null for legacy rows that predate the per-role stamp."
+        sentAt:
+          type: string
+
+    DailyBriefBounceRow:
+      type: object
+      required: [id, recipientEmail, subject, receivedAt, rawExcerpt]
+      properties:
+        id:
+          type: integer
+        recipientEmail:
+          type: string
+          nullable: true
+        subject:
+          type: string
+          nullable: true
+        receivedAt:
+          type: string
+        rawExcerpt:
+          type: string
+          nullable: true
+
+    DailyBriefLastRun:
+      type: object
+      required: [id, startedAt, finishedAt, status, message, metadata]
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true
+        metadata:
+          nullable: true
+
+    DailyBriefDetailResponse:
+      type: object
+      required: [lastRun, recipients]
+      properties:
+        lastRun:
+          oneOf:
+            - $ref: '#/components/schemas/DailyBriefLastRun'
+            - type: 'null'
+        recipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyBriefRecipientRow'
+        bounces:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyBriefBounceRow'
+        sentCount:
+          type: integer
+        failureCount:
+          type: integer
+        recipientCount:
+          type: integer
 
     WorkerRunSummary:
       type: object

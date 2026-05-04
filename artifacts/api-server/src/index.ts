@@ -15,12 +15,14 @@ import { resetStuckSubmissions } from "./lib/stuck-submissions";
 import {
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
+  DAILY_BRIEF_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,
   EXPIRED_SWEEP,
 } from "./lib/cron-schedule";
+import { recheckPreviousRunBounces } from "./routes/daily-brief";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 import { sweepExpiredGroups } from "./lib/expired-sweep";
 
@@ -512,13 +514,51 @@ cron.schedule(DAILY_BRIEF.cron, async () => {
       headers: { "Content-Type": "application/json", "x-bot-token": process.env.BOT_SERVICE_TOKEN ?? "" },
     });
     const data = await res.json().catch(() => ({}));
+    // The route always returns 200 with a structured outcome
+    // ("ok" | "degraded" | "failed").
+    // We only synthesize "failed" here when the response itself is
+    // non-2xx (transport-level failure).
     if (!res.ok) {
-      throw new Error(`Daily brief HTTP ${res.status}: ${JSON.stringify(data).slice(0, 300)}`);
+      return {
+        status: "failed" as const,
+        message: `Daily brief HTTP ${res.status}: ${JSON.stringify(data).slice(0, 300)}`,
+        metadata: { httpStatus: res.status, body: data },
+      };
     }
-    logger.info({ result: data }, "Daily brief sent");
-    return { message: data?.message ?? "Daily brief sent", metadata: data };
+    const outcome: "ok" | "degraded" | "failed" =
+      data?.outcome === "failed" ? "failed"
+      : data?.outcome === "degraded" ? "degraded"
+      : "ok";
+    logger.info({ result: data, outcome }, "Daily brief sent");
+    return {
+      status: outcome,
+      message: data?.message ?? "Daily brief sent",
+      metadata: data,
+    };
   });
 }, { timezone: DAILY_BRIEF.tz });
+
+// Deterministic post-brief bounce recheck. Fires 15m after DAILY_BRIEF
+// so bounce-backs have time to land. recheckPreviousRunBounces looks up the latest
+// daily_brief cron_run by briefRunId in metadata and downgrades it
+// from "ok" → "degraded" when the spike thresholds trip. Independent
+// of the next brief invocation, so a once-per-day cron no longer
+// leaves a 24h gap where the recheck would be skipped.
+cron.schedule(DAILY_BRIEF_BOUNCE_RECHECK.cron, async () => {
+  await recordCronRun(DAILY_BRIEF_BOUNCE_RECHECK.name, async () => {
+    const result = await recheckPreviousRunBounces();
+    if (!result) {
+      return { message: "No daily_brief run eligible for recheck" };
+    }
+    return {
+      status: result.downgrade === "degraded" ? "degraded" as const : "ok" as const,
+      message: result.downgrade === "degraded"
+        ? `Downgraded daily_brief run #${result.runId} after bounce spike`
+        : `Daily_brief run #${result.runId} still healthy after recheck`,
+      metadata: { downgradedRunId: result.runId, outcome: result.downgrade },
+    };
+  });
+}, { timezone: DAILY_BRIEF_BOUNCE_RECHECK.tz });
 
 cron.schedule(RESPONSE_TRACKER.cron, async () => {
   await recordCronRun(RESPONSE_TRACKER.name, async () => {
