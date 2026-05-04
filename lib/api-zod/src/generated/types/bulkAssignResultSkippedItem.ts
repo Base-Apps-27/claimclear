@@ -11,12 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { BulkAssignResultSkippedItem } from "./bulkAssignResultSkippedItem";
-import type { BulkAssignResultUpdatedItemsItem } from "./bulkAssignResultUpdatedItemsItem";
 
-export interface BulkAssignResult {
-  updated: number;
-  updatedItems?: BulkAssignResultUpdatedItemsItem[];
-  skipped?: BulkAssignResultSkippedItem[];
-  success?: boolean;
-}
+export type BulkAssignResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};

@@ -1269,14 +1269,45 @@ router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(as
     return;
   }
 
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  // Task #411 audit, Tier 4: previously this endpoint blindly returned
+  // `{ updated: groupIds.length }` even when zero rows actually changed
+  // (e.g. groupIds pointed at deleted invoice groups). We now look up
+  // the rows that actually exist and report a per-row breakdown so the
+  // toast can surface "Updated 3, skipped 2 (#INV-… not found)".
+  const existing = await db.select({
+    id: invoiceGroupsTable.id,
+    invoiceNumber: invoiceGroupsTable.invoiceNumber,
+  })
+    .from(invoiceGroupsTable)
+    .where(inArray(invoiceGroupsTable.id, requestedIds));
+
+  const matchedIds = new Set(existing.map((g) => g.id));
+  const skipped = requestedIds
+    .filter((id) => !matchedIds.has(id))
+    .map((id) => ({ id, refNumber: null as string | null, reason: "not_found" as const }));
+
+  if (existing.length === 0) {
+    res.status(404).json({
+      success: false,
+      updated: 0,
+      updatedItems: [],
+      skipped,
+    });
+    return;
+  }
+
   await db.update(invoiceGroupsTable)
     .set({ errorTypeId, errorTypeName: errorTypeName || null })
-    .where(inArray(invoiceGroupsTable.id, groupIds));
+    .where(inArray(invoiceGroupsTable.id, existing.map((g) => g.id)));
 
   const actor = actorFromReq(req);
-  for (const gid of groupIds) {
+  for (const g of existing) {
     await db.insert(auditLogsTable).values({
-      invoiceGroupId: gid,
+      invoiceGroupId: g.id,
       action: "group_error_type_assigned",
       details: `Error type assigned: ${errorTypeName || errorTypeId}`,
       metadata: { errorTypeId, errorTypeName },
@@ -1284,7 +1315,12 @@ router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(as
     });
   }
 
-  res.json({ success: true, updated: groupIds.length });
+  res.json({
+    success: true,
+    updated: existing.length,
+    updatedItems: existing.map((g) => ({ id: g.id, refNumber: g.invoiceNumber })),
+    skipped,
+  });
 }));
 
 router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res): Promise<void> => {
@@ -1558,49 +1594,13 @@ router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promi
   res.status(201).json(created);
 }));
 
-router.delete("/invoice-groups/:id/evidence/:evidenceId", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  const evidenceId = parseInt(String(req.params.evidenceId), 10);
-  if (isNaN(id) || isNaN(evidenceId)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  const [existing] = await db.select().from(claimEvidenceTable)
-    .where(and(eq(claimEvidenceTable.id, evidenceId), eq(claimEvidenceTable.invoiceGroupId, id)));
-
-  await db.delete(claimEvidenceTable)
-    .where(and(eq(claimEvidenceTable.id, evidenceId), eq(claimEvidenceTable.invoiceGroupId, id)));
-
-  if (existing) {
-    await db.insert(auditLogsTable).values({
-      invoiceGroupId: id,
-      action: "group_evidence_removed",
-      details: `Evidence removed: ${existing.evidenceTypeName}`,
-      metadata: { evidenceId, evidenceTypeId: existing.evidenceTypeId, treeNodeId: existing.treeNodeId },
-      ...actorFromReq(req),
-    });
-  }
-
-  emitGroupEvent(id, "group_evidence_removed", req);
-  res.json({ success: true });
-}));
-
-router.delete("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  const [existing] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  if (!existing) { res.status(404).json({ error: "Invoice group not found" }); return; }
-
-  const actor = actorFromReq(req);
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId: id,
-    action: "group_deleted",
-    details: `Invoice group ${existing.invoiceNumber} deleted`,
-    ...actor,
-  });
-
-  await db.delete(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
-  res.sendStatus(204);
-}));
+// Task #411 audit, Tier 5: `DELETE /invoice-groups/:id/evidence/:evidenceId`
+// and `DELETE /invoice-groups/:id` were removed — neither had any UI caller
+// (group-level evidence delete was never wired into the detail page; the
+// group delete had no admin destructive-action surface either). Per the
+// endpoint-action contract rule, an orphan mutation is not allowed to
+// linger in the surface area. Re-introduce these alongside the UI that
+// calls them, gated with `requireAdmin` if appropriate.
 
 router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);

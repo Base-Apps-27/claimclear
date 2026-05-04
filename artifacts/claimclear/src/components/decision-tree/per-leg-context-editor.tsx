@@ -36,7 +36,7 @@
 // genuine human-authored finding.
 
 import * as React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 void React; // JSX runtime: keep React in scope under tsx --test.
@@ -129,6 +129,94 @@ export function PerLegContextEditor({
     const next = isLegacyDerivedContext(incoming) ? "" : incoming;
     setSavedClarified(next);
   }, [perLegContext, mode]);
+
+  // Task #411 audit, Tier 2: protect typed-but-unsaved per-leg
+  // context from being silently lost to a tab close, refresh, OR
+  // in-app SPA navigation (which is the primary way operators move
+  // between records — `beforeunload` alone misses that case).
+  //
+  // "Unsaved" means: the operator has typed text in the editor that
+  // has not yet been Accepted-clarified. The textarea is initialized
+  // empty on every mount (it never pre-populates from saved state —
+  // saved context is shown in its own `sop-include-saved-context`
+  // card), so `raw.trim().length > 0` IS exactly "user typed text
+  // that would be lost". The mode==='review' branch covers the case
+  // where the operator clarified, hasn't accepted, and typed nothing
+  // new — the clarified text is also at risk.
+  const hasUnsavedDraft = raw.trim().length > 0 || (mode === "review" && clarified.trim().length > 0);
+  // We track the URL the editor is currently "anchored at" so that on
+  // a popstate cancel we can push back to it. `popstate` fires AFTER
+  // the URL has already changed to the destination, so reading
+  // `window.location.href` inside the handler captures the WRONG URL
+  // (the one we want to leave). The ref always holds the previous,
+  // editor-anchored URL, updated on every accepted navigation.
+  const anchoredUrlRef = useRef<string>(
+    typeof window !== "undefined" ? window.location.href : "",
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Re-anchor whenever the guard activates (a fresh draft begins).
+    if (hasUnsavedDraft) anchoredUrlRef.current = window.location.href;
+  }, [hasUnsavedDraft]);
+  useEffect(() => {
+    if (!hasUnsavedDraft) return;
+
+    // (1) Browser tab close / hard refresh.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    // (2) SPA navigation. wouter (and most history-based routers)
+    // navigates by calling `history.pushState` / `history.replaceState`
+    // directly — neither fires `beforeunload`. We patch both with a
+    // confirm prompt; the patches are scoped to the lifetime of an
+    // unsaved draft and torn down in cleanup so we don't leak guards
+    // to other parts of the app.
+    const originalPush = window.history.pushState.bind(window.history);
+    const originalReplace = window.history.replaceState.bind(window.history);
+    const PROMPT = "You have unsaved per-leg context. Discard it and leave?";
+    const guard = (orig: typeof originalPush) =>
+      function patched(this: History, ...args: Parameters<typeof originalPush>) {
+        // eslint-disable-next-line no-alert
+        if (typeof window !== "undefined" && !window.confirm(PROMPT)) return;
+        const ret = orig(...args);
+        // Operator confirmed the leave — re-anchor to the new URL so
+        // any later popstate (e.g. they hit back from the destination
+        // page) compares against the right reference point.
+        anchoredUrlRef.current = window.location.href;
+        return ret;
+      } as typeof originalPush;
+    window.history.pushState = guard(originalPush);
+    window.history.replaceState = guard(originalReplace);
+
+    // (3) Back / forward via popstate.
+    const onPopState = () => {
+      // popstate fires AFTER the URL has changed. `window.location.href`
+      // here is the DESTINATION, not the editor's URL. To truly keep
+      // the operator on the editor when they cancel, push the
+      // previously-anchored URL back via the unwrapped `originalPush`
+      // (using the wrapped one would re-prompt and infinite-loop on
+      // confirm:cancel). On confirm-leave, just re-anchor to the new
+      // URL so subsequent navigations measure from there.
+      // eslint-disable-next-line no-alert
+      if (!window.confirm(PROMPT)) {
+        originalPush({}, "", anchoredUrlRef.current);
+        return;
+      }
+      anchoredUrlRef.current = window.location.href;
+    };
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.history.pushState = originalPush;
+      window.history.replaceState = originalReplace;
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [hasUnsavedDraft]);
 
   const requestReadback = useMutation({
     mutationFn: async (rawText: string) => {

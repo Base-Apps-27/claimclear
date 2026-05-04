@@ -129,26 +129,47 @@ export function QueueNeedsReviewPanel({ inboxGroup, onCompleted }: Props) {
   async function handleBulkExcludeAll() {
     if (bulkPending) return;
     setBulkPending(true);
-    try {
-      // Sequential to keep the audit trail readable and avoid races
-      // around the parent group's promote-on-last-resolved cascade.
-      for (const c of remainingNeedsClassification) {
+    // Task #411 audit, Tier 4: report a per-row breakdown instead of
+    // a generic "Marked N legs as no-issue" toast. Each leg is run
+    // sequentially so the audit trail stays readable AND so a
+    // mid-loop failure leaves the rest of the list cleanly classified
+    // as "skipped" with the actual error reason. The summary toast
+    // names succeeded confs and skipped confs (with truncation) so
+    // the operator can spot which legs need a follow-up.
+    const succeeded: { id: string; ref: string }[] = [];
+    const skipped: { id: string; ref: string; reason: string }[] = [];
+    for (const c of remainingNeedsClassification) {
+      const idStr = String(c.id);
+      const ref = c.confNumber ? String(c.confNumber) : idStr;
+      try {
         await excludeLeg.mutateAsync({
           id: c.id,
           data: { reason: "non_issue", note: "Bulk no-issue from Classification Inbox (all-blank group)" },
         });
+        succeeded.push({ id: idStr, ref });
+      } catch (e) {
+        skipped.push({
+          id: idStr,
+          ref,
+          reason: e instanceof Error ? e.message : String(e),
+        });
       }
-      invalidateAll();
-      onCompleted(`Marked ${remainingNeedsClassification.length} legs as no-issue`);
-    } catch (e) {
-      toast({
-        title: "Bulk exclude failed",
-        description: e instanceof Error ? e.message : String(e),
-        variant: "destructive",
-      });
-    } finally {
-      setBulkPending(false);
     }
+    invalidateAll();
+    setBulkPending(false);
+
+    if (skipped.length === 0) {
+      onCompleted(`Marked ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as no-issue`);
+      return;
+    }
+    // Truncated list of skipped refs so the toast stays readable.
+    const skippedPreview = skipped.slice(0, 5).map(s => s.ref).join(", ");
+    const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
+    toast({
+      title: `Bulk no-issue partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
+      description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
+      variant: skipped.length === remainingNeedsClassification.length ? "destructive" : "default",
+    });
   }
 
   return (

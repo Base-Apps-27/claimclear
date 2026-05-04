@@ -2031,13 +2031,6 @@ export const UpdateInvoiceGroupResponse = zod.object({
 });
 
 /**
- * @summary Delete an invoice group and its rides
- */
-export const DeleteInvoiceGroupParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-/**
  * @summary Update invoice group status
  */
 export const UpdateInvoiceGroupStatusParams = zod.object({
@@ -4150,8 +4143,25 @@ export const BulkAssignInvoiceGroupErrorTypeBody = zod.object({
 });
 
 export const BulkAssignInvoiceGroupErrorTypeResponse = zod.object({
+  updated: zod.number(),
+  updatedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
   success: zod.boolean().optional(),
-  updated: zod.number().optional(),
 });
 
 /**
@@ -5019,14 +5029,6 @@ export const AddInvoiceGroupEvidenceBody = zod.object({
   treeNodeId: zod.string().optional(),
   imageUrl: zod.string().optional(),
   notes: zod.string().optional(),
-});
-
-/**
- * @summary Delete evidence from an invoice group
- */
-export const DeleteInvoiceGroupEvidenceParams = zod.object({
-  id: zod.coerce.number(),
-  evidenceId: zod.coerce.number(),
 });
 
 /**
@@ -8900,13 +8902,6 @@ export const UpdateClaimResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
-});
-
-/**
- * @summary Delete a claim
- */
-export const DeleteClaimParams = zod.object({
-  id: zod.coerce.number(),
 });
 
 /**
@@ -17314,6 +17309,24 @@ export const BulkAssignErrorTypeBody = zod.object({
 
 export const BulkAssignErrorTypeResponse = zod.object({
   updated: zod.number(),
+  updatedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  success: zod.boolean().optional(),
 });
 
 /**
@@ -20068,13 +20081,6 @@ export const GetAnthropicConversationResponse = zod.object({
       createdAt: zod.coerce.date(),
     }),
   ),
-});
-
-/**
- * @summary Delete a conversation
- */
-export const DeleteAnthropicConversationParams = zod.object({
-  id: zod.coerce.number(),
 });
 
 /**

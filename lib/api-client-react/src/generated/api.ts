@@ -44,7 +44,6 @@ import type {
   BulkAddressBody,
   BulkAddressResponse,
   BulkAssignErrorTypeBody,
-  BulkAssignInvoiceGroupErrorType200,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
   CheckEmailResponsesBody,
@@ -1054,90 +1053,6 @@ export const useUpdateInvoiceGroup = <
 };
 
 /**
- * @summary Delete an invoice group and its rides
- */
-export const getDeleteInvoiceGroupUrl = (id: number) => {
-  return `/api/invoice-groups/${id}`;
-};
-
-export const deleteInvoiceGroup = async (
-  id: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteInvoiceGroupUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteInvoiceGroupMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteInvoiceGroup>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["deleteInvoiceGroup"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deleteInvoiceGroup(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteInvoiceGroupMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteInvoiceGroup>>
->;
-
-export type DeleteInvoiceGroupMutationError = ErrorType<unknown>;
-
-/**
- * @summary Delete an invoice group and its rides
- */
-export const useDeleteInvoiceGroup = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteInvoiceGroup>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteInvoiceGroup>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getDeleteInvoiceGroupMutationOptions(options));
-};
-
-/**
  * @summary Update invoice group status
  */
 export const getUpdateInvoiceGroupStatusUrl = (id: number) => {
@@ -1677,8 +1592,8 @@ export const getBulkAssignInvoiceGroupErrorTypeUrl = () => {
 export const bulkAssignInvoiceGroupErrorType = async (
   bulkAssignInvoiceGroupErrorTypeBody: BulkAssignInvoiceGroupErrorTypeBody,
   options?: RequestInit,
-): Promise<BulkAssignInvoiceGroupErrorType200> => {
-  return customFetch<BulkAssignInvoiceGroupErrorType200>(
+): Promise<BulkAssignResult> => {
+  return customFetch<BulkAssignResult>(
     getBulkAssignInvoiceGroupErrorTypeUrl(),
     {
       ...options,
@@ -2356,94 +2271,6 @@ export const useAddInvoiceGroupEvidence = <
   TContext
 > => {
   return useMutation(getAddInvoiceGroupEvidenceMutationOptions(options));
-};
-
-/**
- * @summary Delete evidence from an invoice group
- */
-export const getDeleteInvoiceGroupEvidenceUrl = (
-  id: number,
-  evidenceId: number,
-) => {
-  return `/api/invoice-groups/${id}/evidence/${evidenceId}`;
-};
-
-export const deleteInvoiceGroupEvidence = async (
-  id: number,
-  evidenceId: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteInvoiceGroupEvidenceUrl(id, evidenceId), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteInvoiceGroupEvidenceMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
-    TError,
-    { id: number; evidenceId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
-  TError,
-  { id: number; evidenceId: number },
-  TContext
-> => {
-  const mutationKey = ["deleteInvoiceGroupEvidence"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
-    { id: number; evidenceId: number }
-  > = (props) => {
-    const { id, evidenceId } = props ?? {};
-
-    return deleteInvoiceGroupEvidence(id, evidenceId, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteInvoiceGroupEvidenceMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>
->;
-
-export type DeleteInvoiceGroupEvidenceMutationError = ErrorType<unknown>;
-
-/**
- * @summary Delete evidence from an invoice group
- */
-export const useDeleteInvoiceGroupEvidence = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
-    TError,
-    { id: number; evidenceId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteInvoiceGroupEvidence>>,
-  TError,
-  { id: number; evidenceId: number },
-  TContext
-> => {
-  return useMutation(getDeleteInvoiceGroupEvidenceMutationOptions(options));
 };
 
 /**
@@ -3776,90 +3603,6 @@ export const useUpdateClaim = <
   TContext
 > => {
   return useMutation(getUpdateClaimMutationOptions(options));
-};
-
-/**
- * @summary Delete a claim
- */
-export const getDeleteClaimUrl = (id: number) => {
-  return `/api/claims/${id}`;
-};
-
-export const deleteClaim = async (
-  id: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteClaimUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteClaimMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteClaim>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteClaim>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["deleteClaim"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteClaim>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deleteClaim(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteClaimMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteClaim>>
->;
-
-export type DeleteClaimMutationError = ErrorType<unknown>;
-
-/**
- * @summary Delete a claim
- */
-export const useDeleteClaim = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteClaim>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteClaim>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getDeleteClaimMutationOptions(options));
 };
 
 /**
@@ -10505,91 +10248,6 @@ export function useGetAnthropicConversation<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary Delete a conversation
- */
-export const getDeleteAnthropicConversationUrl = (id: number) => {
-  return `/api/anthropic/conversations/${id}`;
-};
-
-export const deleteAnthropicConversation = async (
-  id: number,
-  options?: RequestInit,
-): Promise<void> => {
-  return customFetch<void>(getDeleteAnthropicConversationUrl(id), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteAnthropicConversationMutationOptions = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["deleteAnthropicConversation"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    { id: number }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return deleteAnthropicConversation(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteAnthropicConversationMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>
->;
-
-export type DeleteAnthropicConversationMutationError =
-  ErrorType<AnthropicError>;
-
-/**
- * @summary Delete a conversation
- */
-export const useDeleteAnthropicConversation = <
-  TError = ErrorType<AnthropicError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteAnthropicConversation>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  return useMutation(getDeleteAnthropicConversationMutationOptions(options));
-};
 
 /**
  * @summary List messages in a conversation

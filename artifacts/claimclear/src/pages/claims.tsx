@@ -869,10 +869,25 @@ export default function ClaimsList() {
                   const res = await bulkAssign.mutateAsync({
                     data: { claimIds: Array.from(selectedIds), errorTypeId: Number(errorTypeId) },
                   });
-                  setBulkAssignSuccess(`Updated ${res.updated} claim${res.updated !== 1 ? "s" : ""}`);
+                  // Task #411 audit, Tier 4: backend now returns a
+                  // per-row breakdown so the toast tells the operator
+                  // exactly which selected rows actually changed and
+                  // which were silently skipped (e.g. id no longer
+                  // exists). Surface skipped count + first few ids in
+                  // the success line so "Updated 5 claims" stops
+                  // misleading them.
+                  const updated = res.updated ?? 0;
+                  const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+                  let msg = `Updated ${updated} claim${updated !== 1 ? "s" : ""}`;
+                  if (skipped.length > 0) {
+                    const sample = skipped.slice(0, 3).map((s) => s.refNumber || `#${s.id}`).join(", ");
+                    const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+                    msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                  }
+                  setBulkAssignSuccess(msg);
                   setSelectedIds(new Set());
                   queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
-                  setTimeout(() => setBulkAssignSuccess(""), 3000);
+                  setTimeout(() => setBulkAssignSuccess(""), skipped.length > 0 ? 6000 : 3000);
                 }}
               />
             ) : (

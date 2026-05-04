@@ -236,7 +236,11 @@ export default function Insights() {
     return getExportClaimsCsvUrl({ createdFrom: iso });
   }, [days]);
 
-  const handlePrintMonthlyReport = () => {
+  // Opens the browser's native print dialog scoped to this page. The
+  // CTA used to read "Monthly PDF report", which implied a server-rendered
+  // PDF artifact — there is none. The button now matches the action it
+  // actually performs (window.print). See Task #411 audit, Tier 1.
+  const handlePrintThisView = () => {
     window.print();
   };
 
@@ -251,11 +255,11 @@ export default function Insights() {
       <Button
         variant="outline"
         size="sm"
-        onClick={handlePrintMonthlyReport}
-        data-testid="btn-monthly-pdf-report"
+        onClick={handlePrintThisView}
+        data-testid="btn-print-this-view"
       >
         <Printer className="w-4 h-4 mr-1.5" />
-        Monthly PDF report
+        Print this view
       </Button>
     </div>
   );

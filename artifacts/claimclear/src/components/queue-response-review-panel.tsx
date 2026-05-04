@@ -175,11 +175,28 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
 
   const continuationActions: ContinuationActionDef[] = [];
 
+  // Task #411 audit, Tier 1 — honest button labels.
+  //
+  // All three "continuation" verdicts currently route the group back
+  // to the same generic "Needs Evidence" state — there is no per-
+  // verdict downstream state machine yet (re-dispute does not pre-
+  // fill new evidence, re-attest does not open a re-attestation
+  // form, "Submit new invoice" does not seed an invoice number). The
+  // dedicated workflows are tracked separately. Until those land we:
+  //   (a) tag every button with a "Coming soon" badge so operators
+  //       see at a glance that the click is interim,
+  //   (b) keep the click functional (group → Needs Evidence) so the
+  //       work doesn't stall waiting for the new flow, and
+  //   (c) ALSO write a tracking note via the existing notes endpoint
+  //       so the timeline carries an explicit record of which
+  //       continuation path the operator chose. The note serves as
+  //       the "linked tracking" the audit asks for — it shows up in
+  //       the activity feed and survives the status flip.
   if (postResponseActions.includes("re_dispute")) {
     continuationActions.push({
       key: "re_dispute",
-      label: "Re-dispute",
-      sub: "Gather more evidence and re-submit",
+      label: "Re-dispute (workflow coming soon)",
+      sub: "Interim: moves group → Needs Evidence and writes a follow-up note. Dedicated re-dispute workflow tracked separately.",
       icon: <Send className="h-4 w-4" />,
       toneClass: "bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900",
       targetStatus: "Needs Evidence",
@@ -189,8 +206,8 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
   if (postResponseActions.includes("resolve_reattest")) {
     continuationActions.push({
       key: "resolve_reattest",
-      label: "Re-attest",
-      sub: "Capture re-attestation; keep the dispute moving",
+      label: "Re-attest (workflow coming soon)",
+      sub: "Interim: moves group → Needs Evidence and writes a follow-up note. Dedicated re-attest workflow tracked separately.",
       icon: <RefreshCw className="h-4 w-4" />,
       toneClass: "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-900",
       targetStatus: "Needs Evidence",
@@ -200,8 +217,8 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
   if (postResponseActions.includes("resolve_new_invoice")) {
     continuationActions.push({
       key: "resolve_new_invoice",
-      label: "Submit new invoice",
-      sub: "Set up the new invoice # and re-submit",
+      label: "Submit new invoice (workflow coming soon)",
+      sub: "Interim: moves group → Needs Evidence and writes a follow-up note. Dedicated new-invoice workflow tracked separately.",
       icon: <CheckCircle className="h-4 w-4" />,
       toneClass: "bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-900",
       targetStatus: "Needs Evidence",
@@ -215,8 +232,54 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
         id: group.id,
         data: { status: action.targetStatus, reason: action.reason },
       });
+      // Task #411 audit, Tier 1 — write a follow-up tracking note so
+      // the timeline carries the operator's chosen continuation path
+      // explicitly. This is the "linked tracking note" the audit
+      // asks for; even if the status flip is later reverted, the
+      // note remains as a record of intent.
+      //
+      // The status flip is the primary contract the operator
+      // invoked — it has already succeeded by this point — so we
+      // do NOT throw on note failure. BUT: we MUST distinguish
+      // "note saved" from "note attempted but not persisted" in
+      // the success message, otherwise we reintroduce the exact
+      // "button claims success but side effect missing" anti-
+      // pattern this task is meant to eradicate. We check
+      // `response.ok` and surface partial-success messaging.
+      let notePersisted = false;
+      let noteFailureReason: string | null = null;
+      try {
+        const noteRes = await fetch(`/api/notes`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            invoiceGroupId: group.id,
+            content: `Follow-up: operator selected "${action.label}" path after payor response. Interim flow moved group to ${action.targetStatus}. Dedicated workflow for this continuation type is tracked separately.`,
+          }),
+        });
+        if (noteRes.ok) {
+          notePersisted = true;
+        } else {
+          noteFailureReason = `HTTP ${noteRes.status}`;
+        }
+      } catch (noteErr) {
+        noteFailureReason = noteErr instanceof Error ? noteErr.message : String(noteErr);
+      }
       invalidate();
-      onCompleted(`${action.label} — moved to ${action.targetStatus}`);
+      const cleanLabel = action.label.replace(" (workflow coming soon)", "");
+      if (notePersisted) {
+        onCompleted(`${cleanLabel} — moved to ${action.targetStatus}, follow-up note added`);
+      } else {
+        // Status moved; note didn't. Tell the operator the truth so
+        // they can add the tracking note manually if needed.
+        toast({
+          title: `${cleanLabel} — moved to ${action.targetStatus}, but follow-up note FAILED`,
+          description: `Status flip succeeded. Add a tracking note manually from the group page. (${noteFailureReason ?? "unknown error"})`,
+          variant: "destructive",
+        });
+        onCompleted(`${cleanLabel} — moved to ${action.targetStatus} (follow-up note failed; add manually)`);
+      }
     } catch (err: unknown) {
       toast({
         title: `Couldn't apply "${action.label}"`,

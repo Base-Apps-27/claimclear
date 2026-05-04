@@ -12,7 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type BulkAssignInvoiceGroupErrorType200 = {
-  success?: boolean;
-  updated?: number;
+export type BulkAssignResultUpdatedItemsItem = {
+  id: number;
+  refNumber?: string | null;
 };

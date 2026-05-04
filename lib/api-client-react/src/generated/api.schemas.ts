@@ -3038,8 +3038,22 @@ export interface BulkAssignErrorTypeBody {
   errorTypeId: number;
 }
 
+export type BulkAssignResultUpdatedItemsItem = {
+  id: number;
+  refNumber?: string | null;
+};
+
+export type BulkAssignResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};
+
 export interface BulkAssignResult {
   updated: number;
+  updatedItems?: BulkAssignResultUpdatedItemsItem[];
+  skipped?: BulkAssignResultSkippedItem[];
+  success?: boolean;
 }
 
 export type UploadResponseMetadata = {
@@ -3814,11 +3828,6 @@ export type BulkAssignInvoiceGroupErrorTypeBody = {
   groupIds: number[];
   errorTypeId: string;
   errorTypeName?: string;
-};
-
-export type BulkAssignInvoiceGroupErrorType200 = {
-  success?: boolean;
-  updated?: number;
 };
 
 export type ListInvoiceGroupEvidence200 = {

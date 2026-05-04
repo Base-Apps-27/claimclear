@@ -443,19 +443,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupResponse"
-    delete:
-      operationId: deleteInvoiceGroup
-      tags: [invoice-groups]
-      summary: Delete an invoice group and its rides
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "204":
-          description: Deleted
+    # Task #411 audit, Tier 5: `DELETE /invoice-groups/{id}` was removed
+    # from the spec because the route had no UI caller (no admin
+    # destructive-action page existed) and an orphan mutation violates
+    # the endpoint-action contract rule. Re-add alongside the UI that
+    # calls it if a real admin surface ships.
 
   /invoice-groups/{id}/status:
     patch:
@@ -673,12 +665,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  updated:
-                    type: integer
+                $ref: "#/components/schemas/BulkAssignResult"
 
   /invoice-groups/{id}/valid-transitions:
     get:
@@ -901,25 +888,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClaimEvidenceResponse"
 
-  /invoice-groups/{id}/evidence/{evidenceId}:
-    delete:
-      operationId: deleteInvoiceGroupEvidence
-      tags: [invoice-groups]
-      summary: Delete evidence from an invoice group
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-        - name: evidenceId
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Deleted
+  # Task #411 audit, Tier 5: `DELETE /invoice-groups/{id}/evidence/{evidenceId}`
+  # was removed from the spec — group-level evidence delete was never
+  # wired into the detail page. Re-add alongside the UI that calls it.
 
   /invoice-groups/{id}/group-context:
     post:
@@ -1529,19 +1500,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimResponse"
-    delete:
-      operationId: deleteClaim
-      tags: [claims]
-      summary: Delete a claim
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "204":
-          description: Deleted
+    # Task #411 audit, Tier 5: `DELETE /claims/{id}` was removed from
+    # the spec — no admin destructive-action UI ever called it. Re-add
+    # alongside the page that calls it if needed.
 
   /claims/valid-transitions/{id}:
     get:
@@ -3398,25 +3359,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnthropicError"
-    delete:
-      operationId: deleteAnthropicConversation
-      tags: [anthropic]
-      summary: Delete a conversation
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "204":
-          description: Deleted
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AnthropicError"
+    # Task #411 audit, Tier 5: `DELETE /anthropic/conversations/{id}`
+    # was removed from the spec — there is no admin UI for browsing or
+    # pruning Anthropic conversation logs. Re-add alongside the page
+    # that calls it.
   /anthropic/conversations/{id}/messages:
     get:
       operationId: listAnthropicMessages
@@ -7998,10 +7944,41 @@ components:
         - errorTypeId
 
     BulkAssignResult:
+      # Task #411 audit, Tier 4: this response shape was extended so
+      # that bulk-assign endpoints can honestly tell the operator
+      # which rows actually changed and which were silently skipped
+      # (e.g. id pointed at a deleted record). The UI surfaces the
+      # `skipped` list in the toast.
       type: object
       properties:
         updated:
           type: integer
+        updatedItems:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, reason]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        success:
+          type: boolean
       required:
         - updated
 

@@ -59,25 +59,11 @@ router.get("/:id", asyncHandler(async (req, res): Promise<void> => {
   res.json({ ...conversation, messages: msgs });
 }));
 
-router.delete("/:id", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
-
-  const [deleted] = await db
-    .delete(conversations)
-    .where(eq(conversations.id, id))
-    .returning();
-
-  if (!deleted) {
-    res.status(404).json({ error: "Conversation not found" });
-    return;
-  }
-
-  res.sendStatus(204);
-}));
+// Task #411 audit, Tier 5: `DELETE /anthropic/conversations/:id` was
+// removed — there is no admin UI for browsing or pruning Anthropic
+// conversation logs, so the endpoint had no caller. Per the
+// endpoint-action contract rule (no orphan mutations), it should not
+// exist until the UI that uses it does.
 
 router.get("/:id/messages", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);

@@ -455,37 +455,24 @@ async function generatePortalDescription(
 }
 
 /**
- * Hard-coded template description used ONLY when the caller provided no
- * `disputeReason` and no `descriptionHtml` (the bot/admin "submit-now"
- * bypass path with literally nothing to AI-generate from). NOT used as
- * a silent fallback for failed LLM calls — Task #398 removed those: the
- * routes now return 502 instead so the operator knows the AI is down
- * rather than receiving a thin template they didn't ask for.
- *
- * Per Task #398, dollar amounts are also omitted here for shape parity
- * with the LLM prompt (the portal Description field never reasons about
- * money — the amount lives in the dedicated Claim Amount form field).
+ * Task #411 audit, Tier 3: the prior `buildFallbackDescription` helper
+ * was used as a silent template substitute when the caller provided
+ * neither a `descriptionHtml` nor a `disputeReason` to AI-generate from.
+ * That meant a bot/admin "submit-now" call with a missing draft would
+ * still queue a thin boilerplate write-up to MAS. The route now returns
+ * 400 with `code: "missing_description"` instead — see the use site in
+ * `POST /portal-submissions`. The helper is intentionally retained as a
+ * no-op trap so a future caller that accidentally re-imports it gets a
+ * loud runtime failure rather than silently falling back to a template.
  */
 function buildFallbackDescription(
-  ctx: GroupContext,
-  disputeReason: string,
-  specialCircumstances?: string | null,
-): string {
-  const { group, rides } = ctx;
-  const trimmedSpecial = (specialCircumstances || "").trim();
-  const specialPrefix = trimmedSpecial ? `Special Circumstances: ${trimmedSpecial}\n\n` : "";
-  const ridesBlock = rides.map((r, i) => `${i + 1}. Conf #${r.confNumber} — ${r.date || "N/A"}`).join("\n");
-  return `${specialPrefix}Dispute for Invoice Number: ${group.invoiceNumber}
-Client Number: ${group.clientNumber || "N/A"}
-Error Type: ${group.errorTypeName || "N/A"}
-Error Details: ${group.errorDetails || "N/A"}
-
-Affected rides (${rides.length}):
-${ridesBlock}
-
-Dispute Reason: ${disputeReason || "N/A"}
-
-Evidence Notes: ${group.evidenceNotes || "N/A"}`;
+  _ctx: GroupContext,
+  _disputeReason: string,
+  _specialCircumstances?: string | null,
+): never {
+  throw new Error(
+    "buildFallbackDescription has been removed — submit-now must return 400 missing_description when both descriptionHtml and disputeReason are absent (Task #411).",
+  );
 }
 
 /**
@@ -1255,6 +1242,15 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   }
 
   const ack = req.body?.ack === true;
+  // Task #411 Tier 3: when ack=true and we're about to bypass lint
+  // warnings, require a written reason so the audit row names WHY
+  // the override happened. We deliberately enforce the floor server-
+  // side (min 10 chars after trim) so a programmatic caller can't
+  // submit ack:true with an empty reason — the contract is the same
+  // for the UI, the bot, and curl.
+  const bypassReasonRaw = (req.body?.bypassReason ?? "") as string;
+  const bypassReason = typeof bypassReasonRaw === "string" ? bypassReasonRaw.trim() : "";
+  const MIN_BYPASS_REASON_LENGTH = 10;
 
   const { claim, evidence } = await loadLintInputs(existing);
   if (!claim) { res.status(404).json({ error: "Claim not found for submission" }); return; }
@@ -1267,6 +1263,14 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
   }
   if (warnings.length > 0 && !ack) {
     res.status(422).json({ failures: warnings });
+    return;
+  }
+  if (warnings.length > 0 && ack && bypassReason.length < MIN_BYPASS_REASON_LENGTH) {
+    res.status(400).json({
+      error: `bypassReason is required and must be at least ${MIN_BYPASS_REASON_LENGTH} characters when bypassing lint warnings`,
+      code: "missing_bypass_reason",
+      field: "bypassReason",
+    });
     return;
   }
 
@@ -1284,8 +1288,38 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
     });
   }
 
+  // Task #411 audit, Tier 3: when the operator clicked "Submit anyway"
+  // through the lint-warnings dialog, record that as its own dedicated
+  // audit row (`lint_warnings_bypassed`) so the timeline shows BOTH the
+  // bypass event and the subsequent confirm — not a single blended row
+  // that hides the bypass inside metadata. The bypass row is written
+  // first so it appears immediately above the confirm row in the
+  // descending-by-createdAt audit log.
+  const primaryClaimIdForAudit = await primaryClaimIdForGroup(existing.invoiceGroupId);
+  if (warnings.length > 0 && ack) {
+    await db.insert(auditLogsTable).values({
+      claimId: primaryClaimIdForAudit,
+      invoiceGroupId: existing.invoiceGroupId,
+      action: "lint_warnings_bypassed",
+      // The operator's typed bypassReason is included in the human
+      // `details` string so the activity feed surfaces it without
+      // having to drill into metadata. The same string is also
+      // stored in `metadata.bypassReason` so downstream tooling can
+      // read it programmatically without parsing free text.
+      details: `Operator bypassed ${warnings.length} lint warning(s) on submission #${id}: ${warnings.map(w => w.ruleKey).join(", ")} — reason: ${bypassReason}`,
+      metadata: {
+        submissionId: id,
+        bypassedCount: warnings.length,
+        bypassedWarnings: warnings,
+        bypassReason,
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+  }
+
   await db.insert(auditLogsTable).values({
-    claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
+    claimId: primaryClaimIdForAudit,
     invoiceGroupId: existing.invoiceGroupId,
     action: "portal_submission_confirmed",
     details: `Portal submission #${id} confirmed${warnings.length > 0 ? ` with ${warnings.length} warning(s) acknowledged` : ""}`,
@@ -1417,10 +1451,20 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     }
   }
   if (!generatedDescription) {
-    // True no-input case: caller provided neither descriptionHtml nor a
-    // disputeReason, so there was nothing to AI-generate from. Use the
-    // hard template — this is NOT an LLM-failure fallback.
-    generatedDescription = buildFallbackDescription(ctx, reason, trimmedSpecial || null);
+    // Task #411 audit, Tier 3: previously this branch silently
+    // substituted a hard-coded boilerplate template via
+    // `buildFallbackDescription`, which meant a bot/admin "submit-now"
+    // call with no draft would still queue a thin write-up to MAS that
+    // nobody reviewed. We now refuse: the caller must supply either
+    // `descriptionHtml` (a finished draft to send verbatim) or
+    // `disputeReason` (text to AI-generate from). Returning a stable
+    // `code` lets the bot retry path distinguish "I forgot the draft"
+    // from "the LLM is down" (502) without string-matching errors.
+    res.status(400).json({
+      error: "Either descriptionHtml or disputeReason is required to create a portal submission.",
+      code: "missing_description",
+    });
+    return;
   }
 
   const resolvedIssueType = issueType || determineIssueType(errorType);

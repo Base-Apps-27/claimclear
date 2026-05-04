@@ -17,6 +17,7 @@ import {
   useListClaimNotes,
   getListClaimNotesQueryKey,
   useCreateClaimNote,
+  useDeleteNote,
   useListClaimAuditLogs,
   getListClaimAuditLogsQueryKey,
   useListClaimEvidence,
@@ -38,12 +39,16 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
   Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
-  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks,
+  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2,
 } from "lucide-react";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
@@ -356,6 +361,8 @@ export function ClaimDetailV2({
   const markDuplicateMutation = useMarkLegDuplicate();
   const unmarkDuplicateMutation = useUnmarkLegDuplicate();
   const createNoteMutation = useCreateClaimNote();
+  const deleteNoteMutation = useDeleteNote();
+  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
 
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [excludeOpen, setExcludeOpen] = useState(false);
@@ -572,13 +579,57 @@ export function ClaimDetailV2({
     createNoteMutation.mutate(
       { id: claimId, data: { content: trimmed, type: "manual" } },
       {
-        onSuccess: () => {
+        // Task #411 audit, Tier 4: render the new note locally from
+        // the mutation response BEFORE the SSE invalidate fires, so
+        // the operator sees the note appear instantly without the
+        // "submit → empty list briefly → note appears" flicker.
+        // We still invalidate afterward to reconcile with whatever
+        // the server thinks the canonical list is (e.g. system rows
+        // emitted as a side effect of posting).
+        onSuccess: (created) => {
           setNewNote("");
           noteBreath.trigger();
+          if (created) {
+            qc.setQueryData<NoteResponse[]>(
+              getListClaimNotesQueryKey(claimId),
+              (prev: NoteResponse[] | undefined) => {
+                const existing = Array.isArray(prev) ? prev : [];
+                if (existing.some((n) => n.id === created.id)) return existing;
+                return [created, ...existing];
+              },
+            );
+          }
           invalidateLeg();
         },
         onError: (e: unknown) => toast({
           title: "Couldn't post note",
+          description: String((e as Error).message),
+          variant: "destructive",
+        }),
+      },
+    );
+  }
+
+  function onConfirmDeleteNote() {
+    const noteId = pendingDeleteNoteId;
+    if (noteId == null || deleteNoteMutation.isPending) return;
+    deleteNoteMutation.mutate(
+      { id: noteId },
+      {
+        onSuccess: () => {
+          // Optimistically drop the row from the cached list so the
+          // operator sees it disappear without waiting for an
+          // invalidate round-trip.
+          qc.setQueryData<NoteResponse[]>(
+            getListClaimNotesQueryKey(claimId),
+            (prev: NoteResponse[] | undefined) =>
+              Array.isArray(prev) ? prev.filter((n) => n.id !== noteId) : prev,
+          );
+          setPendingDeleteNoteId(null);
+          invalidateLeg();
+        },
+        onError: (e: unknown) => toast({
+          title: "Couldn't delete note",
           description: String((e as Error).message),
           variant: "destructive",
         }),
@@ -1332,7 +1383,7 @@ export function ClaimDetailV2({
               ) : (
                 <div className="space-y-3">
                   {visibleNotes.slice(0, 6).map((n) => (
-                    <div key={n.id} className="text-sm flex gap-2 items-start" data-testid={`leg-note-${n.id}`}>
+                    <div key={n.id} className="text-sm flex gap-2 items-start group/leg-note" data-testid={`leg-note-${n.id}`}>
                       <div
                         className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
                         style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
@@ -1346,6 +1397,25 @@ export function ClaimDetailV2({
                         </div>
                         <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
                       </div>
+                      {/* Task #411 audit, Tier 5: notes had a working
+                          DELETE /api/notes/:id endpoint with no UI to
+                          call it. The trash affordance now wires that
+                          endpoint into the per-note hover state, gated
+                          by an AlertDialog confirm so an accidental
+                          click can't nuke an audit-bearing note. */}
+                      {n.type === "manual" && (
+                        <button
+                          type="button"
+                          aria-label="Delete note"
+                          onClick={() => setPendingDeleteNoteId(n.id)}
+                          disabled={deleteNoteMutation.isPending}
+                          className="opacity-0 group-hover/leg-note:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
+                          style={{ color: "var(--cc-muted-fg)" }}
+                          data-testid={`leg-note-delete-${n.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1645,6 +1715,31 @@ export function ClaimDetailV2({
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={pendingDeleteNoteId != null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteNoteId(null); }}
+      >
+        <AlertDialogContent data-testid="leg-note-delete-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The note will be removed from the leg and an audit row
+              will record who deleted it. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="leg-note-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmDeleteNote}
+              disabled={deleteNoteMutation.isPending}
+              data-testid="leg-note-delete-confirm-action"
+            >
+              {deleteNoteMutation.isPending ? "Deleting…" : "Delete note"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

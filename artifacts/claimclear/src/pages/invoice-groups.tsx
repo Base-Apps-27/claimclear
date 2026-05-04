@@ -963,10 +963,23 @@ export default function InvoiceGroupsList() {
                       errorTypeName: errorType.name,
                     },
                   });
-                  setBulkAssignSuccess(`Updated ${res.updated} group${res.updated !== 1 ? "s" : ""}`);
+                  // Task #411 audit, Tier 4: surface the per-row
+                  // breakdown so "Updated 5 groups" no longer hides the
+                  // case where some selected ids didn't actually change
+                  // (e.g. group was deleted out from under the
+                  // selection).
+                  const updated = res.updated ?? 0;
+                  const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+                  let msg = `Updated ${updated} group${updated !== 1 ? "s" : ""}`;
+                  if (skipped.length > 0) {
+                    const sample = skipped.slice(0, 3).map((s) => s.refNumber || `#${s.id}`).join(", ");
+                    const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+                    msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                  }
+                  setBulkAssignSuccess(msg);
                   setSelectedIds(new Set());
                   queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-                  setTimeout(() => setBulkAssignSuccess(""), 3000);
+                  setTimeout(() => setBulkAssignSuccess(""), skipped.length > 0 ? 6000 : 3000);
                 }}
               />
             ) : (

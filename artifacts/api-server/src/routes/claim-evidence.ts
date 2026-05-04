@@ -1,8 +1,36 @@
 import { Router, type Request, type Response } from "express";
 import { db, claimEvidenceTable, claimsTable, invoiceGroupsTable, auditLogsTable, CLAIM_EVIDENCE_CLOSURE_SCOPES, CLOSURE_REASONS } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { ObjectStorageService } from "../lib/objectStorage";
 
 const router = Router();
+const objectStorageService = new ObjectStorageService();
+
+/**
+ * Task #411 T003 — atomic evidence upload.
+ *
+ * Upload is a two-step flow: PUT /storage/uploads finalizes the blob,
+ * then POST /claims/:id/evidence (or /claim-evidence/closure) inserts
+ * the `claim_evidence` row pointing at it. If the second step throws,
+ * the blob would otherwise be orphaned — paying GCS rent forever
+ * with no UI surface that references it. This helper reverses the
+ * blob-finalize step IF and ONLY IF no other `claim_evidence` row
+ * already references the same `imageUrl` (so we don't accidentally
+ * delete a blob another claim still uses, e.g. an attached evidence
+ * file the operator is re-attaching to a different leg).
+ */
+async function bestEffortCleanupOrphanBlob(imageUrl: string | null | undefined): Promise<boolean> {
+  if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("/objects/")) {
+    return false;
+  }
+  const refs = await db
+    .select({ id: claimEvidenceTable.id })
+    .from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.imageUrl, imageUrl))
+    .limit(1);
+  if (refs.length > 0) return false;
+  return objectStorageService.tryDeleteObjectEntity(imageUrl);
+}
 
 function isValidImageUrl(url: unknown): url is string {
   return typeof url === "string" && url.startsWith("/objects/");
@@ -53,7 +81,10 @@ router.post("/claims/:claimId/evidence", async (req: Request, res: Response) => 
     }).returning();
     res.status(201).json(created);
   } catch (error) {
-    req.log.error({ err: error }, "Error adding claim evidence");
+    // Task #411 T003: row insert failed AFTER the blob upload — best
+    // effort delete the blob so we don't leak an orphan to GCS.
+    const cleaned = await bestEffortCleanupOrphanBlob(imageUrl);
+    req.log.error({ err: error, imageUrl, blobCleanedUp: cleaned }, "Error adding claim evidence (orphan blob cleanup attempted)");
     res.status(500).json({ error: "Failed to add claim evidence" });
   }
 });
@@ -160,7 +191,10 @@ router.post("/claim-evidence/closure", async (req: Request, res: Response) => {
 
     res.status(201).json(created);
   } catch (error) {
-    req.log.error({ err: error }, "Error attaching closure evidence");
+    // Task #411 T003: same orphan-blob cleanup contract as the
+    // tree-scoped insert above.
+    const cleaned = await bestEffortCleanupOrphanBlob(imageUrl);
+    req.log.error({ err: error, imageUrl, blobCleanedUp: cleaned }, "Error attaching closure evidence (orphan blob cleanup attempted)");
     res.status(500).json({ error: "Failed to attach closure evidence" });
   }
 });

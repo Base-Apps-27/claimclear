@@ -15,6 +15,7 @@ import {
   getGetInvoiceGroupEmailThreadQueryKey,
   useCheckEmailResponses,
   useCreateInvoiceGroupNote,
+  useDeleteNote,
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
   useCompleteGroupReattest,
@@ -38,8 +39,12 @@ import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
   XCircle, PauseCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
-  ShieldCheck,
+  ShieldCheck, Trash2,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
@@ -264,6 +269,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
+  const deleteNoteMutation = useDeleteNote();
+  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
   const holdMutation = useHoldInvoiceGroup();
   const removeHoldMutation = useRemoveInvoiceGroupHold();
   // MAS re-attest mutation — used by the admin "recorded offline"
@@ -479,15 +486,57 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     createNoteMutation.mutate(
       { id: groupId, data: { content: trimmed } },
       {
-        onSuccess: () => {
+        // Task #411 audit, Tier 4: optimistically splice the new note
+        // into the cached invoice-group detail so it renders instantly
+        // instead of vanishing until the next SSE-triggered refetch
+        // (the "submit → empty list briefly → reappears" flicker).
+        onSuccess: (created) => {
           setNewNote("");
-          // Quiet in-place confirmation in place of a "Saved" toast.
           noteBreath.trigger();
+          if (created) {
+            qc.setQueryData<InvoiceGroupDetailResponse | undefined>(
+              getGetInvoiceGroupQueryKey(groupId),
+              (prev: InvoiceGroupDetailResponse | undefined) => {
+                if (!prev) return prev;
+                const existing: NoteResponse[] = Array.isArray(prev.notes) ? prev.notes : [];
+                if (existing.some((n: NoteResponse) => n.id === created.id)) return prev;
+                return { ...prev, notes: [created, ...existing] };
+              },
+            );
+          }
           invalidateGroup();
         },
         onError: (e: unknown) =>
           toast({
             title: "Failed to add note",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
+  function onConfirmDeleteNote() {
+    const noteId = pendingDeleteNoteId;
+    if (noteId == null || deleteNoteMutation.isPending) return;
+    deleteNoteMutation.mutate(
+      { id: noteId },
+      {
+        onSuccess: () => {
+          qc.setQueryData<InvoiceGroupDetailResponse | undefined>(
+            getGetInvoiceGroupQueryKey(groupId),
+            (prev: InvoiceGroupDetailResponse | undefined) => {
+              if (!prev) return prev;
+              const existing: NoteResponse[] = Array.isArray(prev.notes) ? prev.notes : [];
+              return { ...prev, notes: existing.filter((n: NoteResponse) => n.id !== noteId) };
+            },
+          );
+          setPendingDeleteNoteId(null);
+          invalidateGroup();
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Couldn't delete note",
             description: e instanceof Error ? e.message : String(e),
             variant: "destructive",
           }),
@@ -1469,7 +1518,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               ) : (
                 <div className="space-y-3">
                   {visibleNotes.slice(0, 6).map((n) => (
-                    <div key={n.id} className="text-sm flex gap-2 items-start" data-testid={`note-${n.id}`}>
+                    <div key={n.id} className="text-sm flex gap-2 items-start group/group-note" data-testid={`note-${n.id}`}>
                       <div
                         className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
                         style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
@@ -1483,6 +1532,24 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         </div>
                         <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
                       </div>
+                      {/* Task #411 audit, Tier 5: notes had a working
+                          DELETE /api/notes/:id endpoint with no UI to
+                          call it. The trash affordance is gated by an
+                          AlertDialog confirm so an accidental hover
+                          click can't nuke an audit-bearing note. */}
+                      {n.type === "manual" && (
+                        <button
+                          type="button"
+                          aria-label="Delete note"
+                          onClick={() => setPendingDeleteNoteId(n.id)}
+                          disabled={deleteNoteMutation.isPending}
+                          className="opacity-0 group-hover/group-note:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
+                          style={{ color: "var(--cc-muted-fg)" }}
+                          data-testid={`group-note-delete-${n.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1784,6 +1851,32 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={pendingDeleteNoteId != null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteNoteId(null); }}
+      >
+        <AlertDialogContent data-testid="group-note-delete-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The note will be removed from the invoice group and an
+              audit row will record who deleted it. This can&apos;t be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="group-note-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmDeleteNote}
+              disabled={deleteNoteMutation.isPending}
+              data-testid="group-note-delete-confirm-action"
+            >
+              {deleteNoteMutation.isPending ? "Deleting…" : "Delete note"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

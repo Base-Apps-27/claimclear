@@ -647,24 +647,13 @@ router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   res.json(advanced ?? saved);
 }));
 
-router.delete("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  const [existing] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
-  if (!existing) { res.status(404).json({ error: "Claim not found" }); return; }
-
-  await createAuditLog(id, "claim_deleted", `Claim ${existing.confNumber} deleted`, req);
-  emitClaimEvent(id, "claim_deleted", req);
-  await db.delete(claimsTable).where(eq(claimsTable.id, id));
-  // Refresh the orphaned parent group's earliest-service-date now that
-  // a child is gone — deleting the leg with the smallest `date` shifts
-  // the MIN forward; a no-op otherwise.
-  if (existing.invoiceGroupId != null) {
-    await recomputeGroupServiceDate(existing.invoiceGroupId);
-  }
-  res.sendStatus(204);
-}));
+// Task #411 audit, Tier 5: `DELETE /claims/:id` was removed because no
+// UI ever called it (an admin destructive-action page was never built),
+// which left a permanently-unreachable mutation in the surface area —
+// exactly the "endpoint promises an action no caller can request" anti-
+// pattern this task eradicates. If a real admin UI is needed later,
+// re-introduce the route alongside the page that calls it (and gate
+// with `requireAdmin`), don't restore an orphan endpoint.
 
 router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
@@ -1384,18 +1373,36 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
     return;
   }
 
-  const ids = claimIds.map((id: string | number) => Number(id)).filter((id: number) => !isNaN(id));
-  if (ids.length === 0) {
+  const requestedIds = claimIds.map((id: string | number) => Number(id))
+    .filter((id: number) => !isNaN(id));
+  if (requestedIds.length === 0) {
     res.status(400).json({ error: "No valid claim IDs provided" });
     return;
   }
 
   const claims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
     .from(claimsTable)
-    .where(inArray(claimsTable.id, ids));
+    .where(inArray(claimsTable.id, requestedIds));
+
+  // Task #411 audit, Tier 4: previously this endpoint returned only
+  // `{ updated: N }`, which silently masked the case where some of
+  // the requested IDs didn't exist (already deleted by another
+  // operator, typo'd id from a stale selection, etc). Operators saw
+  // "Updated 5 claims" when only 3 actually changed. We now compute
+  // the unmatched ids and surface them as `skipped` so the UI can
+  // tell the operator exactly which conf numbers didn't apply.
+  const matchedIds = new Set(claims.map(c => c.id));
+  const skipped = requestedIds
+    .filter((id: number) => !matchedIds.has(id))
+    .map((id: number) => ({ id, refNumber: null as string | null, reason: "not_found" as const }));
 
   if (claims.length === 0) {
-    res.status(404).json({ error: "No matching claims found" });
+    res.status(404).json({
+      error: "No matching claims found",
+      updated: 0,
+      updatedItems: [],
+      skipped,
+    });
     return;
   }
 
@@ -1406,7 +1413,7 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
   await db.transaction(async (tx) => {
     await tx.update(claimsTable)
       .set({ errorTypeId: String(errorTypeId), errorTypeName })
-      .where(inArray(claimsTable.id, ids));
+      .where(inArray(claimsTable.id, claims.map(c => c.id)));
 
     for (const claim of claims) {
       await tx.insert(auditLogsTable).values({
@@ -1424,7 +1431,11 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
     emitClaimEvent(claim.id, "claim_edited", req);
   }
 
-  res.json({ updated: claims.length });
+  res.json({
+    updated: claims.length,
+    updatedItems: claims.map(c => ({ id: c.id, refNumber: c.confNumber })),
+    skipped,
+  });
 }));
 
 router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promise<void> => {

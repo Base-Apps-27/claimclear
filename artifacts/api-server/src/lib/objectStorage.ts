@@ -308,6 +308,25 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+
+  /**
+   * Best-effort delete of a `/objects/...` path. Used by the
+   * claim-evidence atomic-upload safety net (Task #411 T003): if the
+   * `claim_evidence` row insert fails AFTER the blob has been
+   * finalized, the route calls this to avoid leaving an orphan blob
+   * paying GCS rent forever. Errors are swallowed because cleanup is
+   * a best-effort secondary operation and should never mask the
+   * underlying row-insert failure.
+   */
+  async tryDeleteObjectEntity(objectPath: string): Promise<boolean> {
+    try {
+      const file = await this.getObjectEntityFile(objectPath);
+      await file.delete({ ignoreNotFound: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function parseObjectPath(path: string): {
