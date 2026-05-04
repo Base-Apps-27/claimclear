@@ -12,10 +12,18 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem =
-  (typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem];
+/**
+ * Canonical set of accountability tags recorded on a structured
+closure. Defined once here so every request and response schema
+sees the exact same generated TypeScript union — adding a tag in
+one place without updating the others becomes a typecheck error
+instead of a silent runtime drift.
 
-export const UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem = {
+ */
+export type ClosureAccountabilityTag =
+  (typeof ClosureAccountabilityTag)[keyof typeof ClosureAccountabilityTag];
+
+export const ClosureAccountabilityTag = {
   driver: "driver",
   dispatcher: "dispatcher",
   member: "member",

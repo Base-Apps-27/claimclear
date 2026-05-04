@@ -12,7 +12,7 @@ import {
   getListClaimEvidenceQueryKey,
   getListInvoiceGroupEvidenceQueryKey,
   getListWithdrawalsQueryKey,
-  type UpdateClaimOutcomeBodyClosureAccountabilityTagsItem,
+  type ClosureAccountabilityTag as ApiClosureAccountabilityTag,
   type UpdateClaimOutcomeBodyClosureReason,
   type UpdateInvoiceGroupOutcomeBodyClosureReason,
   type AttachClosureEvidenceBodyClosureReasonAtAttach,
@@ -66,6 +66,24 @@ type _CodegenClosureReasonParity =
     : never;
 const _closureReasonParityCheck: _CodegenClosureReasonParity = true;
 void _closureReasonParityCheck;
+
+/**
+ * Same compile-time guarantee for the accountability-tags union: the local
+ * `ClosureAccountabilityTag` (from `closure-options`) and the codegen
+ * `ClosureAccountabilityTag` (sourced from a single shared OpenAPI component
+ * — see `lib/api-spec/openapi.yaml`) must agree exactly. If a tag is added
+ * or removed in one place but not the other, this fails to compile instead
+ * of being silently coerced through a cast at the submit site.
+ */
+type _CodegenClosureAccountabilityTagParity =
+  ClosureAccountabilityTag extends ApiClosureAccountabilityTag
+    ? ApiClosureAccountabilityTag extends ClosureAccountabilityTag
+      ? true
+      : never
+    : never;
+const _closureAccountabilityTagParityCheck: _CodegenClosureAccountabilityTagParity =
+  true;
+void _closureAccountabilityTagParityCheck;
 
 const NARRATIVE_MIN = 150;
 
@@ -371,7 +389,7 @@ export function ClosureIntakeDialog({
       }
     }
 
-    const accountabilityTags = tags as UpdateClaimOutcomeBodyClosureAccountabilityTagsItem[];
+    const accountabilityTags: ApiClosureAccountabilityTag[] = tags;
     const closureCategory = category;
     const closureCategoryOther = category === "other" ? categoryOther.trim() : null;
     const closureRootCause = category === "other" ? null : rootCause;
@@ -440,8 +458,7 @@ export function ClosureIntakeDialog({
             closureRootCause,
             closureRootCauseOther,
             closureNarrative: narrative.trim(),
-            closureAccountabilityTags:
-              accountabilityTags as unknown as import("@workspace/api-client-react").UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem[],
+            closureAccountabilityTags: accountabilityTags,
             closureAccountabilityOther,
             closureDrivers,
             closureDispatchers,

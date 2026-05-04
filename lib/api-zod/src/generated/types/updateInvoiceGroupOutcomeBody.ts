@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
-import type { UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem } from "./updateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem";
 import type { UpdateInvoiceGroupOutcomeBodyClosureReason } from "./updateInvoiceGroupOutcomeBodyClosureReason";
 
 /**
@@ -35,9 +35,7 @@ export interface UpdateInvoiceGroupOutcomeBody {
   /** @nullable */
   closureNarrative?: string | null;
   /** @nullable */
-  closureAccountabilityTags?:
-    | UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem[]
-    | null;
+  closureAccountabilityTags?: ClosureAccountabilityTag[] | null;
   /** @nullable */
   closureAccountabilityOther?: string | null;
   /** @nullable */

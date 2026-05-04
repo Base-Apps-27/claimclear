@@ -1251,10 +1251,18 @@ export const UpdateClaimOutcomeBodyClosureReason = {
   non_issue: "non_issue",
 } as const;
 
-export type UpdateClaimOutcomeBodyClosureAccountabilityTagsItem =
-  (typeof UpdateClaimOutcomeBodyClosureAccountabilityTagsItem)[keyof typeof UpdateClaimOutcomeBodyClosureAccountabilityTagsItem];
+/**
+ * Canonical set of accountability tags recorded on a structured
+closure. Defined once here so every request and response schema
+sees the exact same generated TypeScript union — adding a tag in
+one place without updating the others becomes a typecheck error
+instead of a silent runtime drift.
 
-export const UpdateClaimOutcomeBodyClosureAccountabilityTagsItem = {
+ */
+export type ClosureAccountabilityTag =
+  (typeof ClosureAccountabilityTag)[keyof typeof ClosureAccountabilityTag];
+
+export const ClosureAccountabilityTag = {
   driver: "driver",
   dispatcher: "dispatcher",
   member: "member",
@@ -1288,9 +1296,7 @@ export interface UpdateClaimOutcomeBody {
   /** @nullable */
   closureNarrative?: string | null;
   /** @nullable */
-  closureAccountabilityTags?:
-    | UpdateClaimOutcomeBodyClosureAccountabilityTagsItem[]
-    | null;
+  closureAccountabilityTags?: ClosureAccountabilityTag[] | null;
   /** @nullable */
   closureAccountabilityOther?: string | null;
   /** @nullable */
@@ -1318,19 +1324,6 @@ export const UpdateInvoiceGroupOutcomeBodyClosureReason = {
   non_issue: "non_issue",
 } as const;
 
-export type UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem =
-  (typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem)[keyof typeof UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem];
-
-export const UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem = {
-  driver: "driver",
-  dispatcher: "dispatcher",
-  member: "member",
-  it_system: "it_system",
-  our_staff: "our_staff",
-  external_payor: "external_payor",
-  other: "other",
-} as const;
-
 /**
  * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail
 contract as `UpdateClaimOutcomeBody`.
@@ -1351,9 +1344,7 @@ export interface UpdateInvoiceGroupOutcomeBody {
   /** @nullable */
   closureNarrative?: string | null;
   /** @nullable */
-  closureAccountabilityTags?:
-    | UpdateInvoiceGroupOutcomeBodyClosureAccountabilityTagsItem[]
-    | null;
+  closureAccountabilityTags?: ClosureAccountabilityTag[] | null;
   /** @nullable */
   closureAccountabilityOther?: string | null;
   /** @nullable */
@@ -1578,19 +1569,6 @@ export const CreateClosureRequestClosureReason = {
   non_issue: "non_issue",
 } as const;
 
-export type CreateClosureRequestClosureAccountabilityTagsItem =
-  (typeof CreateClosureRequestClosureAccountabilityTagsItem)[keyof typeof CreateClosureRequestClosureAccountabilityTagsItem];
-
-export const CreateClosureRequestClosureAccountabilityTagsItem = {
-  driver: "driver",
-  dispatcher: "dispatcher",
-  member: "member",
-  it_system: "it_system",
-  our_staff: "our_staff",
-  external_payor: "external_payor",
-  other: "other",
-} as const;
-
 /**
  * Canonical payload for filing a structured closure (Withdraw or
 Non-Issue). Used by `PATCH /claims/{id}/outcome` and
@@ -1623,9 +1601,7 @@ export interface CreateClosureRequest {
   /** @nullable */
   closureNarrative?: string | null;
   /** @nullable */
-  closureAccountabilityTags?:
-    | CreateClosureRequestClosureAccountabilityTagsItem[]
-    | null;
+  closureAccountabilityTags?: ClosureAccountabilityTag[] | null;
   /** @nullable */
   closureAccountabilityOther?: string | null;
   /** @nullable */

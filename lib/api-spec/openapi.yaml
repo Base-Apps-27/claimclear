@@ -5412,8 +5412,7 @@ components:
         closureAccountabilityTags:
           type: ["array", "null"]
           items:
-            type: string
-            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+            $ref: "#/components/schemas/ClosureAccountabilityTag"
         closureAccountabilityOther:
           type: ["string", "null"]
         closureDrivers:
@@ -5464,8 +5463,7 @@ components:
         closureAccountabilityTags:
           type: ["array", "null"]
           items:
-            type: string
-            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+            $ref: "#/components/schemas/ClosureAccountabilityTag"
         closureAccountabilityOther:
           type: ["string", "null"]
         closureDrivers:
@@ -5500,6 +5498,23 @@ components:
           type: ["string", "null"]
       required:
         - name
+
+    ClosureAccountabilityTag:
+      type: string
+      description: |
+        Canonical set of accountability tags recorded on a structured
+        closure. Defined once here so every request and response schema
+        sees the exact same generated TypeScript union — adding a tag in
+        one place without updating the others becomes a typecheck error
+        instead of a silent runtime drift.
+      enum:
+        - driver
+        - dispatcher
+        - member
+        - it_system
+        - our_staff
+        - external_payor
+        - other
 
     EvidenceFileRef:
       type: object
@@ -5762,8 +5777,7 @@ components:
         closureAccountabilityTags:
           type: ["array", "null"]
           items:
-            type: string
-            enum: ["driver", "dispatcher", "member", "it_system", "our_staff", "external_payor", "other"]
+            $ref: "#/components/schemas/ClosureAccountabilityTag"
         closureAccountabilityOther:
           type: ["string", "null"]
         closureDrivers:

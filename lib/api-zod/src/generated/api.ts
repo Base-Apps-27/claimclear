@@ -2731,15 +2731,19 @@ export const UpdateInvoiceGroupOutcomeBody = zod
     closureNarrative: zod.string().nullish(),
     closureAccountabilityTags: zod
       .array(
-        zod.enum([
-          "driver",
-          "dispatcher",
-          "member",
-          "it_system",
-          "our_staff",
-          "external_payor",
-          "other",
-        ]),
+        zod
+          .enum([
+            "driver",
+            "dispatcher",
+            "member",
+            "it_system",
+            "our_staff",
+            "external_payor",
+            "other",
+          ])
+          .describe(
+            "Canonical set of accountability tags recorded on a structured\nclosure. Defined once here so every request and response schema\nsees the exact same generated TypeScript union — adding a tag in\none place without updating the others becomes a typecheck error\ninstead of a silent runtime drift.\n",
+          ),
       )
       .nullish(),
     closureAccountabilityOther: zod.string().nullish(),
@@ -9620,15 +9624,19 @@ export const UpdateClaimOutcomeBody = zod
     closureNarrative: zod.string().nullish(),
     closureAccountabilityTags: zod
       .array(
-        zod.enum([
-          "driver",
-          "dispatcher",
-          "member",
-          "it_system",
-          "our_staff",
-          "external_payor",
-          "other",
-        ]),
+        zod
+          .enum([
+            "driver",
+            "dispatcher",
+            "member",
+            "it_system",
+            "our_staff",
+            "external_payor",
+            "other",
+          ])
+          .describe(
+            "Canonical set of accountability tags recorded on a structured\nclosure. Defined once here so every request and response schema\nsees the exact same generated TypeScript union — adding a tag in\none place without updating the others becomes a typecheck error\ninstead of a silent runtime drift.\n",
+          ),
       )
       .nullish(),
     closureAccountabilityOther: zod.string().nullish(),
