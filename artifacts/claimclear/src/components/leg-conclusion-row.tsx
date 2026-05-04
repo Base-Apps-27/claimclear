@@ -359,6 +359,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
               <ClaimDetailV2
                 claimId={claim.id}
                 embedded
+                lockReason={lockReason}
                 submissionSlot={submissionSlot}
               />
             </div>
