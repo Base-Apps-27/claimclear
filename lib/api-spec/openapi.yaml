@@ -4678,11 +4678,17 @@ components:
         importBatch:
           type: ["string", "null"]
         evidenceFiles:
-          type: ["object", "null"]
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
+          description: "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments."
         evidenceNotes:
           type: ["string", "null"]
         evidenceChecklist:
           type: ["object", "null"]
+          additionalProperties:
+            type: boolean
+          description: "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured."
         generatedEmailSubject:
           type: ["string", "null"]
         generatedEmailBody:
@@ -4938,11 +4944,17 @@ components:
         generatedEmailAt:
           type: ["string", "null"]
         evidenceFiles:
-          type: ["object", "null"]
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
+          description: "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments."
         evidenceNotes:
           type: ["string", "null"]
         evidenceChecklist:
           type: ["object", "null"]
+          additionalProperties:
+            type: boolean
+          description: "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured."
         payorEmail:
           type: ["string", "null"]
         # Lightweight payor-denial-reason signal (Task #321). Recorded by
@@ -5278,9 +5290,13 @@ components:
         evidenceNotes:
           type: string
         evidenceFiles:
-          type: object
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
         evidenceChecklist:
           type: object
+          additionalProperties:
+            type: boolean
 
     ClaimsListResponse:
       type: object
@@ -5349,9 +5365,13 @@ components:
         evidenceNotes:
           type: string
         evidenceFiles:
-          type: object
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
         evidenceChecklist:
           type: object
+          additionalProperties:
+            type: boolean
 
     UpdateClaimStatusBody:
       type: object
@@ -5480,6 +5500,28 @@ components:
           type: ["string", "null"]
       required:
         - name
+
+    EvidenceFileRef:
+      type: object
+      description: |
+        Single attachment row stored on a claim's, invoice group's, or
+        portal submission's `evidenceFiles` JSONB column. The row points
+        at an object-storage URL plus optional rendering metadata. The
+        bot worker (via `collectGroupEvidenceUrls` in
+        `routes/portal-submissions.ts`) and the submission preview
+        drawer (`portal-submission-drawer.tsx`) both read this shape.
+      properties:
+        url:
+          type: string
+          description: Object-storage URL for the attachment. The bot worker only forwards URLs that start with `/objects/` (anything else is dropped to prevent uncontrolled outbound requests).
+        name:
+          type: ["string", "null"]
+          description: Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.
+        size:
+          type: ["number", "null"]
+          description: File size in bytes. Optional; rendered as `47 KB` / `2.3 MB` chips next to attachments in the submission drawer.
+      required:
+        - url
 
     PayorDenialReasonCode:
       type: string
@@ -5784,11 +5826,15 @@ components:
       type: object
       properties:
         evidenceFiles:
-          type: object
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
         evidenceNotes:
           type: string
         evidenceChecklist:
           type: object
+          additionalProperties:
+            type: boolean
 
     PlaceHoldBody:
       type: object
@@ -6686,7 +6732,10 @@ components:
         evidenceNotes:
           type: ["string", "null"]
         evidenceFiles:
-          type: ["object", "null"]
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/EvidenceFileRef"
+          description: "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments."
         workflowHistory:
           type: ["object", "null"]
         portalTicketId:

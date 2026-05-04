@@ -13,8 +13,9 @@ understanding readback / preview generation) instead.
  */
 
 /**
+ * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
  * @nullable
  */
 export type InvoiceGroupResponseEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 } | null;

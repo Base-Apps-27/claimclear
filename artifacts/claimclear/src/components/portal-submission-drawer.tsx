@@ -9,7 +9,7 @@ import {
   useSandboxRunPortalSubmission,
   getListPortalSubmissionsQueryKey,
 } from "@workspace/api-client-react";
-import type { PortalSubmissionResponse, BotActivityLogResponse } from "@workspace/api-client-react";
+import type { PortalSubmissionResponse, BotActivityLogResponse, EvidenceFileRef } from "@workspace/api-client-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -47,29 +47,28 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
+// `attachmentUrls` is the bot worker's flat URL list — historically stored
+// as an array of strings, but legacy rows may still hold `EvidenceFileRef`-
+// shaped objects. The OpenAPI schema for `attachmentUrls` is still a loose
+// JSONB record (untyped — see audit notes on Task #384), so we narrow at
+// runtime and accept either shape.
 function extractAttachmentUrls(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw
-      .map(v => {
-        if (typeof v === "string") return v;
-        if (v && typeof v === "object" && typeof (v as { url?: unknown }).url === "string") {
-          return (v as { url: string }).url;
-        }
-        return null;
-      })
-      .filter((v): v is string => typeof v === "string" && v.length > 0);
-  }
-  return [];
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw
+    .map((v): string | null => {
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object" && "url" in v && typeof (v as { url: unknown }).url === "string") {
+        return (v as { url: string }).url;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
 }
 
-function findSizeForUrl(evidenceFiles: unknown, url: string): number | null {
-  if (!Array.isArray(evidenceFiles)) return null;
-  for (const f of evidenceFiles as Array<unknown>) {
-    if (f && typeof f === "object") {
-      const obj = f as { url?: unknown; size?: unknown };
-      if (obj.url === url && typeof obj.size === "number") return obj.size;
-    }
+function findSizeForUrl(evidenceFiles: EvidenceFileRef[] | null | undefined, url: string): number | null {
+  if (!evidenceFiles) return null;
+  for (const f of evidenceFiles) {
+    if (f.url === url && typeof f.size === "number") return f.size;
   }
   return null;
 }

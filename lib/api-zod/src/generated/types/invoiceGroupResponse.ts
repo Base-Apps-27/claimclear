@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { ClosurePersonRef } from "./closurePersonRef";
+import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
 import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupResponseClosureReviewState";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
-import type { InvoiceGroupResponseEvidenceFiles } from "./invoiceGroupResponseEvidenceFiles";
 import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
@@ -92,11 +92,17 @@ export interface InvoiceGroupResponse {
   generatedEmailBody?: string | null;
   /** @nullable */
   generatedEmailAt?: string | null;
-  /** @nullable */
-  evidenceFiles?: InvoiceGroupResponseEvidenceFiles;
+  /**
+   * Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
+  /**
+   * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
+   * @nullable
+   */
   evidenceChecklist?: InvoiceGroupResponseEvidenceChecklist;
   /** @nullable */
   payorEmail?: string | null;

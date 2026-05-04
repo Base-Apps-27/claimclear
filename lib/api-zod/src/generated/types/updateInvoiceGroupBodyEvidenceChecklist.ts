@@ -13,5 +13,5 @@ understanding readback / preview generation) instead.
  */
 
 export type UpdateInvoiceGroupBodyEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 };

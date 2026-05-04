@@ -43,7 +43,9 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   understandingReadback: text("understanding_readback"),
   understandingReadbackAt: timestamp("understanding_readback_at", { withTimezone: true }),
   evidenceNotes: text("evidence_notes"),
-  evidenceFiles: jsonb("evidence_files"),
+  // Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles`
+  // at draft time. Schema mirrors `EvidenceFileRef` in `lib/api-spec/openapi.yaml`.
+  evidenceFiles: jsonb("evidence_files").$type<Array<{ url: string; name?: string | null; size?: number | null }>>(),
   workflowHistory: jsonb("workflow_history"),
   portalTicketId: text("portal_ticket_id"),
   screenshotUrl: text("screenshot_url"),

@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { UpdateInvoiceGroupBodyEvidenceChecklist } from "./updateInvoiceGroupBodyEvidenceChecklist";
-import type { UpdateInvoiceGroupBodyEvidenceFiles } from "./updateInvoiceGroupBodyEvidenceFiles";
 
 export interface UpdateInvoiceGroupBody {
   errorDetails?: string;
@@ -20,6 +20,6 @@ export interface UpdateInvoiceGroupBody {
   errorTypeName?: string;
   payorEmail?: string;
   evidenceNotes?: string;
-  evidenceFiles?: UpdateInvoiceGroupBodyEvidenceFiles;
+  evidenceFiles?: EvidenceFileRef[];
   evidenceChecklist?: UpdateInvoiceGroupBodyEvidenceChecklist;
 }

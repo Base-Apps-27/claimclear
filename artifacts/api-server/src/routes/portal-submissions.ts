@@ -112,6 +112,30 @@ async function filterRidesForSubmission(
   return { rides: candidate, excludedHeld, excludedAlreadySubmitted };
 }
 
+/**
+ * The `evidenceFiles` JSONB column is typed as `EvidenceFileRef[]` after
+ * Task #384, but rows written before the contract tightened may still hold
+ * plain string URLs. Centralise the legacy-shape narrowing so callers see a
+ * single typed string list instead of sprinkling casts.
+ *
+ * Once a backfill normalises every row to `EvidenceFileRef[]`, the
+ * `typeof item === "string"` branch can be dropped.
+ */
+function evidenceFileUrls(
+  files: Array<{ url: string; name?: string | null; size?: number | null }> | null | undefined,
+): string[] {
+  if (!files) return [];
+  const out: string[] = [];
+  for (const item of files as ReadonlyArray<unknown>) {
+    if (typeof item === "string" && item.length > 0) {
+      out.push(item);
+    } else if (item && typeof item === "object" && "url" in item && typeof (item as { url: unknown }).url === "string") {
+      out.push((item as { url: string }).url);
+    }
+  }
+  return out;
+}
+
 async function collectGroupEvidenceUrls(ctx: GroupContext): Promise<string[]> {
   const urls: string[] = [];
   const seen = new Set<string>();
@@ -131,11 +155,7 @@ async function collectGroupEvidenceUrls(ctx: GroupContext): Promise<string[]> {
     .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
   for (const r of groupEvidence) add(r.imageUrl);
 
-  if (ctx.group.evidenceFiles && Array.isArray(ctx.group.evidenceFiles)) {
-    for (const f of ctx.group.evidenceFiles as Array<Record<string, string> | string>) {
-      add(typeof f === "string" ? f : f.url);
-    }
-  }
+  for (const url of evidenceFileUrls(ctx.group.evidenceFiles)) add(url);
 
   const rideIds = ctx.rides.map(r => r.id);
   if (rideIds.length > 0) {
@@ -146,11 +166,7 @@ async function collectGroupEvidenceUrls(ctx: GroupContext): Promise<string[]> {
   }
 
   for (const ride of ctx.rides) {
-    if (ride.evidenceFiles && Array.isArray(ride.evidenceFiles)) {
-      for (const f of ride.evidenceFiles as Array<Record<string, string> | string>) {
-        add(typeof f === "string" ? f : f.url);
-      }
-    }
+    for (const url of evidenceFileUrls(ride.evidenceFiles)) add(url);
   }
 
   return urls;
@@ -236,8 +252,12 @@ interface SubmissionSnapshot {
   errorTypeName: string;
   errorDetails: string;
   evidenceNotes: string;
-  evidenceFiles: unknown;
-  workflowHistory: unknown;
+  // Mirrors invoiceGroups.evidenceFiles / portalSubmissions.evidenceFiles —
+  // see EvidenceFileRef in lib/api-spec/openapi.yaml.
+  evidenceFiles: Array<{ url: string; name?: string | null; size?: number | null }> | null;
+  // workflowHistory was retired in Task #195; the snapshot field is kept
+  // (always null) only because the bot worker still reads it as opaque.
+  workflowHistory: null;
   subjectFallback: string;
 }
 
@@ -737,8 +757,8 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
     understandingReadback: trimmedReadback || null,
     understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
-    evidenceFiles: snap.evidenceFiles as never,
-    workflowHistory: snap.workflowHistory as never,
+    evidenceFiles: snap.evidenceFiles,
+    workflowHistory: snap.workflowHistory,
     attempts: 0,
   }).returning();
 
@@ -1246,8 +1266,8 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     understandingReadback: trimmedReadback || null,
     understandingReadbackAt: trimmedReadback ? new Date() : null,
     evidenceNotes: snap.evidenceNotes,
-    evidenceFiles: snap.evidenceFiles as never,
-    workflowHistory: snap.workflowHistory as never,
+    evidenceFiles: snap.evidenceFiles,
+    workflowHistory: snap.workflowHistory,
     attempts: 0,
   }).returning();
 

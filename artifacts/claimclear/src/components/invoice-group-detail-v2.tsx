@@ -857,10 +857,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 title={
                   <>
                     Group evidence
-                    {detail.evidenceFiles && Object.keys(detail.evidenceFiles).length > 0 && (
+                    {detail.evidenceFiles && detail.evidenceFiles.length > 0 && (
                       <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                        · {Object.keys(detail.evidenceFiles).length} file
-                        {Object.keys(detail.evidenceFiles).length === 1 ? "" : "s"}
+                        · {detail.evidenceFiles.length} file
+                        {detail.evidenceFiles.length === 1 ? "" : "s"}
                       </span>
                     )}
                   </>
@@ -870,25 +870,35 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 padded={false}
               >
                 {(() => {
-                  const filesObj = detail.evidenceFiles ?? {};
-                  const fileNames = Object.keys(filesObj);
-                  if (fileNames.length === 0) {
+                  const files = detail.evidenceFiles ?? [];
+                  if (files.length === 0) {
                     return (
                       <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
                         No evidence attached yet.
                       </div>
                     );
                   }
-                  return fileNames.map((name, i) => (
-                    <div
-                      key={name}
-                      className="px-3 py-1.5 text-xs flex items-center gap-2"
-                      style={{ borderBottom: i < fileNames.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                    >
-                      <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
-                      <span className="font-medium flex-1 truncate">{name}</span>
-                    </div>
-                  ));
+                  return files.map((f, i) => {
+                    const name = f.name || (() => {
+                      try {
+                        const path = new URL(f.url, "http://x").pathname;
+                        const last = path.split("/").filter(Boolean).pop() || f.url;
+                        return decodeURIComponent(last);
+                      } catch {
+                        return f.url;
+                      }
+                    })();
+                    return (
+                      <div
+                        key={`${f.url}-${i}`}
+                        className="px-3 py-1.5 text-xs flex items-center gap-2"
+                        style={{ borderBottom: i < files.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                      >
+                        <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
+                        <span className="font-medium flex-1 truncate">{name}</span>
+                      </div>
+                    );
+                  });
                 })()}
               </CcCard>
             </div>

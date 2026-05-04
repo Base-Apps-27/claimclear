@@ -285,9 +285,43 @@ export const ListInvoiceGroupsResponse = zod.object({
       generatedEmailSubject: zod.string().nullish(),
       generatedEmailBody: zod.string().nullish(),
       generatedEmailAt: zod.string().nullish(),
-      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceFiles: zod
+        .array(
+          zod
+            .object({
+              url: zod
+                .string()
+                .describe(
+                  "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                ),
+              name: zod
+                .string()
+                .nullish()
+                .describe(
+                  "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                ),
+              size: zod
+                .number()
+                .nullish()
+                .describe(
+                  "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                ),
+            })
+            .describe(
+              "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+            ),
+        )
+        .nullish()
+        .describe(
+          "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+        ),
       evidenceNotes: zod.string().nullish(),
-      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      evidenceChecklist: zod
+        .record(zod.string(), zod.boolean())
+        .nullish()
+        .describe(
+          "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+        ),
       payorEmail: zod.string().nullish(),
       payorDenialReason: zod
         .union([
@@ -717,9 +751,43 @@ export const GetInvoiceGroupResponse = zod
     generatedEmailSubject: zod.string().nullish(),
     generatedEmailBody: zod.string().nullish(),
     generatedEmailAt: zod.string().nullish(),
-    evidenceFiles: zod.object({}).passthrough().nullish(),
+    evidenceFiles: zod
+      .array(
+        zod
+          .object({
+            url: zod
+              .string()
+              .describe(
+                "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+              ),
+            name: zod
+              .string()
+              .nullish()
+              .describe(
+                "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+              ),
+            size: zod
+              .number()
+              .nullish()
+              .describe(
+                "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+              ),
+          })
+          .describe(
+            "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+          ),
+      )
+      .nullish()
+      .describe(
+        "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+      ),
     evidenceNotes: zod.string().nullish(),
-    evidenceChecklist: zod.object({}).passthrough().nullish(),
+    evidenceChecklist: zod
+      .record(zod.string(), zod.boolean())
+      .nullish()
+      .describe(
+        "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+      ),
     payorEmail: zod.string().nullish(),
     payorDenialReason: zod
       .union([
@@ -1018,9 +1086,43 @@ export const GetInvoiceGroupResponse = zod
             disputeEmailSent: zod.boolean(),
             disputeEmailSentAt: zod.string().nullish(),
             importBatch: zod.string().nullish(),
-            evidenceFiles: zod.object({}).passthrough().nullish(),
+            evidenceFiles: zod
+              .array(
+                zod
+                  .object({
+                    url: zod
+                      .string()
+                      .describe(
+                        "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                      ),
+                    name: zod
+                      .string()
+                      .nullish()
+                      .describe(
+                        "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                      ),
+                    size: zod
+                      .number()
+                      .nullish()
+                      .describe(
+                        "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                      ),
+                  })
+                  .describe(
+                    "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+                  ),
+              )
+              .nullish()
+              .describe(
+                "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+              ),
             evidenceNotes: zod.string().nullish(),
-            evidenceChecklist: zod.object({}).passthrough().nullish(),
+            evidenceChecklist: zod
+              .record(zod.string(), zod.boolean())
+              .nullish()
+              .describe(
+                "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+              ),
             generatedEmailSubject: zod.string().nullish(),
             generatedEmailBody: zod.string().nullish(),
             generatedEmailAt: zod.string().nullish(),
@@ -1282,7 +1384,36 @@ export const GetInvoiceGroupResponse = zod
                 "Timestamp of when the most recent confirmed understanding readback was captured.",
               ),
             evidenceNotes: zod.string().nullish(),
-            evidenceFiles: zod.object({}).passthrough().nullish(),
+            evidenceFiles: zod
+              .array(
+                zod
+                  .object({
+                    url: zod
+                      .string()
+                      .describe(
+                        "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                      ),
+                    name: zod
+                      .string()
+                      .nullish()
+                      .describe(
+                        "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                      ),
+                    size: zod
+                      .number()
+                      .nullish()
+                      .describe(
+                        "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                      ),
+                  })
+                  .describe(
+                    "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+                  ),
+              )
+              .nullish()
+              .describe(
+                "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+              ),
             workflowHistory: zod.object({}).passthrough().nullish(),
             portalTicketId: zod.string().nullish(),
             screenshotUrl: zod.string().nullish(),
@@ -1539,8 +1670,34 @@ export const UpdateInvoiceGroupBody = zod.object({
   errorTypeName: zod.string().optional(),
   payorEmail: zod.string().optional(),
   evidenceNotes: zod.string().optional(),
-  evidenceFiles: zod.object({}).passthrough().optional(),
-  evidenceChecklist: zod.object({}).passthrough().optional(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .optional(),
+  evidenceChecklist: zod.record(zod.string(), zod.boolean()).optional(),
 });
 
 export const UpdateInvoiceGroupResponse = zod.object({
@@ -1637,9 +1794,43 @@ export const UpdateInvoiceGroupResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -1945,9 +2136,43 @@ export const PackageInvoiceGroupResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -2249,9 +2474,43 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -2608,9 +2867,43 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -2919,9 +3212,43 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
     generatedEmailSubject: zod.string().nullish(),
     generatedEmailBody: zod.string().nullish(),
     generatedEmailAt: zod.string().nullish(),
-    evidenceFiles: zod.object({}).passthrough().nullish(),
+    evidenceFiles: zod
+      .array(
+        zod
+          .object({
+            url: zod
+              .string()
+              .describe(
+                "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+              ),
+            name: zod
+              .string()
+              .nullish()
+              .describe(
+                "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+              ),
+            size: zod
+              .number()
+              .nullish()
+              .describe(
+                "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+              ),
+          })
+          .describe(
+            "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+          ),
+      )
+      .nullish()
+      .describe(
+        "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+      ),
     evidenceNotes: zod.string().nullish(),
-    evidenceChecklist: zod.object({}).passthrough().nullish(),
+    evidenceChecklist: zod
+      .record(zod.string(), zod.boolean())
+      .nullish()
+      .describe(
+        "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+      ),
     payorEmail: zod.string().nullish(),
     payorDenialReason: zod
       .union([
@@ -3235,9 +3562,43 @@ export const TriageInvoiceGroupResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -3538,9 +3899,43 @@ export const HoldInvoiceGroupResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -3837,9 +4232,43 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -4223,9 +4652,43 @@ export const RecordPayorDenialReasonResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -4546,9 +5009,43 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -4962,9 +5459,43 @@ export const SetGroupContextResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -5268,9 +5799,43 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -5580,9 +6145,43 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -5885,9 +6484,43 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -6187,9 +6820,43 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -6489,9 +7156,43 @@ export const StampPreviewGeneratedResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -6811,9 +7512,43 @@ export const CompleteGroupReattestResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([
@@ -7528,9 +8263,43 @@ export const ListClaimsResponse = zod.object({
       disputeEmailSent: zod.boolean(),
       disputeEmailSentAt: zod.string().nullish(),
       importBatch: zod.string().nullish(),
-      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceFiles: zod
+        .array(
+          zod
+            .object({
+              url: zod
+                .string()
+                .describe(
+                  "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                ),
+              name: zod
+                .string()
+                .nullish()
+                .describe(
+                  "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                ),
+              size: zod
+                .number()
+                .nullish()
+                .describe(
+                  "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                ),
+            })
+            .describe(
+              "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+            ),
+        )
+        .nullish()
+        .describe(
+          "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+        ),
       evidenceNotes: zod.string().nullish(),
-      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      evidenceChecklist: zod
+        .record(zod.string(), zod.boolean())
+        .nullish()
+        .describe(
+          "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+        ),
       generatedEmailSubject: zod.string().nullish(),
       generatedEmailBody: zod.string().nullish(),
       generatedEmailAt: zod.string().nullish(),
@@ -7869,9 +8638,43 @@ export const GetClaimResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -8077,8 +8880,34 @@ export const UpdateClaimBody = zod.object({
   payorEmail: zod.string().optional(),
   invoiceNumbers: zod.string().optional(),
   evidenceNotes: zod.string().optional(),
-  evidenceFiles: zod.object({}).passthrough().optional(),
-  evidenceChecklist: zod.object({}).passthrough().optional(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .optional(),
+  evidenceChecklist: zod.record(zod.string(), zod.boolean()).optional(),
 });
 
 export const UpdateClaimResponse = zod.object({
@@ -8175,9 +9004,43 @@ export const UpdateClaimResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -8509,9 +9372,43 @@ export const UpdateClaimStatusResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -8859,9 +9756,43 @@ export const UpdateClaimOutcomeResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -9160,9 +10091,43 @@ export const ListAttestationPendingResponse = zod.object({
       disputeEmailSent: zod.boolean(),
       disputeEmailSentAt: zod.string().nullish(),
       importBatch: zod.string().nullish(),
-      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceFiles: zod
+        .array(
+          zod
+            .object({
+              url: zod
+                .string()
+                .describe(
+                  "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                ),
+              name: zod
+                .string()
+                .nullish()
+                .describe(
+                  "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                ),
+              size: zod
+                .number()
+                .nullish()
+                .describe(
+                  "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                ),
+            })
+            .describe(
+              "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+            ),
+        )
+        .nullish()
+        .describe(
+          "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+        ),
       evidenceNotes: zod.string().nullish(),
-      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      evidenceChecklist: zod
+        .record(zod.string(), zod.boolean())
+        .nullish()
+        .describe(
+          "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+        ),
       generatedEmailSubject: zod.string().nullish(),
       generatedEmailBody: zod.string().nullish(),
       generatedEmailAt: zod.string().nullish(),
@@ -9499,9 +10464,43 @@ export const AttestClaimResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -9796,9 +10795,43 @@ export const QueueAttestationForClaimResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -10093,9 +11126,43 @@ export const ConfirmQueuedAttestationResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -10370,9 +11437,35 @@ export const UpdateClaimEvidenceParams = zod.object({
 });
 
 export const UpdateClaimEvidenceBody = zod.object({
-  evidenceFiles: zod.object({}).passthrough().optional(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .optional(),
   evidenceNotes: zod.string().optional(),
-  evidenceChecklist: zod.object({}).passthrough().optional(),
+  evidenceChecklist: zod.record(zod.string(), zod.boolean()).optional(),
 });
 
 export const UpdateClaimEvidenceResponse = zod.object({
@@ -10469,9 +11562,43 @@ export const UpdateClaimEvidenceResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -10778,9 +11905,43 @@ export const PlaceLegOnHoldResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -11070,9 +12231,43 @@ export const RemoveLegHoldResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -11359,9 +12554,43 @@ export const ClearLegHoldResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -11656,9 +12885,43 @@ export const ClassifyLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -11956,9 +13219,43 @@ export const SopAdvanceLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -12266,9 +13563,43 @@ export const ExcludeLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -12563,9 +13894,43 @@ export const IncludeLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -12877,9 +14242,43 @@ export const MarkLegDuplicateResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -13169,9 +14568,43 @@ export const UnmarkLegDuplicateResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -13462,9 +14895,43 @@ export const ReclassifyLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -13854,9 +15321,43 @@ export const SetLegContextResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -14160,9 +15661,43 @@ export const ConcludeLegResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -14460,9 +15995,43 @@ export const CompleteLegMasActionResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -14756,9 +16325,43 @@ export const TriageClaimResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -15055,9 +16658,43 @@ export const PostResponseActionResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -15367,9 +17004,43 @@ export const GenerateClaimEmailResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -16030,7 +17701,36 @@ export const ListPortalSubmissionsResponseItem = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16194,7 +17894,36 @@ export const GetPortalSubmissionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16321,7 +18050,36 @@ export const RetryPortalSubmissionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16448,7 +18206,36 @@ export const CancelPortalSubmissionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16602,7 +18389,36 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16771,7 +18587,36 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -16898,7 +18743,36 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -17033,7 +18907,36 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -17183,7 +19086,36 @@ export const ConfirmPortalSubmissionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -17310,7 +19242,36 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
       "Timestamp of when the most recent confirmed understanding readback was captured.",
     ),
   evidenceNotes: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.",
+    ),
   workflowHistory: zod.object({}).passthrough().nullish(),
   portalTicketId: zod.string().nullish(),
   screenshotUrl: zod.string().nullish(),
@@ -17730,9 +19691,43 @@ export const GetDashboardSummaryResponse = zod.object({
       generatedEmailSubject: zod.string().nullish(),
       generatedEmailBody: zod.string().nullish(),
       generatedEmailAt: zod.string().nullish(),
-      evidenceFiles: zod.object({}).passthrough().nullish(),
+      evidenceFiles: zod
+        .array(
+          zod
+            .object({
+              url: zod
+                .string()
+                .describe(
+                  "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                ),
+              name: zod
+                .string()
+                .nullish()
+                .describe(
+                  "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                ),
+              size: zod
+                .number()
+                .nullish()
+                .describe(
+                  "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                ),
+            })
+            .describe(
+              "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+            ),
+        )
+        .nullish()
+        .describe(
+          "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+        ),
       evidenceNotes: zod.string().nullish(),
-      evidenceChecklist: zod.object({}).passthrough().nullish(),
+      evidenceChecklist: zod
+        .record(zod.string(), zod.boolean())
+        .nullish()
+        .describe(
+          "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+        ),
       payorEmail: zod.string().nullish(),
       payorDenialReason: zod
         .union([
@@ -20079,9 +22074,43 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   disputeEmailSent: zod.boolean(),
   disputeEmailSentAt: zod.string().nullish(),
   importBatch: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
@@ -20390,9 +22419,43 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   generatedEmailSubject: zod.string().nullish(),
   generatedEmailBody: zod.string().nullish(),
   generatedEmailAt: zod.string().nullish(),
-  evidenceFiles: zod.object({}).passthrough().nullish(),
+  evidenceFiles: zod
+    .array(
+      zod
+        .object({
+          url: zod
+            .string()
+            .describe(
+              "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+            ),
+          name: zod
+            .string()
+            .nullish()
+            .describe(
+              "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+            ),
+          size: zod
+            .number()
+            .nullish()
+            .describe(
+              "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+            ),
+        })
+        .describe(
+          "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+        ),
+    )
+    .nullish()
+    .describe(
+      "Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+    ),
   evidenceNotes: zod.string().nullish(),
-  evidenceChecklist: zod.object({}).passthrough().nullish(),
+  evidenceChecklist: zod
+    .record(zod.string(), zod.boolean())
+    .nullish()
+    .describe(
+      "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+    ),
   payorEmail: zod.string().nullish(),
   payorDenialReason: zod
     .union([

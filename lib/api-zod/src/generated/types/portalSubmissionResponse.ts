@@ -11,10 +11,10 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { PortalSubmissionResponseAttachmentUrls } from "./portalSubmissionResponseAttachmentUrls";
 import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
 import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
-import type { PortalSubmissionResponseEvidenceFiles } from "./portalSubmissionResponseEvidenceFiles";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
 import type { PortalSubmissionResponseWorkflowHistory } from "./portalSubmissionResponseWorkflowHistory";
 
@@ -81,8 +81,11 @@ export interface PortalSubmissionResponse {
   understandingReadbackAt?: string | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
-  evidenceFiles?: PortalSubmissionResponseEvidenceFiles;
+  /**
+   * Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   workflowHistory?: PortalSubmissionResponseWorkflowHistory;
   /** @nullable */

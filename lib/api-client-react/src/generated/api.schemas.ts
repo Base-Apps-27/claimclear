@@ -83,14 +83,10 @@ export const ClaimResponseClosureReviewState = {
 } as const;
 
 /**
+ * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
  * @nullable
  */
-export type ClaimResponseEvidenceFiles = { [key: string]: unknown } | null;
-
-/**
- * @nullable
- */
-export type ClaimResponseEvidenceChecklist = { [key: string]: unknown } | null;
+export type ClaimResponseEvidenceChecklist = { [key: string]: boolean } | null;
 
 /**
  * Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.
@@ -163,6 +159,30 @@ export interface ClosurePersonRef {
   name: string;
   /** @nullable */
   id?: string | null;
+}
+
+/**
+ * Single attachment row stored on a claim's, invoice group's, or
+portal submission's `evidenceFiles` JSONB column. The row points
+at an object-storage URL plus optional rendering metadata. The
+bot worker (via `collectGroupEvidenceUrls` in
+`routes/portal-submissions.ts`) and the submission preview
+drawer (`portal-submission-drawer.tsx`) both read this shape.
+
+ */
+export interface EvidenceFileRef {
+  /** Object-storage URL for the attachment. The bot worker only forwards URLs that start with `/objects/` (anything else is dropped to prevent uncontrolled outbound requests). */
+  url: string;
+  /**
+   * Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.
+   * @nullable
+   */
+  name?: string | null;
+  /**
+   * File size in bytes. Optional; rendered as `47 KB` / `2.3 MB` chips next to attachments in the submission drawer.
+   * @nullable
+   */
+  size?: number | null;
 }
 
 export interface ClaimVerdictResponse {
@@ -253,11 +273,17 @@ export interface ClaimResponse {
   disputeEmailSentAt?: string | null;
   /** @nullable */
   importBatch?: string | null;
-  /** @nullable */
-  evidenceFiles?: ClaimResponseEvidenceFiles;
+  /**
+   * Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
+  /**
+   * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
+   * @nullable
+   */
   evidenceChecklist?: ClaimResponseEvidenceChecklist;
   /** @nullable */
   generatedEmailSubject?: string | null;
@@ -431,17 +457,11 @@ export const InvoiceGroupResponseClosureReviewState = {
 } as const;
 
 /**
- * @nullable
- */
-export type InvoiceGroupResponseEvidenceFiles = {
-  [key: string]: unknown;
-} | null;
-
-/**
+ * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
  * @nullable
  */
 export type InvoiceGroupResponseEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 } | null;
 
 /**
@@ -596,11 +616,17 @@ export interface InvoiceGroupResponse {
   generatedEmailBody?: string | null;
   /** @nullable */
   generatedEmailAt?: string | null;
-  /** @nullable */
-  evidenceFiles?: InvoiceGroupResponseEvidenceFiles;
+  /**
+   * Per-group attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
+  /**
+   * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
+   * @nullable
+   */
   evidenceChecklist?: InvoiceGroupResponseEvidenceChecklist;
   /** @nullable */
   payorEmail?: string | null;
@@ -811,13 +837,6 @@ export type PortalSubmissionResponseAttachmentUrls = {
 /**
  * @nullable
  */
-export type PortalSubmissionResponseEvidenceFiles = {
-  [key: string]: unknown;
-} | null;
-
-/**
- * @nullable
- */
 export type PortalSubmissionResponseWorkflowHistory = {
   [key: string]: unknown;
 } | null;
@@ -915,8 +934,11 @@ export interface PortalSubmissionResponse {
   understandingReadbackAt?: string | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
-  evidenceFiles?: PortalSubmissionResponseEvidenceFiles;
+  /**
+   * Per-submission attachment list snapshotted from `invoice_groups.evidenceFiles` at draft time. Null when the source group had no JSONB attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   workflowHistory?: PortalSubmissionResponseWorkflowHistory;
   /** @nullable */
@@ -1178,10 +1200,8 @@ Same payload shape as `GET /invoice-groups/needs-classification`.
   needsClassificationInbox?: NeedsClassificationInboxResponse;
 }
 
-export type UpdateInvoiceGroupBodyEvidenceFiles = { [key: string]: unknown };
-
 export type UpdateInvoiceGroupBodyEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 };
 
 export interface UpdateInvoiceGroupBody {
@@ -1190,7 +1210,7 @@ export interface UpdateInvoiceGroupBody {
   errorTypeName?: string;
   payorEmail?: string;
   evidenceNotes?: string;
-  evidenceFiles?: UpdateInvoiceGroupBodyEvidenceFiles;
+  evidenceFiles?: EvidenceFileRef[];
   evidenceChecklist?: UpdateInvoiceGroupBodyEvidenceChecklist;
 }
 
@@ -1212,9 +1232,7 @@ export interface CreateClaimBody {
   payorEmail?: string;
 }
 
-export type UpdateClaimBodyEvidenceFiles = { [key: string]: unknown };
-
-export type UpdateClaimBodyEvidenceChecklist = { [key: string]: unknown };
+export type UpdateClaimBodyEvidenceChecklist = { [key: string]: boolean };
 
 export interface UpdateClaimBody {
   confNumber?: string;
@@ -1229,7 +1247,7 @@ export interface UpdateClaimBody {
   payorEmail?: string;
   invoiceNumbers?: string;
   evidenceNotes?: string;
-  evidenceFiles?: UpdateClaimBodyEvidenceFiles;
+  evidenceFiles?: EvidenceFileRef[];
   evidenceChecklist?: UpdateClaimBodyEvidenceChecklist;
 }
 
@@ -1680,14 +1698,12 @@ export interface AttachClosureEvidenceBody {
   closureReasonAtAttach?: AttachClosureEvidenceBodyClosureReasonAtAttach;
 }
 
-export type UpdateClaimEvidenceBodyEvidenceFiles = { [key: string]: unknown };
-
 export type UpdateClaimEvidenceBodyEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 };
 
 export interface UpdateClaimEvidenceBody {
-  evidenceFiles?: UpdateClaimEvidenceBodyEvidenceFiles;
+  evidenceFiles?: EvidenceFileRef[];
   evidenceNotes?: string;
   evidenceChecklist?: UpdateClaimEvidenceBodyEvidenceChecklist;
 }

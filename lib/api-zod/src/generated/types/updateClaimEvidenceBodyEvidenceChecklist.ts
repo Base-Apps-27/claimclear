@@ -13,5 +13,5 @@ understanding readback / preview generation) instead.
  */
 
 export type UpdateClaimEvidenceBodyEvidenceChecklist = {
-  [key: string]: unknown;
+  [key: string]: boolean;
 };

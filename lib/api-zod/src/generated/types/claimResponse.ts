@@ -16,7 +16,6 @@ import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
 import type { ClaimResponseClosureReviewState } from "./claimResponseClosureReviewState";
 import type { ClaimResponseDropReason } from "./claimResponseDropReason";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
-import type { ClaimResponseEvidenceFiles } from "./claimResponseEvidenceFiles";
 import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionRequired";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
 import type { ClaimResponseSopAnswersItem } from "./claimResponseSopAnswersItem";
@@ -24,6 +23,7 @@ import type { ClaimResponseSopOutcome } from "./claimResponseSopOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
 import type { ClaimVerdictResponse } from "./claimVerdictResponse";
 import type { ClosurePersonRef } from "./closurePersonRef";
+import type { EvidenceFileRef } from "./evidenceFileRef";
 
 export interface ClaimResponse {
   id: number;
@@ -95,11 +95,17 @@ export interface ClaimResponse {
   disputeEmailSentAt?: string | null;
   /** @nullable */
   importBatch?: string | null;
-  /** @nullable */
-  evidenceFiles?: ClaimResponseEvidenceFiles;
+  /**
+   * Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.
+   * @nullable
+   */
+  evidenceFiles?: EvidenceFileRef[] | null;
   /** @nullable */
   evidenceNotes?: string | null;
-  /** @nullable */
+  /**
+   * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
+   * @nullable
+   */
   evidenceChecklist?: ClaimResponseEvidenceChecklist;
   /** @nullable */
   generatedEmailSubject?: string | null;

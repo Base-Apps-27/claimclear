@@ -12,4 +12,4 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type UpdateClaimBodyEvidenceChecklist = { [key: string]: unknown };
+export type UpdateClaimBodyEvidenceChecklist = { [key: string]: boolean };

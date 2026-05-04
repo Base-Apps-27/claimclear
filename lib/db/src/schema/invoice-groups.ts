@@ -93,9 +93,15 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   generatedEmailSubject: text("generated_email_subject"),
   generatedEmailBody: text("generated_email_body"),
   generatedEmailAt: text("generated_email_at"),
-  evidenceFiles: jsonb("evidence_files"),
+  // Per-group attachment list. Stored as a JSONB array of file refs alongside
+  // the canonical `claim_evidence` rows; the bot worker (collectGroupEvidenceUrls)
+  // reads both sources. Schema mirrors `EvidenceFileRef` in `lib/api-spec/openapi.yaml`.
+  evidenceFiles: jsonb("evidence_files").$type<Array<{ url: string; name?: string | null; size?: number | null }>>(),
   evidenceNotes: text("evidence_notes"),
-  evidenceChecklist: jsonb("evidence_checklist"),
+  // Operator-tickable checklist mapping evidence-step name → checked. No
+  // active reader today; typed as `Record<string, boolean>` so future UI
+  // can read/write it without `as unknown` casts.
+  evidenceChecklist: jsonb("evidence_checklist").$type<Record<string, boolean>>(),
   payorEmail: text("payor_email"),
   // ────────────────────────────────────────────────────────────────────────
   // Lightweight payor-denial-reason signal (Task #321). Captured when the
