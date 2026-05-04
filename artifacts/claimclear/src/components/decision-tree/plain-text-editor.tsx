@@ -48,6 +48,27 @@ const FIELD_LABELS: Record<FieldKind, string> = {
   evidenceLabel: "Evidence label",
 };
 
+function countWords(s: string): number {
+  const trimmed = s.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
+}
+
+function describeWordDelta(currentWords: number, suggestedWords: number): { label: string; tone: "shorter" | "longer" | "same" } {
+  const delta = suggestedWords - currentWords;
+  if (delta === 0) {
+    return { label: "same length, simpler", tone: "same" };
+  }
+  const abs = Math.abs(delta);
+  const sign = delta < 0 ? "−" : "+";
+  const noun = abs === 1 ? "word" : "words";
+  if (currentWords > 0) {
+    const pct = Math.round((abs / currentWords) * 100);
+    return { label: `${sign}${abs} ${noun} / ${sign}${pct}%`, tone: delta < 0 ? "shorter" : "longer" };
+  }
+  return { label: `${sign}${abs} ${noun}`, tone: delta < 0 ? "shorter" : "longer" };
+}
+
 function flattenTree(tree: DecisionTree): FlatField[] {
   const fields: FlatField[] = [];
   const order: { node: TreeNode; number: number; breadcrumb: string }[] = [];
@@ -288,6 +309,22 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
 
   const pendingSuggestionCount = Object.values(suggestions).filter(s => s.status === "pending").length;
 
+  const pendingSuggestionStats = useMemo(() => {
+    let count = 0;
+    let totalCurrent = 0;
+    let totalSuggested = 0;
+    for (const [id, s] of Object.entries(suggestions)) {
+      if (s.status !== "pending") continue;
+      const f = fields.find(x => x.id === id);
+      if (!f) continue;
+      const cur = f.id in edits ? edits[f.id] : f.original;
+      count += 1;
+      totalCurrent += countWords(cur);
+      totalSuggested += countWords(s.text);
+    }
+    return { count, totalCurrent, totalSuggested, wordsCut: totalCurrent - totalSuggested };
+  }, [suggestions, edits, fields]);
+
   const handleEdit = (id: string, value: string) => {
     setEdits(prev => ({ ...prev, [id]: value }));
   };
@@ -384,7 +421,9 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
         kept += 1;
       }
       setSuggestions(next);
-      setInfo(kept === 0 ? "AI returned no suggested changes." : `AI suggested rewrites for ${kept} field${kept === 1 ? "" : "s"}. Review below.`);
+      if (kept === 0) {
+        setInfo("AI returned no suggested changes.");
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "AI request failed");
     } finally {
@@ -501,6 +540,25 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
             {error || info}
           </div>
         )}
+        {pendingSuggestionStats.count > 0 && (
+          <div className="mt-2 text-xs flex items-center gap-1 text-violet-700">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>
+              AI suggested rewrites for {pendingSuggestionStats.count} field
+              {pendingSuggestionStats.count === 1 ? "" : "s"}
+              {pendingSuggestionStats.wordsCut > 0 && (
+                <>, cutting ~{pendingSuggestionStats.wordsCut} word{pendingSuggestionStats.wordsCut === 1 ? "" : "s"} total</>
+              )}
+              {pendingSuggestionStats.wordsCut < 0 && (
+                <>, adding ~{-pendingSuggestionStats.wordsCut} word{-pendingSuggestionStats.wordsCut === 1 ? "" : "s"} total</>
+              )}
+              {pendingSuggestionStats.wordsCut === 0 && pendingSuggestionStats.totalCurrent > 0 && (
+                <>, same total length</>
+              )}
+              . Review below.
+            </span>
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -559,6 +617,15 @@ function FieldRow({
   const isChanged = value !== field.original;
   const showDiff = suggestion?.status === "pending";
 
+  const currentWords = countWords(value);
+  const suggestedWords = suggestion ? countWords(suggestion.text) : 0;
+  const wordDelta = suggestion ? describeWordDelta(currentWords, suggestedWords) : null;
+  const deltaClasses: Record<"shorter" | "longer" | "same", string> = {
+    shorter: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    longer: "bg-amber-50 text-amber-800 border-amber-200",
+    same: "bg-slate-50 text-slate-600 border-slate-200",
+  };
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -586,8 +653,19 @@ function FieldRow({
             </div>
           </div>
           <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] uppercase tracking-wider text-violet-700 font-medium">AI suggestion</p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-[10px] uppercase tracking-wider text-violet-700 font-medium">AI suggestion</p>
+                {wordDelta && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] py-0 h-4 ${deltaClasses[wordDelta.tone]}`}
+                    title={`Current: ${currentWords} word${currentWords === 1 ? "" : "s"} → Suggested: ${suggestedWords} word${suggestedWords === 1 ? "" : "s"}`}
+                  >
+                    {wordDelta.label}
+                  </Badge>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="ghost" className="h-6 px-2 text-emerald-700 hover:bg-emerald-50" onClick={onAccept}>
                   <Check className="h-3 w-3 mr-1" />Accept
