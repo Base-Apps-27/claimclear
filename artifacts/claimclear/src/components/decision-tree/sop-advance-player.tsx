@@ -18,6 +18,7 @@
 import * as React from "react";
 import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 
 void React; // JSX runtime: keep React in scope under tsx --test (jsxFactory=React.createElement).
 import {
@@ -75,6 +76,7 @@ import {
   extractClipboardFiles,
 } from "./evidence-paste";
 import { EvidencePasteUpload } from "./evidence-paste-upload";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 
 interface SopAnswerRow {
   nodeId: string;
@@ -149,6 +151,7 @@ interface PendingPerReq {
   notes: string;
 }
 
+  const MAX_EVIDENCE_SIZE_CENTRAL = EMAIL_MESSAGE_MAX_BYTES;
 let __pendIdCounter = 0;
 const newPendingId = () => `pend_${Date.now().toString(36)}_${(++__pendIdCounter).toString(36)}`;
 
@@ -304,7 +307,7 @@ export function SopAdvancePlayer(props: Props) {
       if (file.size > MAX_EVIDENCE_SIZE) {
         toast({
           title: "File too large",
-          description: "Please upload a file smaller than 50 MB.",
+          description: `This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB — emails are capped at 25 MB total. Please compress or split it before uploading.`,
           variant: "destructive",
         });
         return;

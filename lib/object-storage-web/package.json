@@ -10,7 +10,8 @@
     "@uppy/aws-s3": "^5.0.0",
     "@uppy/core": "^5.0.0",
     "@uppy/dashboard": "^5.0.0",
-    "@uppy/react": "^5.0.0"
+    "@uppy/react": "^5.0.0",
+    "@workspace/api-zod": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18"

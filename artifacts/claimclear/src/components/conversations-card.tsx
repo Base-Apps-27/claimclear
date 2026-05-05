@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import DOMPurify from "dompurify";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import {
   Mail, Send, MessagesSquare, CheckCircle, X, Eye, Reply,
   ArrowRightLeft, AlertTriangle, Loader2, ChevronDown, ChevronUp,
@@ -39,6 +40,19 @@ export interface ReplyEvidenceOption {
   id: number;
   label: string;
   fileName: string | null;
+  /**
+   * Size of the underlying file in bytes, or `null` when unknown (e.g. legacy
+   * evidence rows that pre-date size capture). The composer uses this to show
+   * per-file size, the running total against the 25 MB email cap, and to
+   * disable Send when the selection blows the cap.
+   */
+  sizeBytes: number | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface ConversationsCardProps {
@@ -234,6 +248,22 @@ function ConversationThread({
   // the reply mutation.
   const [replyEvidenceIds, setReplyEvidenceIds] = useState<Set<number>>(new Set());
 
+  // Running total of selected attachment bytes vs the 25 MB Outlook per-message
+  // cap. Items with `sizeBytes === null` (legacy rows we couldn't size) are
+  // counted as 0 here — the backend still enforces the cap from the file
+  // metadata before any Graph call, so the worst-case is a server-side reject
+  // rather than a silently-truncated email.
+  const selectedTotalBytes = useMemo(() => {
+    let total = 0;
+    for (const ev of availableEvidence) {
+      if (replyEvidenceIds.has(ev.id) && typeof ev.sizeBytes === "number") {
+        total += ev.sizeBytes;
+      }
+    }
+    return total;
+  }, [availableEvidence, replyEvidenceIds]);
+  const overSizeCap = selectedTotalBytes > EMAIL_MESSAGE_MAX_BYTES;
+
   const openReply = () => {
     setReplyOpen(true);
     // Re-prime fields each time so a stale draft doesn't survive a refresh.
@@ -263,6 +293,10 @@ function ConversationThread({
     const cc = replyCc.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
     if (to.length === 0) { setReplyError("At least one recipient is required."); return; }
     if (replyBody.trim().length === 0) { setReplyError("Reply body cannot be empty."); return; }
+    if (overSizeCap) {
+      setReplyError(`Selected attachments total ${formatBytes(selectedTotalBytes)}. Emails are capped at 25 MB total — please remove or split some files.`);
+      return;
+    }
     setReplyError(null);
     try {
       const created = await onReply({
@@ -446,6 +480,14 @@ function ConversationThread({
                   ({replyEvidenceIds.size} selected)
                 </span>
               )}
+              {replyEvidenceIds.size > 0 && (
+                <span
+                  className={`ml-auto font-normal tabular-nums ${overSizeCap ? "text-red-700 font-semibold" : "text-muted-foreground"}`}
+                  data-testid="reply-attach-total"
+                >
+                  {formatBytes(selectedTotalBytes)} of 25 MB
+                </span>
+              )}
             </Label>
             {availableEvidence.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">
@@ -456,6 +498,7 @@ function ConversationThread({
               <ul className="border rounded-md bg-white/70 dark:bg-slate-900/40 divide-y max-h-40 overflow-y-auto">
                 {availableEvidence.map((ev) => {
                   const checked = replyEvidenceIds.has(ev.id);
+                  const oversizeAlone = typeof ev.sizeBytes === "number" && ev.sizeBytes > EMAIL_MESSAGE_MAX_BYTES;
                   return (
                     <li key={ev.id}>
                       <label className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
@@ -474,6 +517,12 @@ function ConversationThread({
                             — {ev.fileName}
                           </span>
                         )}
+                        <span
+                          className={`ml-auto shrink-0 tabular-nums ${oversizeAlone ? "text-red-700 font-semibold" : "text-muted-foreground"}`}
+                          data-testid={`reply-attach-size-${ev.id}`}
+                        >
+                          {typeof ev.sizeBytes === "number" ? formatBytes(ev.sizeBytes) : "size unknown"}
+                        </span>
                       </label>
                     </li>
                   );
@@ -491,7 +540,7 @@ function ConversationThread({
             <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)} disabled={isReplying}>
               Cancel
             </Button>
-            <Button size="sm" onClick={submitReply} disabled={isReplying}>
+            <Button size="sm" onClick={submitReply} disabled={isReplying || overSizeCap} data-testid="reply-send-button">
               {isReplying ? (
                 <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Sending…</>
               ) : (

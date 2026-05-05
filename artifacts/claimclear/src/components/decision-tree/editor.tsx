@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { ALLOWED_EVIDENCE_TYPES, MAX_EVIDENCE_SIZE, extractClipboardFiles } from "./evidence-paste";
 import { EvidencePasteUpload } from "./evidence-paste-upload";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import {
   type DecisionTree,
   type TreeNode,
@@ -821,9 +822,10 @@ export function InstructionImageUploader({
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
+  const MAX_IMG_SIZE = EMAIL_MESSAGE_MAX_BYTES;
   const handleFile = useCallback(async (file: File) => {
     if (!ALLOWED_EVIDENCE_TYPES.has(file.type) || file.type === "application/pdf") return;
-    if (file.size > MAX_EVIDENCE_SIZE) return;
+    if (file.size > MAX_IMG_SIZE) return;
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {

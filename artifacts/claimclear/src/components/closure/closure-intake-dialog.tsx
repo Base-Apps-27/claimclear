@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import {
   useUpdateClaimOutcome,
   useUpdateInvoiceGroupOutcome,
@@ -288,7 +289,7 @@ export function ClosureIntakeDialog({
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
-  const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+  const MAX_UPLOAD_SIZE = EMAIL_MESSAGE_MAX_BYTES;
   const ALLOWED_UPLOAD_TYPES = new Set([
     "image/png", "image/jpeg", "image/gif", "image/webp",
     "image/heic", "image/heif", "image/tiff", "image/bmp",
@@ -301,7 +302,7 @@ export function ClosureIntakeDialog({
       return;
     }
     if (file.size > MAX_UPLOAD_SIZE) {
-      toast({ title: "File too large", description: "Please upload a file smaller than 50 MB.", variant: "destructive" });
+      toast({ title: "File too large", description: `This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB — emails are capped at 25 MB total. Please compress or split it before uploading.`, variant: "destructive" });
       return;
     }
     setUploading(true);

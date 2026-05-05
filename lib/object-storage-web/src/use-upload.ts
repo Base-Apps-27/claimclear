@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { MAX_UPLOAD_SIZE_BYTES } from "@workspace/api-zod";
 
 const ALLOWED_UPLOAD_TYPES = new Set([
   "image/png",
@@ -12,7 +13,7 @@ const ALLOWED_UPLOAD_TYPES = new Set([
   "application/pdf",
 ]);
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE_BYTES;
 
 interface UploadResponse {
   objectPath: string;
@@ -34,7 +35,7 @@ interface UseUploadOptions {
  * File bytes are sent directly to the API server, which validates the content
  * type against an allowlist (image/png, image/jpeg, image/gif, image/webp,
  * image/heic, image/heif, image/tiff, image/bmp, application/pdf), enforces a
- * 50 MB size limit while streaming to object storage, and returns the resulting
+ * 25 MB size limit while streaming to object storage, and returns the resulting
  * object path. No presigned URLs are issued.
  *
  * @example

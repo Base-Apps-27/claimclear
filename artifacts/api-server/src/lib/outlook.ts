@@ -1,5 +1,9 @@
 // Microsoft Outlook integration via Replit connector (Microsoft Graph API)
 import { Client } from "@microsoft/microsoft-graph-client";
+import {
+  EMAIL_MESSAGE_MAX_BYTES,
+  INLINE_ATTACHMENT_THRESHOLD_BYTES,
+} from "@workspace/api-zod";
 
 let connectionSettings: any;
 
@@ -76,10 +80,87 @@ export interface SendEmailResult {
   conversationId: string | null;
 }
 
-// Microsoft Graph caps inline ("fileAttachment") payloads at ~3 MB total per
-// message. Anything larger requires the upload-session API. We refuse early
-// with a clear error rather than letting Graph reject mid-send.
-const INLINE_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
+// Per-chunk size for the upload-session PUTs. Graph's documented hard cap is
+// ~4 MB; we use 3.2 MB to stay well under that and to align with a number
+// that's an exact multiple of the 320 KiB block size Graph prefers.
+const UPLOAD_SESSION_CHUNK_BYTES = 320 * 1024 * 10; // 3,276,800 bytes (3.125 MB)
+
+/**
+ * Attach a single `EmailAttachment` to an existing draft message. Routes to
+ * Graph's inline `fileAttachment` POST when the payload is at or below
+ * `INLINE_ATTACHMENT_THRESHOLD_BYTES`, otherwise opens an upload-session and
+ * uploads the file in `UPLOAD_SESSION_CHUNK_BYTES` chunks via authenticated-
+ * once `uploadUrl` PUTs.
+ *
+ * Exported (and accepts an optional `httpFetch` injection) so the upload
+ * routing can be unit-tested without a live Graph client.
+ */
+export async function attachToDraft(
+  client: Pick<Client, "api">,
+  messageId: string,
+  attachment: EmailAttachment,
+  opts: { httpFetch?: typeof fetch } = {},
+): Promise<{ kind: "inline" | "upload_session"; chunks?: number }> {
+  const httpFetch = opts.httpFetch ?? globalThis.fetch;
+  const size = attachment.content.length;
+  const contentType = attachment.contentType || "application/octet-stream";
+
+  if (size <= INLINE_ATTACHMENT_THRESHOLD_BYTES) {
+    await client.api(`/me/messages/${messageId}/attachments`).post({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: attachment.name,
+      contentType,
+      contentBytes: attachment.content.toString("base64"),
+    });
+    return { kind: "inline" };
+  }
+
+  // Upload-session flow. The createUploadSession POST is authenticated via
+  // the Graph client; the returned `uploadUrl` is pre-authorized and must
+  // be PUT to *without* the bearer token.
+  const session = await client
+    .api(`/me/messages/${messageId}/attachments/createUploadSession`)
+    .post({
+      AttachmentItem: {
+        attachmentType: "file",
+        name: attachment.name,
+        size,
+        contentType,
+      },
+    });
+  const uploadUrl: string | undefined = session?.uploadUrl;
+  if (!uploadUrl) {
+    throw new Error(
+      `Outlook createUploadSession did not return an uploadUrl for ${attachment.name}`,
+    );
+  }
+
+  let offset = 0;
+  let chunks = 0;
+  while (offset < size) {
+    const end = Math.min(offset + UPLOAD_SESSION_CHUNK_BYTES, size);
+    const slice = attachment.content.subarray(offset, end);
+    const res = await httpFetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Length": String(slice.length),
+        "Content-Range": `bytes ${offset}-${end - 1}/${size}`,
+      },
+      // Buffer is a Uint8Array view; cast to BodyInit so undici's typings
+      // accept it without a copy.
+      body: slice as unknown as BodyInit,
+    });
+    if (!res.ok && res.status !== 202) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Upload-session PUT for ${attachment.name} failed at bytes ${offset}-${end - 1}: ${res.status} ${body.slice(0, 200)}`,
+      );
+    }
+    chunks += 1;
+    offset = end;
+  }
+  return { kind: "upload_session", chunks };
+}
 
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const client = await getOutlookClient();
@@ -98,11 +179,10 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
 
   const attachments = options.attachments ?? [];
   const totalAttachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
-  if (totalAttachmentBytes > INLINE_ATTACHMENT_LIMIT_BYTES) {
+  if (totalAttachmentBytes > EMAIL_MESSAGE_MAX_BYTES) {
     throw new Error(
       `Email attachments total ${totalAttachmentBytes} bytes which exceeds the ` +
-      `${INLINE_ATTACHMENT_LIMIT_BYTES}-byte inline cap. Use a smaller attachment set ` +
-      `or implement the Graph upload-session flow.`,
+      `${EMAIL_MESSAGE_MAX_BYTES}-byte (25 MB) per-message cap.`,
     );
   }
 
@@ -119,22 +199,20 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     draft.ccRecipients = ccRecipients;
   }
 
-  if (attachments.length > 0) {
-    draft.attachments = attachments.map((a) => ({
-      "@odata.type": "#microsoft.graph.fileAttachment",
-      name: a.name,
-      contentType: a.contentType || "application/octet-stream",
-      contentBytes: a.content.toString("base64"),
-    }));
-  }
-
-  // Create a draft message so we can read back its id + conversationId
+  // Create the draft up front (without inline attachments) so we have a
+  // messageId to attach against — the upload-session route requires the
+  // draft to already exist, and routing per-attachment via `attachToDraft`
+  // lets a single mixed batch (small + large) work in one send.
   const created = await client.api("/me/messages").post(draft);
   const messageId: string = created?.id;
   const conversationId: string | null = created?.conversationId ?? null;
 
   if (!messageId) {
     throw new Error("Outlook draft create did not return an id");
+  }
+
+  for (const attachment of attachments) {
+    await attachToDraft(client, messageId, attachment);
   }
 
   await client.api(`/me/messages/${messageId}/send`).post({});
@@ -161,8 +239,9 @@ export interface ReplyToMessageOptions {
   cc?: string[];
   /**
    * Files to attach to the reply. Same `EmailAttachment` shape as `sendEmail`.
-   * Total payload must stay under the 3 MB inline cap; we POST each one to
-   * the draft's `/attachments` collection before sending.
+   * Total payload must stay under `EMAIL_MESSAGE_MAX_BYTES` (25 MB);
+   * per-attachment routing decides between the inline POST and the Graph
+   * upload-session flow based on `INLINE_ATTACHMENT_THRESHOLD_BYTES`.
    */
   attachments?: EmailAttachment[];
 }
@@ -205,25 +284,19 @@ export async function replyToMessage(options: ReplyToMessageOptions): Promise<Se
   }
   await client.api(`/me/messages/${messageId}`).patch(patch);
 
-  // 3. Attachments — POST one at a time onto the draft. Graph rejects
-  //    fileAttachments included in a PATCH body, so the dedicated
-  //    `/attachments` collection endpoint is the supported route.
+  // 3. Attachments — route each one through `attachToDraft`, which picks
+  //    the inline POST or the Graph upload-session PUT loop based on size.
+  //    A single mixed batch (one big + several small) works in one send.
   if (options.attachments && options.attachments.length > 0) {
     const totalAttachmentBytes = options.attachments.reduce((sum, a) => sum + a.content.length, 0);
-    if (totalAttachmentBytes > INLINE_ATTACHMENT_LIMIT_BYTES) {
+    if (totalAttachmentBytes > EMAIL_MESSAGE_MAX_BYTES) {
       throw new Error(
         `Reply attachments total ${totalAttachmentBytes} bytes which exceeds the ` +
-        `${INLINE_ATTACHMENT_LIMIT_BYTES}-byte inline cap. Use a smaller attachment set ` +
-        `or implement the Graph upload-session flow.`,
+        `${EMAIL_MESSAGE_MAX_BYTES}-byte (25 MB) per-message cap.`,
       );
     }
     for (const attachment of options.attachments) {
-      await client.api(`/me/messages/${messageId}/attachments`).post({
-        "@odata.type": "#microsoft.graph.fileAttachment",
-        name: attachment.name,
-        contentType: attachment.contentType || "application/octet-stream",
-        contentBytes: attachment.content.toString("base64"),
-      });
+      await attachToDraft(client, messageId, attachment);
     }
   }
 

@@ -57,6 +57,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
+    "@workspace/api-zod": "workspace:*",
     "@workspace/object-storage-web": "workspace:*",
     "@workspace/replit-auth-web": "workspace:*",
     "class-variance-authority": "catalog:",

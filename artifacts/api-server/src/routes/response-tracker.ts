@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, or, inArray } from "drizzle-orm";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -734,10 +735,12 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
       .map((id) => evidenceRows.find((r) => r.id === id))
       .filter((r): r is typeof evidenceRows[number] => Boolean(r));
     const urls: string[] = [];
-    // Mirror the inline cap enforced inside `outlook.replyToMessage` so we
-    // can fail before touching the network when staff pick a single file
-    // that's already known to be too large for Graph's inline path.
-    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+    // Mirror the per-message cap enforced inside `outlook.replyToMessage`.
+    // We additionally tally the running total so a batch that fits each
+    // single-file check but blows the 25 MB per-message cap is rejected
+    // here, before any Graph call.
+    const MAX_TOTAL_BYTES = EMAIL_MESSAGE_MAX_BYTES;
+    let totalAttachmentBytes = 0;
     const objectStorage = new ObjectStorageService();
     for (const row of orderedRows) {
       if (!row.imageUrl || row.imageUrl.trim().length === 0) {
@@ -762,9 +765,16 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
         const size = typeof metadata.size === "number"
           ? metadata.size
           : Number(metadata.size ?? 0);
-        if (size > MAX_ATTACHMENT_BYTES) {
+        if (size > MAX_TOTAL_BYTES) {
           res.status(400).json({
-            error: `Evidence #${row.id} (${row.evidenceTypeName}) is ${(size / (1024 * 1024)).toFixed(1)}MB. Max attachment size is 3MB.`,
+            error: `Evidence #${row.id} (${row.evidenceTypeName}) is ${(size / (1024 * 1024)).toFixed(1)} MB. Emails are capped at 25 MB total.`,
+          });
+          return;
+        }
+        totalAttachmentBytes += size;
+        if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
+          res.status(400).json({
+            error: `Selected attachments total ${(totalAttachmentBytes / (1024 * 1024)).toFixed(1)} MB. Emails are capped at 25 MB total — please remove or split some files.`,
           });
           return;
         }

@@ -5,11 +5,12 @@
 // without dragging in the dispute-send pipeline.
 
 import path from "path";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import { ObjectStorageService } from "./objectStorage";
 import type { EmailAttachment } from "./outlook";
 import { logger } from "./logger";
 
-const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = EMAIL_MESSAGE_MAX_BYTES;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export async function downloadAttachment(
