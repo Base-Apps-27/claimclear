@@ -1,58 +1,43 @@
 import { eq } from "drizzle-orm";
 import { db, claimsTable } from "@workspace/db";
-import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
+import {
+  buildLegResolvedIndex,
+  RESOLVED_LEG_SUB_STATUSES,
+  type LegForResolvedCheck,
+} from "@workspace/leg-state";
 import { verifyBotToken } from "./bot-token";
 import type { Request } from "express";
 
-// Terminal sub-statuses that satisfy the readiness gate. A `duplicate` leg
-// is conditionally resolved — it satisfies the gate iff its primary is in
-// this set. See `allDisputedLegsResolved` below.
-export const RESOLVED_LEG_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set([
-  "ready",
-  "dropped",
-  "excluded",
-]);
+// Re-export the terminal-status set for the few places (currently
+// `routes/invoice-groups.ts`) that import it from here. The set itself
+// lives in `@workspace/leg-state` so the React client and the
+// api-server cannot drift on what counts as a concluded leg.
+export { RESOLVED_LEG_SUB_STATUSES };
 
 /**
  * Pure resolution check used by the portal-submission gate. Exposed for
  * unit testing — callers in production should use `allDisputedLegsResolved`
- * which loads the rows from the DB. See the integration test for the
- * `duplicate→excluded-primary` regression that motivated this split.
+ * which loads the rows from the DB. The per-leg "is this concluded?" rule
+ * (including the sibling-duplicate→primary fan-out) lives in
+ * `@workspace/leg-state`'s `buildLegResolvedIndex`; this function only
+ * adds the gate aggregation (`disputed` filter + unresolved count + the
+ * "must have at least one disputed leg" requirement) on top of it.
  */
 export function evaluateDisputedLegsResolved<
-  L extends Parameters<typeof deriveLegSubStatus>[0] & {
-    id: number;
-    includedInDispute: boolean | null;
-    duplicateOfClaimId: number | null;
-  },
+  L extends LegForResolvedCheck & { includedInDispute: boolean | null },
 >(legs: readonly L[]): { ok: boolean; unresolved: number } {
-  // Pre-compute every leg's sub-status — NOT just the disputed subset —
-  // because a `duplicate` leg's gate is checked against its primary, and
-  // the primary may legitimately be excluded (`includedInDispute=false`).
-  // If we only mapped disputed legs, an excluded primary would look
-  // "missing" and the duplicate would be falsely counted as unresolved.
-  const subStatusById = new Map<number, LegSubStatus>();
-  for (const l of legs) {
-    subStatusById.set(l.id, deriveLegSubStatus(l));
-  }
-
+  // Hand the FULL leg list to the shared index — NOT just the disputed
+  // subset — because a `duplicate` leg's gate is checked against its
+  // primary, and the primary may legitimately be excluded
+  // (`includedInDispute=false`). Limiting the index to disputed legs
+  // would make an excluded primary look "missing" and the duplicate
+  // would be falsely counted as unresolved. Pinned by
+  // `disputed-legs-resolved.test.ts`.
+  const index = buildLegResolvedIndex(legs);
   const disputed = legs.filter((l) => l.includedInDispute);
-
   let unresolved = 0;
   for (const l of disputed) {
-    const sub = subStatusById.get(l.id)!;
-    if (sub === "duplicate") {
-      // A sibling duplicate satisfies the gate only when its primary has
-      // reached a terminal sub-status. If the primary is mid-walk (or
-      // gets reclassified back), the gate naturally re-locks.
-      const primaryId = l.duplicateOfClaimId;
-      const primarySub = primaryId != null ? subStatusById.get(primaryId) : undefined;
-      if (!primarySub || !RESOLVED_LEG_SUB_STATUSES.has(primarySub)) {
-        unresolved++;
-      }
-      continue;
-    }
-    if (!RESOLVED_LEG_SUB_STATUSES.has(sub)) unresolved++;
+    if (!index.isLegResolved(l)) unresolved++;
   }
   return { ok: unresolved === 0 && disputed.length > 0, unresolved };
 }

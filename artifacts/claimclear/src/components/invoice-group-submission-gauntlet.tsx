@@ -33,7 +33,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
-import { buildLegResolvedIndex } from "@/lib/leg-resolved";
+import { buildLegResolvedIndex } from "@workspace/leg-state";
 
 // Submission gauntlet — readback → preview → submit, extracted from
 // invoice-group-detail-v2 so the inline queue workspace renders the same

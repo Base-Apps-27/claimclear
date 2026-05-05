@@ -1,10 +1,7 @@
-// Single source of truth for the "leg has reached a conclusion?" rule on
-// the client. Both the queue's per-leg row (LegConclusionRow) and the
-// invoice-group submission gauntlet (InvoiceGroupSubmissionGauntlet) ask
-// this question, and they MUST stay aligned with the backend's
-// `evaluateDisputedLegsResolved` in
-// `artifacts/api-server/src/lib/group-readiness.ts` so the UI gate and
-// the server-side gate move together.
+// Single source of truth for the "is this leg concluded?" rule. Both
+// the React client (queue's per-leg row + invoice-group submission
+// gauntlet) and the api-server's portal-submission gate import from
+// here so the UI gate and the server-side gate cannot drift.
 //
 // The rule:
 //   - A leg whose derived sub-status is in RESOLVED_LEG_SUB_STATUSES
@@ -12,21 +9,23 @@
 //   - A `duplicate` leg is resolved iff its primary leg
 //     (`duplicateOfClaimId`) is itself in RESOLVED_LEG_SUB_STATUSES.
 //     If the primary is mid-walk (or gets reclassified back), the
-//     duplicate becomes unresolved again — same semantics as the
-//     backend gate.
+//     duplicate becomes unresolved again.
 //
-// Implementation detail mirrored from the backend: we pre-compute
-// sub-statuses across the FULL leg list (including excluded primaries),
-// not just the disputed subset, because a duplicate's primary may be
-// excluded (`includedInDispute=false`). Limiting the index to disputed
-// legs would make an excluded primary look "missing" and falsely flag
-// the duplicate as unresolved.
+// Implementation detail: we pre-compute sub-statuses across the FULL
+// leg list (including excluded primaries), not just the disputed
+// subset, because a duplicate's primary may be excluded
+// (`includedInDispute=false`). Limiting the index to disputed legs
+// would make an excluded primary look "missing" and falsely flag the
+// duplicate as unresolved.
 
+// Import the derivation symbols from the leaf module rather than from
+// `./index` — `index.ts` re-exports this file, so going through the
+// barrel would create a `index <-> leg-resolved` cycle.
 import {
   deriveLegSubStatus,
   type LegForSubStatus,
   type LegSubStatus,
-} from "@workspace/leg-state";
+} from "./per-leg-sub-status";
 
 export const RESOLVED_LEG_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set([
   "ready",
@@ -34,8 +33,8 @@ export const RESOLVED_LEG_SUB_STATUSES: ReadonlySet<LegSubStatus> = new Set([
   "excluded",
 ]);
 
-// Minimal shape required for the resolved check. Compatible with
-// ClaimResponse (which has `id` plus the leg-state fields).
+// Minimal shape required for the resolved check. Compatible with the
+// React client's ClaimResponse and the api-server's claims row alike.
 export interface LegForResolvedCheck extends LegForSubStatus {
   id: number;
   duplicateOfClaimId?: number | null;

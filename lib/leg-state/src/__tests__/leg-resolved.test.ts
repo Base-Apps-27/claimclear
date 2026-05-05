@@ -1,7 +1,10 @@
-// Pure-helper tests for the client-side "leg has reached a conclusion?"
-// rule. Pinned here so a future tweak that diverges from the backend's
-// `evaluateDisputedLegsResolved` (in `artifacts/api-server/src/lib/group-readiness.ts`)
-// is caught at the package boundary instead of in a flaky e2e.
+// Pure-helper tests for the shared "is this leg concluded?" rule. Both
+// the React client (queue per-leg row + submission gauntlet) and the
+// api-server's portal-submission gate consume this same module, so a
+// regression here trips the package-level CI before either surface
+// gets a chance to drift. (Companion fixture coverage:
+// `artifacts/api-server/src/__tests__/disputed-legs-resolved.test.ts`,
+// which exercises the gate aggregator built on top of this helper.)
 
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
@@ -10,12 +13,7 @@ import {
   buildLegResolvedIndex,
   RESOLVED_LEG_SUB_STATUSES,
   type LegForResolvedCheck,
-} from "./leg-resolved";
-
-// Convenience: the backend's `evaluateDisputedLegsResolved` covers the
-// canonical fixtures (excluded primary, mid-walk primary, terminal
-// primary). The client tests below mirror the same scenarios so both
-// surfaces stay in lockstep.
+} from "../leg-resolved";
 
 const ready: Partial<LegForResolvedCheck> = {
   errorTypeId: "ET-1",
@@ -39,9 +37,7 @@ function leg(id: number, overrides: Partial<LegForResolvedCheck> = {}): LegForRe
   };
 }
 
-test("RESOLVED_LEG_SUB_STATUSES matches the backend reference set", () => {
-  // If this trips, mirror the change in
-  // `artifacts/api-server/src/lib/group-readiness.ts` first.
+test("RESOLVED_LEG_SUB_STATUSES is exactly {ready, dropped, excluded}", () => {
   assert.deepEqual(
     [...RESOLVED_LEG_SUB_STATUSES].sort(),
     ["dropped", "excluded", "ready"],
@@ -89,10 +85,10 @@ test("clearing the primary's terminal state re-locks the duplicate", () => {
 });
 
 test("an excluded primary still satisfies the duplicate's gate", () => {
-  // Same edge case the backend test in
-  // `evaluateDisputedLegsResolved` covers: a duplicate whose primary
-  // was removed from the dispute (`includedInDispute=false`) derives
-  // to `excluded`, which IS a terminal sub-status.
+  // A duplicate whose primary was removed from the dispute
+  // (`includedInDispute=false`) derives to `excluded`, which IS a
+  // terminal sub-status. The companion api-server test
+  // (`disputed-legs-resolved.test.ts`) pins the same regression.
   const excludedPrimary = leg(589, { includedInDispute: false });
   const duplicate = leg(588, { duplicateOfClaimId: 589 });
   const idx = buildLegResolvedIndex([excludedPrimary, duplicate]);
@@ -117,10 +113,6 @@ test("a duplicate with a NULL primary id is unresolved (defensive)", () => {
     id: 588,
     includedInDispute: true,
     duplicateOfClaimId: null,
-    // Force the duplicate sub-status by hand — normally
-    // deriveLegSubStatus returns "duplicate" because of the pointer.
-    // With the pointer null, the leg derives to needs_classification,
-    // which is also unresolved. Either way, gate is locked.
   };
   const idx = buildLegResolvedIndex([duplicate]);
   assert.equal(idx.isLegResolved(duplicate), false);

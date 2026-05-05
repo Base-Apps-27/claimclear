@@ -34,7 +34,7 @@ import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { useAuth } from "@workspace/replit-auth-web";
-import { buildLegResolvedIndex } from "@/lib/leg-resolved";
+import { buildLegResolvedIndex } from "@workspace/leg-state";
 
 // ─────────────────────────────────────────────────────────────────────────
 // LegConclusionRow — the Queue Panel A row.
