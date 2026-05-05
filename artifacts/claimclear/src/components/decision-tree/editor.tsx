@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { ALLOWED_EVIDENCE_TYPES, MAX_EVIDENCE_SIZE, extractClipboardFiles } from "./evidence-paste";
+import { EvidencePasteUpload } from "./evidence-paste-upload";
 import {
   type DecisionTree,
   type TreeNode,
@@ -39,7 +41,7 @@ import {
   FileText, Play, GitBranch, ArrowRight, Layers,
   Send, Ban, PauseCircle, Mail, Info, Image as ImageIcon,
   Settings, Trash2, GripVertical, Maximize, ZoomIn, ZoomOut, RotateCcw,
-  Upload, ExternalLink, Loader2, ClipboardPaste,
+  ExternalLink, Loader2,
   XCircle, FileX,
 } from "lucide-react";
 import {
@@ -804,7 +806,8 @@ function NodeSettingsPopover({
   );
 }
 
-function InstructionImageUploader({
+// Exported for editor.test.tsx.
+export function InstructionImageUploader({
   imagePath,
   imageUrl,
   onUploaded,
@@ -815,20 +818,12 @@ function InstructionImageUploader({
   onUploaded: (path: string) => void;
   onRemove: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
-  const MAX_IMG_SIZE = 50 * 1024 * 1024;
-  const ALLOWED_IMG_TYPES = new Set([
-    "image/png", "image/jpeg", "image/gif", "image/webp",
-    "image/heic", "image/heif", "image/tiff", "image/bmp",
-  ]);
-
   const handleFile = useCallback(async (file: File) => {
-    if (!ALLOWED_IMG_TYPES.has(file.type)) return;
-    if (file.size > MAX_IMG_SIZE) return;
+    if (!ALLOWED_EVIDENCE_TYPES.has(file.type) || file.type === "application/pdf") return;
+    if (file.size > MAX_EVIDENCE_SIZE) return;
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {
@@ -850,41 +845,6 @@ function InstructionImageUploader({
       setUploading(false);
     }
   }, [onUploaded]);
-
-  const handlePasteImage = useCallback(async () => {
-    try {
-      const clipboardItems = await navigator.clipboard.read();
-      for (const item of clipboardItems) {
-        const imageType = item.types.find((t) => t.startsWith("image/"));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const ext = imageType.split("/")[1] || "png";
-          const file = new File([blob], `pasted-image.${ext}`, { type: imageType });
-          handleFile(file);
-          return;
-        }
-      }
-    } catch {}
-  }, [handleFile]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const handler = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of Array.from(items)) {
-        if (item.type.startsWith("image/")) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) handleFile(file);
-          return;
-        }
-      }
-    };
-    el.addEventListener("paste", handler);
-    return () => el.removeEventListener("paste", handler);
-  }, [handleFile]);
 
   const currentSrc = preview
     || (imagePath?.startsWith("/objects/") ? `/api/storage${imagePath}` : imagePath)
@@ -913,37 +873,20 @@ function InstructionImageUploader({
   }
 
   return (
-    <div ref={containerRef} className="flex gap-2" tabIndex={0}>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-        }}
+    <div
+      className="flex gap-2"
+      tabIndex={0}
+      onPaste={(e) =>
+        extractClipboardFiles(e.clipboardData, { acceptPdf: false }).forEach(handleFile)
+      }
+      data-testid="instruction-image-paste-zone"
+    >
+      <EvidencePasteUpload
+        onFile={handleFile}
+        acceptPdf={false}
+        testIdPrefix="instruction-image"
+        uploadLabels={{ empty: "Upload", more: "Replace" }}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="text-xs gap-1 h-7"
-        onClick={() => inputRef.current?.click()}
-      >
-        <Upload className="h-3 w-3" />
-        Upload
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="text-xs gap-1 h-7"
-        onClick={handlePasteImage}
-      >
-        <ClipboardPaste className="h-3 w-3" />
-        Paste
-      </Button>
     </div>
   );
 }

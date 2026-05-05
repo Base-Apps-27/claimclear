@@ -25,10 +25,11 @@ import {
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import {
-  TreeEditor, TreePreview, TreePlayer, PlainTextEditor,
+  TreeEditor, TreePreview, PlainTextEditor,
   type DecisionTree, type LegacyTreeNode,
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
+import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 
 
 function ConversationalWizard({
@@ -800,11 +801,7 @@ export default function ErrorTypes() {
             <DialogTitle>Test Decision Tree</DialogTitle>
           </DialogHeader>
           {testTree && (
-            <TreePlayer
-              tree={testTree}
-              onOutcome={() => {}}
-              isTestMode
-            />
+            <SopAdvancePlayer mode="preview" tree={testTree} />
           )}
         </DialogContent>
       </Dialog>

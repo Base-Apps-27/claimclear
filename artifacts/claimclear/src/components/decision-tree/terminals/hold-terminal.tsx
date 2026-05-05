@@ -1,5 +1,5 @@
 // Hold terminal. Byte-equivalent to the pre-refactor block in
-// `sop-advance-player.tsx` (Guard #3). Resume / clear-sop-hold /
+// the live SOP player (Guard #3). Resume / clear-sop-hold /
 // stale-tree fallback are the operator-critical paths.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";

@@ -1,8 +1,8 @@
-// Task #372 — SOP-advance player tests. The render layer is exercised
-// via renderToStaticMarkup (no jsdom); the satisfaction predicate is
-// exercised directly because it owns the central guarantee: required
-// evidence is satisfied ONLY by a real attachment or non-empty text,
-// never by an "acknowledged" checkbox short-circuit.
+// SOP-advance player render + state tests. Static render via
+// renderToStaticMarkup; the satisfaction predicate is exercised
+// directly. Pure paste helpers are tested in `evidence-paste.test.ts`,
+// and the interaction-driven preview walk lives in
+// `sop-advance-player-preview-walk.test.tsx`.
 
 import * as React from "react";
 import { test } from "node:test";
@@ -12,8 +12,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   SopAdvancePlayer,
   isReqSatisfied,
-  extractClipboardFiles,
-  pasteFromClipboard,
 } from "./sop-advance-player";
 import type { DecisionTree, EvidenceReq } from "./types";
 
@@ -76,7 +74,7 @@ test("SopAdvancePlayer renders helpText, instructionText, instructionImage, inst
   assert.match(html, /data-testid="sop-evidence-blocked"/);
 });
 
-test("SopAdvancePlayer: there is NO 'acknowledged' checkbox in the evidence row (Task #372 false-satisfy removal)", () => {
+test("SopAdvancePlayer: there is NO 'acknowledged' checkbox in the evidence row", () => {
   const html = render(
     <SopAdvancePlayer
       leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
@@ -191,15 +189,13 @@ test("isReqSatisfied: required text — persisted note → satisfied", () => {
   );
 });
 
-// ---------------------------------------------------------------------------
-// Paste-from-clipboard support — code review explicitly required this
-// alongside the file-picker upload. The render layer mounts a
-// `paste-zone` testid on each image-accepting evidence row, and the
-// pure helper `extractClipboardFiles` filters DataTransfer entries to
-// the SOP-evidence allowlist. Tested directly so jsdom isn't needed.
-// ---------------------------------------------------------------------------
+// EvidenceReqRow render contract — pin every test-id the row exposes so
+// future edits to either consumer of `EvidencePasteUpload` (this row OR
+// the instruction-image uploader in editor.tsx) can't silently drop a
+// button. The primitive itself is the single source of truth; these
+// tests verify the consumer mounts it.
 
-test("SopAdvancePlayer: image-accepting evidence rows expose a clipboard paste zone (review-fix: paste-from-clipboard)", () => {
+test("SopAdvancePlayer: image-accepting evidence rows expose a clipboard paste zone", () => {
   const html = render(
     <SopAdvancePlayer
       leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
@@ -211,11 +207,10 @@ test("SopAdvancePlayer: image-accepting evidence rows expose a clipboard paste z
   assert.match(html, /data-testid="sop-evidence-req-gps_screenshot-paste-zone"/);
 });
 
-// Task #415 — the redundant italic "or paste a screenshot" hint was
-// removed once the explicit Paste button was restored. If a future
-// edit re-introduces it the row will look noisy; this test pins the
-// removal.
-test("SopAdvancePlayer: the redundant 'or paste a screenshot' italic hint is gone (Task #415 cleanup)", () => {
+test("SopAdvancePlayer: the redundant 'or paste a screenshot' italic hint is gone", () => {
+  // The italic "or paste a screenshot" hint was removed once the
+  // explicit Paste button was restored. If a future edit re-introduces
+  // it the row will look noisy; this test pins the removal.
   const html = render(
     <SopAdvancePlayer
       leg={{ id: 1, sopOutcome: null, sopNodeId: null, sopAnswers: [], invoiceGroupId: 9, duplicateOfClaimId: null, dropReason: null, perLegContext: null }}
@@ -228,73 +223,6 @@ test("SopAdvancePlayer: the redundant 'or paste a screenshot' italic hint is gon
     "the italic hint should be replaced by the explicit Paste button",
   );
 });
-
-function fakeDataTransfer(items: Array<{ kind: "file" | "string"; type: string; file?: File }>): DataTransfer {
-  return {
-    items: {
-      length: items.length,
-      // Indexed access via for-loop in extractClipboardFiles — back the
-      // length+numeric-index protocol with a Proxy-free fixture.
-      ...Object.fromEntries(items.map((it, i) => [i, {
-        kind: it.kind,
-        type: it.type,
-        getAsFile: () => it.file ?? null,
-      }])),
-    },
-  } as unknown as DataTransfer;
-}
-
-test("extractClipboardFiles: returns image File entries (the screenshot-paste happy path)", () => {
-  const png = new File(["x"], "shot.png", { type: "image/png" });
-  const got = extractClipboardFiles(fakeDataTransfer([
-    { kind: "file", type: "image/png", file: png },
-  ]));
-  assert.equal(got.length, 1);
-  assert.equal(got[0].type, "image/png");
-});
-
-test("extractClipboardFiles: skips string-kind entries (plain text paste must not become a file upload)", () => {
-  const got = extractClipboardFiles(fakeDataTransfer([
-    { kind: "string", type: "text/plain" },
-  ]));
-  assert.equal(got.length, 0);
-});
-
-test("extractClipboardFiles: skips file-kind entries whose MIME isn't on the SOP-evidence allowlist", () => {
-  const exe = new File(["x"], "evil.exe", { type: "application/x-msdownload" });
-  const got = extractClipboardFiles(fakeDataTransfer([
-    { kind: "file", type: "application/x-msdownload", file: exe },
-  ]));
-  assert.equal(got.length, 0);
-});
-
-test("extractClipboardFiles: PDF is in the allowlist (operators routinely paste copied PDFs)", () => {
-  const pdf = new File(["x"], "doc.pdf", { type: "application/pdf" });
-  const got = extractClipboardFiles(fakeDataTransfer([
-    { kind: "file", type: "application/pdf", file: pdf },
-  ]));
-  assert.equal(got.length, 1);
-});
-
-test("extractClipboardFiles: null/undefined DataTransfer → []", () => {
-  assert.deepEqual(extractClipboardFiles(null), []);
-  assert.deepEqual(extractClipboardFiles(undefined), []);
-});
-
-// ---------------------------------------------------------------------------
-// Task #415 — explicit one-click "Paste" button. The button uses the
-// Async Clipboard API (`navigator.clipboard.read`) so it can read a
-// screenshot the user has already copied to the OS clipboard, with no
-// drop-zone focus required. We test:
-//   (a) the button only renders when the API is available,
-//   (b)/(c)/(d) the click-handler logic via the pure `pasteFromClipboard`
-//       helper — image is uploaded, missing image fires the toast hook,
-//       disallowed MIME is ignored,
-//   (e) the button is disabled when the row is disabled.
-// renderToStaticMarkup can't fire DOM events, so the click logic is
-// tested through the pure helper (the same pattern `extractClipboardFiles`
-// uses for the keyboard-paste flow).
-// ---------------------------------------------------------------------------
 
 function withNavigator<T>(value: unknown, fn: () => T): T {
   const desc = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -311,7 +239,7 @@ function withNavigator<T>(value: unknown, fn: () => T): T {
   }
 }
 
-test("Paste button: hidden when navigator.clipboard.read is not available (Task #415, older-Safari fallback)", () => {
+test("Paste button: hidden when navigator.clipboard.read is not available (older-Safari fallback)", () => {
   const html = withNavigator({ userAgent: "test" }, () =>
     render(
       <SopAdvancePlayer
@@ -346,7 +274,7 @@ test("Paste button: rendered when navigator.clipboard.read is available", () => 
   assert.match(html, /title="Paste from clipboard \(Ctrl\/Cmd\+V\)"/);
 });
 
-test("Paste button: disabled when the evidence row is disabled (Task #415, gating parity with Upload)", () => {
+test("Paste button: disabled when the evidence row is disabled (gating parity with Upload)", () => {
   const html = withNavigator(
     { clipboard: { read: async () => [] } },
     () =>
@@ -367,64 +295,166 @@ test("Paste button: disabled when the evidence row is disabled (Task #415, gatin
   assert.match(m![0], /\bdisabled\b/);
 });
 
-function fakeClipboardItem(entries: Array<{ mime: string; blob: Blob }>): ClipboardItem {
-  return {
-    types: entries.map((e) => e.mime),
-    getType: async (mime: string) => {
-      const hit = entries.find((e) => e.mime === mime);
-      if (!hit) throw new Error(`no entry for ${mime}`);
-      return hit.blob;
+// Task #416 — Preview mode. The admin "Test Decision Tree" dialog
+// renders SopAdvancePlayer with `mode="preview"`, replacing the
+// previous standalone admin player. Preview mode must:
+//   - render WITHOUT a `leg` prop (synthesizes a stub from local state),
+//   - surface a Test-Mode badge so operators know nothing is being
+//     written,
+//   - NOT mount the live `PerLegContextEditor` (no leg.id to bind to).
+
+const simpleTestTree: DecisionTree = {
+  rootId: "q1",
+  nodes: [
+    {
+      id: "q1",
+      question: "Is the rider verified?",
+      options: [
+        { label: "Yes", childId: "q2" },
+        { label: "No", outcomeType: "cannot_dispute", outcomeLabel: "Cannot dispute" },
+      ],
     },
-  } as unknown as ClipboardItem;
-}
+    {
+      id: "q2",
+      question: "Did pickup match?",
+      options: [
+        { label: "Match", outcomeType: "portal_dispute", outcomeLabel: "Portal" },
+        { label: "Mismatch", outcomeType: "internal", outcomeLabel: "Internal" },
+      ],
+    },
+  ],
+};
 
-test("pasteFromClipboard: allowed image on the clipboard → onUpload called with that file (Task #415 happy path)", async () => {
-  const png = new Blob(["x"], { type: "image/png" });
-  const uploads: File[] = [];
-  let nothingFoundCalls = 0;
-  await pasteFromClipboard({
-    read: async () => [fakeClipboardItem([{ mime: "image/png", blob: png }])],
-    onUpload: (f) => uploads.push(f),
-    onNothingFound: () => { nothingFoundCalls++; },
-  });
-  assert.equal(uploads.length, 1);
-  assert.equal(uploads[0].type, "image/png");
-  assert.equal(nothingFoundCalls, 0);
+test("SopAdvancePlayer: preview mode renders WITHOUT a leg prop and shows the Test-Mode badge", () => {
+  const html = render(
+    <SopAdvancePlayer mode="preview" tree={simpleTestTree} />,
+  );
+  // The Test-Mode badge anchors operator awareness.
+  assert.match(html, /data-testid="sop-preview-mode-badge"/);
+  assert.match(html, /Test Mode/);
+  // The first question still renders just like live.
+  assert.match(html, /Is the rider verified\?/);
+  // Both options should render.
+  assert.match(html, /data-testid="sop-option-0"/);
+  assert.match(html, /data-testid="sop-option-1"/);
 });
 
-test("pasteFromClipboard: empty clipboard → friendly-toast hook fires, onUpload is NOT called", async () => {
-  const uploads: File[] = [];
-  let nothingFoundCalls = 0;
-  await pasteFromClipboard({
-    read: async () => [],
-    onUpload: (f) => uploads.push(f),
-    onNothingFound: () => { nothingFoundCalls++; },
-  });
-  assert.equal(uploads.length, 0);
-  assert.equal(nothingFoundCalls, 1);
+test("SopAdvancePlayer: preview mode does NOT render the live PerLegContextEditor (no leg.id to bind)", () => {
+  const html = render(
+    <SopAdvancePlayer mode="preview" tree={simpleTestTree} />,
+  );
+  // The PerLegContextEditor mounts under `data-testid="per-leg-context-editor"`
+  // — preview mode must not render it.
+  assert.equal(
+    html.includes("per-leg-context-editor"),
+    false,
+    "PerLegContextEditor should not render in preview mode",
+  );
+  // And the include "Ready" card must not render either — preview
+  // walks land at a simple inline outcome card instead.
+  assert.equal(html.includes("sop-include-ready-card"), false);
 });
 
-test("pasteFromClipboard: clipboard MIME outside the SOP-evidence allowlist → onUpload NOT called", async () => {
-  const exe = new Blob(["x"], { type: "application/x-msdownload" });
-  const uploads: File[] = [];
-  let nothingFoundCalls = 0;
-  await pasteFromClipboard({
-    read: async () => [fakeClipboardItem([{ mime: "application/x-msdownload", blob: exe }])],
-    onUpload: (f) => uploads.push(f),
-    onNothingFound: () => { nothingFoundCalls++; },
-  });
-  assert.equal(uploads.length, 0);
-  assert.equal(nothingFoundCalls, 1);
+test("SopAdvancePlayer: preview mode with `initialState` at a terminal renders the inline outcome card with Undo + Restart", () => {
+  const html = render(
+    <SopAdvancePlayer
+      mode="preview"
+      tree={simpleTestTree}
+      initialState={{
+        currentNodeId: "q2",
+        answers: [
+          { nodeId: "q1", answer: "Yes", ts: "2026-01-01T00:00:00Z" },
+          { nodeId: "q2", answer: "Match", ts: "2026-01-01T00:01:00Z" },
+        ],
+        sopOutcome: "portal_dispute",
+      }}
+    />,
+  );
+  // The dedicated preview outcome card mounts.
+  assert.match(html, /data-testid="sop-preview-outcome-card"/);
+  assert.match(html, /data-testid="sop-preview-outcome-label"/);
+  // Both Undo and Restart buttons render.
+  assert.match(html, /data-testid="sop-preview-undo"/);
+  assert.match(html, /data-testid="sop-preview-restart"/);
+  // The breadcrumb of preview answers is visible.
+  assert.match(html, /data-testid="sop-breadcrumb"/);
+  // No live terminal screen renders (closed/hold/duplicate cards live
+  // under `sop-terminal-card`).
+  assert.equal(html.includes("sop-terminal-card"), false);
 });
 
-test("pasteFromClipboard: a rejected clipboard.read (permission denied) routes to onNothingFound, not onUpload", async () => {
-  const uploads: File[] = [];
-  let nothingFoundCalls = 0;
-  await pasteFromClipboard({
-    read: async () => { throw new Error("blocked"); },
-    onUpload: (f) => uploads.push(f),
-    onNothingFound: () => { nothingFoundCalls++; },
-  });
-  assert.equal(uploads.length, 0);
-  assert.equal(nothingFoundCalls, 1);
+test("SopAdvancePlayer: preview mode performs ZERO network calls during render (no useListClaimEvidence, no uploads, no SOP-advance mutations)", () => {
+  // Critical contract for the admin "Test Decision Tree" dialog:
+  // walking a tree in preview must not touch the API. The hook
+  // `useListClaimEvidence`, the upload mutation, and the
+  // SOP-advance mutation are all gated on `isPreview === false`,
+  // and synthesizePreviewLeg avoids needing a real leg id. If any
+  // future edit accidentally re-enables one of those paths in
+  // preview, this spy catches it.
+  const originalFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+  const fetchCalls: Array<{ url: string }> = [];
+  (globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL) => {
+    fetchCalls.push({ url: typeof input === "string" ? input : input.toString() });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    // Walk every reachable preview state for the rich tree (which
+    // has evidence requirements — the live path would otherwise
+    // call `useListClaimEvidence`):
+    //   1) initial render (no answers)
+    //   2) mid-walk (one answer)
+    //   3) terminal (sopOutcome set)
+    render(<SopAdvancePlayer mode="preview" tree={richTree} />);
+    render(
+      <SopAdvancePlayer
+        mode="preview"
+        tree={richTree}
+        initialState={{
+          currentNodeId: "n2",
+          answers: [{ nodeId: "n1", answer: "Yes, GPS available", ts: "2026-01-01T00:00:00Z" }],
+          sopOutcome: null,
+        }}
+      />,
+    );
+    render(
+      <SopAdvancePlayer
+        mode="preview"
+        tree={richTree}
+        initialState={{
+          currentNodeId: "n1",
+          answers: [{ nodeId: "n1", answer: "No GPS data", ts: "2026-01-01T00:00:00Z" }],
+          sopOutcome: "hold",
+        }}
+      />,
+    );
+  } finally {
+    if (originalFetch) (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+    else delete (globalThis as { fetch?: typeof fetch }).fetch;
+  }
+  assert.deepEqual(
+    fetchCalls,
+    [],
+    `preview mode must not perform any network requests; got: ${JSON.stringify(fetchCalls)}`,
+  );
+});
+
+test("SopAdvancePlayer: preview mode mounts Undo + Restart on the question card too (not only at terminal)", () => {
+  // After at least one answer the in-progress controls should be
+  // active so an operator can rewind during the walk.
+  const html = render(
+    <SopAdvancePlayer
+      mode="preview"
+      tree={simpleTestTree}
+      initialState={{
+        currentNodeId: "q2",
+        answers: [{ nodeId: "q1", answer: "Yes", ts: "2026-01-01T00:00:00Z" }],
+        sopOutcome: null,
+      }}
+    />,
+  );
+  assert.match(html, /data-testid="sop-preview-undo"/);
+  assert.match(html, /data-testid="sop-preview-restart"/);
+  // We're still on the question card (not the outcome card).
+  assert.equal(html.includes("sop-preview-outcome-card"), false);
+  assert.match(html, /Did pickup match\?/);
 });

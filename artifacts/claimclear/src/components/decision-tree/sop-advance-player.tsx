@@ -1,32 +1,22 @@
-// Task #372 — SOP-advance player. Renders the live walk for a leg's
-// decision tree, posting each step to /sop-advance so the server stays
-// the source of truth. Restored to full per-step fidelity here:
+// SOP-advance player. Renders the live walk for a leg's decision tree
+// and posts each step to /sop-advance so the server stays the source
+// of truth. Renders helpText, instructionText, instructionImage,
+// instructionLink, and per-step evidence capture (uploads + notes).
+// Required evidence is satisfied only by a real attachment or
+// non-empty text — never by an "acknowledged" checkbox.
 //
-//   - helpText, instructionText, instructionImage, instructionLink
-//     all render (parity with the test/preview `TreePlayer`).
-//   - evidenceRequirements render with a real per-step capture UI:
-//     image upload (per /api/storage/uploads) and free-form notes.
-//     The previous "acknowledged" checkbox is gone — required items
-//     are satisfied only by a real attachment or non-empty text.
-//   - Captured evidence is persisted via POST /api/claims/:id/evidence
-//     scoped to the current treeNodeId on every advance, so the leg
-//     page's existing evidence list and the dispute write-up bot pick
-//     it up automatically.
-//   - Previously-collected evidence for the current step (matched by
-//     treeNodeId via the existing useListClaimEvidence hook) is shown
-//     as read-only thumbnails / persisted-notes alongside any pending
-//     items the operator is still adding.
-//   - The pre-#372 autofill of `perLegContext` with a "• Q — A"
-//     breadcrumb is removed entirely. Per-leg unique context is now
-//     captured INLINE during the walk via the `PerLegContextEditor`
-//     panel (rendered below the question card on every step and on
-//     the inline "Ready" surface when the leg lands at an include
-//     outcome). The standalone "I'm done — hand off" Include terminal
-//     screen has been retired — the leg already lands in terminal
-//     state via the prior `/sop-advance` POST.
+// Discriminated by `mode`:
+//   - "live" (default): requires `leg`, posts to /sop-advance,
+//     persists evidence, renders live terminal sub-screens
+//     (closed/hold/duplicate, Include Ready, PerLegContextEditor).
+//   - "preview": no `leg`; local-only state advance; uploads and
+//     evidence list are no-ops; renders a generic inline outcome
+//     card with Undo/Restart instead of live terminals (those bind
+//     to leg id and fire server mutations, which preview must avoid).
+//     Used by the admin "Test Decision Tree" dialog.
 
 import * as React from "react";
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 void React; // JSX runtime: keep React in scope under tsx --test (jsxFactory=React.createElement).
@@ -34,6 +24,9 @@ import {
   type DecisionTree,
   type TreeNode,
   type EvidenceReq,
+  type OutcomeType,
+  OUTCOME_LABELS,
+  OUTCOME_COLORS,
   getMaxDepth,
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,10 +43,11 @@ import {
   Info,
   ExternalLink,
   FileText,
-  Upload,
   X,
   Paperclip,
-  ClipboardPaste,
+  FlaskConical,
+  Undo2,
+  RotateCcw,
 } from "lucide-react";
 import {
   terminalKindForLeg,
@@ -75,6 +69,12 @@ import {
   getListClaimEvidenceQueryKey,
 } from "@workspace/api-client-react";
 import type { ClaimEvidenceResponse } from "@workspace/api-client-react";
+import {
+  ALLOWED_EVIDENCE_TYPES,
+  MAX_EVIDENCE_SIZE,
+  extractClipboardFiles,
+} from "./evidence-paste";
+import { EvidencePasteUpload } from "./evidence-paste-upload";
 
 interface SopAnswerRow {
   nodeId: string;
@@ -87,27 +87,42 @@ interface LegLite extends TerminalLeg {
   sopAnswers?: unknown;
 }
 
-interface Props {
-  leg: LegLite;
+/** Optional in-memory state for preview mode. Lets a host (e.g. a
+ *  saved-progress sandbox) seed the walker mid-tree. The Test
+ *  Decision Tree dialog leaves it `undefined` and starts at the
+ *  root. */
+export interface SopAdvancePlayerPreviewState {
+  currentNodeId: string;
+  answers: SopAnswerRow[];
+  sopOutcome: string | null;
+}
+
+interface BaseProps {
   tree: DecisionTree;
   /** Disable advancing — typically when the parent surface is locked or
    *  the leg is in a terminal sub-status the operator must reclassify out
-   *  of first. Tree navigation buttons are still rendered (so the operator
-   *  can read the current question) but the answer choices are disabled. */
+   *  of first. */
   disabledReason?: string | null;
-  /** Called after a successful `/sop-advance` POST. Lets the parent refresh
-   *  related queries (group preview, leg list, etc) without this component
-   *  needing to know about them. */
+  /** Live mode only. Called after a successful `/sop-advance` POST. */
   onAdvanced?: (next: { isTerminal: boolean; sopOutcome: string | null }) => void;
-  /** Source for the include terminal's "Channel: …" hint. Owned by the
-   *  parent surface (`claim-detail-v2`) which already loads the
-   *  error-types list to render the badge in the leg header. */
+  /** Source for the include terminal's "Channel: …" hint. */
   errorType?: ErrorTypeChannelInput | null;
-  /** When set, the in-SOP sibling-detection prompt renders above the
-   *  first SOP question. The parent computes eligibility — see
-   *  `lib/sop-sibling-eligibility.ts`. */
+  /** Live mode only. Sibling-detection prompt above the first question. */
   siblingPrompt?: Omit<SiblingDuplicatePromptProps, "legId" | "invoiceGroupId"> | null;
 }
+
+interface LiveProps extends BaseProps {
+  mode?: "live";
+  leg: LegLite;
+}
+
+interface PreviewProps extends BaseProps {
+  mode: "preview";
+  /** Optional starting state. Defaults to `rootId` with no answers. */
+  initialState?: SopAdvancePlayerPreviewState;
+}
+
+type Props = LiveProps | PreviewProps;
 
 function apiBase(): string {
   return import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -134,22 +149,14 @@ interface PendingPerReq {
   notes: string;
 }
 
-const MAX_EVIDENCE_SIZE = 50 * 1024 * 1024;
-const ALLOWED_EVIDENCE_TYPES = new Set([
-  "image/png", "image/jpeg", "image/gif", "image/webp",
-  "image/heic", "image/heif", "image/tiff", "image/bmp",
-  "application/pdf",
-]);
-
 let __pendIdCounter = 0;
 const newPendingId = () => `pend_${Date.now().toString(36)}_${(++__pendIdCounter).toString(36)}`;
 
 /**
  * Pure: an evidence requirement is satisfied iff (and only iff) the
  * operator has supplied real content of the kind it accepts. There is
- * NO "acknowledged" checkbox short-circuit here — Task #372 explicitly
- * removed the false-satisfy shortcut so required items demand a real
- * attachment or non-empty notes.
+ * NO "acknowledged" checkbox short-circuit — required items demand a
+ * real attachment or non-empty notes.
  */
 export function isReqSatisfied(args: {
   req: EvidenceReq;
@@ -172,18 +179,56 @@ export function isReqSatisfied(args: {
   return false;
 }
 
-export function SopAdvancePlayer({
-  leg,
-  tree,
-  disabledReason,
-  onAdvanced,
-  errorType,
-  siblingPrompt,
-}: Props) {
+/** Synthetic leg used as the rendering source-of-truth in preview
+ *  mode. Mirrors the LegLite shape so the rest of the component is
+ *  identical to live. */
+function synthesizePreviewLeg(state: {
+  currentNodeId: string | null;
+  answers: SopAnswerRow[];
+  sopOutcome: string | null;
+}): LegLite {
+  return {
+    id: 0,
+    sopOutcome: state.sopOutcome,
+    sopNodeId: state.currentNodeId,
+    sopAnswers: state.answers,
+    invoiceGroupId: null,
+    duplicateOfClaimId: null,
+    dropReason: null,
+    perLegContext: null,
+  };
+}
+
+export function SopAdvancePlayer(props: Props) {
+  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt } = props;
+  const isPreview = props.mode === "preview";
   const qc = useQueryClient();
   const disabled = !!disabledReason;
-  const answers = useMemo(() => normalizeAnswers(leg.sopAnswers), [leg.sopAnswers]);
   const maxDepth = useMemo(() => getMaxDepth(tree), [tree]);
+
+  // Preview-mode local state. Hooks are always declared; they're inert
+  // in live mode because nothing reads them.
+  const previewInit = isPreview ? props.initialState : undefined;
+  const [previewNodeId, setPreviewNodeId] = useState<string | null>(
+    previewInit?.currentNodeId ?? tree.rootId,
+  );
+  const [previewAnswers, setPreviewAnswers] = useState<SopAnswerRow[]>(
+    previewInit?.answers ?? [],
+  );
+  const [previewSopOutcome, setPreviewSopOutcome] = useState<string | null>(
+    previewInit?.sopOutcome ?? null,
+  );
+
+  // Live uses the prop leg; preview synthesizes one from local state.
+  const leg: LegLite = isPreview
+    ? synthesizePreviewLeg({
+        currentNodeId: previewNodeId,
+        answers: previewAnswers,
+        sopOutcome: previewSopOutcome,
+      })
+    : props.leg;
+
+  const answers = useMemo(() => normalizeAnswers(leg.sopAnswers), [leg.sopAnswers]);
 
   const currentNodeId: string = leg.sopNodeId ?? tree.rootId;
   const currentNode: TreeNode | undefined = tree.nodes.find((n) => n.id === currentNodeId);
@@ -210,24 +255,27 @@ export function SopAdvancePlayer({
     });
   };
 
-  // Server-source-of-truth evidence list. We filter to the current node
-  // when rendering so the operator sees what they (or a teammate) have
-  // already collected for THIS step, not a noisy mixed list.
-  const { data: evidenceResp } = useListClaimEvidence(leg.id, {
-    query: { queryKey: getListClaimEvidenceQueryKey(leg.id), enabled: !!leg.id },
+  // Server-source-of-truth evidence list. Disabled in preview mode so
+  // the rendering layer always falls through to an empty `persistedAll`.
+  const { data: evidenceResp } = useListClaimEvidence(isPreview ? 0 : leg.id, {
+    query: {
+      queryKey: getListClaimEvidenceQueryKey(isPreview ? 0 : leg.id),
+      enabled: !isPreview && !!leg.id,
+    },
   });
   const persistedAll: ClaimEvidenceResponse[] = useMemo(() => {
+    if (isPreview) return [];
     const e = evidenceResp as { evidence?: ClaimEvidenceResponse[] } | ClaimEvidenceResponse[] | undefined;
     if (!e) return [];
     if (Array.isArray(e)) return e;
     return Array.isArray(e.evidence) ? e.evidence : [];
-  }, [evidenceResp]);
+  }, [evidenceResp, isPreview]);
 
   // Group persisted evidence per (nodeId, evidenceTypeName=key) so each
   // requirement row can render its own collected items / notes. We use
   // `evidenceTypeName` as the join key because that's what the POST
-  // endpoint persists from the player (see persistEvidenceForCurrentNode
-  // below); evidenceTypeId is optional and not always set on the tree.
+  // endpoint persists from the player; evidenceTypeId is optional and
+  // not always set on the tree.
   const persistedForNode = useCallback(
     (nodeId: string): Record<string, ClaimEvidenceResponse[]> => {
       const out: Record<string, ClaimEvidenceResponse[]> = {};
@@ -263,6 +311,21 @@ export function SopAdvancePlayer({
       }
       const tempId = newPendingId();
       const previewUrl = URL.createObjectURL(file);
+
+      // Preview mode: skip the storage POST. Treat the blob URL as
+      // both the local preview AND the `imageUrl`, so isReqSatisfied
+      // trips green without ever talking to the server.
+      if (isPreview) {
+        updatePending(nodeId, key, (cur) => ({
+          ...cur,
+          items: [
+            ...cur.items,
+            { id: tempId, uploading: false, imagePreview: previewUrl, imageUrl: previewUrl },
+          ],
+        }));
+        return;
+      }
+
       updatePending(nodeId, key, (cur) => ({
         ...cur,
         items: [...cur.items, { id: tempId, uploading: true, imagePreview: previewUrl }],
@@ -300,7 +363,7 @@ export function SopAdvancePlayer({
         });
       }
     },
-    [],
+    [isPreview, leg.id],
   );
 
   const removePendingItem = useCallback((nodeId: string, key: string, itemId: string) => {
@@ -457,9 +520,62 @@ export function SopAdvancePlayer({
     );
   }, [currentNode, pendingByReq]);
 
+  // ---- Preview-mode advance / undo / restart -----------------------
+  // Pure local-state transitions. No fetch, no toast unless the
+  // gating UX needs it (the existing `evidenceReady` / `anyUploading`
+  // gates apply identically to preview mode — even Test Mode forces
+  // the operator through the required-evidence flow so the dialog
+  // surfaces gating bugs).
+  const handlePreviewAdvance = useCallback(
+    (answer: string) => {
+      if (!currentNode) return;
+      const opt = currentNode.options.find((o) => o.label === answer);
+      if (!opt) return;
+      const nextAnswers = [
+        ...previewAnswers,
+        { nodeId: currentNode.id, answer, ts: new Date().toISOString() },
+      ];
+      setPreviewAnswers(nextAnswers);
+      if (opt.childId) {
+        setPreviewNodeId(opt.childId);
+      } else if (opt.outcomeType) {
+        // Terminal — record the outcome locally; render switches to
+        // the inline outcome card on next render.
+        setPreviewSopOutcome(opt.outcomeType);
+      } else {
+        // Misconfigured option (no childId, no outcomeType). Surface
+        // it so authors notice while testing rather than silently
+        // dead-ending.
+        toast({
+          title: "Option not configured",
+          description: `"${opt.label}" has no next step or outcome configured.`,
+          variant: "destructive",
+        });
+      }
+      clearPendingForNode(currentNode.id);
+    },
+    [currentNode, previewAnswers],
+  );
+
+  const handlePreviewUndo = useCallback(() => {
+    if (previewAnswers.length === 0) return;
+    const last = previewAnswers[previewAnswers.length - 1];
+    setPreviewAnswers(previewAnswers.slice(0, -1));
+    setPreviewNodeId(last.nodeId);
+    setPreviewSopOutcome(null);
+  }, [previewAnswers]);
+
+  const handlePreviewRestart = useCallback(() => {
+    setPreviewAnswers([]);
+    setPreviewNodeId(tree.rootId);
+    setPreviewSopOutcome(null);
+    setPendingByReq({});
+  }, [tree.rootId]);
+
   const handleChoice = useCallback(
     (answer: string) => {
-      if (!currentNode || disabled || advanceMutation.isPending) return;
+      if (!currentNode || disabled) return;
+      if (!isPreview && advanceMutation.isPending) return;
       if (!evidenceReady) {
         toast({
           title: "Required evidence missing",
@@ -475,23 +591,39 @@ export function SopAdvancePlayer({
         });
         return;
       }
+      if (isPreview) {
+        handlePreviewAdvance(answer);
+        return;
+      }
       setPendingAnswer(answer);
       advanceMutation.mutate({ nodeId: currentNode.id, answer });
     },
-    [currentNode, disabled, advanceMutation, evidenceReady, anyUploading],
+    [currentNode, disabled, isPreview, advanceMutation, evidenceReady, anyUploading, handlePreviewAdvance],
   );
 
-  // Terminal dispatch — single switch on outcomeRole-derived terminal
-  // kind (Guard #1: no parallel enum, no precedence ladder copy here).
-  //
-  // Closed/Hold/Duplicate keep their dedicated terminal screens (each
-  // captures information specific to that outcome). The Include
-  // terminal "I'm done — hand off" screen was retired — when a leg
-  // lands at include we render an inline "Ready" confirmation here
-  // (with the channel hint so the operator knows portal vs email vs
-  // unconfigured) and the same `PerLegContextEditor` that runs during
-  // the walk, so context can still be added/edited after terminal.
-  // The leg's existing status pill on the leg page carries the rest.
+  // ---- Preview mode: simple inline outcome card --------------------
+  // When a preview walk lands at a terminal we render an inline
+  // outcome card with Undo/Restart instead of dispatching to the live
+  // ClosedTerminal/HoldTerminal/DuplicateTerminal/Include screens
+  // (which all assume a real leg.id and fire mutations on click).
+  if (isPreview && previewSopOutcome) {
+    return (
+      <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
+        <PreviewModeBadge />
+        {previewAnswers.length > 0 && <SopBreadcrumb tree={tree} answers={previewAnswers} />}
+        <PreviewOutcomeCard
+          outcomeType={previewSopOutcome as OutcomeType}
+          onUndo={handlePreviewUndo}
+          onRestart={handlePreviewRestart}
+        />
+      </div>
+    );
+  }
+
+  // Terminal dispatch (live mode) — single switch on outcomeRole-derived
+  // terminal kind. Closed/Hold/Duplicate keep their dedicated terminal
+  // screens; Include renders an inline "Ready" confirmation alongside
+  // the same `PerLegContextEditor` that runs during the walk.
   const terminalKind = terminalKindForLeg(leg);
   if (terminalKind !== "none" && terminalKind !== "include") {
     const terminalLeg: TerminalLeg = {
@@ -584,7 +716,7 @@ export function SopAdvancePlayer({
   }
 
   const progress = maxDepth > 0 ? Math.min(100, Math.round((answers.length / maxDepth) * 100)) : 0;
-  const showSiblingPrompt = !!siblingPrompt && answers.length === 0;
+  const showSiblingPrompt = !isPreview && !!siblingPrompt && answers.length === 0;
   const persistedHere = persistedForNode(currentNode.id);
   const hasInstructionBlock =
     currentNode.instructionText ||
@@ -594,12 +726,41 @@ export function SopAdvancePlayer({
 
   return (
     <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
+      {isPreview && <PreviewModeBadge />}
       <div className="flex items-center gap-3">
         <Progress value={progress} className="flex-1 h-2" />
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Step {answers.length + 1}
           {maxDepth > 0 ? ` of ~${maxDepth}` : ""}
         </span>
+        {isPreview && (
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={handlePreviewUndo}
+              disabled={previewAnswers.length === 0}
+              data-testid="sop-preview-undo"
+            >
+              <Undo2 className="h-3 w-3" />
+              Undo
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={handlePreviewRestart}
+              disabled={previewAnswers.length === 0}
+              data-testid="sop-preview-restart"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Restart
+            </Button>
+          </div>
+        )}
       </div>
 
       {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
@@ -678,7 +839,7 @@ export function SopAdvancePlayer({
                     onUpload={(file) => uploadFile(currentNode.id, req.key, file)}
                     onRemovePending={(itemId) => removePendingItem(currentNode.id, req.key, itemId)}
                     onNotesChange={(notes) => updatePending(currentNode.id, req.key, (cur) => ({ ...cur, notes }))}
-                    disabled={disabled || advanceMutation.isPending}
+                    disabled={disabled || (!isPreview && advanceMutation.isPending)}
                   />
                 );
               })}
@@ -692,14 +853,14 @@ export function SopAdvancePlayer({
 
           <div className="space-y-1.5">
             {currentNode.options?.map((opt, i) => {
-              const isPending = advanceMutation.isPending && pendingAnswer === opt.label;
+              const isPending = !isPreview && advanceMutation.isPending && pendingAnswer === opt.label;
               const blockedByEvidence = !evidenceReady || anyUploading;
               return (
                 <Button
                   key={`${currentNode.id}-${i}`}
                   variant="outline"
                   className="w-full justify-between text-left h-auto py-2.5"
-                  disabled={disabled || advanceMutation.isPending || blockedByEvidence}
+                  disabled={disabled || (!isPreview && advanceMutation.isPending) || blockedByEvidence}
                   onClick={() => handleChoice(opt.label)}
                   data-testid={`sop-option-${i}`}
                 >
@@ -722,20 +883,93 @@ export function SopAdvancePlayer({
 
       {/*
         Per-leg unique-context editor. Rendered inline on EVERY step of
-        the walk so operators can capture context as they go (the field
-        used to live on a separate "I'm done — hand off" Include
-        terminal screen that has been retired). The editor is optional;
-        an empty box is fine. The same component also renders on the
-        inline "Ready" surface above when the leg lands at an include
-        outcome, so context can still be added/edited post-terminal.
+        the walk so operators can capture context as they go. The same
+        component also renders on the inline "Ready" surface above when
+        the leg lands at an include outcome, so context can still be
+        added/edited post-terminal. Preview mode skips it — there is no
+        leg.id to bind it to.
       */}
-      <PerLegContextEditor
-        legId={leg.id}
-        perLegContext={leg.perLegContext ?? null}
-        disabled={disabled}
-        disabledReason={disabledReason}
-      />
+      {!isPreview && (
+        <PerLegContextEditor
+          legId={leg.id}
+          perLegContext={leg.perLegContext ?? null}
+          disabled={disabled}
+          disabledReason={disabledReason}
+        />
+      )}
     </div>
+  );
+}
+
+function PreviewModeBadge() {
+  return (
+    <div
+      className="flex items-center gap-2 px-2 py-1 rounded-md border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900"
+      data-testid="sop-preview-mode-badge"
+    >
+      <FlaskConical className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+      <span className="text-[11px] font-medium text-amber-800 dark:text-amber-200">
+        Test Mode — no changes are saved
+      </span>
+    </div>
+  );
+}
+
+function PreviewOutcomeCard({
+  outcomeType,
+  onUndo,
+  onRestart,
+}: {
+  outcomeType: OutcomeType;
+  onUndo: () => void;
+  onRestart: () => void;
+}) {
+  const colors = OUTCOME_COLORS[outcomeType] ?? OUTCOME_COLORS.cannot_dispute;
+  const label = OUTCOME_LABELS[outcomeType] ?? outcomeType;
+  return (
+    <Card
+      className={`${colors.bg} border ${colors.border}`}
+      data-testid="sop-preview-outcome-card"
+    >
+      <CardContent className="p-4 text-center space-y-3">
+        <CheckCircle2 className={`h-9 w-9 mx-auto ${colors.text}`} />
+        <div className="space-y-1">
+          <p
+            className={`text-base font-semibold ${colors.text}`}
+            data-testid="sop-preview-outcome-label"
+          >
+            Reached: {label}
+          </p>
+          <p className="text-xs text-muted-foreground italic">
+            Test Mode — no changes are saved.
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onUndo}
+            className="gap-1.5 h-7 text-xs"
+            data-testid="sop-preview-undo"
+          >
+            <Undo2 className="h-3 w-3" />
+            Undo
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onRestart}
+            className="gap-1.5 h-7 text-xs"
+            data-testid="sop-preview-restart"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Restart
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -754,14 +988,9 @@ function EvidenceReqRow({
   onNotesChange: (notes: string) => void;
   disabled: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const persistedImages = persisted.filter((p) => !!p.imageUrl);
   const persistedNote = persisted.find((p) => p.notes && p.notes.trim().length > 0)?.notes ?? "";
   const totalImages = persistedImages.length + pending.items.length;
-  // Capability check at render time — render is synchronous and the
-  // value is stable per environment, so a plain check (not a hook) is
-  // fine. See `isClipboardReadAvailable` for the rationale.
-  const clipboardReadAvailable = isClipboardReadAvailable();
 
   return (
     <div className="space-y-2 bg-white dark:bg-background rounded-md p-2 border" data-testid={`sop-evidence-req-${req.key}`}>
@@ -782,7 +1011,9 @@ function EvidenceReqRow({
           // Paste-from-clipboard: drop a screenshot or copied PDF into
           // the row and it uploads as a pending image. Mounted at the
           // image-block level (not the textarea) so paste in either the
-          // notes box OR the empty drop zone both work.
+          // notes box OR the empty drop zone both work. The shared
+          // primitive owns the explicit Upload + Paste buttons; this
+          // wrapper owns the keyboard-paste capture only.
           onPaste={(e) => extractClipboardFiles(e.clipboardData).forEach(onUpload)}
           data-testid={`sop-evidence-req-${req.key}-paste-zone`}
         >
@@ -802,66 +1033,13 @@ function EvidenceReqRow({
             </div>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            <input
-              ref={inputRef}
-              type="file"
-              className="hidden"
-              accept="image/*,application/pdf"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onUpload(f);
-                if (inputRef.current) inputRef.current.value = "";
-              }}
-              data-testid={`sop-evidence-req-${req.key}-file-input`}
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => inputRef.current?.click()}
+            <EvidencePasteUpload
+              onFile={onUpload}
               disabled={disabled}
-              className="gap-1.5 h-7 text-xs"
-              data-testid={`sop-evidence-req-${req.key}-upload-btn`}
-            >
-              <Upload className="h-3 w-3" />
-              {totalImages > 0 ? "Add another" : "Upload image"}
-            </Button>
-            {/*
-              Task #415 — restore the explicit one-click Paste button
-              that originally shipped in Task #15 and was dropped in the
-              Task #372 SOP-player rebuild. Hidden in browsers without
-              the Async Clipboard API (older Safari, non-secure
-              contexts) so we don't show a control that can't work.
-              Keyboard paste (Ctrl/Cmd+V) on the drop zone or notes
-              textarea is unaffected.
-            */}
-            {clipboardReadAvailable && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  void pasteFromClipboard({
-                    read: () => navigator.clipboard.read(),
-                    onUpload,
-                    onNothingFound: () =>
-                      toast({
-                        title: "No image found in clipboard",
-                        description:
-                          "Copy a screenshot or image first, then paste here.",
-                        variant: "destructive",
-                      }),
-                  })
-                }
-                disabled={disabled}
-                title="Paste from clipboard (Ctrl/Cmd+V)"
-                className="gap-1.5 h-7 text-xs"
-                data-testid={`sop-evidence-req-${req.key}-paste-btn`}
-              >
-                <ClipboardPaste className="h-3 w-3" />
-                Paste
-              </Button>
-            )}
+              hasItems={totalImages > 0}
+              acceptPdf={true}
+              testIdPrefix={`sop-evidence-req-${req.key}`}
+            />
           </div>
         </div>
       )}
@@ -898,92 +1076,6 @@ function EvidenceReqRow({
       )}
     </div>
   );
-}
-
-/**
- * Pure-helper extraction of File items from a ClipboardEvent's
- * DataTransfer. Returns only entries whose `kind === "file"` and whose
- * type passes the SOP-evidence allowlist. Exported so the
- * sop-advance-player tests can pin the contract without spinning up
- * jsdom + a real paste event.
- */
-export function extractClipboardFiles(
-  data: DataTransfer | null | undefined,
-): File[] {
-  if (!data || !data.items) return [];
-  const out: File[] = [];
-  for (let i = 0; i < data.items.length; i++) {
-    const it = data.items[i];
-    if (it.kind !== "file") continue;
-    const f = it.getAsFile();
-    if (!f) continue;
-    if (!ALLOWED_EVIDENCE_TYPES.has(f.type)) continue;
-    out.push(f);
-  }
-  return out;
-}
-
-/**
- * Capability check for the explicit "Paste" button (Task #415). The
- * Async Clipboard API (`navigator.clipboard.read`) isn't universally
- * available — older Safari and most non-secure contexts don't expose
- * it — so we hide the button entirely in those environments instead
- * of showing a control that can't possibly work. Keyboard paste
- * (Ctrl/Cmd+V) keeps working through the row's onPaste handlers.
- */
-export function isClipboardReadAvailable(): boolean {
-  return (
-    typeof navigator !== "undefined" &&
-    typeof navigator.clipboard !== "undefined" &&
-    typeof navigator.clipboard.read === "function"
-  );
-}
-
-/**
- * Pure-helper async read of the first SOP-evidence-allowed file from
- * the Async Clipboard API. The `read` callback is injected so tests
- * can drive every branch (image found, no image, disallowed MIME)
- * without jsdom or a real `navigator.clipboard`.
- *
- * Returns the first File whose MIME passes `ALLOWED_EVIDENCE_TYPES`,
- * or `null` if the clipboard has nothing usable.
- */
-export async function readAllowedFileFromClipboard(
-  read: () => Promise<readonly ClipboardItem[]>,
-): Promise<File | null> {
-  const items = await read();
-  for (const item of items) {
-    for (const mime of item.types) {
-      if (!ALLOWED_EVIDENCE_TYPES.has(mime)) continue;
-      const blob = await item.getType(mime);
-      const ext = mime.split("/")[1] || "bin";
-      return new File([blob], `pasted.${ext}`, { type: mime });
-    }
-  }
-  return null;
-}
-
-/**
- * Wrapper used by the Paste button's click handler. Reads from the
- * clipboard, routes a found file to `onUpload`, and otherwise calls
- * `onNothingFound` (the component shows a friendly toast there). The
- * pure split keeps the test surface simple — see sop-advance-player
- * tests for the (b)/(c)/(d) coverage.
- */
-export async function pasteFromClipboard(opts: {
-  read: () => Promise<readonly ClipboardItem[]>;
-  onUpload: (file: File) => void;
-  onNothingFound: () => void;
-}): Promise<void> {
-  let file: File | null = null;
-  try {
-    file = await readAllowedFileFromClipboard(opts.read);
-  } catch {
-    opts.onNothingFound();
-    return;
-  }
-  if (file) opts.onUpload(file);
-  else opts.onNothingFound();
 }
 
 function PersistedThumbnail({ ev }: { ev: ClaimEvidenceResponse }) {
