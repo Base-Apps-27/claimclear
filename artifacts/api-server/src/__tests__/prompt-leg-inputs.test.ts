@@ -153,6 +153,7 @@ function makeGroup(overrides: Partial<InvoiceGroup> = {}): InvoiceGroup {
     importBatch: null,
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
+    isTourSample: false,
     ...overrides,
   };
 }
@@ -230,6 +231,7 @@ function makeClaim(overrides: Partial<Claim> & Pick<Claim, "id" | "confNumber">)
     attestationQueuedBy: null,
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
+    isTourSample: false,
     ...overrides,
   };
 }

@@ -12,6 +12,7 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
+import { blockMutationOnTourSampleGroup } from "../lib/tour-sample";
 import {
   transitionGroupStatus,
   transitionGroupOutcome,

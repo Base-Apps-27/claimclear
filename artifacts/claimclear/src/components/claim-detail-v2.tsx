@@ -50,7 +50,7 @@ import {
 import {
   Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
   Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
-  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2, Tag,
+  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2, Tag, Sparkles,
 } from "lucide-react";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";

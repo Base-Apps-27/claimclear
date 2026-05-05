@@ -76,7 +76,6 @@ import {
   extractClipboardFiles,
 } from "./evidence-paste";
 import { EvidencePasteUpload } from "./evidence-paste-upload";
-import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 
 interface SopAnswerRow {
   nodeId: string;

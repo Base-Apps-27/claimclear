@@ -16,6 +16,7 @@ import {
   excludeLegCore,
 } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { blockMutationOnTourSampleClaim } from "../lib/tour-sample";
 import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
