@@ -13,9 +13,8 @@ understanding readback / preview generation) instead.
  */
 
 /**
- * Optional metadata for any of the `/claims/{id}/attest*` endpoints
-and for `POST /invoice-groups/{id}/reattest/queue`. `note` is
-free-form text recorded on the claim/group and audit log.
+ * Optional metadata for any of the `/claims/{id}/attest*` endpoints.
+`note` is free-form text recorded on the claim and audit log.
 
  */
 export interface AttestationActionBody {

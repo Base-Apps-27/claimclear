@@ -1951,17 +1951,66 @@ chars) explaining when/where the re-attest was recorded outside the
 standard checklist.
  */
   offlineNote?: string;
+  /**
+   * Task #455 — when set, atomically rename the group's
+`invoiceNumber` from its current value to this trimmed value
+inside the same transaction as the re-attest stamp + draft
+promotion. Validates non-empty (after trim), differs from
+current, and no other group already uses the same invoice
+number; otherwise the entire write rolls back with 409. A
+distinct `group_invoice_number_renamed` audit row is written
+with metadata `{from, to, sourceResponseId?}`.
+
+   * @nullable
+   */
+  renameInvoiceNumberTo?: string | null;
+  /**
+   * Optional `portal_responses.id` of the inbound payor reply that
+cited the new invoice number — recorded on the rename audit
+row's metadata for traceability.
+
+   * @nullable
+   */
+  renameSourceResponseId?: number | null;
 }
 
 /**
- * Optional metadata for any of the `/claims/{id}/attest*` endpoints
-and for `POST /invoice-groups/{id}/reattest/queue`. `note` is
-free-form text recorded on the claim/group and audit log.
+ * Optional metadata for any of the `/claims/{id}/attest*` endpoints.
+`note` is free-form text recorded on the claim and audit log.
 
  */
 export interface AttestationActionBody {
   /** @nullable */
   note?: string | null;
+}
+
+/**
+ * Optional payload for `POST /invoice-groups/{id}/reattest/queue`.
+Carries the operator note recorded on the queued legs plus an
+optional Task #455 invoice-number rename to apply atomically with
+the queue write.
+
+ */
+export interface BulkQueueGroupReattestBody {
+  /** @nullable */
+  note?: string | null;
+  /**
+   * Task #455 — when set, atomically rename the group's
+`invoiceNumber` to this trimmed value inside the same
+transaction as the bulk queue. Same validation as
+`CompleteReattestBody.renameInvoiceNumberTo`.
+
+   * @nullable
+   */
+  renameInvoiceNumberTo?: string | null;
+  /**
+   * Optional `portal_responses.id` of the inbound payor reply that
+cited the new invoice number — recorded on the rename audit
+row's metadata for traceability.
+
+   * @nullable
+   */
+  renameSourceResponseId?: number | null;
 }
 
 /**

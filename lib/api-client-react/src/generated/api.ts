@@ -46,6 +46,7 @@ import type {
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
+  BulkQueueGroupReattestBody,
   BulkQueueGroupReattestResponse,
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
@@ -3067,7 +3068,7 @@ export const getBulkQueueGroupReattestUrl = (id: number) => {
 
 export const bulkQueueGroupReattest = async (
   id: number,
-  attestationActionBody?: AttestationActionBody,
+  bulkQueueGroupReattestBody?: BulkQueueGroupReattestBody,
   options?: RequestInit,
 ): Promise<BulkQueueGroupReattestResponse> => {
   return customFetch<BulkQueueGroupReattestResponse>(
@@ -3076,7 +3077,7 @@ export const bulkQueueGroupReattest = async (
       ...options,
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(attestationActionBody),
+      body: JSON.stringify(bulkQueueGroupReattestBody),
     },
   );
 };
@@ -3088,14 +3089,14 @@ export const getBulkQueueGroupReattestMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
     TError,
-    { id: number; data: BodyType<AttestationActionBody> },
+    { id: number; data: BodyType<BulkQueueGroupReattestBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
   TError,
-  { id: number; data: BodyType<AttestationActionBody> },
+  { id: number; data: BodyType<BulkQueueGroupReattestBody> },
   TContext
 > => {
   const mutationKey = ["bulkQueueGroupReattest"];
@@ -3109,7 +3110,7 @@ export const getBulkQueueGroupReattestMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
-    { id: number; data: BodyType<AttestationActionBody> }
+    { id: number; data: BodyType<BulkQueueGroupReattestBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
@@ -3123,7 +3124,7 @@ export type BulkQueueGroupReattestMutationResult = NonNullable<
   Awaited<ReturnType<typeof bulkQueueGroupReattest>>
 >;
 export type BulkQueueGroupReattestMutationBody =
-  BodyType<AttestationActionBody>;
+  BodyType<BulkQueueGroupReattestBody>;
 export type BulkQueueGroupReattestMutationError =
   ErrorType<void | StateConflictResponse>;
 
@@ -3137,14 +3138,14 @@ export const useBulkQueueGroupReattest = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
     TError,
-    { id: number; data: BodyType<AttestationActionBody> },
+    { id: number; data: BodyType<BulkQueueGroupReattestBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof bulkQueueGroupReattest>>,
   TError,
-  { id: number; data: BodyType<AttestationActionBody> },
+  { id: number; data: BodyType<BulkQueueGroupReattestBody> },
   TContext
 > => {
   return useMutation(getBulkQueueGroupReattestMutationOptions(options));

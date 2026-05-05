@@ -74,6 +74,9 @@ const GROUP_ONLY: Record<string, string> = {
   // button stamps the group as awaiting the next inbound reply.
   payor_denial_reason_recorded: "Payor denial reason recorded",
   awaiting_payor_again: "Marked awaiting payor reply",
+  // Task #455 — invoice number rename carried through the Re-attest flow
+  // (atomic with the re-attest stamp + draft promotion).
+  group_invoice_number_renamed: "Invoice number renamed",
 };
 
 export const AUDIT_ACTION_LABELS_BY_KIND = {

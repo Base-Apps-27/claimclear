@@ -129,6 +129,8 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   // skim for them. Both are group-only by design.
   payor_denial_reason_recorded: meta("payor_denial_reason_recorded", "group", Tag, "text-rose-600", "status"),
   awaiting_payor_again: meta("awaiting_payor_again", "group", Send, "text-blue-600", "communication"),
+  // Task #455 — invoice number renamed atomically with the Re-attest stamp.
+  group_invoice_number_renamed: meta("group_invoice_number_renamed", "group", FileEdit, "text-indigo-600", "edit"),
 };
 
 export function humanizeAuditAction(action: string, kind: "claim" | "group"): ActionMeta {

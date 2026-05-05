@@ -48,8 +48,18 @@ function legInvoiceNumber(
 export function buildReattestChecklist(
   deniedLegs: readonly ClaimResponse[],
   groupInvoiceNumber: string | null,
+  rename?: { from: string; to: string } | null,
 ): ReattestInstructionItem[] {
   const items: ReattestInstructionItem[] = [];
+  // Task #455 — when the operator confirmed a payor-cited new invoice
+  // number, the rename is the *first* checklist line so it's the first
+  // thing the portal user (or whoever picks this off the queue) sees.
+  if (rename && rename.to && rename.to !== rename.from) {
+    items.push({
+      id: `rename-${rename.to}`,
+      text: `Update the invoice # from #${rename.from} to #${rename.to}.`,
+    });
+  }
   // Case 2: one MAS line per denied leg, addressed at the affected
   // invoice number. De-duplicated when several denied legs share the
   // same invoice number so the operator doesn't tick the same MAS

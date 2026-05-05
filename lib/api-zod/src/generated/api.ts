@@ -7820,6 +7820,18 @@ export const CompleteGroupReattestBody = zod.object({
     .describe(
       "Required when `recordedOffline` is true. Free-form note (>= 10 trimmed\nchars) explaining when\/where the re-attest was recorded outside the\nstandard checklist.\n",
     ),
+  renameInvoiceNumberTo: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #455 — when set, atomically rename the group's\n`invoiceNumber` from its current value to this trimmed value\ninside the same transaction as the re-attest stamp + draft\npromotion. Validates non-empty (after trim), differs from\ncurrent, and no other group already uses the same invoice\nnumber; otherwise the entire write rolls back with 409. A\ndistinct `group_invoice_number_renamed` audit row is written\nwith metadata `{from, to, sourceResponseId?}`.\n",
+    ),
+  renameSourceResponseId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional `portal_responses.id` of the inbound payor reply that\ncited the new invoice number — recorded on the rename audit\nrow's metadata for traceability.\n",
+    ),
 });
 
 export const CompleteGroupReattestResponse = zod.object({
@@ -8176,9 +8188,21 @@ export const BulkQueueGroupReattestParams = zod.object({
 export const BulkQueueGroupReattestBody = zod
   .object({
     note: zod.string().nullish(),
+    renameInvoiceNumberTo: zod
+      .string()
+      .nullish()
+      .describe(
+        "Task #455 — when set, atomically rename the group's\n`invoiceNumber` to this trimmed value inside the same\ntransaction as the bulk queue. Same validation as\n`CompleteReattestBody.renameInvoiceNumberTo`.\n",
+      ),
+    renameSourceResponseId: zod
+      .number()
+      .nullish()
+      .describe(
+        "Optional `portal_responses.id` of the inbound payor reply that\ncited the new invoice number — recorded on the rename audit\nrow's metadata for traceability.\n",
+      ),
   })
   .describe(
-    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints\nand for `POST \/invoice-groups\/{id}\/reattest\/queue`. `note` is\nfree-form text recorded on the claim\/group and audit log.\n",
+    "Optional payload for `POST \/invoice-groups\/{id}\/reattest\/queue`.\nCarries the operator note recorded on the queued legs plus an\noptional Task #455 invoice-number rename to apply atomically with\nthe queue write.\n",
   );
 
 export const BulkQueueGroupReattestResponse = zod
@@ -11141,7 +11165,7 @@ export const AttestClaimBody = zod
     note: zod.string().nullish(),
   })
   .describe(
-    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints\nand for `POST \/invoice-groups\/{id}\/reattest\/queue`. `note` is\nfree-form text recorded on the claim\/group and audit log.\n",
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
   );
 
 export const AttestClaimResponse = zod.object({
@@ -11472,7 +11496,7 @@ export const QueueAttestationForClaimBody = zod
     note: zod.string().nullish(),
   })
   .describe(
-    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints\nand for `POST \/invoice-groups\/{id}\/reattest\/queue`. `note` is\nfree-form text recorded on the claim\/group and audit log.\n",
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
   );
 
 export const QueueAttestationForClaimResponse = zod.object({
@@ -11803,7 +11827,7 @@ export const ConfirmQueuedAttestationBody = zod
     note: zod.string().nullish(),
   })
   .describe(
-    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints\nand for `POST \/invoice-groups\/{id}\/reattest\/queue`. `note` is\nfree-form text recorded on the claim\/group and audit log.\n",
+    "Optional metadata for any of the `\/claims\/{id}\/attest\*` endpoints.\n`note` is free-form text recorded on the claim and audit log.\n",
   );
 
 export const ConfirmQueuedAttestationResponse = zod.object({

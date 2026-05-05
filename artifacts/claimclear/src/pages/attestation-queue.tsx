@@ -394,9 +394,32 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
     const rides = detail?.rides ?? [];
     return rides.filter((r) => r.outcome === "Denied");
   }, [detail]);
+  // Task #455 — surface a "Renamed → #{new}" chip in the queue header
+  // when the persisted attestationNote captured a rename gesture at
+  // queue time. The note text follows the canonical line emitted by
+  // `buildReattestChecklist` for the rename item:
+  //   "Update the invoice # from #{from} to #{to}."
+  // We extract from/to so the portal user sees at a glance that this
+  // group's invoice # changed (and what the previous one was) without
+  // hunting through the persisted note disclosure below.
+  const pendingRename = useMemo(() => {
+    const re = /Update the invoice # from #(\S+) to #(\S+?)\./;
+    for (const row of bucket.rows) {
+      const note = row.claim.attestationNote;
+      if (!note) continue;
+      const m = note.match(re);
+      if (m) return { from: m[1], to: m[2] };
+    }
+    return null;
+  }, [bucket.rows]);
   const checklist = useMemo(
-    () => buildReattestChecklist(deniedLegs, invoiceNumber ?? null),
-    [deniedLegs, invoiceNumber],
+    () =>
+      buildReattestChecklist(
+        deniedLegs,
+        invoiceNumber ?? null,
+        pendingRename,
+      ),
+    [deniedLegs, invoiceNumber, pendingRename],
   );
 
   // Persisted notes from queue time — surfaced under a collapsed
@@ -439,6 +462,16 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
               <Badge variant="secondary" className="text-[11px]">
                 {bucket.rows.length} leg{bucket.rows.length === 1 ? "" : "s"}
               </Badge>
+              {pendingRename && (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] border-indigo-300 bg-indigo-50 text-indigo-800 font-mono"
+                  data-testid="queue-row-rename-chip"
+                  title={`Operator renamed this invoice from #${pendingRename.from} during the queue action.`}
+                >
+                  Renamed → #{pendingRename.to}
+                </Badge>
+              )}
             </div>
             <div className="text-sm text-muted-foreground">
               Payor <span className="font-medium text-foreground">{payor}</span>

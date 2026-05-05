@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   ShieldCheck,
   Inbox,
@@ -34,6 +35,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Edit3,
+  FileText,
 } from "lucide-react";
 import {
   isOfflineReattestNoteValid,
@@ -71,6 +73,17 @@ interface Props {
    * pick they can't use.
    */
   canRecordOffline?: boolean;
+  /**
+   * Task #455 — when the inbound-email classifier extracted a
+   * `newInvoiceNumber` from a payor reply, the parent passes it (plus
+   * the sourceResponseId of the reply that cited it) so the modal can
+   * surface a prominent "rename invoice #" step pre-filled with the
+   * suggestion. The modal carries the confirmed value through every
+   * sub-mode's submit and the backend renames atomically with the
+   * re-attest stamp + draft promotion.
+   */
+  suggestedNewInvoiceNumber?: string | null;
+  suggestedNewInvoiceNumberSourceResponseId?: number | null;
 }
 
 /**
@@ -106,6 +119,8 @@ export function ReattestModal({
   promoteDrafts,
   onAfterAction,
   canRecordOffline = false,
+  suggestedNewInvoiceNumber = null,
+  suggestedNewInvoiceNumberSourceResponseId = null,
 }: Props) {
   const { toast } = useToast();
   const completeReattest = useCompleteGroupReattest();
@@ -119,9 +134,52 @@ export function ReattestModal({
   const bulkQueueReattest = useBulkQueueGroupReattest();
   const markWaiting = useMarkAwaitingPayorAgain();
 
+  // Task #455 — invoice-number rename state. Pre-filled with the AI
+  // suggestion (if any); the operator can edit, blank, or confirm it.
+  // The rename is threaded through every sub-mode's submit handler.
+  const [renameTo, setRenameTo] = useState<string>("");
+  const trimmedRename = renameTo.trim();
+  // What we actually send to the backend: only when the operator left
+  // a non-empty value that *differs* from the current invoice number.
+  // Equal values are a no-op (the backend treats them the same way) but
+  // we drop the field client-side so the audit row isn't noisy.
+  const renamePayload = useMemo<{
+    renameInvoiceNumberTo?: string;
+    renameSourceResponseId?: number;
+  } | null>(() => {
+    if (!trimmedRename) return null;
+    if (trimmedRename === group.invoiceNumber) return null;
+    const payload: { renameInvoiceNumberTo: string; renameSourceResponseId?: number } = {
+      renameInvoiceNumberTo: trimmedRename,
+    };
+    // Only forward the sourceResponseId when the operator actually kept
+    // the AI suggestion (or one that matches it). If they typed a
+    // different number, the original response no longer corresponds.
+    if (
+      suggestedNewInvoiceNumberSourceResponseId != null &&
+      suggestedNewInvoiceNumber &&
+      trimmedRename === suggestedNewInvoiceNumber.trim()
+    ) {
+      payload.renameSourceResponseId = suggestedNewInvoiceNumberSourceResponseId;
+    }
+    return payload;
+  }, [
+    trimmedRename,
+    group.invoiceNumber,
+    suggestedNewInvoiceNumber,
+    suggestedNewInvoiceNumberSourceResponseId,
+  ]);
+  const renameForChecklist = useMemo(
+    () =>
+      renamePayload
+        ? { from: group.invoiceNumber, to: renamePayload.renameInvoiceNumberTo! }
+        : null,
+    [renamePayload, group.invoiceNumber],
+  );
+
   const checklist = useMemo<ReattestInstructionItem[]>(
-    () => buildReattestChecklist(deniedLegs, group.invoiceNumber),
-    [deniedLegs, group.invoiceNumber],
+    () => buildReattestChecklist(deniedLegs, group.invoiceNumber, renameForChecklist),
+    [deniedLegs, group.invoiceNumber, renameForChecklist],
   );
   const renderedChecklistText = useMemo(
     () => renderChecklistAsText(checklist),
@@ -141,7 +199,8 @@ export function ReattestModal({
   const [offlineConfirmed, setOfflineConfirmed] = useState(false);
 
   // Reset to the picker every time the modal is reopened so the operator
-  // always lands on the question, never on a stale sub-view.
+  // always lands on the question, never on a stale sub-view. Pre-fill the
+  // rename input with the AI suggestion when one is available.
   useEffect(() => {
     if (open) {
       setMode("pick");
@@ -151,8 +210,9 @@ export function ReattestModal({
       setConfirmQueueOpen(false);
       setOfflineNote("");
       setOfflineConfirmed(false);
+      setRenameTo(suggestedNewInvoiceNumber?.trim() ?? "");
     }
-  }, [open]);
+  }, [open, suggestedNewInvoiceNumber]);
 
   const allChecked =
     checklist.length > 0 && checklist.every((it) => checked[it.id] === true);
@@ -190,15 +250,22 @@ export function ReattestModal({
     try {
       await completeReattest.mutateAsync({
         id: group.id,
-        data: { note: reattestNote.trim() || undefined },
+        data: {
+          note: reattestNote.trim() || undefined,
+          ...(renamePayload ?? {}),
+        },
       });
       // Drop the row off Responses Awaiting Review while the re-attest
       // propagates back to the payor.
       await markWaiting.mutateAsync({ id: group.id, data: {} });
-      onAfterAction("Re-attest recorded — group is awaiting payor again.");
+      onAfterAction(
+        renamePayload
+          ? `Re-attest recorded — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
+          : "Re-attest recorded — group is awaiting payor again.",
+      );
       close();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not record.";
+      const msg = renameConflictMessage(err) ?? (err instanceof Error ? err.message : "Could not record.");
       toast({
         title: "Re-attest failed",
         description: msg,
@@ -234,15 +301,17 @@ export function ReattestModal({
       // group queued and the other half not.
       const result = await bulkQueueReattest.mutateAsync({
         id: group.id,
-        data: { note: fullNote },
+        data: { note: fullNote, ...(renamePayload ?? {}) },
       });
       const queuedCount = result.queuedLegIds.length;
       onAfterAction(
-        `Queued ${queuedCount} leg${queuedCount === 1 ? "" : "s"} for re-attestation.`,
+        renamePayload
+          ? `Queued ${queuedCount} leg${queuedCount === 1 ? "" : "s"} for re-attestation — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
+          : `Queued ${queuedCount} leg${queuedCount === 1 ? "" : "s"} for re-attestation.`,
       );
       close();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not queue.";
+      const msg = renameConflictMessage(err) ?? (err instanceof Error ? err.message : "Could not queue.");
       toast({
         title: "Queue failed",
         description: msg,
@@ -281,17 +350,19 @@ export function ReattestModal({
     try {
       await completeReattest.mutateAsync({
         id: group.id,
-        data: buildOfflineReattestPayload(offlineNote),
+        data: { ...buildOfflineReattestPayload(offlineNote), ...(renamePayload ?? {}) },
       });
       // Same as the "now" path: drop the row off Responses Awaiting
       // Review while the (offline-recorded) re-attest propagates.
       await markWaiting.mutateAsync({ id: group.id, data: {} });
       onAfterAction(
-        "Recorded as already re-attested (offline) — group is awaiting payor again.",
+        renamePayload
+          ? `Recorded as already re-attested (offline) — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
+          : "Recorded as already re-attested (offline) — group is awaiting payor again.",
       );
       close();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not record.";
+      const msg = renameConflictMessage(err) ?? (err instanceof Error ? err.message : "Could not record.");
       toast({
         title: "Offline re-attest failed",
         description: msg,
@@ -299,6 +370,19 @@ export function ReattestModal({
       });
     }
   };
+
+  // Task #455 — render the rename banner ONLY when the inbound-email
+  // classifier surfaced a suggestion. With no suggestion the modal
+  // looks exactly as it did before this task (no banner, no toggle).
+  const renameBanner = suggestedNewInvoiceNumber ? (
+    <RenameInvoiceBanner
+      currentInvoiceNumber={group.invoiceNumber}
+      value={renameTo}
+      onChange={setRenameTo}
+      suggestion={suggestedNewInvoiceNumber}
+      disabled={busy}
+    />
+  ) : null;
 
   const headerTitle = (() => {
     if (mode === "now") return "Re-attest now";
@@ -354,6 +438,7 @@ export function ReattestModal({
         {/* ── Mode 1: Pick a path ──────────────────────────────── */}
         {mode === "pick" && (
           <div className="space-y-3 pt-2" data-testid="reattest-mode-pick">
+            {renameBanner}
             <PickButton
               icon={<ShieldCheck className="h-5 w-5" />}
               title="I'm re-attesting now"
@@ -394,6 +479,7 @@ export function ReattestModal({
         {/* ── Mode 2: Re-attest now (checklist) ─────────────────── */}
         {mode === "now" && (
           <div className="space-y-4 pt-2" data-testid="reattest-mode-now">
+            {renameBanner}
             <ul className="space-y-2" data-testid="reattest-checklist">
               {checklist.map((item) => (
                 <li
@@ -456,6 +542,7 @@ export function ReattestModal({
         {/* ── Mode 3: Queue for later (with double confirm) ─────── */}
         {mode === "queue" && (
           <div className="space-y-4 pt-2" data-testid="reattest-mode-queue">
+            {renameBanner}
             <div
               className="rounded-md border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap"
               data-testid="reattest-checklist-preview"
@@ -499,6 +586,7 @@ export function ReattestModal({
         {/* ── Mode 4: Offline re-attest override ────────────────── */}
         {mode === "offline" && (
           <div className="space-y-4 pt-2" data-testid="reattest-mode-offline">
+            {renameBanner}
             <div className="space-y-1">
               <Label className="text-xs font-medium">
                 Why are you recording this offline?
@@ -541,9 +629,12 @@ export function ReattestModal({
                 data-testid="reattest-offline-confirm"
               />
               <span className="leading-snug">
-                I confirm the re-attestation already happened in the portal.
-                This will be recorded as an admin override on the audit trail
-                and the group will drop off Responses Awaiting Review.
+                I confirm the re-attestation already happened in the portal
+                {renamePayload
+                  ? `, including renaming the invoice from #${group.invoiceNumber} to #${renamePayload.renameInvoiceNumberTo}`
+                  : ""}
+                . This will be recorded as an admin override on the audit
+                trail and the group will drop off Responses Awaiting Review.
               </span>
             </label>
             <div className="flex justify-end gap-2 pt-1">
@@ -620,6 +711,110 @@ export function ReattestModal({
         </AlertDialog>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Task #455 — pull the colliding invoice number out of a 409 response
+ * and shape it into a user-facing message. Returns null when the error
+ * isn't an invoice_number_conflict so the caller can fall back to the
+ * generic message.
+ */
+function renameConflictMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const anyErr = err as Record<string, unknown> & {
+    response?: { status?: number; data?: unknown };
+  };
+  const status = anyErr.response?.status;
+  if (status !== 409) return null;
+  const data = anyErr.response?.data;
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (d.code !== "invoice_number_conflict") return null;
+  const errMsg = typeof d.error === "string" ? d.error : null;
+  return errMsg ?? "That invoice number is already in use by another group.";
+}
+
+/**
+ * Task #455 — prominent first-class step inside the Re-attest modal.
+ * Renders an editable invoice-# field pre-filled with the AI suggestion
+ * so the operator can confirm, edit, or blank it before any sub-mode
+ * commits. Only shown when the inbound-email classifier surfaced a
+ * suggestion — when there's no suggestion the modal looks exactly as
+ * it did before this task.
+ */
+function RenameInvoiceBanner({
+  currentInvoiceNumber,
+  value,
+  onChange,
+  suggestion,
+  disabled,
+}: {
+  currentInvoiceNumber: string;
+  value: string;
+  onChange: (next: string) => void;
+  suggestion: string | null;
+  disabled?: boolean;
+}) {
+  const trimmed = value.trim();
+  const willRename = trimmed.length > 0 && trimmed !== currentInvoiceNumber;
+
+  return (
+    <div
+      className={`rounded-md border-2 px-3 py-3 ${
+        willRename
+          ? "border-indigo-300 bg-indigo-50/60"
+          : suggestion
+            ? "border-indigo-200 bg-indigo-50/40"
+            : "border-border bg-card"
+      }`}
+      data-testid="reattest-rename-banner"
+    >
+      <div className="flex items-start gap-2">
+        <FileText className="h-4 w-4 mt-0.5 text-indigo-600" />
+        <div className="flex-1 space-y-1.5">
+          <Label
+            htmlFor="reattest-rename-input"
+            className="text-sm font-medium"
+          >
+            Update invoice #{" "}
+            <span className="text-muted-foreground font-normal">
+              (current: #{currentInvoiceNumber})
+            </span>
+          </Label>
+          {suggestion && (
+            <p
+              className="text-xs text-indigo-700"
+              data-testid="reattest-rename-suggestion-hint"
+            >
+              The payor's reply mentioned a new invoice # — pre-filled
+              below. Edit or clear if it's wrong.
+            </p>
+          )}
+          <Input
+            id="reattest-rename-input"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`e.g. ${currentInvoiceNumber}-R`}
+            disabled={disabled}
+            className="text-sm font-mono"
+            data-testid="reattest-rename-input"
+          />
+          {willRename ? (
+            <p
+              className="text-xs text-indigo-800"
+              data-testid="reattest-rename-preview"
+            >
+              On submit: rename #{currentInvoiceNumber} → #{trimmed}.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Leave blank to keep #{currentInvoiceNumber}.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

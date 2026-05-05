@@ -160,6 +160,33 @@ export function pickSuggestedNewInvoiceNumber(
 }
 
 /**
+ * Task #455 — same scan as `pickSuggestedNewInvoiceNumber` but also
+ * returns the `portal_responses.id` of the response that supplied the
+ * suggestion so the Re-attest commit can record it on the rename
+ * audit row's `metadata.sourceResponseId`.
+ */
+export function pickSuggestedNewInvoiceNumberWithSource(
+  responses: readonly PortalResponseItem[] | undefined,
+): { invoiceNumber: string; sourceResponseId: number | null } | null {
+  if (!responses || responses.length === 0) return null;
+  const sorted = [...responses].sort((a, b) => {
+    const aT = a.receivedAt ? new Date(a.receivedAt).getTime() : 0;
+    const bT = b.receivedAt ? new Date(b.receivedAt).getTime() : 0;
+    return bT - aT;
+  });
+  for (const r of sorted) {
+    const meta = r.metadata;
+    if (!meta || typeof meta !== "object") continue;
+    const v = (meta as Record<string, unknown>).newInvoiceNumber;
+    if (typeof v === "string" && v.trim().length > 0) {
+      const id = typeof r.id === "number" && Number.isFinite(r.id) ? r.id : null;
+      return { invoiceNumber: v.trim(), sourceResponseId: id };
+    }
+  }
+  return null;
+}
+
+/**
  * Pull the AI-classified `suggestedPayorDenialReason` off the freshest
  * portal-response metadata. Returned as the raw code string — the
  * picker validates it against the @workspace/payor-denial-reasons

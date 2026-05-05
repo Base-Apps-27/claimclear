@@ -28,4 +28,25 @@ chars) explaining when/where the re-attest was recorded outside the
 standard checklist.
  */
   offlineNote?: string;
+  /**
+   * Task #455 — when set, atomically rename the group's
+`invoiceNumber` from its current value to this trimmed value
+inside the same transaction as the re-attest stamp + draft
+promotion. Validates non-empty (after trim), differs from
+current, and no other group already uses the same invoice
+number; otherwise the entire write rolls back with 409. A
+distinct `group_invoice_number_renamed` audit row is written
+with metadata `{from, to, sourceResponseId?}`.
+
+   * @nullable
+   */
+  renameInvoiceNumberTo?: string | null;
+  /**
+   * Optional `portal_responses.id` of the inbound payor reply that
+cited the new invoice number — recorded on the rename audit
+row's metadata for traceability.
+
+   * @nullable
+   */
+  renameSourceResponseId?: number | null;
 }

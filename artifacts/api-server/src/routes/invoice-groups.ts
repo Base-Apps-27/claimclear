@@ -1966,6 +1966,159 @@ async function createGroupAuditLog(
   });
 }
 
+// Task #455 — outcome of `parseAndValidateRename` so callers can branch
+// without re-throwing.
+type RenameValidation =
+  | { kind: "absent" }
+  | { kind: "noop" }
+  | { kind: "ok"; from: string; to: string; sourceResponseId: number | null }
+  | { kind: "error"; status: 400 | 409; code: string; error: string };
+
+/**
+ * Task #455 — validate the optional `renameInvoiceNumberTo` payload off
+ * the Re-attest endpoints. Pure (no DB hit besides the uniqueness probe
+ * the caller runs INSIDE its transaction); returns a tagged union so the
+ * caller can either ignore it ("absent"/"noop"), respond with a stable
+ * 4xx code, or proceed with the rename inside its transaction.
+ *
+ * Validation rules:
+ *   * If `renameInvoiceNumberTo` is missing/null/empty after trim, treat
+ *     as absent — no rename intent.
+ *   * If the trimmed value equals the current invoiceNumber, treat as a
+ *     no-op (don't error — the operator may have just confirmed the
+ *     suggestion that already matches).
+ *   * `renameSourceResponseId`, when present, must be a positive integer.
+ */
+function parseAndValidateRename(
+  body: unknown,
+  currentInvoiceNumber: string,
+): RenameValidation {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = b.renameInvoiceNumberTo;
+  if (raw == null) return { kind: "absent" };
+  if (typeof raw !== "string") {
+    return {
+      kind: "error",
+      status: 400,
+      code: "invalid_rename_invoice_number",
+      error: "renameInvoiceNumberTo must be a string",
+    };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { kind: "absent" };
+  if (trimmed === currentInvoiceNumber) return { kind: "noop" };
+
+  // Same intake-style format rules: invoice numbers in this product
+  // are short, single-token identifiers — no internal whitespace, no
+  // control characters, ASCII printable only, capped at 64 chars to
+  // match what the import path tolerates without truncation. Reject
+  // anything else with a stable code so the UI can surface the
+  // problem before the request opens a transaction.
+  if (trimmed.length > 64) {
+    return {
+      kind: "error",
+      status: 400,
+      code: "invalid_rename_invoice_number",
+      error: "renameInvoiceNumberTo must be 64 characters or fewer.",
+    };
+  }
+  if (/\s/.test(trimmed)) {
+    return {
+      kind: "error",
+      status: 400,
+      code: "invalid_rename_invoice_number",
+      error: "renameInvoiceNumberTo must not contain whitespace.",
+    };
+  }
+  // Disallow control characters and non-ASCII bytes — the intake
+  // pipeline trims and stores plain ASCII identifiers, and a stray
+  // smart-quote / NBSP would silently 404 every downstream lookup.
+  // eslint-disable-next-line no-control-regex
+  if (/[^\x21-\x7E]/.test(trimmed)) {
+    return {
+      kind: "error",
+      status: 400,
+      code: "invalid_rename_invoice_number",
+      error: "renameInvoiceNumberTo must contain only printable ASCII characters.",
+    };
+  }
+
+  let sourceResponseId: number | null = null;
+  if (b.renameSourceResponseId != null) {
+    const n = Number(b.renameSourceResponseId);
+    if (!Number.isInteger(n) || n <= 0) {
+      return {
+        kind: "error",
+        status: 400,
+        code: "invalid_rename_source_response_id",
+        error: "renameSourceResponseId must be a positive integer",
+      };
+    }
+    sourceResponseId = n;
+  }
+
+  return { kind: "ok", from: currentInvoiceNumber, to: trimmed, sourceResponseId };
+}
+
+/**
+ * Task #455 — apply an in-transaction invoice-number rename for a group.
+ * Throws a tagged error if another group already uses the new number so
+ * the surrounding `db.transaction` rolls back the entire write set
+ * (re-attest stamp, draft promotion, queue flips). The audit row records
+ * `{from, to, sourceResponseId?}` per spec.
+ *
+ * Caller is responsible for invoking this only when
+ * `parseAndValidateRename` returned `kind === "ok"`.
+ */
+class InvoiceNumberConflictError extends Error {
+  constructor(public readonly conflictingGroupId: number, public readonly invoiceNumber: string) {
+    super(`Invoice number ${invoiceNumber} is already in use by group ${conflictingGroupId}`);
+    this.name = "InvoiceNumberConflictError";
+  }
+}
+
+async function applyGroupInvoiceRename(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  groupId: number,
+  rename: { from: string; to: string; sourceResponseId: number | null },
+  actor: { userEmail: string | null; userName: string | null },
+): Promise<void> {
+  // Uniqueness probe inside the same tx so any concurrent rename racing
+  // us either commits before we read (we see it and 409) or commits
+  // after we write (their unique-by-app check sees ours and 409s). The
+  // DB index is non-unique today, so this app-level guard is the only
+  // one in place — keeping it inside the tx is what makes it safe.
+  const collision = await tx
+    .select({ id: invoiceGroupsTable.id })
+    .from(invoiceGroupsTable)
+    .where(and(
+      eq(invoiceGroupsTable.invoiceNumber, rename.to),
+      ne(invoiceGroupsTable.id, groupId),
+    ))
+    .limit(1);
+  if (collision.length > 0) {
+    throw new InvoiceNumberConflictError(collision[0].id, rename.to);
+  }
+
+  await tx
+    .update(invoiceGroupsTable)
+    .set({ invoiceNumber: rename.to })
+    .where(eq(invoiceGroupsTable.id, groupId));
+
+  await tx.insert(auditLogsTable).values({
+    invoiceGroupId: groupId,
+    action: "group_invoice_number_renamed",
+    details: `Invoice number renamed from #${rename.from} to #${rename.to}`,
+    metadata: {
+      from: rename.from,
+      to: rename.to,
+      sourceResponseId: rename.sourceResponseId,
+    },
+    userEmail: actor.userEmail,
+    userName: actor.userName,
+  });
+}
+
 
 // POST /invoice-groups/:id/group-context — operator records the group-level
 // "what's going on with this invoice" narrative used by the dispute write-
@@ -2647,31 +2800,108 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
     }
   }
 
+  // Task #455 — optional invoice-number rename payload. Validate up
+  // front so a 400 short-circuits before we open the transaction.
+  const renameValidation = parseAndValidateRename(req.body, group.invoiceNumber);
+  if (renameValidation.kind === "error") {
+    res.status(renameValidation.status).json({
+      error: renameValidation.error,
+      code: renameValidation.code,
+    });
+    return;
+  }
+
   const now = new Date();
   const fullNote = recordedOffline
     ? offlineNote
     : (masReference ? `${note ? note + " " : ""}(MAS ref: ${masReference})` : note);
-  const [updated] = await db
-    .update(invoiceGroupsTable)
-    .set({
-      reattestCompletedAt: now,
-      reattestCompletedBy: req.user?.email ?? null,
-      reattestNote: fullNote,
-    })
-    .where(eq(invoiceGroupsTable.id, id))
-    .returning();
+  const actor = actorFromReq(req);
 
-  if (recordedOffline) {
-    await createGroupAuditLog(
-      id,
-      "mas_reattest_recorded_offline",
-      "MAS re-attest recorded (offline)",
-      req,
-      { offlineNote, recordedOffline: true },
-    );
-  } else {
-    await createGroupAuditLog(id, "mas_reattest_completed", "MAS re-attest completed", req, { note, masReference });
+  // Wrap the entire write set in a single transaction so the optional
+  // Task #455 rename either commits alongside the re-attest stamp +
+  // attestation-gate flips or rolls everything back. Even when no
+  // rename is requested, the transaction keeps the gate writes from
+  // observers seeing a half-graduated group on a partial failure.
+  let updated: typeof invoiceGroupsTable.$inferSelect;
+  try {
+    updated = await db.transaction(async (tx) => {
+      if (renameValidation.kind === "ok") {
+        await applyGroupInvoiceRename(tx, id, renameValidation, actor);
+      }
+
+      const [u] = await tx
+        .update(invoiceGroupsTable)
+        .set({
+          reattestCompletedAt: now,
+          reattestCompletedBy: req.user?.email ?? null,
+          reattestNote: fullNote,
+        })
+        .where(eq(invoiceGroupsTable.id, id))
+        .returning();
+
+      if (recordedOffline) {
+        await tx.insert(auditLogsTable).values({
+          invoiceGroupId: id,
+          action: "mas_reattest_recorded_offline",
+          details: "MAS re-attest recorded (offline)",
+          metadata: { offlineNote, recordedOffline: true },
+          userEmail: actor.userEmail,
+          userName: actor.userName,
+        });
+      } else {
+        await tx.insert(auditLogsTable).values({
+          invoiceGroupId: id,
+          action: "mas_reattest_completed",
+          details: "MAS re-attest completed",
+          metadata: { note, masReference },
+          userEmail: actor.userEmail,
+          userName: actor.userName,
+        });
+      }
+
+      // Trigger gate: graduate any leg with an operator-confirmed
+      // Approved/Partial verdict from not_required → pending. Same
+      // gate behavior as before, just inside the surrounding tx.
+      const legs = await tx.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
+      for (const leg of legs) {
+        const [latestVerdict] = await tx
+          .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
+          .from(claimVerdictTable)
+          .where(eq(claimVerdictTable.claimId, leg.id))
+          .orderBy(desc(claimVerdictTable.createdAt))
+          .limit(1);
+        if (
+          latestVerdict &&
+          latestVerdict.source === "operator_confirmed" &&
+          (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
+        ) {
+          const delta = computeAttestationDelta(
+            "Pending",
+            leg.outcome === "Approved" || leg.outcome === "Partially Approved" ? leg.outcome : "Approved",
+            { reattestCompletedAt: now },
+          );
+          if (Object.keys(delta).length > 0 && leg.attestationState === "not_required") {
+            await tx.update(claimsTable).set(delta).where(eq(claimsTable.id, leg.id));
+          }
+        }
+      }
+
+      return u;
+    });
+  } catch (err) {
+    if (err instanceof InvoiceNumberConflictError) {
+      res.status(409).json({
+        error: `Invoice number #${err.invoiceNumber} is already in use by another group.`,
+        code: "invoice_number_conflict",
+        conflictingGroupId: err.conflictingGroupId,
+      });
+      return;
+    }
+    throw err;
   }
+
+  // Post-commit fan-out: SSE/state events live outside the tx so
+  // listeners only react to a committed write set.
   await emitStateEvent({
     eventKey: "group.reattest_completed",
     invoiceGroupId: id,
@@ -2680,32 +2910,6 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
       ? { recordedOffline: true, offlineNote }
       : { note, masReference },
   });
-
-  // Trigger gate: graduate any leg with an operator-confirmed
-  // Approved/Partial verdict from not_required → pending.
-  const legs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
-  for (const leg of legs) {
-    const [latestVerdict] = await db
-      .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
-      .from(claimVerdictTable)
-      .where(eq(claimVerdictTable.claimId, leg.id))
-      .orderBy(desc(claimVerdictTable.createdAt))
-      .limit(1);
-    if (
-      latestVerdict &&
-      latestVerdict.source === "operator_confirmed" &&
-      (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
-    ) {
-      const delta = computeAttestationDelta(
-        "Pending",
-        leg.outcome === "Approved" || leg.outcome === "Partially Approved" ? leg.outcome : "Approved",
-        { reattestCompletedAt: now },
-      );
-      if (Object.keys(delta).length > 0 && leg.attestationState === "not_required") {
-        await db.update(claimsTable).set(delta).where(eq(claimsTable.id, leg.id));
-      }
-    }
-  }
 
   await refreshGroupDerivedFields(id);
   emitGroupEvent(id, "reattest_completed", req);
@@ -2756,6 +2960,17 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
+
+  // Task #455 — optional invoice-number rename payload, validated up
+  // front so a bad shape short-circuits before we open the transaction.
+  const renameValidation = parseAndValidateRename(req.body, group.invoiceNumber);
+  if (renameValidation.kind === "error") {
+    res.status(renameValidation.status).json({
+      error: renameValidation.error,
+      code: renameValidation.code,
+    });
+    return;
+  }
 
   // Same source-state contract as `/awaiting-payor-again`: this is
   // the "drop the group off Responses Awaiting Review" leg of the
@@ -2836,14 +3051,42 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
   // group queued and the other half not, plus stamp awaiting_payor_again
   // on a group whose legs only partly moved. Wrap every write in a
   // single drizzle transaction so a failure rolls all of them back.
-  const updatedGroup = await db.transaction(async (tx) => {
+  let updatedGroup: typeof invoiceGroupsTable.$inferSelect;
+  try {
+    updatedGroup = await db.transaction(async (tx) => {
+    // Task #455 — apply rename FIRST inside the same tx so the
+    // attestation queue + awaiting_payor_again_at flips and the
+    // umbrella audit row all reference the new invoice number, and
+    // a uniqueness conflict rolls back the entire write set.
+    if (renameValidation.kind === "ok") {
+      await applyGroupInvoiceRename(tx, id, renameValidation, actor);
+    }
+    // Task #455 — when an invoice rename happens during the queue
+    // action, persist the canonical "Update the invoice # from #X to
+    // #Y." line on each leg's attestationNote so the Attestation
+    // Queue UI can derive a "Renamed → #{new}" chip from the per-leg
+    // note without needing a separate rename column.
+    const renameLine =
+      renameValidation.kind === "ok"
+        ? `Update the invoice # from #${renameValidation.from} to #${renameValidation.to}.`
+        : null;
+    // Avoid duplicating the rename line: the frontend already
+    // prepends it via the rendered checklist text it sends in `note`.
+    // Only inject from the backend when the operator note doesn't
+    // already contain it (e.g. a non-modal caller of the API).
+    const perLegAttestationNote = (() => {
+      if (!renameLine) return noteForDb;
+      if (noteForDb && noteForDb.includes(renameLine)) return noteForDb;
+      if (noteForDb) return `${renameLine}\n${noteForDb}`;
+      return renameLine;
+    })();
     for (const leg of eligibleLegs) {
       await tx.update(claimsTable)
         .set({
           attestationState: "queued",
           attestationQueuedAt: now,
           attestationQueuedBy: actorIdentity,
-          attestationNote: noteForDb,
+          attestationNote: perLegAttestationNote,
         })
         .where(eq(claimsTable.id, leg.id));
 
@@ -2916,7 +3159,18 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
     }, tx);
 
     return g;
-  });
+    });
+  } catch (err) {
+    if (err instanceof InvoiceNumberConflictError) {
+      res.status(409).json({
+        error: `Invoice number #${err.invoiceNumber} is already in use by another group.`,
+        code: "invoice_number_conflict",
+        conflictingGroupId: err.conflictingGroupId,
+      });
+      return;
+    }
+    throw err;
+  }
 
   // Post-commit fan-out: SSE broadcasts and denormalized-cache refresh.
   // These run after the transaction commits because (a) SSE listeners

@@ -17,6 +17,7 @@ import { useClosureLauncher } from "@/components/closure/closure-launcher";
 import {
   deriveVerdictMix,
   pickSuggestedNewInvoiceNumber,
+  pickSuggestedNewInvoiceNumberWithSource,
   pickSuggestedPayorDenialReason,
   isAwaitingPayorAgain,
   type VerdictDerivation,
@@ -96,10 +97,26 @@ export function WhatsNextCard({
     () => deriveVerdictMix(rides),
     [rides],
   );
-  const newInvoiceNumber = useMemo(
-    () => pickSuggestedNewInvoiceNumber(responses),
-    [responses],
-  );
+  // Task #455 — once the operator commits the rename through the
+  // Re-attest flow, `group.invoiceNumber` holds the new value. The
+  // raw `pickSuggestedNewInvoiceNumber` would still echo the same
+  // string off the response metadata, so the badge would never
+  // disappear. Filter out a suggestion that already matches the
+  // current invoice # so it stops showing once consumed.
+  const newInvoiceNumber = useMemo(() => {
+    const v = pickSuggestedNewInvoiceNumber(responses);
+    if (!v) return null;
+    if (v === group.invoiceNumber) return null;
+    return v;
+  }, [responses, group.invoiceNumber]);
+  // Same consumption logic for the modal pre-fill: a suggestion that
+  // matches the current invoice # is already applied — don't re-prompt.
+  const newInvoiceSuggestion = useMemo(() => {
+    const s = pickSuggestedNewInvoiceNumberWithSource(responses);
+    if (!s) return null;
+    if (s.invoiceNumber === group.invoiceNumber) return null;
+    return s;
+  }, [responses, group.invoiceNumber]);
   // Kept for the heads-up nudge in the no-verdicts-yet state — the
   // payor-denial-reason picker itself is no longer rendered here per
   // the Task #343 Step 4 contract (the closure intake dialog owns
@@ -326,6 +343,10 @@ export function WhatsNextCard({
         approvedLegs={derivation.approvedLegs}
         deniedLegs={derivation.deniedLegs}
         canRecordOffline={user?.role === "admin"}
+        suggestedNewInvoiceNumber={newInvoiceSuggestion?.invoiceNumber ?? null}
+        suggestedNewInvoiceNumberSourceResponseId={
+          newInvoiceSuggestion?.sourceResponseId ?? null
+        }
         promoteDrafts={async () => {
           // Re-attest (Attest now / Queue for later) commits Step 4 by
           // first promoting every draft on the group to
