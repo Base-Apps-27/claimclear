@@ -75,44 +75,44 @@ export const STEPS: StepDef[] = [
     nextLabel: "Next: the Queue",
   },
 
-  // ═══════ Queue — intro + 4 lane coaches ═══════
+  // ═══════ Queue — intro + 4 anchored coaches matching real layout ═══════
   {
     id: 9, kind: "modal", page: "queue", processStep: 3,
     title: "The Queue — where most of your day actually happens",
     body:
-      "Steps 2, 3, and 4 of the loop all happen here. Each column is a stage, left to right: Triage, Investigate, Gather proof, Submit. Pick the leftmost non-empty column and walk it down. Let's go column by column — what each one is, and what you do there.",
-    nextLabel: "Next: Triage",
+      "Steps 2, 3, and 4 of the loop all live on this page. It's four things stacked top to bottom: a status banner up top that tells you how urgent the day is, the Classification Inbox for brand-new uploads, the Actionable lane below that, and a side workspace that opens when you click into a group. Let's walk it top to bottom.",
+    nextLabel: "Next: the urgency banner",
   },
   {
-    id: 10, kind: "coach", page: "queue", processStep: 2,
-    anchor: { selector: '[data-tour="queue-lane-triage"]', placement: "right" },
-    title: "Triage — first look at every new dispute",
+    id: 10, kind: "coach", page: "queue", processStep: 4,
+    anchor: { selector: '[data-tour="queue-urgency-hero"]', placement: "bottom" },
+    title: "The urgency hero — your boss for the day",
     body:
-      "Brand-new uploads land here. Open each card, classify what kind of issue MAS got wrong (wrong distance, missing signature, wrong code, etc.), and tag it. A 30-second judgment call per invoice is enough — we're sorting, not solving yet.",
-    nextLabel: "Next: Investigate",
+      "Three states: red means drop everything and file before EOD (the big number is exactly how many groups owe you that). Amber means soon — due in the next 3 days, or already submitted but unconfirmed past deadline. Green means clear, you're ahead. The 'Show urgent only' button on the right collapses the whole page to just the items in the red bucket so you can plow through them.",
+    nextLabel: "Next: Classification Inbox",
   },
   {
     id: 11, kind: "coach", page: "queue", processStep: 2,
-    anchor: { selector: '[data-tour="queue-lane-investigate"]', placement: "right" },
-    title: "Investigate — figure out the exact ask",
+    anchor: { selector: '[data-tour="queue-classification-inbox"]', placement: "bottom" },
+    title: "Classification Inbox — Step 2 of the loop, and a gate",
     body:
-      "Now go deeper. For each invoice, decide the precise change you'll ask MAS to make and what proof would convince them. This is the most thinking-heavy column — the difference between a dispute that lands and one that bounces back as denied.",
-    nextLabel: "Next: Gather proof",
+      "Brand-new uploads land here without an error type yet. Open a row, classify what MAS got wrong (wrong distance, missing signature, wrong code, etc.), and the group leaves the inbox into the Actionable lane below. Nothing moves to evidence-gathering until it's classified — this inbox is the gate. If it has rows, work it before the lane.",
+    nextLabel: "Next: Actionable",
   },
   {
     id: 12, kind: "coach", page: "queue", processStep: 3,
-    anchor: { selector: '[data-tour="queue-lane-gather"]', placement: "left" },
-    title: "Gather proof — pull the evidence together",
+    anchor: { selector: '[data-tour="queue-tab-actionable"]', placement: "bottom" },
+    title: "Actionable lane — every group ready to work",
     body:
-      "Kick off the fact-finding workflow that pulls GPS pings, driver signatures, dispatch notes, and any uploaded documents. The system does most of the legwork; your job is to confirm the packet is clean and complete before it ships.",
-    nextLabel: "Next: Submit",
+      "After classification, groups land here in the Actionable lane: New, Needs Evidence, Generating Email — anything that needs your hands today. Click a group and the Submission Gauntlet (the same one we'll see on the Group Detail page) opens to the right. Pick by deadline, work top-to-bottom, ship.",
+    nextLabel: "Next: hidden tabs",
   },
   {
-    id: 13, kind: "coach", page: "queue", processStep: 4,
-    anchor: { selector: '[data-tour="queue-lane-submit"]', placement: "left" },
-    title: "Submit — send the packet to MAS",
+    id: 13, kind: "coach", page: "queue", processStep: "all",
+    anchor: { selector: '[data-tour="queue-engagement-strip"]', placement: "bottom" },
+    title: "⚠️ Two tabs are hidden right now — Needs Engagement is on",
     body:
-      "The evidence packet is ready. Click submit and the app routes you to the right channel for that invoice — either the MAS portal or an Outlook email — and the dispute is officially in flight. From here it shows up on the dashboard as At Risk until MAS responds.",
+      "By default the Queue only shows the Actionable tab. 'Portal Queued' (groups already submitted, waiting for MAS to confirm receipt) and 'On Hold' (manually parked or blocked) are hidden because they don't need your hands today. If a group seems to have vanished from the Queue, flip 'Needs engagement' to 'All' and the two hidden tabs come back. Same trap shows up on the Browse pages later — different shape, same idea.",
     nextLabel: "Next: Responses",
   },
 
