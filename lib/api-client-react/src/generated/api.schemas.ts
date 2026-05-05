@@ -1985,9 +1985,11 @@ export interface AttestationCountsResponse {
 }
 
 export interface ResponsesAwaitingReviewCountResponse {
-  /** Number of invoice groups in `Needs Review` status that have an
-Error Type assigned (stage-2 verdict pending). Drives the sidebar
-badge on the Responses Awaiting Review nav entry.
+  /** Number of invoice groups visible on the Responses Awaiting
+Review page — `response-pending` macro phase (status ∈
+{Ready to Review, Needs Review}), Error Type assigned, NOT in
+MAS-action-required state, and with at least one reviewable
+payor response on file. Drives the sidebar nav badge.
  */
   count: number;
   /** Number of invoice groups whose macro phase is
@@ -2682,7 +2684,7 @@ export type DashboardSummaryAmounts = {
   lostDeniedGroups?: number;
   /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. */
   lostExposureTotal?: string;
-  /** Σ approvedAmount across the portfolio, RAW (no prepay multiplier — once approved, the payor remit washes the prepay through). Approved dollars on rows whose re-attestation deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
+  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
   reclaimedApproved?: string;
 };
 
@@ -2891,6 +2893,63 @@ export interface DashboardTimeseries {
   points: DashboardTimeseriesPointsItem[];
 }
 
+export type DashboardInsightsStatusBreakdownItem = {
+  status: string;
+  count: number;
+};
+
+export type DashboardInsightsOutcomeBreakdownItem = {
+  outcome: string;
+  count: number;
+};
+
+export type DashboardInsightsErrorTypeBreakdownItem = {
+  /** Error type label, or `"Unclassified"` for claims with no error type. */
+  name: string;
+  count: number;
+  /** Settled-positive Σ approved for this error type. */
+  recoveredAmount: string | null;
+  /** Σ claim_amount for outcome=Denied claims of this error type. */
+  deniedAmount: string | null;
+};
+
+export type DashboardInsightsPayorBreakdownItem = {
+  /** Payor email, or `"Unassigned"` for claims with no payor. */
+  payorEmail: string;
+  count: number;
+  /** Σ claim_amount for outcome=Denied claims at this payor. */
+  atRiskAmount: string | null;
+};
+
+/**
+ * Server-side aggregations for the Insights page. All numeric
+breakdowns (`statusBreakdown`, `outcomeBreakdown`,
+`errorTypeBreakdown`, `payorBreakdown`) are exact counts over
+every claim in the window — no sample cap. Money string fields
+are decimal-formatted with 2 decimal places, or `null` for
+clerks who don't see amounts.
+
+ */
+export interface DashboardInsights {
+  days: number;
+  /** Exact count of claims with `created_at` inside the window. */
+  totalClaims: number;
+  /** Σ `claim_amount` across all claims in the window. */
+  totalClaimedAmount: string | null;
+  /** Σ `approved_amount` across claims whose outcome is Approved
+or Partially Approved AND whose re-attestation has settled
+(`attestation_state IN ('completed','not_required')`).
+Mirrors the dashboard "Reclaimed" KPI definition exactly.
+ */
+  totalRecoveredAmount: string | null;
+  /** Σ `claim_amount` across claims with outcome=Denied. */
+  totalDeniedAmount: string | null;
+  statusBreakdown: DashboardInsightsStatusBreakdownItem[];
+  outcomeBreakdown: DashboardInsightsOutcomeBreakdownItem[];
+  errorTypeBreakdown: DashboardInsightsErrorTypeBreakdownItem[];
+  payorBreakdown: DashboardInsightsPayorBreakdownItem[];
+}
+
 export type DashboardUserProductivityUsersItem = {
   userEmail: string;
   userName: string;
@@ -2908,16 +2967,16 @@ export interface DashboardUserProductivity {
 }
 
 /**
- * Personal "claims processed today" counter for the streak pip on the
+ * Personal "invoices processed today" counter for the streak pip on the
 sidebar avatar. The pip is private — only the requesting user's count
 is returned.
 
  */
 export interface MyProcessedTodayCount {
   /**
-   * Number of claims the current user transitioned into the
-`Processed` status since the start of "today" in the supplied
-timezone.
+   * Number of invoice groups the current user transitioned into the
+`Portal Queued` status (finished worktree, queued for portal
+submission) since the start of "today" in the supplied timezone.
 
    * @minimum 0
    */
@@ -4298,6 +4357,14 @@ export type ConfirmPortalSubmission422 = {
 };
 
 export type GetDashboardTimeseriesParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+};
+
+export type GetDashboardInsightsParams = {
   /**
    * @minimum 1
    * @maximum 365

@@ -72,6 +72,7 @@ import type {
   DailyBriefDetailResponse,
   DailyBriefResponse,
   DashboardActivity,
+  DashboardInsights,
   DashboardRepeatOffenders,
   DashboardSummary,
   DashboardTimeseries,
@@ -93,6 +94,7 @@ import type {
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
   GetDashboardActivityParams,
+  GetDashboardInsightsParams,
   GetDashboardRepeatOffendersParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
@@ -4548,13 +4550,15 @@ export function useGetAttestationCounts<
 }
 
 /**
- * Returns the live count of invoice groups in `Needs Review` status that
-already have an Error Type assigned (i.e., they are stage-2 awaiting a
-human verdict, not stage-1 awaiting classification). Drives the
-sidebar nav badge for the "Responses Awaiting Review" page so the
-team always knows when verdicts are owed. The same payload also
-carries a `masActionCount` so the sidebar can render a sub-pill
-without a second poll.
+ * Returns the live count of invoice groups visible on the
+`/responses-awaiting-review` page — i.e., groups in the
+`response-pending` macro phase (status ∈ {Ready to Review,
+Needs Review}) that have an Error Type assigned and are NOT in
+the MAS-action-required state (those have moved to the
+Attestation Queue). Drives the sidebar nav badge so the rail
+and the page can never disagree. The same payload also carries
+a `masActionCount` so the sidebar can render a sub-pill without
+a second poll.
 
  * @summary Count of invoice groups whose payor response needs a verdict
  */
@@ -9710,6 +9714,118 @@ export function useGetDashboardTimeseries<
 }
 
 /**
+ * Returns exact, server-side counts and sums for every claim whose
+`created_at` falls inside the requested window. Replaces the old
+client-side reductions on Insights, which silently capped at the
+first 500 claims returned by `/claims` and understated everything
+once a window grew past that.
+
+Money fields use the same Reclaimed semantics as
+`/dashboard/summary`: a positive verdict only contributes to
+`totalRecoveredAmount` (and to per-error-type / per-payor
+`recoveredAmount`) once re-attestation has settled. Money fields
+are nulled out for clerks.
+
+ * @summary Server-side aggregations powering the Insights page topline tiles and breakdowns
+ */
+export const getGetDashboardInsightsUrl = (
+  params?: GetDashboardInsightsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/insights?${stringifiedParams}`
+    : `/api/dashboard/insights`;
+};
+
+export const getDashboardInsights = async (
+  params?: GetDashboardInsightsParams,
+  options?: RequestInit,
+): Promise<DashboardInsights> => {
+  return customFetch<DashboardInsights>(getGetDashboardInsightsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDashboardInsightsQueryKey = (
+  params?: GetDashboardInsightsParams,
+) => {
+  return [`/api/dashboard/insights`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDashboardInsightsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardInsights>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardInsightsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardInsights>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardInsightsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardInsights>>
+  > = ({ signal }) =>
+    getDashboardInsights(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardInsights>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardInsightsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardInsights>>
+>;
+export type GetDashboardInsightsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Server-side aggregations powering the Insights page topline tiles and breakdowns
+ */
+
+export function useGetDashboardInsights<
+  TData = Awaited<ReturnType<typeof getDashboardInsights>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardInsightsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardInsights>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardInsightsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Per-user productivity counts over a window
  */
 export const getGetDashboardUserProductivityUrl = (
@@ -9920,15 +10036,17 @@ export function useGetDashboardActivity<
 
 /**
  * Powers the personal "streak pip" overlay on the sidebar avatar. Counts
-every claim that the currently-authenticated user moved into the
-`Processed` status since the start of "today" in the user's local
-timezone. Sourced from the per-claim status-transition history
-(`audit_logs`), filtered by `userEmail` of the actor.
+every invoice group that the currently-authenticated user moved into
+the `Portal Queued` status — i.e. finished the worktree and queued for
+portal submission — since the start of "today" in the user's local
+timezone. Sourced from the group-level status-transition history
+(`audit_logs.action = 'group_status_changed'`,
+`metadata.to = 'Portal Queued'`), filtered by `userEmail` of the actor.
 
 The pip is private — only the requesting user's count is returned, and
 nothing is exposed about other users.
 
- * @summary Count of claims the current user transitioned into Processed today
+ * @summary Count of invoice groups the current user processed (queued for portal submission) today
  */
 export const getGetMyProcessedTodayUrl = (
   params?: GetMyProcessedTodayParams,
@@ -10004,7 +10122,7 @@ export type GetMyProcessedTodayQueryResult = NonNullable<
 export type GetMyProcessedTodayQueryError = ErrorType<unknown>;
 
 /**
- * @summary Count of claims the current user transitioned into Processed today
+ * @summary Count of invoice groups the current user processed (queued for portal submission) today
  */
 
 export function useGetMyProcessedToday<

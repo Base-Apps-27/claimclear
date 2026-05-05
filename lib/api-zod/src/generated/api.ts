@@ -12139,13 +12139,15 @@ export const GetAttestationCountsResponse = zod.object({
 });
 
 /**
- * Returns the live count of invoice groups in `Needs Review` status that
-already have an Error Type assigned (i.e., they are stage-2 awaiting a
-human verdict, not stage-1 awaiting classification). Drives the
-sidebar nav badge for the "Responses Awaiting Review" page so the
-team always knows when verdicts are owed. The same payload also
-carries a `masActionCount` so the sidebar can render a sub-pill
-without a second poll.
+ * Returns the live count of invoice groups visible on the
+`/responses-awaiting-review` page — i.e., groups in the
+`response-pending` macro phase (status ∈ {Ready to Review,
+Needs Review}) that have an Error Type assigned and are NOT in
+the MAS-action-required state (those have moved to the
+Attestation Queue). Drives the sidebar nav badge so the rail
+and the page can never disagree. The same payload also carries
+a `masActionCount` so the sidebar can render a sub-pill without
+a second poll.
 
  * @summary Count of invoice groups whose payor response needs a verdict
  */
@@ -12153,7 +12155,7 @@ export const GetResponsesAwaitingReviewCountResponse = zod.object({
   count: zod
     .number()
     .describe(
-      "Number of invoice groups in `Needs Review` status that have an\nError Type assigned (stage-2 verdict pending). Drives the sidebar\nbadge on the Responses Awaiting Review nav entry.\n",
+      "Number of invoice groups visible on the Responses Awaiting\nReview page — `response-pending` macro phase (status ∈\n{Ready to Review, Needs Review}), Error Type assigned, NOT in\nMAS-action-required state, and with at least one reviewable\npayor response on file. Drives the sidebar nav badge.\n",
     ),
   masActionCount: zod
     .number()
@@ -20366,7 +20368,7 @@ export const GetDashboardSummaryResponse = zod.object({
       .string()
       .optional()
       .describe(
-        "Σ approvedAmount across the portfolio, RAW (no prepay multiplier — once approved, the payor remit washes the prepay through). Approved dollars on rows whose re-attestation deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss.",
+        "Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved \/ Partially Approved) AND no leg is still in pending\/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss.",
       ),
   }),
   expiringGroups: zod.array(
@@ -20911,6 +20913,103 @@ export const GetDashboardTimeseriesResponse = zod.object({
 });
 
 /**
+ * Returns exact, server-side counts and sums for every claim whose
+`created_at` falls inside the requested window. Replaces the old
+client-side reductions on Insights, which silently capped at the
+first 500 claims returned by `/claims` and understated everything
+once a window grew past that.
+
+Money fields use the same Reclaimed semantics as
+`/dashboard/summary`: a positive verdict only contributes to
+`totalRecoveredAmount` (and to per-error-type / per-payor
+`recoveredAmount`) once re-attestation has settled. Money fields
+are nulled out for clerks.
+
+ * @summary Server-side aggregations powering the Insights page topline tiles and breakdowns
+ */
+export const getDashboardInsightsQueryDaysDefault = 30;
+export const getDashboardInsightsQueryDaysMax = 365;
+
+export const GetDashboardInsightsQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardInsightsQueryDaysMax)
+    .default(getDashboardInsightsQueryDaysDefault),
+});
+
+export const GetDashboardInsightsResponse = zod
+  .object({
+    days: zod.number(),
+    totalClaims: zod
+      .number()
+      .describe("Exact count of claims with `created_at` inside the window."),
+    totalClaimedAmount: zod
+      .string()
+      .nullable()
+      .describe("Σ `claim_amount` across all claims in the window."),
+    totalRecoveredAmount: zod
+      .string()
+      .nullable()
+      .describe(
+        "Σ `approved_amount` across claims whose outcome is Approved\nor Partially Approved AND whose re-attestation has settled\n(`attestation_state IN ('completed','not_required')`).\nMirrors the dashboard \"Reclaimed\" KPI definition exactly.\n",
+      ),
+    totalDeniedAmount: zod
+      .string()
+      .nullable()
+      .describe("Σ `claim_amount` across claims with outcome=Denied."),
+    statusBreakdown: zod.array(
+      zod.object({
+        status: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    outcomeBreakdown: zod.array(
+      zod.object({
+        outcome: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    errorTypeBreakdown: zod.array(
+      zod.object({
+        name: zod
+          .string()
+          .describe(
+            'Error type label, or `\"Unclassified\"` for claims with no error type.',
+          ),
+        count: zod.number(),
+        recoveredAmount: zod
+          .string()
+          .nullable()
+          .describe("Settled-positive Σ approved for this error type."),
+        deniedAmount: zod
+          .string()
+          .nullable()
+          .describe(
+            "Σ claim_amount for outcome=Denied claims of this error type.",
+          ),
+      }),
+    ),
+    payorBreakdown: zod.array(
+      zod.object({
+        payorEmail: zod
+          .string()
+          .describe(
+            'Payor email, or `\"Unassigned\"` for claims with no payor.',
+          ),
+        count: zod.number(),
+        atRiskAmount: zod
+          .string()
+          .nullable()
+          .describe("Σ claim_amount for outcome=Denied claims at this payor."),
+      }),
+    ),
+  })
+  .describe(
+    "Server-side aggregations for the Insights page. All numeric\nbreakdowns (`statusBreakdown`, `outcomeBreakdown`,\n`errorTypeBreakdown`, `payorBreakdown`) are exact counts over\nevery claim in the window — no sample cap. Money string fields\nare decimal-formatted with 2 decimal places, or `null` for\nclerks who don't see amounts.\n",
+  );
+
+/**
  * @summary Per-user productivity counts over a window
  */
 export const getDashboardUserProductivityQueryDaysDefault = 30;
@@ -20993,15 +21092,17 @@ export const GetDashboardActivityResponse = zod.object({
 
 /**
  * Powers the personal "streak pip" overlay on the sidebar avatar. Counts
-every claim that the currently-authenticated user moved into the
-`Processed` status since the start of "today" in the user's local
-timezone. Sourced from the per-claim status-transition history
-(`audit_logs`), filtered by `userEmail` of the actor.
+every invoice group that the currently-authenticated user moved into
+the `Portal Queued` status — i.e. finished the worktree and queued for
+portal submission — since the start of "today" in the user's local
+timezone. Sourced from the group-level status-transition history
+(`audit_logs.action = 'group_status_changed'`,
+`metadata.to = 'Portal Queued'`), filtered by `userEmail` of the actor.
 
 The pip is private — only the requesting user's count is returned, and
 nothing is exposed about other users.
 
- * @summary Count of claims the current user transitioned into Processed today
+ * @summary Count of invoice groups the current user processed (queued for portal submission) today
  */
 export const GetMyProcessedTodayQueryParams = zod.object({
   tz: zod.coerce
@@ -21020,7 +21121,7 @@ export const GetMyProcessedTodayResponse = zod
       .number()
       .min(getMyProcessedTodayResponseCountMin)
       .describe(
-        'Number of claims the current user transitioned into the\n`Processed` status since the start of \"today\" in the supplied\ntimezone.\n',
+        'Number of invoice groups the current user transitioned into the\n`Portal Queued` status (finished worktree, queued for portal\nsubmission) since the start of \"today\" in the supplied timezone.\n',
       ),
     timezone: zod
       .string()
@@ -21034,7 +21135,7 @@ export const GetMyProcessedTodayResponse = zod
       ),
   })
   .describe(
-    'Personal \"claims processed today\" counter for the streak pip on the\nsidebar avatar. The pip is private — only the requesting user\'s count\nis returned.\n',
+    'Personal \"invoices processed today\" counter for the streak pip on the\nsidebar avatar. The pip is private — only the requesting user\'s count\nis returned.\n',
   );
 
 /**

@@ -13,9 +13,11 @@ understanding readback / preview generation) instead.
  */
 
 export interface ResponsesAwaitingReviewCountResponse {
-  /** Number of invoice groups in `Needs Review` status that have an
-Error Type assigned (stage-2 verdict pending). Drives the sidebar
-badge on the Responses Awaiting Review nav entry.
+  /** Number of invoice groups visible on the Responses Awaiting
+Review page — `response-pending` macro phase (status ∈
+{Ready to Review, Needs Review}), Error Type assigned, NOT in
+MAS-action-required state, and with at least one reviewable
+payor response on file. Drives the sidebar nav badge.
  */
   count: number;
   /** Number of invoice groups whose macro phase is

@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import {
   useGetDashboardSummary,
-  useListClaims,
+  useGetDashboardInsights,
   useGetDashboardTimeseries,
   useGetDashboardUserProductivity,
   useGetDashboardRepeatOffenders,
@@ -116,91 +116,22 @@ export default function Insights() {
   const { isClerk: clerk } = useRole();
   const [rangeKey, setRangeKey] = useState<RangeKey>("30");
   const days = daysForRange(rangeKey);
-  const createdFromISO = useMemo(() => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - days);
-    d.setUTCHours(0, 0, 0, 0);
-    return d.toISOString();
-  }, [days]);
 
   useDashboardLiveUpdates();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
-  // `includeExpired: true`: analytics over a date range
-  // must include past-deadline and Expired claims; otherwise the
-  // counts misrepresent the historical workload.
-  const { data: allClaimsData } = useListClaims({ limit: 1000, createdFrom: createdFromISO, includeExpired: true });
+  // Server-side aggregation for the topline tiles and breakdowns.
+  // Replaces the prior in-memory reductions over the first 500 claims
+  // returned by /claims — those silently understated everything once
+  // the window held more than 500 rows. Now `totalClaims`, the dollar
+  // sums, and every breakdown reflect the entire window exactly.
+  const { data: insights, isLoading: insightsLoading } = useGetDashboardInsights({ days });
   const { data: timeseries, isLoading: tsLoading } = useGetDashboardTimeseries({ days });
   const { data: productivity, isLoading: prodLoading } = useGetDashboardUserProductivity({ days });
   const { data: repeat, isLoading: repeatLoading } = useGetDashboardRepeatOffenders({ days, limit: 5 });
 
-  const claims = allClaimsData?.claims || [];
-  // Server-side count of all claims matching the window filter. The
-  // `claims` array above is capped at 500 by the /claims endpoint, so
-  // `claims.length` understates the real workload as soon as the
-  // window exceeds 500 rows. `totalClaims` is sourced from the server's
-  // aggregate count and is exact regardless of the page-size cap.
-  const totalClaims = allClaimsData?.total ?? claims.length;
-  // Truthy when the window contains more rows than we sampled. Used to
-  // mark sample-derived breakdowns ($-by-error-type, status/outcome/
-  // payor counts, topline $ sums) so the operator knows those numbers
-  // approximate the leading 500 claims rather than the full window.
-  const sampleTruncated = (allClaimsData?.total ?? 0) > claims.length;
-
-  const { statusBreakdown, outcomeBreakdown, errorTypeAggregate, payorBreakdown, rangeAmounts } = useMemo(() => {
-    const status: Record<string, number> = {};
-    const outcome: Record<string, number> = {};
-    type ErrAgg = { count: number; recovered: number; denied: number };
-    const errorType: Record<string, ErrAgg> = {};
-    type PayorAgg = { count: number; denied: number; recovered: number; atRisk: number };
-    const payor: Record<string, PayorAgg> = {};
-    let claimedSum = 0;
-    let approvedSum = 0;
-    let deniedSum = 0;
-    for (const c of claims) {
-      status[c.status] = (status[c.status] || 0) + 1;
-      outcome[c.outcome] = (outcome[c.outcome] || 0) + 1;
-      const et = c.errorTypeName || "Unclassified";
-      const agg = errorType[et] || (errorType[et] = { count: 0, recovered: 0, denied: 0 });
-      agg.count += 1;
-      const amt = parseFloat(c.claimAmount || "0");
-      // "Recovered" = approved dollars on rides that reached their true
-      // end (outcome is a positive verdict AND re-attestation has
-      // settled). Mirrors the dashboard "Reclaimed" KPI so the two
-      // surfaces never disagree. A pending/queued re-attest can still
-      // flip the verdict back, so its approved dollars don't count yet.
-      const isApproved = c.outcome === "Approved" || c.outcome === "Partially Approved";
-      const isDenied = c.outcome === "Denied";
-      const attestSettled = c.attestationState === "completed" || c.attestationState === "not_required";
-      const recoveredAmt = parseFloat(c.approvedAmount || "0");
-      const isRecovered = isApproved && attestSettled && Number.isFinite(recoveredAmt);
-      if (Number.isFinite(amt)) {
-        claimedSum += amt;
-        if (isDenied) {
-          agg.denied += amt;
-          deniedSum += amt;
-        }
-      }
-      if (isRecovered) {
-        agg.recovered += recoveredAmt;
-        approvedSum += recoveredAmt;
-      }
-      const payorKey = c.payorEmail || "Unassigned";
-      const p = payor[payorKey] || (payor[payorKey] = { count: 0, denied: 0, recovered: 0, atRisk: 0 });
-      p.count += 1;
-      if (isDenied) {
-        p.denied += 1;
-        if (Number.isFinite(amt)) p.atRisk += amt;
-      }
-      if (isRecovered) p.recovered += recoveredAmt;
-    }
-    return {
-      statusBreakdown: status,
-      outcomeBreakdown: outcome,
-      errorTypeAggregate: errorType,
-      payorBreakdown: payor,
-      rangeAmounts: { claimed: claimedSum, approved: approvedSum, denied: deniedSum },
-    };
-  }, [claims]);
+  const totalClaims = insights?.totalClaims ?? 0;
+  const totalClaimed = parseFloat(insights?.totalClaimedAmount ?? "0") || 0;
+  const totalApproved = parseFloat(insights?.totalRecoveredAmount ?? "0") || 0;
 
   const trendTotals = useMemo(() => {
     const points = timeseries?.points || [];
@@ -223,19 +154,54 @@ export default function Insights() {
     }, null);
   }, [timeseries]);
 
+  // Per-error-type bars. Counts and dollar sums come straight from the
+  // server's `errorTypeBreakdown`, so a window with thousands of claims
+  // is summarized exactly rather than from a leading 500-row sample.
   const errorTypeBars = useMemo(() => {
-    const entries = Object.entries(errorTypeAggregate)
-      .map(([name, agg]) => ({ name, ...agg }))
-      .sort((a, b) => b.recovered - a.recovered)
-      .slice(0, 6);
+    const rows = (insights?.errorTypeBreakdown ?? []).map(b => ({
+      name: b.name,
+      count: b.count,
+      recovered: parseFloat(b.recoveredAmount ?? "0") || 0,
+      denied: parseFloat(b.deniedAmount ?? "0") || 0,
+    }));
+    const entries = rows.sort((a, b) => b.recovered - a.recovered).slice(0, 6);
     const maxRecovered = entries.reduce((m, e) => Math.max(m, e.recovered), 0) || 1;
-    const totalCount = entries.reduce((s, e) => s + e.count, 0) || 1;
+    // Percentage of windowed claims that fell into this error type. Use
+    // the global windowed total (not just the top-6 sum) so the
+    // numbers add up to a meaningful share of all claims, not a share
+    // of "claims that made the bar list".
+    const totalForPct = totalClaims || rows.reduce((s, e) => s + e.count, 0) || 1;
     return entries.map(e => ({
       ...e,
-      pct: Math.round((e.count / totalCount) * 100),
+      pct: Math.round((e.count / totalForPct) * 100),
       barPct: Math.round((e.recovered / maxRecovered) * 100),
     }));
-  }, [errorTypeAggregate]);
+  }, [insights?.errorTypeBreakdown, totalClaims]);
+
+  // Status / outcome / payor breakdowns also come from the server.
+  // We materialize them as Maps keyed by the dimension so the JSX
+  // doesn't need to know whether the source was a client reduction
+  // or a typed array — same shape it consumed before.
+  const statusBreakdown = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of insights?.statusBreakdown ?? []) m[r.status] = r.count;
+    return m;
+  }, [insights?.statusBreakdown]);
+  const outcomeBreakdown = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of insights?.outcomeBreakdown ?? []) m[r.outcome] = r.count;
+    return m;
+  }, [insights?.outcomeBreakdown]);
+  const payorBreakdown = useMemo(() => {
+    const m: Record<string, { count: number; atRisk: number }> = {};
+    for (const r of insights?.payorBreakdown ?? []) {
+      m[r.payorEmail] = {
+        count: r.count,
+        atRisk: parseFloat(r.atRiskAmount ?? "0") || 0,
+      };
+    }
+    return m;
+  }, [insights?.payorBreakdown]);
 
   const teamRows = useMemo(() => {
     const users = productivity?.users || [];
@@ -297,9 +263,6 @@ export default function Insights() {
     return <div className="text-center py-12 text-muted-foreground">No data available</div>;
   }
 
-  // Range-windowed amounts (computed from claims sample filtered by createdFrom).
-  const totalClaimed = rangeAmounts.claimed;
-  const totalApproved = rangeAmounts.approved;
   // Use the vendor-prepay rate the API computed against, so insights and the
   // dashboard / brief never disagree if the rate changes.
   const vendorPrepayRate = summary.amounts.vendorPrepayRate ?? 0.70;
@@ -712,11 +675,7 @@ export default function Insights() {
                   );
                 })
             )}
-            <div className="text-[10px] text-muted-foreground pt-1">
-              {sampleTruncated
-                ? `${claims.length} of ${totalClaims} claims sampled`
-                : `${totalClaims} total claims`}
-            </div>
+            <div className="text-[10px] text-muted-foreground pt-1">{totalClaims} total claims</div>
           </div>
         </div>
 

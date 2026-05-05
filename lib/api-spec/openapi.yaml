@@ -3277,6 +3277,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardTimeseries"
 
+  /dashboard/insights:
+    get:
+      operationId: getDashboardInsights
+      tags: [dashboard]
+      summary: Server-side aggregations powering the Insights page topline tiles and breakdowns
+      description: |
+        Returns exact, server-side counts and sums for every claim whose
+        `created_at` falls inside the requested window. Replaces the old
+        client-side reductions on Insights, which silently capped at the
+        first 500 claims returned by `/claims` and understated everything
+        once a window grew past that.
+
+        Money fields use the same Reclaimed semantics as
+        `/dashboard/summary`: a positive verdict only contributes to
+        `totalRecoveredAmount` (and to per-error-type / per-payor
+        `recoveredAmount`) once re-attestation has settled. Money fields
+        are nulled out for clerks.
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        "200":
+          description: Counts and money sums for the Insights page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardInsights"
+
   /dashboard/user-productivity:
     get:
       operationId: getDashboardUserProductivity
@@ -7651,6 +7685,102 @@ components:
       required:
         - days
         - points
+
+    DashboardInsights:
+      type: object
+      description: |
+        Server-side aggregations for the Insights page. All numeric
+        breakdowns (`statusBreakdown`, `outcomeBreakdown`,
+        `errorTypeBreakdown`, `payorBreakdown`) are exact counts over
+        every claim in the window — no sample cap. Money string fields
+        are decimal-formatted with 2 decimal places, or `null` for
+        clerks who don't see amounts.
+      properties:
+        days:
+          type: integer
+        totalClaims:
+          type: integer
+          description: Exact count of claims with `created_at` inside the window.
+        totalClaimedAmount:
+          type: string
+          nullable: true
+          description: Σ `claim_amount` across all claims in the window.
+        totalRecoveredAmount:
+          type: string
+          nullable: true
+          description: |
+            Σ `approved_amount` across claims whose outcome is Approved
+            or Partially Approved AND whose re-attestation has settled
+            (`attestation_state IN ('completed','not_required')`).
+            Mirrors the dashboard "Reclaimed" KPI definition exactly.
+        totalDeniedAmount:
+          type: string
+          nullable: true
+          description: Σ `claim_amount` across claims with outcome=Denied.
+        statusBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+            required: [status, count]
+        outcomeBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              outcome:
+                type: string
+              count:
+                type: integer
+            required: [outcome, count]
+        errorTypeBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Error type label, or `"Unclassified"` for claims with no error type.
+              count:
+                type: integer
+              recoveredAmount:
+                type: string
+                nullable: true
+                description: Settled-positive Σ approved for this error type.
+              deniedAmount:
+                type: string
+                nullable: true
+                description: Σ claim_amount for outcome=Denied claims of this error type.
+            required: [name, count, recoveredAmount, deniedAmount]
+        payorBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              payorEmail:
+                type: string
+                description: Payor email, or `"Unassigned"` for claims with no payor.
+              count:
+                type: integer
+              atRiskAmount:
+                type: string
+                nullable: true
+                description: Σ claim_amount for outcome=Denied claims at this payor.
+            required: [payorEmail, count, atRiskAmount]
+      required:
+        - days
+        - totalClaims
+        - totalClaimedAmount
+        - totalRecoveredAmount
+        - totalDeniedAmount
+        - statusBreakdown
+        - outcomeBreakdown
+        - errorTypeBreakdown
+        - payorBreakdown
 
     DashboardUserProductivity:
       type: object

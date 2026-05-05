@@ -41,6 +41,6 @@ export type DashboardSummaryAmounts = {
   lostDeniedGroups?: number;
   /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. */
   lostExposureTotal?: string;
-  /** Σ approvedAmount across the portfolio, RAW (no prepay multiplier — once approved, the payor remit washes the prepay through). Approved dollars on rows whose re-attestation deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
+  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
   reclaimedApproved?: string;
 };

@@ -664,6 +664,132 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   res.json({ days, points });
 }));
 
+// ─────────────────────────────────────────────────────────────────────
+// /dashboard/insights
+//
+// Server-side aggregations for the Insights page topline tiles and
+// breakdown lists. Replaces the prior client-side reductions that
+// summed the first 500 rows returned by /claims and silently
+// understated everything once a window held more than that.
+//
+// All windows are filtered on `claims.created_at >= start_of_window`,
+// matching the page's `createdFrom` query, and exclude the global
+// tour sample. Money sums use the same Reclaimed semantics as
+// /dashboard/summary: a positive verdict only counts toward
+// `recoveredAmount` once re-attestation has settled
+// (`attestation_state IN ('completed','not_required')`), so the
+// Insights "Recovered" tile and the dashboard "Reclaimed" KPI can
+// never disagree.
+//
+// Money fields are nulled out for clerks via `canSeeAmounts`.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> => {
+  const days = parseDays(req.query.days, 30);
+  const start = startOfWindow(days);
+  const showAmounts = canSeeAmounts(req.user);
+
+  // Settled-positive predicate. Mirrors the gate used by
+  // /dashboard/summary's `reclaimedApproved` bucket: only attestation-
+  // settled approvals count as money recovered. A pending/queued
+  // re-attestation can still flip the verdict back, so its approved
+  // dollars stay out of the recovered total.
+  const isSettledApprovedExpr = sql`${claimsTable.outcome} IN ('Approved','Partially Approved')
+    AND ${claimsTable.attestationState} IN ('completed','not_required')`;
+  const inWindow = and(gte(claimsTable.createdAt, start), HIDE_TOUR_SAMPLE_CLAIM);
+
+  // Totals. One pass with conditional sums so the Insights topline
+  // tiles (count, disputed, recovered, denied) are always internally
+  // consistent — they're computed from the same row set in one query.
+  const [totalsRow] = await db
+    .select({
+      totalClaims: count(),
+      totalClaimedAmount: sql<string>`COALESCE(SUM(COALESCE(${claimsTable.claimAmount}, 0)), 0)`,
+      totalRecoveredAmount: sql<string>`COALESCE(SUM(CASE
+        WHEN ${isSettledApprovedExpr}
+          THEN COALESCE(${claimsTable.approvedAmount}, 0)
+        ELSE 0
+      END), 0)`,
+      totalDeniedAmount: sql<string>`COALESCE(SUM(CASE
+        WHEN ${claimsTable.outcome} = 'Denied'
+          THEN COALESCE(${claimsTable.claimAmount}, 0)
+        ELSE 0
+      END), 0)`,
+    })
+    .from(claimsTable)
+    .where(inWindow);
+
+  // Breakdown queries. Run in parallel — none depend on each other.
+  const [statusRows, outcomeRows, errorTypeRows, payorRows] = await Promise.all([
+    db
+      .select({ key: claimsTable.status, count: count() })
+      .from(claimsTable)
+      .where(inWindow)
+      .groupBy(claimsTable.status),
+    db
+      .select({ key: claimsTable.outcome, count: count() })
+      .from(claimsTable)
+      .where(inWindow)
+      .groupBy(claimsTable.outcome),
+    db
+      .select({
+        key: claimsTable.errorTypeName,
+        count: count(),
+        recovered: sql<string>`COALESCE(SUM(CASE
+          WHEN ${isSettledApprovedExpr}
+            THEN COALESCE(${claimsTable.approvedAmount}, 0)
+          ELSE 0
+        END), 0)`,
+        denied: sql<string>`COALESCE(SUM(CASE
+          WHEN ${claimsTable.outcome} = 'Denied'
+            THEN COALESCE(${claimsTable.claimAmount}, 0)
+          ELSE 0
+        END), 0)`,
+      })
+      .from(claimsTable)
+      .where(inWindow)
+      .groupBy(claimsTable.errorTypeName),
+    db
+      .select({
+        key: claimsTable.payorEmail,
+        count: count(),
+        atRisk: sql<string>`COALESCE(SUM(CASE
+          WHEN ${claimsTable.outcome} = 'Denied'
+            THEN COALESCE(${claimsTable.claimAmount}, 0)
+          ELSE 0
+        END), 0)`,
+      })
+      .from(claimsTable)
+      .where(inWindow)
+      .groupBy(claimsTable.payorEmail),
+  ]);
+
+  const moneyOrNull = (raw: string) =>
+    showAmounts ? parseFloat(raw || "0").toFixed(2) : null;
+
+  res.json({
+    days,
+    totalClaims: Number(totalsRow?.totalClaims ?? 0),
+    totalClaimedAmount: moneyOrNull(totalsRow?.totalClaimedAmount ?? "0"),
+    totalRecoveredAmount: moneyOrNull(totalsRow?.totalRecoveredAmount ?? "0"),
+    totalDeniedAmount: moneyOrNull(totalsRow?.totalDeniedAmount ?? "0"),
+    statusBreakdown: statusRows.map(r => ({ status: r.key, count: r.count })),
+    outcomeBreakdown: outcomeRows.map(r => ({ outcome: r.key, count: r.count })),
+    errorTypeBreakdown: errorTypeRows.map(r => ({
+      // Match the page's "Unclassified" label so the frontend can
+      // render this verbatim instead of normalizing each row again.
+      name: r.key ?? "Unclassified",
+      count: r.count,
+      recoveredAmount: moneyOrNull(r.recovered),
+      deniedAmount: moneyOrNull(r.denied),
+    })),
+    payorBreakdown: payorRows.map(r => ({
+      payorEmail: r.key ?? "Unassigned",
+      count: r.count,
+      atRiskAmount: moneyOrNull(r.atRisk),
+    })),
+  });
+}));
+
 // Office wall-clock fallback. The streak pip is anchored to the user's
 // local timezone (taken from the client query param), but if the client
 // sends nothing — or sends garbage we can't validate — we fall back to

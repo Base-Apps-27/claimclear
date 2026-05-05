@@ -13,16 +13,16 @@ understanding readback / preview generation) instead.
  */
 
 /**
- * Personal "claims processed today" counter for the streak pip on the
+ * Personal "invoices processed today" counter for the streak pip on the
 sidebar avatar. The pip is private — only the requesting user's count
 is returned.
 
  */
 export interface MyProcessedTodayCount {
   /**
-   * Number of claims the current user transitioned into the
-`Processed` status since the start of "today" in the supplied
-timezone.
+   * Number of invoice groups the current user transitioned into the
+`Portal Queued` status (finished worktree, queued for portal
+submission) since the start of "today" in the supplied timezone.
 
    * @minimum 0
    */
