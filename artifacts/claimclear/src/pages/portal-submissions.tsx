@@ -455,7 +455,7 @@ export default function PortalSubmissions() {
 
       {/* Two-column layout: list left, sticky rail right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-8 space-y-3 min-w-0">
+        <div className="lg:col-span-8 space-y-3 min-w-0" data-tour="portal-submissions-list">
           {/* Standard list-page header strip — search + matching count.
               No advanced filter categories yet (the status pill strip above
               is the primary segmentation); the Faceted Rail shell will pick
@@ -534,7 +534,7 @@ export default function PortalSubmissions() {
         </div>
 
         {/* Right rail — clerks see no batch / queue / selection rail. */}
-        <aside className="lg:col-span-4 space-y-4">
+        <aside className="lg:col-span-4 space-y-4" data-tour="portal-submissions-rail">
           <div className="lg:sticky lg:top-4 space-y-4">
             {clerk ? null : sharedBatch ? (
               <InFlightRail

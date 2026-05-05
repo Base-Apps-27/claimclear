@@ -621,7 +621,7 @@ export default function InvoiceGroupsList() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3" data-tour="invoice-groups-tabs">
         <FilterStrip
           tabs={tabs}
           active={activeTab}
@@ -689,7 +689,7 @@ export default function InvoiceGroupsList() {
               </>
             }
           >
-          <Card>
+          <Card data-tour="invoice-groups-table">
             <FilterChipStrip
               chips={chips}
               onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, page: null }, false); }}

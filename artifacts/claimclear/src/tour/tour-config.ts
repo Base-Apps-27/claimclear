@@ -6,14 +6,14 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v16";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v17";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
   | "all" | "transition" | "closing";
 
 export type PageKey =
-  | "dashboard" | "queue" | "responses" | "attestation"
+  | "dashboard" | "queue" | "responses" | "attestation" | "portal"
   | "invoice-groups" | "group-detail" | "claims" | "claim-detail";
 
 export type TourStepDef = {
@@ -68,6 +68,7 @@ export function routeForPage(page: PageKey | null): string | null {
     case "queue":           return "/queue";
     case "responses":       return "/responses-awaiting-review";
     case "attestation":     return "/attestation-queue";
+    case "portal":          return "/portal-submissions";
     case "invoice-groups":  return "/invoice-groups";
     case "group-detail":    return "/invoice-groups";
     case "claims":          return "/claims";
@@ -86,6 +87,7 @@ export function pageForLocation(location: string): PageKey | null {
   if (location.startsWith("/queue"))           return "queue";
   if (location.startsWith("/responses-awaiting-review")) return "responses";
   if (location.startsWith("/attestation-queue"))         return "attestation";
+  if (location.startsWith("/portal-submissions"))        return "portal";
   if (location === "/" || location.startsWith("/dashboard")) return "dashboard";
   return null;
 }
@@ -94,7 +96,7 @@ export function pageForLocation(location: string): PageKey | null {
 //   1. Process orientation (steps 1–7): the five-step playbook every
 //      claim travels through. Front-loaded so a brand-new hire holds
 //      the mental model before any UI is shown.
-//   2. UI walkthrough (steps 8–24): which screen each playbook step
+//   2. UI walkthrough (steps 8–29): which screen each playbook step
 //      lives on, walked column-by-column where the page has more than
 //      one part. Anchored coach cards point at real selectors with
 //      `data-tour="..."` attributes on the live pages.
@@ -214,6 +216,30 @@ export const TOUR_STEPS: TourStepDef[] = [
     title: "⚠️ Two tabs are hidden right now",
     body:
       "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
+    nextLabel: "Next: Portal Submissions",
+  },
+
+  // ═══════ Portal Submissions (1 modal + 1 coach) ═══════
+  // Step 4 of the playbook ("Send it to MAS") in action: every dispute
+  // queued from the Queue lands here as a draft and gets filed by the
+  // submission bot. The page has two parts: the list of submissions on
+  // the left (grouped by status) and the run-the-queue rail on the right
+  // where you trigger / monitor / stop the bot. Both anchors always
+  // render — even when the list is empty (it shows an EmptyState card).
+  {
+    id: 14, kind: "modal", page: "portal", processStep: 4,
+    target: "body", placement: "center",
+    title: "Portal Submissions — where the bot files for you",
+    body:
+      "Once you finish a group in the Queue, the dispute lands here as a draft. A bot logs into MAS's website, fills the form, and submits every draft in order. You watch progress, retry failures, and step in only when something needs a human. The page has two parts: the list of submissions on the left, and the run-the-queue rail on the right.",
+    nextLabel: "Next: the list",
+  },
+  {
+    id: 15, kind: "coach", page: "portal", processStep: 4,
+    target: '[data-tour="portal-submissions-list"]', placement: "right",
+    title: "The list — every submission, grouped by status",
+    body:
+      "Drafts up top, then Pending (queued for the bot), then In Progress, then Failed and Done. Click any row to open the drawer and see what the bot saw. A failed row tells you why so you can fix the draft and retry. The right rail next to this list is the engine — that's where you run the queue.",
     nextLabel: "Next: Responses",
   },
 
@@ -239,7 +265,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   // controller falls back to leaving the user on the bare list page;
   // Joyride's TARGET_NOT_FOUND handler then skips these steps.
   {
-    id: 14, kind: "coach", page: "responses", processStep: 5,
+    id: 16, kind: "coach", page: "responses", processStep: 5,
     dynamicRoute: "tour-sample-response",
     target: '[data-tour="responses-thread"]', placement: "right",
     title: "Responses — Step 5, column 1: pick a response",
@@ -248,7 +274,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: read what MAS said",
   },
   {
-    id: 15, kind: "coach", page: "responses", processStep: 5,
+    id: 17, kind: "coach", page: "responses", processStep: 5,
     dynamicRoute: "tour-sample-response",
     target: '[data-tour="responses-airead"]', placement: "left",
     title: "Column 2: read MAS, then the AI",
@@ -257,7 +283,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: pick the verdict",
   },
   {
-    id: 16, kind: "coach", page: "responses", processStep: 5,
+    id: 18, kind: "coach", page: "responses", processStep: 5,
     dynamicRoute: "tour-sample-response",
     target: '[data-tour="responses-verdict"]', placement: "left",
     title: "Column 3: decide right then",
@@ -266,31 +292,75 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: Attestation",
   },
 
-  // ═══════ Attestation ═══════
+  // ═══════ Attestation (1 modal + 2 coaches) ═══════
+  // The page has two persistent landmarks that always render even when
+  // the queue is empty:
+  //   • [data-tour="attestation-tabs"]      — Open / Completed tabs
+  //   • [data-tour="attestation-workspace"] — list + review pane (or
+  //     the empty-state card when nothing is queued)
+  // Anchoring on those wrappers (not on inner rows) means the coach
+  // cards never orphan, even on a fresh tenant with no re-attestations.
   {
-    id: 17, kind: "modal", page: "attestation", processStep: 5,
+    id: 19, kind: "modal", page: "attestation", processStep: 5,
     target: "body", placement: "center",
     title: "Attestation Queue — closing the loop",
     body:
-      "Groups MAS approved that still need to be re-billed in MAS's website. The amber number in the side menu is how many groups are owed. Once a group clears, the rides in it become money we recovered.",
+      "Groups MAS approved that still need to be re-billed in MAS's website. The amber number in the side menu is how many groups are owed. Once a group clears, the rides in it become money we recovered. The page has two parts: tabs at the top, and a workspace below.",
+    nextLabel: "Next: the tabs",
+  },
+  {
+    id: 20, kind: "coach", page: "attestation", processStep: 5,
+    target: '[data-tour="attestation-tabs"]', placement: "bottom",
+    title: "Two tabs — Open vs Completed",
+    body:
+      "'Open' is what still needs your hands — groups MAS approved but you haven't re-billed yet. 'Completed re-attestations' is the audit trail of groups already closed out. Most days you'll live in Open and only flip to Completed when someone asks 'did we ever re-bill that one?'",
+    nextLabel: "Next: the workspace",
+  },
+  {
+    id: 21, kind: "coach", page: "attestation", processStep: 5,
+    target: '[data-tour="attestation-workspace"]', placement: "top",
+    title: "Pick a group, work the right pane",
+    body:
+      "The list on the left is every group waiting on a re-attest. Click one and the right pane fills in: the last MAS reply for context, an action checklist of what to do in MAS's website, and a per-leg breakdown for the rare cases where one ride needs a different action. Check the boxes as you go; the re-attest button stays gated until every required action is done.",
     nextLabel: "Next: Browse",
   },
 
-  // ═══════ Invoice Groups (1 modal + 1 coach) ═══════
+  // ═══════ Invoice Groups (1 modal + 3 coaches) ═══════
+  // The page has three persistent landmarks that always render even
+  // when the table is empty:
+  //   • [data-tour="invoice-groups-tabs"]    — lifecycle pill strip
+  //   • [data-tour="invoice-groups-filters"] — search + filter row
+  //   • [data-tour="invoice-groups-table"]   — the results card
   {
-    id: 18, kind: "modal", page: "invoice-groups", processStep: "transition",
+    id: 22, kind: "modal", page: "invoice-groups", processStep: "transition",
     target: "body", placement: "center",
     title: "Invoice Groups — every group, in one list",
     body:
-      "When the Dashboard isn't enough — when you need to find one specific group, audit a status, or do bulk work — come here. Every group ever uploaded is in this list, no matter what step it's on. The filter bar at the top makes the page useful. It also makes it easy to lose rows. Let's look at what catches new people.",
+      "When the Dashboard isn't enough — when you need to find one specific group, audit a status, or do bulk work — come here. Every group ever uploaded is in this list, no matter what step it's on. Three landmarks to know: the lifecycle tabs at the top, the filter bar below them, and the results table.",
+    nextLabel: "Next: the lifecycle tabs",
+  },
+  {
+    id: 23, kind: "coach", page: "invoice-groups", processStep: "all",
+    target: '[data-tour="invoice-groups-tabs"]', placement: "bottom",
+    title: "Lifecycle tabs — jump to a stage",
+    body:
+      "Each tab is a stage in the group's lifecycle: All, Action Required (your work), Sent (waiting on MAS), Closed (won or lost). Click one to narrow the table to just that stage. The count on each tab is how many groups match.",
     nextLabel: "Next: the filter trap",
   },
   {
-    id: 19, kind: "coach", page: "invoice-groups", processStep: "all",
+    id: 24, kind: "coach", page: "invoice-groups", processStep: "all",
     target: '[data-tour="invoice-groups-filters"]', placement: "bottom",
     title: "⚠️ Two filters are hiding rows by default",
     body:
       "This page hides anything you can't act on right now. 'Engagement: Needs engagement' hides finished and waiting groups. 'Show past-deadline' is OFF, which hides expired ones (the badge shows how many). If a group isn't there when you search, switch 'Engagement' to 'All' or turn 'Show past-deadline' on. The Claims page has the same two filters.",
+    nextLabel: "Next: the table",
+  },
+  {
+    id: 25, kind: "coach", page: "invoice-groups", processStep: "all",
+    target: '[data-tour="invoice-groups-table"]', placement: "top",
+    title: "The table — every column sortable, every row a group",
+    body:
+      "The results sit here. Click any column header to sort. Click any row to open the group's full detail page. Use 'Columns' in the toolbar above to hide what you don't need, and 'Density' to fit more rows on screen. Tick the checkboxes to bulk-assign or export.",
     nextLabel: "Next: opening a group",
   },
 
@@ -303,7 +373,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   // If the sample is unavailable, the controller falls back to a
   // centered modal so the tour still completes.
   {
-    id: 20, kind: "coach", page: "group-detail", processStep: "all",
+    id: 26, kind: "coach", page: "group-detail", processStep: "all",
     dynamicRoute: "tour-sample-group",
     target: '[data-tour="group-gauntlet"]', placement: "left",
     title: "Group detail — the Gauntlet shows the path to done",
@@ -314,18 +384,22 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Claims (1 modal + 1 coach on detail) ═══════
   {
-    id: 21, kind: "modal", page: "claims", processStep: "transition",
+    id: 27, kind: "modal", page: "claims", processStep: "transition",
     target: "body", placement: "center",
     title: "Claims — same idea as Groups, one ride at a time",
     body:
       "Sometimes you need a single ride — by car number, client, or date. That's this page. The pills across the top (Investigating, Ready, Blocked, Submitted) jump you to a workflow state. ⚠️ Same two filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off. If a ride isn't showing, those are why.",
     nextLabel: "Next: a single claim",
   },
-  // Same idea as step 18: anchor on the SOP Player inside the global
-  // tour-sample claim (seeded by migration 0029, resolved via
-  // `GET /tour/sample`). Read-only, mutations blocked at the API.
+  // Same idea as the Group-detail step: anchor on the SOP Player wrapper
+  // inside the global tour-sample claim (seeded by migration 0029,
+  // resolved via `GET /tour/sample`). Read-only, mutations blocked at
+  // the API. The wrapper sits OUTSIDE the conditional that renders the
+  // SopAdvancePlayer itself — see claim-detail-v2.tsx — so the anchor
+  // exists even when the sample claim has no decision tree configured
+  // (the most common silent-skip cause prior to v17).
   {
-    id: 22, kind: "coach", page: "claim-detail", processStep: "all",
+    id: 28, kind: "coach", page: "claim-detail", processStep: "all",
     dynamicRoute: "tour-sample-claim",
     target: '[data-tour="claim-sop-player"]', placement: "top",
     title: "Claim detail — the SOP Player tells you what to do",
@@ -336,7 +410,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Replay anchor ═══════
   {
-    id: 23, kind: "coach", page: "dashboard", processStep: "closing",
+    id: 29, kind: "coach", page: "dashboard", processStep: "closing",
     target: '[data-tour="sidebar-take-tour"]', placement: "right",
     title: "Replay anytime",
     body:

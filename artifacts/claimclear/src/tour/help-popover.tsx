@@ -18,6 +18,7 @@ const PAGE_FRIENDLY: Record<PageKey, string> = {
   queue: "Queue",
   responses: "Responses",
   attestation: "Attestation",
+  portal: "Portal Submissions",
   "invoice-groups": "Invoice Groups",
   "group-detail": "Invoice group detail",
   claims: "Claims",

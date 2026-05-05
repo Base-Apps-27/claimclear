@@ -100,7 +100,7 @@ export default function AttestationQueue() {
         value={activeTab}
         onValueChange={(value) => set({ tab: value === "open" ? null : value }, false)}
       >
-        <TabsList data-testid="attestation-tabs">
+        <TabsList data-testid="attestation-tabs" data-tour="attestation-tabs">
           <TabsTrigger value="open" data-testid="attestation-tab-open">
             Open
           </TabsTrigger>
@@ -109,7 +109,15 @@ export default function AttestationQueue() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="open" className="mt-4">
-          <QueueWorkspace />
+          {/* `data-tour="attestation-workspace"` lives on the wrapper rather
+              than inside QueueWorkspace because QueueWorkspace returns a
+              completely different subtree when the queue is empty (a single
+              ShieldCheck card) vs. when it has groups (a 320px+1fr grid).
+              Anchoring on the wrapper means the tour always finds the
+              element no matter which branch renders. */}
+          <div data-tour="attestation-workspace">
+            <QueueWorkspace />
+          </div>
         </TabsContent>
         <TabsContent value="completed" className="mt-4">
           <CompletedWorkspace />

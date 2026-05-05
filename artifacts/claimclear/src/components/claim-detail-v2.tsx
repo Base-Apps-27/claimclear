@@ -1222,7 +1222,17 @@ export function ClaimDetailV2({
               )}
             </CcCard>
 
-            {/* Investigation walk (SOP) — the entire purpose of this surface */}
+            {/* Investigation walk (SOP) — the entire purpose of this surface.
+                The `data-tour="claim-sop-player"` wrapper sits OUT here on the
+                CcCard so the tour anchor always exists, even when the inner
+                player can't render (no error type assigned, no decision tree
+                configured for the assigned type, leg is on hold/excluded,
+                etc.). Anchoring on the inner SopAdvancePlayer used to leave
+                step 22 of the tour orphaned for the read-only tour-sample
+                claim, which has no SOP tree configured by default — the
+                anchor wouldn't mount and Joyride's TARGET_NOT_FOUND handler
+                would silently skip the entire claim-detail step. */}
+            <div data-tour="claim-sop-player">
             <CcCard
               title="Investigation walk"
               icon={<FileText className="w-3.5 h-3.5" />}
@@ -1286,7 +1296,7 @@ export function ClaimDetailV2({
                 </div>
               )}
               {!isDuplicate && tree && canShowPlayer && (
-                <div data-tour="claim-sop-player">
+                <div>
                 <SopAdvancePlayer
                   leg={{
                     id: claim.id,
@@ -1338,6 +1348,7 @@ export function ClaimDetailV2({
                 </div>
               )}
             </CcCard>
+            </div>
 
             {/* Submission preview slot — embedded mode (queue inline
                 expansion) drops the group-level submission preview in
