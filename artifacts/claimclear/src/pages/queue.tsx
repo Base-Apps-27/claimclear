@@ -44,6 +44,7 @@ import {
 } from "@/lib/queue-urgency";
 import { countUrgentRows } from "@/lib/urgent-count";
 import { ClassifyDialog } from "@/components/classify-dialog";
+import { ListTableHeaderStrip } from "@/components/list-table/faceted-filter/list-table-header-strip";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -444,6 +445,14 @@ export default function Queue() {
 
   const [successMessage, setSuccessMessage] = useState("");
 
+  // Per-tab search state. Each tab keeps its own term so switching
+  // tabs doesn't surprise the operator with a stale filter applied
+  // somewhere they can't see. Matches invoice number, client number,
+  // and error type name (consistent with the Invoice Groups list).
+  const [searchActionable, setSearchActionable] = useState("");
+  const [searchPortalQueued, setSearchPortalQueued] = useState("");
+  const [searchOnHold, setSearchOnHold] = useState("");
+
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
   // Presence is intentionally informational-only: the `viewers` array
   // feeds the HumanPresenceBanner so an operator can see who else is
@@ -619,6 +628,32 @@ export default function Queue() {
   const actionableGroups = actionableAll;
   const portalQueuedSorted = portalQueuedAll;
   const onHoldSorted = onHoldAll;
+
+  // Client-side search overlay — narrows the already-filtered lane
+  // sets (urgency / engagement / past-deadline filters stay upstream).
+  // Matches invoice number, client number, and error type name,
+  // case-insensitive substring (consistent with the Invoice Groups
+  // list page's search).
+  const matchesSearch = (g: InvoiceGroupResponse, query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    const haystacks = [g.invoiceNumber, g.clientNumber, g.errorTypeName];
+    return haystacks.some(
+      (v) => typeof v === "string" && v.toLowerCase().includes(q),
+    );
+  };
+  const actionableVisible = useMemo(
+    () => actionableGroups.filter((g) => matchesSearch(g, searchActionable)),
+    [actionableGroups, searchActionable],
+  );
+  const portalQueuedVisible = useMemo(
+    () => portalQueuedSorted.filter((g) => matchesSearch(g, searchPortalQueued)),
+    [portalQueuedSorted, searchPortalQueued],
+  );
+  const onHoldVisible = useMemo(
+    () => onHoldSorted.filter((g) => matchesSearch(g, searchOnHold)),
+    [onHoldSorted, searchOnHold],
+  );
 
   // Lane urgent / stuck / soon counts. When an `?expiring=` filter is
   // active the lane is already server-narrowed, so `data.total` IS the
@@ -1031,9 +1066,30 @@ export default function Queue() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
-                  {actionableGroups.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <ListTableHeaderStrip
+                    searchValue={searchActionable}
+                    onSearchChange={setSearchActionable}
+                    searchPlaceholder="Search invoice #, client #, or error type…"
+                    searchTestId="queue-search-actionable"
+                    matchingCount={actionableVisible.length}
+                    matchingNoun={{ one: "group", other: "groups" }}
+                  />
+                  {actionableVisible.length === 0 ? (
+                    <Card>
+                      <CardContent
+                        className="py-12 text-center text-muted-foreground space-y-3"
+                        data-testid="queue-search-empty-actionable"
+                      >
+                        No groups match “{searchActionable}” in this tab.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
+                      {actionableVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
 
@@ -1048,9 +1104,30 @@ export default function Queue() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
-                  {portalQueuedSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <ListTableHeaderStrip
+                    searchValue={searchPortalQueued}
+                    onSearchChange={setSearchPortalQueued}
+                    searchPlaceholder="Search invoice #, client #, or error type…"
+                    searchTestId="queue-search-portal-queued"
+                    matchingCount={portalQueuedVisible.length}
+                    matchingNoun={{ one: "group", other: "groups" }}
+                  />
+                  {portalQueuedVisible.length === 0 ? (
+                    <Card>
+                      <CardContent
+                        className="py-12 text-center text-muted-foreground space-y-3"
+                        data-testid="queue-search-empty-portal-queued"
+                      >
+                        No groups match “{searchPortalQueued}” in this tab.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
+                      {portalQueuedVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
 
@@ -1065,9 +1142,30 @@ export default function Queue() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
-                  {onHoldSorted.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
-                </div>
+                <>
+                  <ListTableHeaderStrip
+                    searchValue={searchOnHold}
+                    onSearchChange={setSearchOnHold}
+                    searchPlaceholder="Search invoice #, client #, or error type…"
+                    searchTestId="queue-search-on-hold"
+                    matchingCount={onHoldVisible.length}
+                    matchingNoun={{ one: "group", other: "groups" }}
+                  />
+                  {onHoldVisible.length === 0 ? (
+                    <Card>
+                      <CardContent
+                        className="py-12 text-center text-muted-foreground space-y-3"
+                        data-testid="queue-search-empty-on-hold"
+                      >
+                        No groups match “{searchOnHold}” in this tab.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
+                      {onHoldVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
           </Tabs>
