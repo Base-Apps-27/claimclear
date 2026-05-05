@@ -24,12 +24,20 @@ export function useAdminTour() {
   return useContext(TourContext);
 }
 
+// How long Joyride will poll for an anchored step's target element to
+// mount before giving up. Generous because cross-page steps may have to
+// wait for a route change + data fetch + render before their anchor
+// appears in the DOM.
+const TARGET_WAIT_MS = 8000;
+
 function buildJoyrideStep(def: TourStepDef): Step {
   return {
     target: def.target,
     placement: def.placement ?? "auto",
     title: def.title,
     content: def.body,
+    skipBeacon: def.disableBeacon ?? false,
+    targetWaitTimeout: TARGET_WAIT_MS,
   };
 }
 
@@ -80,46 +88,6 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     setRun(true);
   }, [enabled, tourState]);
 
-  // Cross-page navigation: pause when the active step needs a different
-  // route, then resume once the target element is in the DOM.
-  useEffect(() => {
-    if (!run) return;
-    const def = TOUR_STEPS[stepIndex];
-    if (!def) return;
-    if (def.route && def.route !== location) {
-      setRun(false);
-      setLocation(def.route);
-    }
-  }, [run, stepIndex, location, setLocation]);
-
-  useEffect(() => {
-    if (run) return;
-    const def = TOUR_STEPS[stepIndex];
-    if (!def) return;
-    if (!autoStartedRef.current && stepIndex === 0) return;
-    if (def.route && def.route !== location) return;
-    if (def.target === "body") {
-      setRun(true);
-      return;
-    }
-    let attempts = 0;
-    const t = window.setInterval(() => {
-      const el = document.querySelector(def.target);
-      attempts += 1;
-      if (el) {
-        window.clearInterval(t);
-        setRun(true);
-      } else if (attempts > 60) {
-        // Target never showed up. Quietly halt the tour at the previous
-        // step instead of resuming into a guaranteed TARGET_NOT_FOUND. We
-        // intentionally do NOT mark the version seen here — the user can
-        // replay manually from the sidebar, or auto-retry on next reload.
-        window.clearInterval(t);
-      }
-    }, 100);
-    return () => window.clearInterval(t);
-  }, [run, stepIndex, location]);
-
   const closeTour = useCallback(() => {
     setRun(false);
     setStepIndex(0);
@@ -142,14 +110,25 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         sawAtLeastOneStepRef.current = true;
       }
 
-      // Target not found: stop the tour quietly. Do NOT advance, do NOT mark
-      // seen. (Previously this branch incremented stepIndex, which cascaded
-      // through every step and ended in finish() — silently marking the user
-      // "done" without them ever seeing the tour. That's the bug that left
-      // existing users stranded with tourVersionSeen set to a version they
-      // never actually viewed.)
+      // Target not found even after the per-step poll timeout. Skip past
+      // this broken step instead of killing the whole tour — one missing
+      // anchor shouldn't strand the user. If we've already shown them
+      // something, keep advancing; if we walked off the end, finish.
       if (type === EVENTS.TARGET_NOT_FOUND) {
-        closeTour();
+        const next = index + 1;
+        if (next >= TOUR_STEPS.length) {
+          if (sawAtLeastOneStepRef.current) {
+            finishAndMarkSeen();
+          } else {
+            closeTour();
+          }
+          return;
+        }
+        const nextDef = TOUR_STEPS[next];
+        if (nextDef.route && nextDef.route !== location) {
+          setLocation(nextDef.route);
+        }
+        setStepIndex(next);
         return;
       }
 
@@ -168,8 +147,6 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
       if (type === EVENTS.STEP_AFTER) {
         const next = index + (action === ACTIONS.PREV ? -1 : 1);
         if (next < 0 || next >= TOUR_STEPS.length) {
-          // Walked off an end. Forward exit on a real run = completion;
-          // anything else just closes without a DB write.
           if (next >= TOUR_STEPS.length && sawAtLeastOneStepRef.current) {
             finishAndMarkSeen();
           } else {
@@ -177,18 +154,41 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
+        // If the next step lives on a different route, kick off the
+        // navigation now. Joyride's built-in targetWaitTimeout polls
+        // for the new step's anchor element, so we just have to set
+        // stepIndex and let the engine wait for the route swap to land.
+        const nextDef = TOUR_STEPS[next];
+        if (nextDef.route && nextDef.route !== location) {
+          setLocation(nextDef.route);
+        }
         setStepIndex(next);
       }
     },
-    [closeTour, finishAndMarkSeen],
+    [closeTour, finishAndMarkSeen, location, setLocation],
   );
 
   const startTour = useCallback(() => {
     autoStartedRef.current = true;
     sawAtLeastOneStepRef.current = false;
+    // Force a clean false→true transition on the next tick so Joyride's
+    // usePropSync sees `run` change even if we were mid-tour.
+    setRun(false);
     setStepIndex(0);
-    setRun(true);
+    queueMicrotask(() => setRun(true));
   }, []);
+
+  // If the tour starts on a step that has a `route` set, make sure we're
+  // actually on that route. This handles the (rare) case of auto-start
+  // landing on a non-default first step in a future tour revision.
+  useEffect(() => {
+    if (!run) return;
+    const def = TOUR_STEPS[stepIndex];
+    if (!def?.route) return;
+    if (def.route !== location) {
+      setLocation(def.route);
+    }
+  }, [run, stepIndex, location, setLocation]);
 
   const value = useMemo<TourContextValue>(
     () => ({ startTour, isAvailable: !!enabled }),
@@ -205,6 +205,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           stepIndex={stepIndex}
           continuous
           scrollToFirstStep
+          debug={import.meta.env.DEV}
           onEvent={handleEvent}
           options={{
             showProgress: true,
