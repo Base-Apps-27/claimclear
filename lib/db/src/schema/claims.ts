@@ -166,6 +166,13 @@ export const claimsTable = pgTable("claims", {
   attestationNote: text("attestation_note"),
   attestationQueuedAt: timestamp("attestation_queued_at", { withTimezone: true }),
   attestationQueuedBy: text("attestation_queued_by"),
+  // Marks the single global "tour sample" row used by the in-app guided
+  // tour so steps 18 / 20 can land on real detail pages with real
+  // anchors. Hidden from every normal list/aggregate query and
+  // read-only at the API layer (assertNotTourSample). See migration
+  // 0029_tour_sample.sql for the singleton-enforcement partial unique
+  // index and the seed.
+  isTourSample: boolean("is_tour_sample").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

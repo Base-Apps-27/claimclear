@@ -748,6 +748,22 @@ export function ClaimDetailV2({
       data-embedded={embedded ? "true" : undefined}
     >
       <div className={embedded ? "space-y-4" : "max-w-[1180px] mx-auto space-y-4"}>
+        {/* Read-only banner shown when this is the global "tour sample"
+            row (seeded by migration 0029). The pair exists only so the
+            in-app guided tour can anchor steps 18 & 20 on a real detail
+            page. Mutations are blocked at the API layer. */}
+        {(claim as { isTourSample?: boolean })?.isTourSample && (
+          <div
+            className="text-xs px-3 py-2 rounded border flex items-center gap-2"
+            style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", borderColor: "var(--cc-border)" }}
+            data-testid="tour-sample-banner"
+          >
+            <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>
+              <strong>Tour sample.</strong> This is the read-only claim used by the in-app tour. Edits are disabled.
+            </span>
+          </div>
+        )}
 
         {embedded ? (
           // Crumb-only nav for embedded use. No "Back" button — the

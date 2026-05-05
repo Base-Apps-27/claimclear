@@ -599,6 +599,22 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   return (
     <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }} data-testid="invoice-group-detail-v2">
       <div className="max-w-[1180px] mx-auto space-y-4">
+        {/* Read-only banner shown when this is the global "tour sample"
+            row (seeded by migration 0029). The pair exists only so the
+            in-app guided tour can anchor steps 18 & 20 on a real detail
+            page. Mutations are blocked at the API layer. */}
+        {(detail as { isTourSample?: boolean })?.isTourSample && (
+          <div
+            className="text-xs px-3 py-2 rounded border flex items-center gap-2"
+            style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", borderColor: "var(--cc-border)" }}
+            data-testid="tour-sample-banner"
+          >
+            <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>
+              <strong>Tour sample.</strong> This is the read-only group used by the in-app tour. Edits are disabled.
+            </span>
+          </div>
+        )}
 
         {/* Back + breadcrumb (hybrid).
             ──────────────────────────────────────────────────────────────

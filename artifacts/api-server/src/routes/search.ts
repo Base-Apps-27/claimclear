@@ -65,6 +65,7 @@ router.get("/search", asyncHandler(async (req, res): Promise<void> => {
         // bucket — those surface in the Withdrawals bucket below so we
         // don't double-list the same record.
         sql`${invoiceGroupsTable.closureReason} IS NULL`,
+        eq(invoiceGroupsTable.isTourSample, false),
         or(
           ilike(invoiceGroupsTable.invoiceNumber, pat),
           ilike(invoiceGroupsTable.clientNumber, pat),
@@ -92,6 +93,7 @@ router.get("/search", asyncHandler(async (req, res): Promise<void> => {
     .where(
       and(
         sql`${claimsTable.closureReason} IS NULL`,
+        eq(claimsTable.isTourSample, false),
         or(
           ilike(claimsTable.confNumber, pat),
           ilike(claimsTable.refNumber, pat),

@@ -83,7 +83,20 @@ export function useAdminTour() {
 // appears in the DOM.
 const TARGET_WAIT_MS = 8000;
 
-function effectiveRoute(def: TourStepDef): string | null {
+// Pair of ids resolved from `GET /tour/sample` — the global read-only
+// invoice group + claim that anchored steps 18 & 20 navigate to. Both
+// can be `null` if the tour-sample seed migration hasn't been applied
+// yet; the controller falls back to leaving the user on the list page
+// (Joyride's TARGET_NOT_FOUND handler then skips the orphaned step).
+type TourSampleIds = { groupId: number | null; claimId: number | null };
+
+function effectiveRoute(def: TourStepDef, sampleIds: TourSampleIds): string | null {
+  if (def.dynamicRoute === "tour-sample-group" && sampleIds.groupId != null) {
+    return `/invoice-groups/${sampleIds.groupId}`;
+  }
+  if (def.dynamicRoute === "tour-sample-claim" && sampleIds.claimId != null) {
+    return `/claims/${sampleIds.claimId}`;
+  }
   return def.route ?? routeForPage(def.page);
 }
 
@@ -96,8 +109,8 @@ function effectiveRoute(def: TourStepDef): string | null {
 // the bare route, the page's auto-select effect re-appends the id,
 // repeat. That ping-pong was the actual cause of the
 // "/responses-awaiting-review white-screens mid-mount" crash.
-function isOnRoute(def: TourStepDef, location: string): boolean {
-  const route = effectiveRoute(def);
+function isOnRoute(def: TourStepDef, location: string, sampleIds: TourSampleIds): boolean {
+  const route = effectiveRoute(def, sampleIds);
   if (!route) return true;
   if (route === location) return true;
   if (def.page && pageForLocation(location) === def.page) return true;
@@ -150,6 +163,26 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const autoStartedRef = useRef(false);
+  // Tour-sample id pair fetched once on mount. Used to materialize the
+  // dynamic detail-page routes for steps 18 & 20. Defaults to nulls so
+  // the rest of the tour still works in environments where the
+  // migration hasn't run yet.
+  const [sampleIds, setSampleIds] = useState<TourSampleIds>({ groupId: null, claimId: null });
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch("/api/tour/sample", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setSampleIds({
+          groupId: typeof data.groupId === "number" ? data.groupId : null,
+          claimId: typeof data.claimId === "number" ? data.claimId : null,
+        });
+      })
+      .catch(() => { /* tour falls back to modal-on-list for missing ids */ });
+    return () => { cancelled = true; };
+  }, [enabled]);
   // Tracks whether at least one tour step has actually rendered for this run.
   // Joyride emits EVENTS.TOOLTIP whenever a step's tooltip mounts in the DOM —
   // we only flip this true on that signal. The DB write that records "user
@@ -205,8 +238,8 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const nextDef = TOUR_STEPS[next];
-        const nextRoute = effectiveRoute(nextDef);
-        if (nextRoute && !isOnRoute(nextDef, location)) {
+        const nextRoute = effectiveRoute(nextDef, sampleIds);
+        if (nextRoute && !isOnRoute(nextDef, location, sampleIds)) {
           setLocation(nextRoute);
         }
         setStepIndex(next);
@@ -233,8 +266,8 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const nextDef = TOUR_STEPS[next];
-        const nextRoute = effectiveRoute(nextDef);
-        const isCrossRoute = !!nextRoute && !isOnRoute(nextDef, location);
+        const nextRoute = effectiveRoute(nextDef, sampleIds);
+        const isCrossRoute = !!nextRoute && !isOnRoute(nextDef, location, sampleIds);
         if (isCrossRoute) {
           // Cross-route transition. Just navigate + advance the step
           // synchronously. Joyride polls for the next anchor up to
@@ -253,7 +286,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         setStepIndex(next);
       }
     },
-    [closeTour, finishAndMarkSeen, location, setLocation],
+    [closeTour, finishAndMarkSeen, location, setLocation, sampleIds],
   );
 
   const startTour = useCallback((opts?: StartTourOpts) => {
@@ -274,9 +307,15 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     // that surface), so the in-URL id is preserved.
     const startDef = TOUR_STEPS[startIndex];
     if (startDef) {
+      // Dynamic-route steps (18 & 20) MUST navigate to their resolved
+      // detail page even when launched from a detail-scope popover, so
+      // the resolved tour-sample id wins over whatever id the user is
+      // currently viewing. For non-dynamic detail steps, leave the URL
+      // alone so the popover-from-a-detail-page experience is preserved.
       const isDetailScope = startDef.page === "group-detail" || startDef.page === "claim-detail";
-      if (!isDetailScope) {
-        const startRoute = effectiveRoute(startDef);
+      const isDynamic = !!startDef.dynamicRoute;
+      if (!isDetailScope || isDynamic) {
+        const startRoute = effectiveRoute(startDef, sampleIds);
         if (startRoute && startRoute !== location) {
           setLocation(startRoute);
         }
@@ -287,23 +326,28 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     setRun(false);
     setStepIndex(startIndex);
     queueMicrotask(() => setRun(true));
-  }, [location, setLocation]);
+  }, [location, setLocation, sampleIds]);
 
   // If the tour starts on a step that has a route, ensure we're on it.
   useEffect(() => {
     if (!run) return;
     const def = TOUR_STEPS[stepIndex];
     if (!def) return;
-    const route = effectiveRoute(def);
+    const route = effectiveRoute(def, sampleIds);
     if (!route) return;
-    // Don't yank the user off a detail page when the current step's
-    // anchor is on that exact detail surface.
-    if (def.page === "group-detail" && location.startsWith("/invoice-groups/")) return;
-    if (def.page === "claim-detail" && location.startsWith("/claims/")) return;
-    if (!isOnRoute(def, location)) {
+    // Dynamic-route steps (18 & 20) target a specific tour-sample id,
+    // so we MUST re-route to that id even if the user happens to be on
+    // a different detail page. For other detail-scope steps, leave the
+    // URL alone so opening the tour from a detail page preserves the
+    // user's row.
+    if (!def.dynamicRoute) {
+      if (def.page === "group-detail" && location.startsWith("/invoice-groups/")) return;
+      if (def.page === "claim-detail" && location.startsWith("/claims/")) return;
+    }
+    if (!isOnRoute(def, location, sampleIds)) {
       setLocation(route);
     }
-  }, [run, stepIndex, location, setLocation]);
+  }, [run, stepIndex, location, setLocation, sampleIds]);
 
   const value = useMemo<TourContextValue>(
     () => ({ startTour, isAvailable: !!enabled }),

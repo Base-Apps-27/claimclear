@@ -121,6 +121,13 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   // Does NOT change `status` or `outcome`.
   awaitingPayorAgainAt: timestamp("awaiting_payor_again_at", { withTimezone: true }),
   importBatch: text("import_batch"),
+  // Marks the single global "tour sample" row used by the in-app guided
+  // tour so steps 18 / 20 can land on real detail pages with real
+  // anchors. Hidden from every normal list/aggregate query and
+  // read-only at the API layer (assertNotTourSample). See migration
+  // 0029_tour_sample.sql for the singleton-enforcement partial unique
+  // index and the seed.
+  isTourSample: boolean("is_tour_sample").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

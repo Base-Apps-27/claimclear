@@ -131,6 +131,12 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     conditions.push(eq(invoiceGroupsTable.importBatch, importBatch));
   }
 
+  // Always hide the global tour-sample row from every list/aggregate
+  // query. The row exists only so the in-app guided tour can navigate
+  // to a real detail page (steps 18 & 20). See migration 0029 +
+  // routes/tour.ts.
+  conditions.push(eq(invoiceGroupsTable.isTourSample, false));
+
   let statusFilterIncludesExpired = false;
   if (status && typeof status === "string") {
     const statuses = status.split(",").map(s => s.trim()).filter(Boolean) as (typeof invoiceGroupsTable.status.enumValues)[number][];
@@ -688,6 +694,7 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
     })
     .from(claimsTable)
     .innerJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
+    .where(eq(invoiceGroupsTable.isTourSample, false))
     // Task #412: broaden the inbox so any active leg with no Error Type
     // surfaces, regardless of parent group status. Previously the
     // predicate was scoped to `Needs Review` only, which hid legs whose
@@ -827,7 +834,10 @@ router.get("/invoice-groups/attestation-history", asyncHandler(async (req, res):
   const rawRange = (req.query.range ?? "7d") as string;
   const range = rawRange === "30d" || rawRange === "all" ? rawRange : "7d";
 
-  const conditions: SQL[] = [isNotNull(invoiceGroupsTable.reattestCompletedAt)];
+  const conditions: SQL[] = [
+    isNotNull(invoiceGroupsTable.reattestCompletedAt),
+    eq(invoiceGroupsTable.isTourSample, false),
+  ];
   if (range !== "all") {
     const days = range === "30d" ? 30 : 7;
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -1064,6 +1074,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
 router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = {};
   const allowedFields = [
@@ -1128,6 +1139,7 @@ router.patch("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void>
 router.patch("/invoice-groups/:id/status", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { status, reason } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
@@ -1161,6 +1173,7 @@ router.patch("/invoice-groups/:id/status", asyncHandler(async (req, res): Promis
 router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { outcome, approvedAmount, closureReason } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
@@ -1250,6 +1263,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
 router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { triageOutcome, errorTypeId, errorTypeName, notes: triageNotes } = req.body;
   if (!triageOutcome || !["non_issue", "issue_found"].includes(triageOutcome)) {
@@ -1329,6 +1343,7 @@ router.post("/invoice-groups/:id/triage", asyncHandler(async (req, res): Promise
 router.post("/invoice-groups/:id/mark-mas-eligible", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { reason } = req.body ?? {};
 
@@ -1369,6 +1384,7 @@ router.post("/invoice-groups/:id/mark-mas-eligible", asyncHandler(async (req, re
 router.post("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { reason } = req.body;
 
@@ -1392,6 +1408,7 @@ router.post("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<v
 router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
@@ -1569,6 +1586,7 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
 router.post("/invoice-groups/:id/payor-denial-reason", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { reason, note } = (req.body ?? {}) as { reason?: unknown; note?: unknown };
 
@@ -1644,6 +1662,7 @@ router.post("/invoice-groups/:id/payor-denial-reason", asyncHandler(async (req, 
 router.post("/invoice-groups/:id/awaiting-payor-again", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   // Optional operator note. Non-string / null collapses to null. Trim,
   // then drop pure-whitespace so the audit row only carries content
@@ -1716,6 +1735,7 @@ router.get("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promis
 router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const { evidenceTypeId, evidenceTypeName, treeNodeId, imageUrl, notes } = req.body;
   if (!evidenceTypeName) {
@@ -1758,6 +1778,7 @@ router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promi
 router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const [existing] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice group not found" }); return; }
@@ -1949,6 +1970,7 @@ async function createGroupAuditLog(
 router.post("/invoice-groups/:id/group-context", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
   const context = (req.body?.context ?? "") as string;
   if (typeof context !== "string") { res.status(400).json({ error: "context must be a string" }); return; }
 
@@ -1990,6 +2012,7 @@ router.post("/invoice-groups/:id/group-context", asyncHandler(async (req, res): 
 router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
   const readback = (req.body?.readback ?? "") as string;
   if (!readback || typeof readback !== "string") {
     res.status(400).json({ error: "readback is required" });
@@ -2069,6 +2092,7 @@ router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (re
 router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
@@ -2165,6 +2189,7 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
 router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const subject = req.body?.subject;
   const descriptionHtml = req.body?.descriptionHtml;
@@ -2227,6 +2252,7 @@ router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<
 router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
@@ -2305,6 +2331,7 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
 router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
@@ -2376,6 +2403,7 @@ router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, 
 router.post("/invoice-groups/:id/promote-verdict-drafts", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
@@ -2554,6 +2582,7 @@ async function createAuditLog(
 router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
   const note = (req.body?.note ?? null) as string | null;
   const masReference = (req.body?.masReference ?? null) as string | null;
   const recordedOffline = req.body?.recordedOffline === true;
@@ -2711,6 +2740,7 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
 router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
 
   // Optional operator note. Same shape as the per-leg /attest/queue
   // (AttestationActionBody): trim, drop pure-whitespace.

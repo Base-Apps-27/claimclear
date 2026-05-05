@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v14";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v15";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -49,6 +49,13 @@ export type TourStepDef = {
   //     actionable tab anchor, so the prior step already scrolled it
   //     into the viewport. Re-scrolling jerks the page for no reason.
   disableScrolling?: boolean;
+  // Marks a step whose route depends on a runtime-resolved id (the
+  // global tour-sample group / claim from `GET /tour/sample`). The
+  // tour controller substitutes the id at navigation time. If the
+  // sample isn't available (migration not yet run, fetch failed) the
+  // controller falls back to a centered modal so the rest of the
+  // tour still works. See admin-tour.tsx.
+  dynamicRoute?: "tour-sample-group" | "tour-sample-claim";
 };
 
 // Map page → default route for navigation before showing each step.
@@ -263,21 +270,21 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: opening a group",
   },
 
-  // ═══════ Group detail (1 modal — described from the list page) ═══════
-  // Earlier this step tried to anchor on `[data-tour="group-gauntlet"]`,
-  // which only exists when an actual group-detail page is open. The tour
-  // can't reliably open a real group on the user's behalf (we'd have to
-  // pick one of their rows mid-tour), so the anchor was missing on the
-  // /invoice-groups list fallback and Joyride's TARGET_NOT_FOUND handler
-  // silently skipped past it — making the tour appear to "jump to the
-  // end". Rendering this as a centered modal on the list page describes
-  // the detail surface conceptually and always succeeds.
+  // ═══════ Group detail (1 anchored coach on the global tour sample) ═══════
+  // The Gauntlet anchor `[data-tour="group-gauntlet"]` only exists
+  // inside a real group-detail page, so the tour navigates to a global
+  // read-only "tour sample" group seeded by migration 0029. The id is
+  // resolved at runtime from `GET /tour/sample` and substituted into
+  // the route by the controller (see admin-tour.tsx + dynamicRoute).
+  // If the sample is unavailable, the controller falls back to a
+  // centered modal so the tour still completes.
   {
-    id: 18, kind: "modal", page: "invoice-groups", processStep: "all",
-    target: "body", placement: "center",
+    id: 18, kind: "coach", page: "group-detail", processStep: "all",
+    dynamicRoute: "tour-sample-group",
+    target: '[data-tour="group-gauntlet"]', placement: "left",
     title: "Group detail — the Gauntlet shows the path to done",
     body:
-      "When you click any row above, the group opens in its own workspace. Inside, the list on the left is every ride in the group. The Gauntlet on the right is a 4-step checklist that takes the group from 'needs evidence' to 'sent to MAS'. Work top to bottom. When the last step lights up, the group is on its way. The 'What's next' card gives you AI hints if you're stuck.",
+      "This is a sample group — read-only — so you can poke around safely. The list on the left is every ride in the group. The Gauntlet here on the right is a 4-step checklist that takes the group from 'needs evidence' to 'sent to MAS'. Work top to bottom. When the last step lights up, the group is on its way.",
     nextLabel: "Next: Claims",
   },
 
@@ -290,15 +297,16 @@ export const TOUR_STEPS: TourStepDef[] = [
       "Sometimes you need a single ride — by car number, client, or date. That's this page. The pills across the top (Investigating, Ready, Blocked, Submitted) jump you to a workflow state. ⚠️ Same two filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off. If a ride isn't showing, those are why.",
     nextLabel: "Next: a single claim",
   },
-  // Same story as step 18 — the SOP Player anchor only exists on a real
-  // claim-detail page, so we describe it from the /claims list as a
-  // centered modal that always renders.
+  // Same idea as step 18: anchor on the SOP Player inside the global
+  // tour-sample claim (seeded by migration 0029, resolved via
+  // `GET /tour/sample`). Read-only, mutations blocked at the API.
   {
-    id: 20, kind: "modal", page: "claims", processStep: "all",
-    target: "body", placement: "center",
+    id: 20, kind: "coach", page: "claim-detail", processStep: "all",
+    dynamicRoute: "tour-sample-claim",
+    target: '[data-tour="claim-sop-player"]', placement: "top",
     title: "Claim detail — the SOP Player tells you what to do",
     body:
-      "When you click any row above, the claim opens in its own page. The SOP Player there walks you through a set of questions made for that claim's error type. Answer each one in order. At the end, you have a finished ask with proof attached, ready to roll up into the group. Whatever the SOP Player says — that is the rule. No improvising.",
+      "This is a sample claim — read-only — so you can step through without changing anything. The SOP Player walks you through a set of questions made for the claim's error type. Answer each one in order. At the end, you have a finished ask with proof attached. Whatever the SOP Player says — that is the rule.",
     nextLabel: "Next: Replay",
   },
 

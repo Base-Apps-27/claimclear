@@ -97,6 +97,12 @@ const CLAIMS_SORTABLE_COLUMNS = {
   createdAt: claimsTable.createdAt,
 } as const;
 
+// Always hide the global tour-sample row from every list/aggregate
+// query. The row exists only so the in-app guided tour can navigate
+// to a real detail page (steps 18 & 20). See migration 0029 +
+// routes/tour.ts.
+const HIDE_TOUR_SAMPLE_CLAIM = eq(claimsTable.isTourSample, false);
+
 function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   const { status, outcome, search, errorTypeId } = query;
   const createdFrom = query.createdFrom as string | undefined;
@@ -108,7 +114,7 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
   const carNumber = query.carNumber as string | undefined;
   const clientNumber = query.clientNumber as string | undefined;
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [HIDE_TOUR_SAMPLE_CLAIM];
 
   let statusFilterIncludesExpired = false;
   if (status && typeof status === "string") {
@@ -486,6 +492,7 @@ router.get("/claims/attestation-pending", asyncHandler(async (req, res): Promise
     .select()
     .from(claimsTable)
     .where(and(
+      HIDE_TOUR_SAMPLE_CLAIM,
       eq(claimsTable.attestationState, stateRaw),
       or(
         inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
@@ -569,6 +576,7 @@ router.get("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
 router.patch("/claims/:id", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = {};
   const allowedFields = ["confNumber", "date", "refNumber", "clientNumber", "carNumber", "errorDetails",
@@ -735,6 +743,7 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
 router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const { status } = req.body;
   if (!status) { res.status(400).json({ error: "status is required" }); return; }
@@ -759,6 +768,7 @@ router.patch("/claims/:id/status", asyncHandler(async (req, res): Promise<void> 
 router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const { outcome, approvedAmount, invoiceNumbers, closureReason } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
@@ -969,6 +979,7 @@ function parseAttestNote(raw: unknown): string | null {
 router.post("/claims/:id/attest", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const result = await applyAttestationAction({
     claimId: id,
     action: "attestation_self_confirmed",
@@ -981,6 +992,7 @@ router.post("/claims/:id/attest", asyncHandler(async (req, res): Promise<void> =
 router.post("/claims/:id/attest/queue", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const result = await applyAttestationAction({
     claimId: id,
     action: "attestation_queued",
@@ -993,6 +1005,7 @@ router.post("/claims/:id/attest/queue", asyncHandler(async (req, res): Promise<v
 router.post("/claims/:id/attest/confirm", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const result = await applyAttestationAction({
     claimId: id,
     action: "attestation_queue_confirmed",
@@ -1005,6 +1018,7 @@ router.post("/claims/:id/attest/confirm", asyncHandler(async (req, res): Promise
 router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const updateData: Partial<typeof claimsTable.$inferInsert> = {};
   if (req.body.evidenceFiles !== undefined) updateData.evidenceFiles = req.body.evidenceFiles;
@@ -1025,6 +1039,7 @@ router.patch("/claims/:id/evidence", asyncHandler(async (req, res): Promise<void
 router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   // Backward-compat: accept legacy `holdReason` body alongside new `reason`.
   const reason = (req.body?.reason ?? req.body?.holdReason) as string | undefined;
@@ -1087,6 +1102,7 @@ router.post("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => 
 router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -1131,6 +1147,7 @@ router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> =
 router.post("/claims/:id/clear-hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -1168,6 +1185,7 @@ router.post("/claims/:id/clear-hold", asyncHandler(async (req, res): Promise<voi
 router.post("/claims/:id/clear-sop-hold", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -1211,6 +1229,7 @@ router.post("/claims/:id/clear-sop-hold", asyncHandler(async (req, res): Promise
 router.post("/claims/:id/triage", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const { action, errorTypeId, errorTypeName, triageNotes } = req.body;
   if (!action || !["non_issue", "issue_found"].includes(action)) {
@@ -1277,6 +1296,7 @@ const POST_RESPONSE_ACTION_LABELS: Record<PostResponseAction, string> = {
 router.post("/claims/:id/post-response-action", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const { action, notes } = req.body;
   if (!action || !POST_RESPONSE_ACTIONS.includes(action)) {
@@ -1441,6 +1461,7 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
 router.patch("/claims/:id/closure-review", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [existing] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -1627,6 +1648,7 @@ const SOP_READY_REASONS = new Set(["portal_dispute", "dispute"]);
 router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const errorTypeId = (req.body?.errorTypeId ?? "") as string;
   if (!errorTypeId) { res.status(400).json({ error: "errorTypeId is required" }); return; }
 
@@ -1741,6 +1763,7 @@ router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void>
 router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const nodeId = (req.body?.nodeId ?? "") as string;
   const answer = (req.body?.answer ?? "") as string;
   if (!nodeId || !answer) { res.status(400).json({ error: "nodeId and answer are required" }); return; }
@@ -1877,6 +1900,7 @@ const CONCLUDE_LEG_REASONS = new Set(["non_issue", "cannot_dispute"]);
 router.post("/claims/:id/conclude-leg", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const reason = (req.body?.reason ?? "") as string;
   const note = typeof req.body?.note === "string" ? (req.body.note as string) : null;
   if (!CONCLUDE_LEG_REASONS.has(reason)) {
@@ -1970,6 +1994,7 @@ router.post("/claims/:id/conclude-leg", asyncHandler(async (req, res): Promise<v
 router.post("/claims/:id/per-leg-context", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const context = (req.body?.context ?? "") as string;
   if (typeof context !== "string") { res.status(400).json({ error: "context must be a string" }); return; }
 
@@ -2043,6 +2068,7 @@ router.post("/claims/:id/per-leg-context", asyncHandler(async (req, res): Promis
 router.post("/claims/:id/per-leg-context-readback", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const raw = (req.body?.context ?? "") as string;
   if (typeof raw !== "string" || raw.trim().length === 0) {
     res.status(400).json({ error: "context (non-empty string) is required" });
@@ -2123,6 +2149,7 @@ Restate the note as described in the system prompt.`;
 router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const reason = (req.body?.reason ?? "") as string;
   const note = (req.body?.note ?? null) as string | null;
@@ -2238,6 +2265,7 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
 router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const note = (req.body?.note ?? null) as string | null;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
@@ -2321,6 +2349,7 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
 router.post("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const primaryIdRaw = req.body?.primaryClaimId;
   const primaryId = typeof primaryIdRaw === "number" ? primaryIdRaw : parseInt(String(primaryIdRaw ?? ""), 10);
@@ -2438,6 +2467,7 @@ router.post("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<v
 router.delete("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2507,6 +2537,7 @@ router.delete("/claims/:id/duplicate-of", asyncHandler(async (req, res): Promise
 router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2628,6 +2659,7 @@ router.post("/claims/:id/reclassify", asyncHandler(async (req, res): Promise<voi
 router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const source = (req.body?.source ?? "") as string;
   const outcome = (req.body?.outcome ?? "") as string;
   const note = (req.body?.note ?? null) as string | null;
@@ -2833,6 +2865,7 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
 router.delete("/claims/:id/verdict/draft", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2902,6 +2935,7 @@ router.delete("/claims/:id/verdict/draft", asyncHandler(async (req, res): Promis
 router.post("/claims/:id/mas-action/complete", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
   const note = (req.body?.note ?? null) as string | null;
   const masReference = (req.body?.masReference ?? null) as string | null;
 

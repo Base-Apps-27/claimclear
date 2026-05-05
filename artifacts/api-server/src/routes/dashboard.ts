@@ -8,6 +8,13 @@ import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 import { getOverdueCount } from "../lib/overdue-submissions";
+
+// Always exclude the global "tour sample" rows from every aggregate
+// query — that pair exists only so the in-app guided tour can navigate
+// to a real detail page (steps 18 & 20). See migration 0029 +
+// routes/tour.ts.
+const HIDE_TOUR_SAMPLE_GROUP = eq(invoiceGroupsTable.isTourSample, false);
+const HIDE_TOUR_SAMPLE_CLAIM = eq(claimsTable.isTourSample, false);
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
 import { scrubDashboardAmounts, scrubMoneyFieldsArray, canSeeAmounts } from "../lib/role";
 
@@ -130,6 +137,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const statusCountsRaw = await db
     .select({ status: invoiceGroupsTable.status, count: count() })
     .from(invoiceGroupsTable)
+    .where(HIDE_TOUR_SAMPLE_GROUP)
     .groupBy(invoiceGroupsTable.status);
 
   const statusCounts = Object.fromEntries(statusCountsRaw.map(r => [r.status, r.count]));
@@ -137,7 +145,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const withdrawnByReasonRaw = await db
     .select({ closureReason: invoiceGroupsTable.closureReason, count: count() })
     .from(invoiceGroupsTable)
-    .where(eq(invoiceGroupsTable.outcome, "Withdrawn"))
+    .where(and(eq(invoiceGroupsTable.outcome, "Withdrawn"), HIDE_TOUR_SAMPLE_GROUP))
     .groupBy(invoiceGroupsTable.closureReason);
   const withdrawnByReason = {
     cannot_dispute: 0,
@@ -152,7 +160,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const deniedByReasonRaw = await db
     .select({ closureReason: invoiceGroupsTable.closureReason, count: count() })
     .from(invoiceGroupsTable)
-    .where(eq(invoiceGroupsTable.outcome, "Denied"))
+    .where(and(eq(invoiceGroupsTable.outcome, "Denied"), HIDE_TOUR_SAMPLE_GROUP))
     .groupBy(invoiceGroupsTable.closureReason);
   const deniedByReason = { denied_by_payor: 0, other: 0 };
   for (const row of deniedByReasonRaw) {
@@ -190,6 +198,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
     .select({ value: count() })
     .from(claimsTable)
     .where(and(
+      HIDE_TOUR_SAMPLE_CLAIM,
       or(
         inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
         eq(claimsTable.status, "MAS Eligible"),
@@ -206,6 +215,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
     .from(invoiceGroupsTable)
     .innerJoin(claimsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
     .where(and(
+      HIDE_TOUR_SAMPLE_GROUP,
       eq(invoiceGroupsTable.status, "Resolved"),
       inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
       inArray(claimsTable.attestationState, ["pending", "queued"]),
@@ -218,7 +228,8 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
       totalClaimed: sum(invoiceGroupsTable.totalAmount),
       totalApproved: sum(invoiceGroupsTable.approvedAmount),
     })
-    .from(invoiceGroupsTable);
+    .from(invoiceGroupsTable)
+    .where(HIDE_TOUR_SAMPLE_GROUP);
 
   const totalClaimed = parseFloat(amountsResult.totalClaimed || "0");
   const totalApproved = parseFloat(amountsResult.totalApproved || "0");
@@ -227,7 +238,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const [lostResult] = await db
     .select({ totalLost: sum(invoiceGroupsTable.totalAmount) })
     .from(invoiceGroupsTable)
-    .where(eq(invoiceGroupsTable.outcome, "Denied"));
+    .where(and(eq(invoiceGroupsTable.outcome, "Denied"), HIDE_TOUR_SAMPLE_GROUP));
   const totalLost = parseFloat(lostResult?.totalLost || "0");
 
   // ────────────────────────────────────────────────────────────────────
@@ -362,7 +373,8 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
       // attest — see the long comment above).
       reclaimedApproved: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
     })
-    .from(invoiceGroupsTable);
+    .from(invoiceGroupsTable)
+    .where(HIDE_TOUR_SAMPLE_GROUP);
 
   const PREPAY_MULT = 1 + VENDOR_PREPAY_RATE;
   const atRiskClaim = parseFloat(bucketRow?.atRiskClaim || "0");
@@ -400,7 +412,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
       earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
-    .where(and(expiringStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
+    .where(and(HIDE_TOUR_SAMPLE_GROUP, expiringStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
 
   const expiringNow = new Date();
   const expiringGroups = openGroupsWithDates
@@ -454,7 +466,7 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
       earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
     })
     .from(invoiceGroupsTable)
-    .where(and(stuckStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
+    .where(and(HIDE_TOUR_SAMPLE_GROUP, stuckStatusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
 
   const submittedStuckGroups = stuckGroupsWithDates
     .map(g => {
