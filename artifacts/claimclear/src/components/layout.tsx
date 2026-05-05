@@ -98,7 +98,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // per authenticated tab; fires confetti + toast when the day flips to
   // fully concluded. Disabled on the auth screen so we don't leak an SSE
   // connection past sign-out.
-  useSystemEvents({ enabled: isAuthenticated && user?.status === "active" });
+  useSystemEvents({ enabled: isAuthenticated && user?.status === "approved" });
 
   // Nav badge for the Attestation Queue. Task #430 changed the surface
   // from per-leg rows to per-invoice-group rows, so the badge now
@@ -106,7 +106,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // instead of raw leg counts. We hit the same two list endpoints the
   // Open tab uses so the number on the rail always matches the number
   // of rows the operator will land on.
-  const attestActive = isAuthenticated && user?.status === "active";
+  const attestActive = isAuthenticated && user?.status === "approved";
   const { data: pendingList } = useListAttestationPending(
     { state: "pending" },
     {
@@ -145,7 +145,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     query: {
       queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
       refetchInterval: 60_000,
-      enabled: isAuthenticated && user?.status === "active",
+      enabled: isAuthenticated && user?.status === "approved",
     },
   });
   const responsesAwaitingReview = awaitingReviewCount?.count ?? 0;

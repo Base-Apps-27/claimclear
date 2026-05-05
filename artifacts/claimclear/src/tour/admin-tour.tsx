@@ -43,10 +43,7 @@ function buildJoyrideStep(def: TourStepDef): Step {
 
 export function AdminTourProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuth();
-  // Approved users (status "approved" in DB; "active" kept for forward-compat
-  // with any environment that uses the alternate label) are who get the tour.
-  const enabled =
-    isAuthenticated && (user?.status === "approved" || user?.status === "active");
+  const enabled = isAuthenticated && user?.status === "approved";
 
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();

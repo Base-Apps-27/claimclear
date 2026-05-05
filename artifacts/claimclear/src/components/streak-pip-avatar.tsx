@@ -76,7 +76,7 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
     {
       query: {
         queryKey: getGetMyProcessedTodayQueryKey({ tz }),
-        enabled: isAuthenticated && user?.status === "active",
+        enabled: isAuthenticated && user?.status === "approved",
         // Light polling as a safety net in case an SSE event is
         // missed (e.g. while the tab was throttled). The optimistic
         // bump in `useStreakPipLiveUpdates` keeps the pip feeling
@@ -117,7 +117,7 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
   // open across midnight, returns 0 for the new day — and that flows
   // through the displayCount-reset path above.
   useEffect(() => {
-    if (!isAuthenticated || user?.status !== "active") return;
+    if (!isAuthenticated || user?.status !== "approved") return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     function arm() {
@@ -272,7 +272,7 @@ export function useStreakPipLiveUpdates() {
   const seenIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!isAuthenticated || user?.status !== "active" || !user?.email) return;
+    if (!isAuthenticated || user?.status !== "approved" || !user?.email) return;
     const userEmail = user.email;
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
