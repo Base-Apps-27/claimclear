@@ -512,6 +512,7 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
                 key={row.claim.id}
                 row={row}
                 invoiceGroupId={groupId}
+                detail={detail}
               />
             ))}
           </ul>
@@ -628,15 +629,26 @@ function GroupActionChecklist({
 function PerLegRow({
   row,
   invoiceGroupId,
+  detail,
 }: {
   row: MergedRow;
   invoiceGroupId: number | null;
+  detail: InvoiceGroupDetailResponse | null;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const attest = useAttestClaim();
   const confirm = useConfirmQueuedAttestation();
   const { claim, state } = row;
+
+  // Authoritative attestation state: prefer the freshly-fetched invoice
+  // group detail (which reflects another teammate's confirmation as soon
+  // as that query refetches) over the cached pending/queued list claim,
+  // which can lag behind by a refetch interval.
+  const liveLeg = detail?.rides?.find((r) => r.id === claim.id);
+  const liveAttestationState =
+    liveLeg?.attestationState ?? claim.attestationState;
+  const alreadyConfirmed = liveAttestationState === "completed";
 
   const busy = attest.isPending || confirm.isPending;
 
@@ -676,7 +688,12 @@ function PerLegRow({
 
   return (
     <li
-      className="flex items-start gap-3 rounded-md border bg-muted/20 px-3 py-2 text-xs"
+      className={
+        "flex items-start gap-3 rounded-md border px-3 py-2 text-xs " +
+        (alreadyConfirmed
+          ? "border-green-200 bg-green-50"
+          : "bg-muted/20")
+      }
       data-testid={`group-leg-row-${claim.id}`}
     >
       <div className="flex-1 min-w-0">
@@ -685,6 +702,15 @@ function PerLegRow({
           <Badge variant="outline" className="text-[10px]">
             {claim.outcome}
           </Badge>
+          {alreadyConfirmed && (
+            <Badge
+              variant="outline"
+              className="text-[10px] border-green-300 bg-green-100 text-green-800"
+              data-testid={`already-confirmed-${claim.id}`}
+            >
+              Already confirmed
+            </Badge>
+          )}
         </div>
         {claim.attestationNote && (
           <div className="text-muted-foreground italic mt-1 break-words">
@@ -692,17 +718,19 @@ function PerLegRow({
           </div>
         )}
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="text-[11px] h-7 px-2 shrink-0"
-        onClick={onConfirmJustThisLeg}
-        disabled={busy}
-        data-testid={`confirm-just-this-leg-${claim.id}`}
-      >
-        Confirm just this leg
-      </Button>
+      {!alreadyConfirmed && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-[11px] h-7 px-2 shrink-0"
+          onClick={onConfirmJustThisLeg}
+          disabled={busy}
+          data-testid={`confirm-just-this-leg-${claim.id}`}
+        >
+          Confirm just this leg
+        </Button>
+      )}
     </li>
   );
 }

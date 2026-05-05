@@ -63,7 +63,7 @@ const inertMutation = () => ({
 // Three groups exercising every buildReattestChecklist branch:
 // 100 (all-approved), 200 (single-denied), 300 (multi-denied).
 
-type AttestState = "pending" | "queued";
+type AttestState = "pending" | "queued" | "completed";
 
 function makeLeg(overrides: {
   id: number;
@@ -376,4 +376,37 @@ test("each leg in the group exposes a 'Confirm just this leg' button", () => {
   assert.match(html, /data-testid="group-leg-breakdown"/);
   assert.match(html, /data-testid="group-leg-row-1001"/);
   assert.match(html, /data-testid="group-leg-row-1002"/);
+});
+
+test("legs already attested in the group detail show an 'Already confirmed' pill and hide the per-leg confirm button", () => {
+  urlParams = {};
+  // Simulate a teammate having just confirmed CLM-1001 in another tab:
+  // the pending list (cached) still includes the leg, but the freshly
+  // refetched invoice-group detail reports it as completed.
+  const original = grp100AllApproved.rides[0];
+  grp100AllApproved.rides[0] = makeLeg({
+    id: 1001,
+    confNumber: "CLM-1001",
+    outcome: "Approved",
+    invoiceGroupId: 100,
+    invoiceNumbers: "INV-100",
+    attestationState: "completed",
+  });
+  try {
+    const html = render();
+    // The completed leg shows the pill and hides its confirm button…
+    assert.match(html, /data-testid="already-confirmed-1001"/);
+    assert.equal(
+      html.includes('data-testid="confirm-just-this-leg-1001"'),
+      false,
+    );
+    // …while the still-pending sibling keeps both behaviors as before.
+    assert.equal(
+      html.includes('data-testid="already-confirmed-1002"'),
+      false,
+    );
+    assert.match(html, /data-testid="confirm-just-this-leg-1002"/);
+  } finally {
+    grp100AllApproved.rides[0] = original;
+  }
 });
