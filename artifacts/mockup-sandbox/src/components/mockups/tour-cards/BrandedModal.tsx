@@ -153,9 +153,9 @@ export function BrandedModal() {
         </div>
 
         {/* Body — two columns */}
-        <div className="grid grid-cols-[1fr_280px] gap-8 px-8 pt-7 pb-6">
+        <div className="grid grid-cols-[1fr_280px] gap-8 px-8 pt-5 pb-4">
           {/* Left: badge + title + copy */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <span
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider"
@@ -169,18 +169,18 @@ export function BrandedModal() {
               </span>
             </div>
 
-            <h2 className="text-[28px] font-semibold leading-[1.2]" style={{ color: SLATE_TEXT, letterSpacing: "-0.01em" }}>
+            <h2 className="text-[26px] font-semibold leading-[1.15]" style={{ color: SLATE_TEXT, letterSpacing: "-0.01em" }}>
               Submit the dispute
             </h2>
 
-            <p className="text-[15px] leading-[1.65]" style={{ color: SLATE_MUTED, maxWidth: "52ch" }}>
+            <p className="text-[14.5px] leading-[1.55]" style={{ color: SLATE_MUTED, maxWidth: "52ch" }}>
               Once fact-finding produces clean evidence, submit the dispute to MAS — either through the payor portal or by email,
               depending on what each invoice requires.{" "}
               <span style={{ color: SLATE_TEXT, fontWeight: 500 }}>The app routes you to the right channel.</span>
             </p>
 
             {/* "What happens next" mini callout */}
-            <div className="mt-1 flex items-start gap-2.5 rounded-lg px-3.5 py-2.5"
+            <div className="flex items-start gap-2.5 rounded-lg px-3 py-2"
               style={{ backgroundColor: EMERALD_BG, border: `1px solid ${EMERALD_BD}` }}>
               <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: EMERALD_FG }} />
               <div className="text-[12.5px] leading-snug" style={{ color: EMERALD_FG }}>
@@ -248,7 +248,7 @@ export function BrandedModal() {
         </div>
 
         {/* Footer */}
-        <div className="px-8 pb-7 pt-2 flex flex-col gap-5">
+        <div className="px-8 pb-5 pt-1 flex flex-col gap-3.5">
           {/* Phase pipeline (5 colored chips) */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
@@ -295,7 +295,7 @@ export function BrandedModal() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-between pt-4 border-t" style={{ borderColor: HAIRLINE }}>
+          <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: HAIRLINE }}>
             <button
               className="text-[13px] font-medium transition-colors"
               style={{ color: SLATE_MUTED }}
