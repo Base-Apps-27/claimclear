@@ -128,20 +128,33 @@ function QueueUrgencyHero({
     );
   }
 
-  // Task #452 — combined today+tomorrow hero. Urgent rows (today /
-  // past-due) still dominate the tone (red, intensified+sticky like
-  // the urgent-only hero) but the headline calls out the tomorrow
-  // share so the operator sees both halves of the click-through.
-  if (filter === "today-tomorrow") {
+  // Task #452 — combined today+tomorrow hero. Fires both for the
+  // explicit `today-tomorrow` filter (the Dashboard click-through) AND
+  // for the default no-filter view, so the Queue baseline matches the
+  // Dashboard's "X due today · Y due tomorrow" framing instead of
+  // dropping to a green "0" the moment urgent is empty but tomorrow
+  // still has rows. Differences between the two modes:
+  //   • Explicit `today-tomorrow`: sticky+intensified red, with the
+  //     "from the Dashboard" callout — matches the click-through
+  //     intent that the operator deliberately chose this view.
+  //   • Default (no filter): same combined copy, calmer chrome
+  //     (no sticky, no callout) — this is the always-on baseline.
+  // When BOTH counts are 0 we fall through to the green "all clear"
+  // branch at the bottom of the function so the relief state still
+  // reads correctly.
+  if (filter === null || filter === "today-tomorrow") {
     const total = urgentCount + tomorrowCount;
-    const intensified = true;
+    const intensified = filter === "today-tomorrow";
     if (urgentCount > 0) {
       return (
         <div
           data-testid="queue-urgency-hero"
+          data-tour="queue-urgency-hero"
           data-tone="red"
           data-intensified={intensified ? "true" : undefined}
-          className="rounded-lg border-2 px-5 py-4 flex items-center gap-4 sticky top-0 z-20 shadow-lg"
+          className={`rounded-lg border-2 px-5 py-4 flex items-center gap-4 ${
+            intensified ? "sticky top-0 z-20 shadow-lg" : ""
+          }`}
           style={{
             background: "hsl(var(--cc-red-bg))",
             borderColor: "hsl(var(--cc-red-border))",
@@ -163,8 +176,9 @@ function QueueUrgencyHero({
                   {urgentCount} due today · {tomorrowCount} due tomorrow
                 </span>
                 <span className="text-xs opacity-80">
-                  Combined "file today or tomorrow" view from the Dashboard. Today's red
-                  rows must ship before EOD; tomorrow's amber rows are next on the clock.
+                  {intensified
+                    ? `Combined "file today or tomorrow" view from the Dashboard. Today's red rows must ship before EOD; tomorrow's amber rows are next on the clock.`
+                    : `Today's red rows must ship before EOD; tomorrow's amber rows are next on the clock.`}
                 </span>
               </div>
             </div>
@@ -178,36 +192,40 @@ function QueueUrgencyHero({
         </div>
       );
     }
-    // No urgent rows but tomorrow rows present — fall through to the
-    // amber tone so we don't render the green "all clear" relief over
-    // a non-empty filter.
-    return (
-      <div
-        data-testid="queue-urgency-hero"
-        data-tone="amber"
-        className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
-        style={{
-          background: "hsl(var(--cc-amber-bg))",
-          borderColor: "hsl(var(--cc-amber-border))",
-          color: "hsl(var(--cc-amber-fg))",
-        }}
-      >
-        <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <span
-              className="text-3xl font-bold tabular-nums"
-              data-testid="queue-urgency-hero-count"
-            >
-              {tomorrowCount}
-            </span>
-            <span className="text-sm">
-              due tomorrow · nothing must file today yet
-            </span>
+    if (tomorrowCount > 0) {
+      // Tomorrow rows but no today — render the amber tomorrow-only
+      // hero so the operator still sees what's coming up next.
+      return (
+        <div
+          data-testid="queue-urgency-hero"
+          data-tour="queue-urgency-hero"
+          data-tone="amber"
+          className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+          style={{
+            background: "hsl(var(--cc-amber-bg))",
+            borderColor: "hsl(var(--cc-amber-border))",
+            color: "hsl(var(--cc-amber-fg))",
+          }}
+        >
+          <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span
+                className="text-3xl font-bold tabular-nums"
+                data-testid="queue-urgency-hero-count"
+              >
+                {tomorrowCount}
+              </span>
+              <span className="text-sm">
+                due tomorrow · nothing must file today yet
+              </span>
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    }
+    // total === 0 → fall through to the green "all clear" branch below.
+    void total;
   }
 
   // Task #352 — "stuck after submission" filter state. Amber-orange tone
