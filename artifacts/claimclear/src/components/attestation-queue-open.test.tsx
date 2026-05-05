@@ -352,20 +352,73 @@ test("right pane renders the live instructional list above the action checklist"
   assert.ok(instrIdx < checklistIdx);
 });
 
-test("persisted attestationNote is preserved in a collapsed <details> disclosure", () => {
+test("persisted attestationNote is shown in a collapsed <details> disclosure when it adds something new", () => {
   urlParams = {};
-  const html = render();
-  // grp100 (default selection) has no persisted notes — the disclosure
-  // for grp200's note must NOT render here, and when it does it must be
-  // collapsed (no `open` attribute).
-  assert.equal(
-    html.includes('data-testid="persisted-note-2001"'),
-    false,
-  );
-  assert.equal(
-    /<details[^>]*\bopen\b[^>]*data-testid="persisted-attestation-notes"/.test(html),
-    false,
-  );
+  // Seed a note on the default-selected group (grp100, all-approved →
+  // live checklist is just "Re-attest the invoice.") that is genuinely
+  // different from the live walkthrough so the disclosure renders.
+  const leg1001 = pendingPayload.claims.find((c) => c.id === 1001)!;
+  const original = leg1001.attestationNote;
+  leg1001.attestationNote =
+    "Heads up: cancelled the duplicate manually before parking this.";
+  try {
+    const html = render();
+    assert.match(html, /data-testid="persisted-attestation-notes"/);
+    assert.match(html, /data-testid="persisted-note-1001"/);
+    // Collapsed by default — no `open` attribute on the <details>.
+    assert.equal(
+      /<details[^>]*\bopen\b[^>]*data-testid="persisted-attestation-notes"/.test(html),
+      false,
+    );
+  } finally {
+    leg1001.attestationNote = original;
+  }
+});
+
+test("persisted attestationNote disclosure is hidden when the note is redundant with the live checklist", () => {
+  urlParams = {};
+  // grp100's live checklist is the single line "Re-attest the
+  // invoice." Seeding the same text (or a substring of the live
+  // walkthrough) must drop the entry and hide the whole disclosure.
+  const leg1001 = pendingPayload.claims.find((c) => c.id === 1001)!;
+  const original = leg1001.attestationNote;
+  leg1001.attestationNote = "Re-attest the invoice.";
+  try {
+    const html = render();
+    assert.equal(
+      html.includes('data-testid="persisted-attestation-notes"'),
+      false,
+    );
+    assert.equal(
+      html.includes('data-testid="persisted-note-1001"'),
+      false,
+    );
+  } finally {
+    leg1001.attestationNote = original;
+  }
+});
+
+test("persisted attestationNote disclosure is hidden when the note is a strict substring of the live checklist", () => {
+  urlParams = {};
+  // grp100's live checklist text is "1. Re-attest the invoice." A
+  // strict substring of that walkthrough (not an exact match) must
+  // still be filtered out and the whole disclosure hidden.
+  const leg1001 = pendingPayload.claims.find((c) => c.id === 1001)!;
+  const original = leg1001.attestationNote;
+  leg1001.attestationNote = "Re-attest the invoice";
+  try {
+    const html = render();
+    assert.equal(
+      html.includes('data-testid="persisted-attestation-notes"'),
+      false,
+    );
+    assert.equal(
+      html.includes('data-testid="persisted-note-1001"'),
+      false,
+    );
+  } finally {
+    leg1001.attestationNote = original;
+  }
 });
 
 test("each leg in the group exposes a 'Confirm just this leg' button", () => {

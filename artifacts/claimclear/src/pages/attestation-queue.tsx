@@ -27,8 +27,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
-import { buildReattestChecklist } from "@/components/whats-next/reattest-instruction-template";
+import {
+  buildReattestChecklist,
+  renderChecklistAsText,
+} from "@/components/whats-next/reattest-instruction-template";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -51,6 +55,7 @@ import {
   Clock,
   Ban,
   CircleDashed,
+  AlertTriangle,
 } from "lucide-react";
 
 type AttestationState = "pending" | "queued";
@@ -388,125 +393,166 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
 
   // Persisted notes from queue time — surfaced under a collapsed
   // disclosure so the audit trail is reachable but doesn't compete
-  // with the live walkthrough above.
-  const persistedNotes = useMemo(
-    () =>
-      bucket.rows
-        .map((r) => ({
-          claim: r.claim,
-          note: r.claim.attestationNote ?? null,
-        }))
-        .filter((n) => !!n.note),
-    [bucket.rows],
+  // with the live walkthrough above. Drop entries whose text is
+  // effectively the same as the live checklist (exact match after
+  // trim, or fully contained in the joined live checklist text) so
+  // the disclosure isn't a duplicate of what's already on screen.
+  const liveChecklistText = useMemo(
+    () => renderChecklistAsText(checklist),
+    [checklist],
   );
+  const persistedNotes = useMemo(() => {
+    const liveTrim = liveChecklistText.trim();
+    return bucket.rows
+      .map((r) => ({
+        claim: r.claim,
+        note: r.claim.attestationNote ?? null,
+      }))
+      .filter((n) => {
+        if (!n.note) return false;
+        const noteTrim = n.note.trim();
+        if (noteTrim.length === 0) return false;
+        if (noteTrim === liveTrim) return false;
+        if (liveTrim.includes(noteTrim)) return false;
+        return true;
+      });
+  }, [bucket.rows, liveChecklistText]);
 
   return (
     <Card data-testid={`group-review-pane-${bucket.key}`}>
-      <CardContent className="p-5 space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
+      <CardContent className="p-6 space-y-6">
+        {/* Header — proper page header for the selected group */}
+        <header className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="space-y-1.5 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-mono text-lg font-semibold">
+              <h3 className="font-mono text-xl font-semibold tracking-tight">
                 {invoiceNumber || "—"}
               </h3>
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="secondary" className="text-[11px]">
                 {bucket.rows.length} leg{bucket.rows.length === 1 ? "" : "s"}
               </Badge>
             </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              Payor {payor}
+            <div className="text-sm text-muted-foreground">
+              Payor <span className="font-medium text-foreground">{payor}</span>
             </div>
           </div>
           {groupId != null && (
             <Link
               href={`/invoice-groups/${groupId}`}
-              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              className="text-sm text-primary hover:underline inline-flex items-center gap-1.5 shrink-0"
               data-testid={`group-review-open-${groupId}`}
             >
-              Open invoice group <ExternalLink className="h-3 w-3" />
+              Open invoice group <ExternalLink className="h-3.5 w-3.5" />
             </Link>
           )}
-        </div>
+        </header>
 
-        {/* Last response context */}
-        {lastResponse?.lastResponseAt ? (
-          <div
-            className="rounded-md border bg-muted/30 px-3 py-2 text-xs"
-            data-testid="group-last-response"
-          >
-            <div className="flex items-center gap-1.5 font-medium text-muted-foreground">
-              {lastResponse.lastResponseSource === "email" ? (
-                <Mail className="h-3.5 w-3.5" />
-              ) : (
-                <FileText className="h-3.5 w-3.5" />
+        <Separator />
+
+        {/* Last payor response context */}
+        <ReviewSection
+          title="Last payor response"
+          icon={<Mail className="h-3.5 w-3.5" />}
+        >
+          {lastResponse?.lastResponseAt ? (
+            <div
+              className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm space-y-1"
+              data-testid="group-last-response"
+            >
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {lastResponse.lastResponseSource === "email" ? (
+                  <Mail className="h-3.5 w-3.5" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  Received {formatDateTime(lastResponse.lastResponseAt)}
+                  {lastResponse.lastResponseSource
+                    ? ` · ${lastResponse.lastResponseSource}`
+                    : ""}
+                </span>
+              </div>
+              {lastResponse.lastResponseSubject && (
+                <div className="font-medium truncate">
+                  {lastResponse.lastResponseSubject}
+                </div>
               )}
-              Why this is owed · last payor response{" "}
-              {formatDateTime(lastResponse.lastResponseAt)}
-              {lastResponse.lastResponseSource
-                ? ` · ${lastResponse.lastResponseSource}`
-                : ""}
             </div>
-            {lastResponse.lastResponseSubject && (
-              <div className="mt-1 truncate">{lastResponse.lastResponseSubject}</div>
-            )}
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground italic">
-            No payor response recorded for this group yet.
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No payor response recorded for this group yet.
+            </p>
+          )}
+        </ReviewSection>
 
         {/* Live instructional walkthrough — sourced from current verdict mix */}
-        <div data-testid="reattest-instructions">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            Steps to take
-          </h4>
-          <ol className="space-y-1.5 text-sm" data-testid="reattest-instruction-list">
-            {checklist.map((item, idx) => (
-              <li
-                key={item.id}
-                className="flex items-start gap-2"
-                data-testid={`reattest-instruction-${item.id}`}
-              >
-                <span className="font-mono text-xs text-muted-foreground mt-0.5 shrink-0">
-                  {idx + 1}.
-                </span>
-                <span>{item.text}</span>
-              </li>
-            ))}
-          </ol>
-          <p className="text-[11px] text-muted-foreground mt-2">
-            Each line above maps to a row below — work top-to-bottom; the
-            re-attest box stays gated until every MAS cancel is checked.
-          </p>
-        </div>
+        <ReviewSection title="Steps to take">
+          <div data-testid="reattest-instructions">
+            <ol
+              className="space-y-2 text-sm"
+              data-testid="reattest-instruction-list"
+            >
+              {checklist.map((item, idx) => (
+                <li
+                  key={item.id}
+                  className="flex items-start gap-3"
+                  data-testid={`reattest-instruction-${item.id}`}
+                >
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-[11px] font-medium text-muted-foreground">
+                    {idx + 1}
+                  </span>
+                  <span className="leading-5">{item.text}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="text-xs text-muted-foreground mt-3">
+              Each line maps to a row in the action checklist below — work
+              top-to-bottom; the re-attest box stays gated until every MAS
+              cancel is checked.
+            </p>
+          </div>
+        </ReviewSection>
 
         {/* Action checklist — gated re-attest CTA lives here */}
-        {detail ? (
-          <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
-        ) : groupId == null ? (
-          <div className="text-xs text-muted-foreground italic">
-            This leg isn't tied to an invoice group — confirm individually below.
-          </div>
-        ) : detailQuery.isLoading ? (
-          <Skeleton className="h-32 w-full" data-testid="group-detail-loading" />
-        ) : (
-          <div
-            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-            data-testid="group-detail-error"
-          >
-            Couldn't load the invoice group's MAS checklist. Open the group
-            page for the full controls.
-          </div>
-        )}
+        <ReviewSection title="Action checklist">
+          {detail ? (
+            <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
+          ) : groupId == null ? (
+            <div
+              className="rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground flex items-start gap-2"
+              data-testid="group-orphan-leg-note"
+            >
+              <CircleDashed className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                This leg isn't tied to an invoice group — confirm it
+                individually below.
+              </span>
+            </div>
+          ) : detailQuery.isLoading ? (
+            <div className="space-y-2" data-testid="group-detail-loading">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <div
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 flex items-start gap-2"
+              data-testid="group-detail-error"
+            >
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                Couldn't load the invoice group's MAS checklist. Open the
+                group page for the full controls.
+              </span>
+            </div>
+          )}
+        </ReviewSection>
 
         {/* Per-leg breakdown with the per-leg "Confirm just this leg" affordance */}
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            Legs in this group
-          </h4>
-          <ul className="space-y-2" data-testid="group-leg-breakdown">
+        <ReviewSection title="Legs in this group">
+          <ul
+            className="divide-y rounded-md border bg-card"
+            data-testid="group-leg-breakdown"
+          >
             {bucket.rows.map((row) => (
               <PerLegRow
                 key={row.claim.id}
@@ -516,28 +562,42 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
               />
             ))}
           </ul>
-        </div>
+        </ReviewSection>
 
-        {/* Persisted attestation notes — collapsed disclosure */}
+        {/* Persisted attestation notes — collapsed disclosure, only when
+            it adds something the live checklist doesn't already cover. */}
         {persistedNotes.length > 0 && (
           <details
-            className="text-xs"
+            className="group rounded-md border bg-muted/20"
             data-testid="persisted-attestation-notes"
           >
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-              Show original walkthrough captured when this was queued
+            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground flex items-center justify-between gap-2">
+              <span>Original walkthrough captured when queued</span>
+              <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70 group-open:hidden">
+                Show
+              </span>
+              <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70 hidden group-open:inline">
+                Hide
+              </span>
             </summary>
-            <div className="mt-2 space-y-2">
+            <div className="border-t p-3 space-y-2">
               {persistedNotes.map((n) => (
                 <div
                   key={n.claim.id}
-                  className="rounded-md border bg-muted/20 px-3 py-2"
+                  className="rounded-md border bg-card px-3 py-2.5 text-sm"
                   data-testid={`persisted-note-${n.claim.id}`}
                 >
-                  <div className="font-mono text-[11px] text-muted-foreground">
-                    #{n.claim.confNumber}
+                  <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                    <span className="font-mono font-medium text-foreground">
+                      #{n.claim.confNumber}
+                    </span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {n.claim.outcome}
+                    </Badge>
                   </div>
-                  <div className="mt-1 whitespace-pre-wrap">{n.note}</div>
+                  <div className="mt-1.5 whitespace-pre-wrap text-foreground/90 leading-5">
+                    {n.note}
+                  </div>
                 </div>
               ))}
             </div>
@@ -545,6 +605,26 @@ function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ReviewSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-2.5">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+        {icon}
+        {title}
+      </h4>
+      {children}
+    </section>
   );
 }
 
@@ -689,41 +769,36 @@ function PerLegRow({
   return (
     <li
       className={
-        "flex items-start gap-3 rounded-md border px-3 py-2 text-xs " +
-        (alreadyConfirmed
-          ? "border-green-200 bg-green-50"
-          : "bg-muted/20")
+        "flex items-center gap-3 px-3 py-2.5 text-sm first:rounded-t-md last:rounded-b-md transition-colors " +
+        (alreadyConfirmed ? "bg-green-50" : "hover:bg-muted/40")
       }
       data-testid={`group-leg-row-${claim.id}`}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-sm font-medium">{claim.confNumber}</span>
-          <Badge variant="outline" className="text-[10px]">
-            {claim.outcome}
+      <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+        <span className="font-mono font-medium">{claim.confNumber}</span>
+        <Badge variant="outline" className="text-[10px]">
+          {claim.outcome}
+        </Badge>
+        {alreadyConfirmed ? (
+          <Badge
+            variant="outline"
+            className="text-[10px] border-green-300 bg-green-100 text-green-800"
+            data-testid={`already-confirmed-${claim.id}`}
+          >
+            Already confirmed
           </Badge>
-          {alreadyConfirmed && (
-            <Badge
-              variant="outline"
-              className="text-[10px] border-green-300 bg-green-100 text-green-800"
-              data-testid={`already-confirmed-${claim.id}`}
-            >
-              Already confirmed
-            </Badge>
-          )}
-        </div>
-        {claim.attestationNote && (
-          <div className="text-muted-foreground italic mt-1 break-words">
-            "{claim.attestationNote}"
-          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {state === "queued" ? "Parked" : "Owed by you"}
+          </span>
         )}
       </div>
       {!alreadyConfirmed && (
         <Button
           type="button"
           size="sm"
-          variant="ghost"
-          className="text-[11px] h-7 px-2 shrink-0"
+          variant="outline"
+          className="text-xs h-7 px-2.5 shrink-0"
           onClick={onConfirmJustThisLeg}
           disabled={busy}
           data-testid={`confirm-just-this-leg-${claim.id}`}
