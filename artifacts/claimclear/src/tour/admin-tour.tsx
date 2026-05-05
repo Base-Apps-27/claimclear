@@ -319,20 +319,6 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
             tooltipComponent={TourCard}
             debug={import.meta.env.DEV}
             onEvent={handleEvent}
-            // Kill ALL of Joyride's built-in opacity transitions on
-            // both the dim overlay and the spotlight cutout. Joyride
-            // re-mounts these on every step, so the default 0.2-0.3s
-            // opacity fade was the "individual parts transitioning"
-            // artifact between consecutive centered modals (steps 1-7
-            // share target=body, identical position — the only thing
-            // that visibly changed step-to-step was that fade).
-            // With transition:none the overlay simply IS, full-stop,
-            // and the only thing the user sees move between steps is
-            // the card content swap.
-            styles={{
-              overlay: { transition: "none" },
-              spotlight: { transition: "none" } as React.CSSProperties,
-            }}
             options={{
               showProgress: true,
               buttons: ["back", "skip", "primary"],

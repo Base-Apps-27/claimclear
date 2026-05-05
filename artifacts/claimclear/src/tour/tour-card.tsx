@@ -18,14 +18,21 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, Globe, Mail, FileText, ArrowUpRight } from "lucide-react";
-// NOTE: framer-motion is still imported because the inner phase-pipeline
-// pills animate their fill color when the active step changes. The OUTER
-// card wrappers (ModalCard / CoachCard) deliberately use plain divs —
-// any opacity/scale fade on the wrapper visibly re-runs every time
-// Joyride re-mounts the tooltipComponent (which it does once per step),
-// so back-to-back centered modals would appear to "transition" even
-// though their position is identical. Keeping the wrapper static makes
-// step-to-step changes read as a content swap, which is what we want.
+// Animation policy (per user feedback May 5):
+// The card must fade in AS A SINGLE UNIT. Previously the outer wrapper
+// was static while inner pieces (phase-pipeline pills) animated their
+// fill color and box-shadow on each step change — which read as
+// "individual parts of the card transitioning separately" rather than
+// one cohesive card change. We now do the inverse:
+//   • OUTER wrapper (ModalCard / CoachCard): one motion.div fade-in
+//     (opacity 0→1, ~220ms, ease-out). Joyride re-mounts the
+//     tooltipComponent on every step, so this fade fires once per
+//     step transition — the user perceives "the whole card faded in",
+//     which is the requested behavior.
+//   • INNER PhasePipeline atoms: plain divs / spans. Static styles
+//     derived from `current` at render time, no `animate` prop, no
+//     framer transition. They simply ARE in their step state when
+//     the card mounts — they don't independently move.
 import type { TooltipRenderProps } from "react-joyride";
 import type { ProcessStepValue, TourStepDef } from "./tour-config";
 
@@ -159,14 +166,11 @@ function PhasePipelineFull({ current }: { current: ProcessStepValue }) {
         const isPending = !isCurrent && !isDone;
         return (
           <React.Fragment key={p.n}>
-            <motion.div layout
+            <div
               className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-              animate={{
+              style={{
                 backgroundColor: isCurrent ? p.color : isDone ? "#ffffff" : T.SLATE_50,
                 color: isCurrent ? "#ffffff" : isDone ? p.color : T.SLATE_400,
-              }}
-              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-              style={{
                 border: `1px solid ${isCurrent ? p.color : isDone ? p.color + "55" : "transparent"}`,
                 boxShadow: isCurrent ? `0 3px 10px -2px ${p.color}66` : "none",
               }}
@@ -180,7 +184,7 @@ function PhasePipelineFull({ current }: { current: ProcessStepValue }) {
                 {isDone ? "✓" : p.n}
               </span>
               <span>{p.label}</span>
-            </motion.div>
+            </div>
             {idx < PHASES.length - 1 && (
               <div className="h-px w-2" style={{ backgroundColor: idx < (typeof current === "number" ? current - 1 : -1) ? PHASES[idx].color + "66" : T.HAIRLINE }} />
             )}
@@ -200,13 +204,12 @@ function PhasePipelineCompact({ current }: { current: ProcessStepValue }) {
         return (
           <React.Fragment key={p.n}>
             <div className="flex items-center gap-1">
-              <motion.span
-                className="h-1.5 w-1.5 rounded-full"
-                animate={{
+              <span
+                className="h-1.5 w-1.5 rounded-full inline-block"
+                style={{
                   backgroundColor: (isDone || isCurrent ? p.color : T.SLATE_300),
-                  boxShadow: isCurrent ? `0 0 0 2.5px ${p.color}33` : `0 0 0 0px ${p.color}00`,
+                  boxShadow: isCurrent ? `0 0 0 2.5px ${p.color}33` : "none",
                 }}
-                transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
               />
               <span className="text-[9.5px] font-medium" style={{ color: isCurrent ? p.color : isDone ? T.SLATE_MUTED : T.SLATE_400 }}>
                 {p.label}
@@ -307,8 +310,15 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
   const isClosing = def.processStep === "closing";
 
   return (
-    <div
+    <motion.div
       {...tooltipProps}
+      // Single unified fade-in for the whole card. No layout shift, no
+      // per-element staggered motion — everything inside (header, body,
+      // pipeline, footer) appears together as one block. This is what
+      // satisfies "the whole card should fade in as a unit".
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.22, ease: EASE_OUT }}
       className={`relative rounded-2xl bg-white overflow-hidden flex flex-col ${isSubmitStep ? "w-[640px]" : "w-[480px]"} max-w-[calc(100vw-2rem)]`}
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.32), 0 8px 24px -12px rgba(27,42,74,0.20), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -352,7 +362,7 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
         )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -364,8 +374,12 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
   tooltipProps: TooltipRenderProps["tooltipProps"];
 }) {
   return (
-    <div
+    <motion.div
       {...tooltipProps}
+      // Same single-unit fade as ModalCard. See note above ModalCard.
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.22, ease: EASE_OUT }}
       className="w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white overflow-hidden flex flex-col"
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.36), 0 8px 24px -12px rgba(27,42,74,0.22), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -384,7 +398,7 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
         )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v11";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v12";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -211,43 +211,43 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: Responses",
   },
 
-  // ═══════ Responses (1 modal + 3 coaches) ═══════
+  // ═══════ Responses (1 modal — see history note below) ═══════
+  //
+  // History (May 5, 2026): this section used to be 1 modal + 3 anchored
+  // coach cards (id 14 modal, ids 15-17 coaches). The coaches landed on
+  // /responses-awaiting-review, which crashed mid-mount when the tour
+  // tried to walk it (page rendered briefly, then a downstream effect
+  // threw and unmounted the React tree). Three iterations failed to
+  // pinpoint the exact React throw without browser-console access. Per
+  // direct user direction ("even if the solution is a simplified card
+  // without the walk-through, we cant simply Not continue the tour"),
+  // we collapsed those four steps into ONE overview card that:
+  //   • does NOT navigate (page stays as wherever the user is — Queue,
+  //     in normal tour flow). page=null → routeForPage returns null →
+  //     admin-tour's STEP_AFTER never crosses routes for this step, so
+  //     the broken page is never visited and the crash can't fire.
+  //   • describes the three columns of the responses workspace in one
+  //     paragraph, so the operator still gets the mental model — just
+  //     without an in-place walkthrough.
+  //   • has nextLabel pointing forward to Attestation, so the tour
+  //     CONTINUES (not aborted, not "accept-the-break") — the next
+  //     navigation is to the attestation page, which works.
+  // Subsequent steps (Attestation, Invoice Groups, Group detail, Claims,
+  // Claim detail, Replay) are renumbered down by 3 (was 18-24, now
+  // 15-21). The mockup-sandbox FullTour story still shows the original
+  // 24-step deck for documentation; production ships these 21.
   {
-    id: 14, kind: "modal", page: "responses", processStep: 5,
+    id: 14, kind: "modal", page: null, processStep: 5,
     target: "body", placement: "center",
     title: "Responses Awaiting Review — Step 5 lives here",
     body:
-      "When MAS replies to a dispute, it comes here for a decision. Three columns work together: the message thread on the left, the AI's read in the middle, and your decision on the right. Like the Queue, let's walk it column by column.",
-    nextLabel: "Next: the thread",
-  },
-  {
-    id: 15, kind: "coach", page: "responses", processStep: 5,
-    target: '[data-tour="responses-thread"]', placement: "right",
-    title: "Thread — every reply, oldest first",
-    body:
-      "All open replies, sorted oldest first. Click one to read it. Bold rows haven't been opened yet — that's your list for the day. An empty list means nothing is waiting.",
-    nextLabel: "Next: AI Read",
-  },
-  {
-    id: 16, kind: "coach", page: "responses", processStep: 5,
-    target: '[data-tour="responses-airead"]', placement: "top",
-    title: "AI Read — what MAS said, summarized",
-    body:
-      "MAS's actual reply is on top, the AI's summary and suggestion below. Use the AI as a second pair of eyes — not a decider. Always read the original reply first, then check what the AI thinks.",
-    nextLabel: "Next: Decide",
-  },
-  {
-    id: 17, kind: "coach", page: "responses", processStep: 5,
-    target: '[data-tour="responses-verdict"]', placement: "left",
-    title: "Decide right then",
-    body:
-      "Three buttons. Pick one before you move on: Re-bill (the reply is clean and you're allowed), Hand to supervisor (it needs more than you can do), or Mark lost (MAS denied). Nothing sits without a decision. Once you click, it's done.",
+      "When MAS replies to a dispute, it lands on the Responses page for a decision. Three columns work together: a Thread on the left (every reply, bold = unread), an AI Read in the middle (MAS's actual words on top, the AI's summary below — use it as a second pair of eyes, not the decider), and a Decide rail on the right (Re-bill, Hand to supervisor, or Mark lost). Pick one before you move on. Nothing sits without a decision.",
     nextLabel: "Next: Attestation",
   },
 
   // ═══════ Attestation ═══════
   {
-    id: 18, kind: "modal", page: "attestation", processStep: 5,
+    id: 15, kind: "modal", page: "attestation", processStep: 5,
     target: "body", placement: "center",
     title: "Attestation Queue — closing the loop",
     body:
@@ -257,7 +257,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Invoice Groups (1 modal + 1 coach) ═══════
   {
-    id: 19, kind: "modal", page: "invoice-groups", processStep: "transition",
+    id: 16, kind: "modal", page: "invoice-groups", processStep: "transition",
     target: "body", placement: "center",
     title: "Invoice Groups — every group, in one list",
     body:
@@ -265,7 +265,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: the filter trap",
   },
   {
-    id: 20, kind: "coach", page: "invoice-groups", processStep: "all",
+    id: 17, kind: "coach", page: "invoice-groups", processStep: "all",
     target: '[data-tour="invoice-groups-filters"]', placement: "bottom",
     title: "⚠️ Two filters are hiding rows by default",
     body:
@@ -278,7 +278,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   // when no group is selected, and Joyride's TARGET_NOT_FOUND handler
   // skips this step gracefully if the user has no group open) ═══════
   {
-    id: 21, kind: "coach", page: "group-detail", processStep: "all",
+    id: 18, kind: "coach", page: "group-detail", processStep: "all",
     route: "/invoice-groups",
     target: '[data-tour="group-gauntlet"]', placement: "left",
     title: "Group detail — the Gauntlet shows the path to done",
@@ -289,7 +289,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Claims (1 modal + 1 coach on detail) ═══════
   {
-    id: 22, kind: "modal", page: "claims", processStep: "transition",
+    id: 19, kind: "modal", page: "claims", processStep: "transition",
     target: "body", placement: "center",
     title: "Claims — same idea as Groups, one ride at a time",
     body:
@@ -297,7 +297,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: a single claim",
   },
   {
-    id: 23, kind: "coach", page: "claim-detail", processStep: "all",
+    id: 20, kind: "coach", page: "claim-detail", processStep: "all",
     route: "/claims",
     target: '[data-tour="claim-sop-player"]', placement: "left",
     title: "Claim detail — the SOP Player tells you what to do",
@@ -308,7 +308,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Replay anchor ═══════
   {
-    id: 24, kind: "coach", page: "dashboard", processStep: "closing",
+    id: 21, kind: "coach", page: "dashboard", processStep: "closing",
     target: '[data-tour="sidebar-take-tour"]', placement: "right",
     title: "Replay anytime",
     body:
