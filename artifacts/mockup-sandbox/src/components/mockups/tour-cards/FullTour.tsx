@@ -16,6 +16,8 @@ export function FullTour() {
   const stepParam = parseInt(urlParams.get("step") || "1", 10);
   const stepId = Math.max(1, Math.min(STEPS.length, isNaN(stepParam) ? 1 : stepParam));
   const currentStep = STEPS.find((s) => s.id === stepId) || STEPS[0];
+  const helpOpen = urlParams.get("help") === "open";
+  const showTour = urlParams.get("tour") !== "off";
 
   const renderPage = () => {
     switch (currentStep.page) {
@@ -32,8 +34,8 @@ export function FullTour() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      <MockApp activePage={currentStep.page}>{renderPage()}</MockApp>
-      <TourCard step={currentStep} />
+      <MockApp activePage={currentStep.page} helpOpen={helpOpen}>{renderPage()}</MockApp>
+      {showTour && !helpOpen && <TourCard step={currentStep} />}
 
       <div
         className="fixed bottom-2 right-2 z-50 px-2 py-1 rounded-md text-[10px] font-mono font-semibold pointer-events-none"

@@ -1,10 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, CheckCircle2, Globe, Mail, FileText, ArrowUpRight } from "lucide-react";
 import { T, PHASES, phaseColor, ProcessStep } from "./tokens";
 import { STEPS, type StepDef } from "./steps";
 
 const TOTAL_STEPS = STEPS.length;
-
 const VIEWPORT_MARGIN = 16;
 
 function Mark({ size = 14 }: { size?: number }) {
@@ -19,8 +19,7 @@ function Mark({ size = 14 }: { size?: number }) {
 
 function AccentStripe() {
   return (
-    <div
-      className="h-[3px] w-full"
+    <div className="h-[3px] w-full"
       style={{ background: `linear-gradient(90deg, ${T.CORAL} 0%, ${T.CORAL} 30%, ${T.BRAND_BLUE} 70%, ${T.NAVY} 100%)` }}
     />
   );
@@ -28,10 +27,8 @@ function AccentStripe() {
 
 function HeaderBand({ stepLabel }: { stepLabel: string }) {
   return (
-    <div
-      className="h-9 px-4 flex items-center justify-between text-white"
-      style={{ background: `linear-gradient(95deg, ${T.NAVY} 0%, ${T.NAVY_2} 60%, ${T.NAVY_3} 100%)` }}
-    >
+    <div className="h-9 px-4 flex items-center justify-between text-white"
+      style={{ background: `linear-gradient(95deg, ${T.NAVY} 0%, ${T.NAVY_2} 60%, ${T.NAVY_3} 100%)` }}>
       <div className="flex items-center gap-2">
         <Mark size={13} />
         <span className="text-[11.5px] font-semibold tracking-wide">ClaimClear</span>
@@ -46,10 +43,8 @@ function HeaderBand({ stepLabel }: { stepLabel: string }) {
 function PhaseBadge({ ps }: { ps: ProcessStep }) {
   if (ps === "transition") {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-        style={{ color: T.BRAND_BLUE, backgroundColor: "rgba(31,111,235,0.08)", border: `1px solid ${T.BRAND_BLUE}30` }}
-      >
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color: T.BRAND_BLUE, backgroundColor: "rgba(31,111,235,0.08)", border: `1px solid ${T.BRAND_BLUE}30` }}>
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: T.BRAND_BLUE }} />
         Process orientation
       </span>
@@ -57,10 +52,8 @@ function PhaseBadge({ ps }: { ps: ProcessStep }) {
   }
   if (ps === "all") {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-        style={{ color: T.NAVY, backgroundColor: "#EEF1F8", border: `1px solid ${T.NAVY}25` }}
-      >
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color: T.NAVY, backgroundColor: "#EEF1F8", border: `1px solid ${T.NAVY}25` }}>
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: T.NAVY }} />
         All process steps
       </span>
@@ -68,10 +61,8 @@ function PhaseBadge({ ps }: { ps: ProcessStep }) {
   }
   if (ps === "closing") {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-        style={{ color: T.EMERALD_FG, backgroundColor: T.EMERALD_BG, border: `1px solid ${T.EMERALD_BD}` }}
-      >
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color: T.EMERALD_FG, backgroundColor: T.EMERALD_BG, border: `1px solid ${T.EMERALD_BD}` }}>
         <CheckCircle2 className="w-2.5 h-2.5" />
         Tour complete
       </span>
@@ -80,10 +71,8 @@ function PhaseBadge({ ps }: { ps: ProcessStep }) {
   const c = phaseColor(ps);
   const phase = PHASES.find((p) => p.n === ps)!;
   return (
-    <span
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-      style={{ color: c, backgroundColor: c + "12", border: `1px solid ${c}40` }}
-    >
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+      style={{ color: c, backgroundColor: c + "12", border: `1px solid ${c}40` }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
       Step {phase.n} · {phase.label}
     </span>
@@ -100,27 +89,28 @@ function PhasePipelineFull({ current }: { current: ProcessStep }) {
           const isPending = !isCurrent && !isDone;
           return (
             <React.Fragment key={p.n}>
-              <div
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all"
+              <motion.div layout
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                animate={{
+                  backgroundColor: isCurrent ? p.color : isDone ? "#ffffff" : T.SLATE_50,
+                  color: isCurrent ? "#ffffff" : isDone ? p.color : T.SLATE_400,
+                }}
+                transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
                 style={{
-                  backgroundColor: isCurrent ? p.color : isDone ? "white" : T.SLATE_50,
-                  color: isCurrent ? "white" : isDone ? p.color : T.SLATE_400,
                   border: `1px solid ${isCurrent ? p.color : isDone ? p.color + "55" : "transparent"}`,
                   boxShadow: isCurrent ? `0 3px 10px -2px ${p.color}66` : "none",
                 }}
               >
-                <span
-                  className="h-3 w-3 rounded-full flex items-center justify-center text-[8px] font-bold tabular-nums"
+                <span className="h-3 w-3 rounded-full flex items-center justify-center text-[8px] font-bold tabular-nums"
                   style={{
                     backgroundColor: isCurrent ? "rgba(255,255,255,0.25)" : isDone ? p.color : "transparent",
                     color: isCurrent ? "white" : isDone ? "white" : T.SLATE_400,
                     border: isPending ? `1px solid ${T.SLATE_300}` : "none",
-                  }}
-                >
+                  }}>
                   {isDone ? "✓" : p.n}
                 </span>
                 <span>{p.label}</span>
-              </div>
+              </motion.div>
               {idx < PHASES.length - 1 && (
                 <div className="h-px w-2" style={{ backgroundColor: idx < (typeof current === "number" ? current - 1 : -1) ? PHASES[idx].color + "66" : T.HAIRLINE }} />
               )}
@@ -141,12 +131,13 @@ function PhasePipelineCompact({ current }: { current: ProcessStep }) {
         return (
           <React.Fragment key={p.n}>
             <div className="flex items-center gap-1">
-              <span
+              <motion.span
                 className="h-1.5 w-1.5 rounded-full"
-                style={{
-                  backgroundColor: isDone || isCurrent ? p.color : T.SLATE_300,
-                  boxShadow: isCurrent ? `0 0 0 2.5px ${p.color}33` : "none",
+                animate={{
+                  backgroundColor: (isDone || isCurrent ? p.color : T.SLATE_300),
+                  boxShadow: isCurrent ? `0 0 0 2.5px ${p.color}33` : `0 0 0 0px ${p.color}00`,
                 }}
+                transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
               />
               <span className="text-[9.5px] font-medium" style={{ color: isCurrent ? p.color : isDone ? T.SLATE_MUTED : T.SLATE_400 }}>
                 {p.label}
@@ -166,17 +157,13 @@ function FooterActions({ stepId, nextLabel }: { stepId: number; nextLabel: strin
       <button className="text-[11.5px] font-medium" style={{ color: T.SLATE_MUTED }}>Skip tour</button>
       <div className="flex items-center gap-1.5">
         {stepId > 1 && (
-          <button className="px-2.5 py-1.5 text-[11.5px] font-medium rounded-md" style={{ color: T.SLATE_MUTED }}>
-            Back
-          </button>
+          <button className="px-2.5 py-1.5 text-[11.5px] font-medium rounded-md" style={{ color: T.SLATE_MUTED }}>Back</button>
         )}
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[11.5px] font-semibold text-white rounded-md"
+        <button className="flex items-center gap-1.5 px-3 py-1.5 text-[11.5px] font-semibold text-white rounded-md"
           style={{
             background: `linear-gradient(135deg, ${T.CORAL} 0%, ${T.CORAL_DARK} 100%)`,
             boxShadow: `0 4px 12px -2px ${T.CORAL}80, 0 1px 2px -1px rgba(208,79,50,0.3)`,
-          }}
-        >
+          }}>
           <span>{nextLabel}</span>
           <ArrowRight className="w-3 h-3" />
         </button>
@@ -185,13 +172,11 @@ function FooterActions({ stepId, nextLabel }: { stepId: number; nextLabel: strin
   );
 }
 
-// ============== ROUTING VISUAL (only for the Submit step modal) ==============
+// ============== ROUTING VISUAL (Submit step only) ==============
 function RoutingVisual() {
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-[9.5px] uppercase tracking-widest font-semibold" style={{ color: T.SLATE_MUTED }}>
-        Routing
-      </div>
+      <div className="text-[9.5px] uppercase tracking-widest font-semibold" style={{ color: T.SLATE_MUTED }}>Routing</div>
       <div className="rounded-lg border bg-white p-2 flex items-center gap-2" style={{ borderColor: T.HAIRLINE }}>
         <div className="h-7 w-7 rounded-md flex items-center justify-center" style={{ backgroundColor: "#EEF2FF", color: T.BRAND_BLUE }}>
           <FileText className="w-3.5 h-3.5" />
@@ -226,6 +211,10 @@ function RoutingVisual() {
   );
 }
 
+// Motion presets — quick, refined, easeOutExpo-ish
+const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const EASE_IN: [number, number, number, number]  = [0.4, 0, 1, 1];
+
 // ============== MODAL (centered) ==============
 function ModalCard({ step }: { step: StepDef }) {
   const isSubmitStep = step.id === 5;
@@ -233,32 +222,31 @@ function ModalCard({ step }: { step: StepDef }) {
 
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center p-6 pointer-events-none">
-      {/* Soft radial dim — keeps the page visible (no white-screen failure mode) */}
-      <div
+      <motion.div
+        key={`dim-${step.id}`}
         className="absolute inset-0"
         style={{ background: "radial-gradient(ellipse at center, rgba(27,42,74,0) 0%, rgba(27,42,74,0.10) 55%, rgba(27,42,74,0.32) 100%)" }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.22, ease: EASE_OUT }}
       />
-      <div
+      <motion.div
+        key={`modal-${step.id}`}
+        initial={{ opacity: 0, scale: 0.965, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.985, y: -4 }}
+        transition={{ duration: 0.26, ease: EASE_OUT }}
         className={`relative rounded-2xl bg-white overflow-hidden flex flex-col pointer-events-auto ${isSubmitStep ? "w-[640px]" : "w-[480px]"} max-w-full max-h-full`}
-        style={{
-          boxShadow:
-            "0 20px 56px -16px rgba(27,42,74,0.32), 0 8px 24px -12px rgba(27,42,74,0.20), 0 0 0 1px rgba(27,42,74,0.06)",
-        }}
+        style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.32), 0 8px 24px -12px rgba(27,42,74,0.20), 0 0 0 1px rgba(27,42,74,0.06)" }}
       >
         <AccentStripe />
         <HeaderBand stepLabel={`Step ${step.id} of ${TOTAL_STEPS}`} />
 
         {isSubmitStep ? (
-          // Two-column layout for the routing-rich Submit step
           <div className="grid grid-cols-[1fr_220px] gap-5 px-5 pt-4 pb-3">
             <div className="flex flex-col gap-2.5">
               <PhaseBadge ps={step.processStep} />
-              <h2 className="text-[20px] font-semibold leading-[1.18]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>
-                {step.title}
-              </h2>
-              <p className="text-[12.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>
-                {step.body}
-              </p>
+              <h2 className="text-[20px] font-semibold leading-[1.18]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{step.title}</h2>
+              <p className="text-[12.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>{step.body}</p>
               <div className="flex items-start gap-2 rounded-lg px-2.5 py-1.5 mt-1" style={{ backgroundColor: T.EMERALD_BG, border: `1px solid ${T.EMERALD_BD}` }}>
                 <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: T.EMERALD_FG }} />
                 <div className="text-[11px] leading-snug" style={{ color: T.EMERALD_FG }}>
@@ -271,21 +259,16 @@ function ModalCard({ step }: { step: StepDef }) {
         ) : (
           <div className="px-5 pt-4 pb-3 flex flex-col gap-2.5">
             <PhaseBadge ps={step.processStep} />
-            <h2 className="text-[19px] font-semibold leading-[1.2]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>
-              {step.title}
-            </h2>
-            <p className="text-[12.5px] leading-[1.6]" style={{ color: T.SLATE_MUTED }}>
-              {step.body}
-            </p>
+            <h2 className="text-[19px] font-semibold leading-[1.2]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{step.title}</h2>
+            <p className="text-[12.5px] leading-[1.6]" style={{ color: T.SLATE_MUTED }}>{step.body}</p>
           </div>
         )}
 
-        {/* Footer */}
         <div className="px-5 pb-4 pt-1 flex flex-col gap-2.5">
           {!isClosing && <PhasePipelineFull current={step.processStep} />}
           <FooterActions stepId={step.id} nextLabel={step.nextLabel} />
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -303,153 +286,119 @@ function CoachCard({ step }: { step: StepDef }) {
       const el = document.querySelector(sel) as HTMLElement | null;
       const card = cardRef.current;
       if (!el || !card) return;
-
       const r = el.getBoundingClientRect();
       setHaloRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-
-      const cardW = card.offsetWidth;
-      const cardH = card.offsetHeight;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const m = VIEWPORT_MARGIN;
-      const gap = 14;
-
+      const cardW = card.offsetWidth, cardH = card.offsetHeight;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const m = VIEWPORT_MARGIN, gap = 14;
       let top = 0, left = 0, pointer: "up" | "down" | "left" | "right" = "up";
-
       switch (step.anchor!.placement) {
-        case "right":
-          left = r.right + gap;
-          top = r.top;
-          pointer = "left";
-          break;
-        case "left":
-          left = r.left - cardW - gap;
-          top = r.top;
-          pointer = "right";
-          break;
-        case "bottom":
-          top = r.bottom + gap;
-          left = r.left;
-          pointer = "up";
-          break;
-        case "top":
-          top = r.top - cardH - gap;
-          left = r.left;
-          pointer = "down";
-          break;
+        case "right":  left = r.right + gap; top = r.top; pointer = "left"; break;
+        case "left":   left = r.left - cardW - gap; top = r.top; pointer = "right"; break;
+        case "bottom": top = r.bottom + gap; left = r.left; pointer = "up"; break;
+        case "top":    top = r.top - cardH - gap; left = r.left; pointer = "down"; break;
       }
-
-      // Clamp inside viewport (failure mode 2 prevention)
       left = Math.max(m, Math.min(vw - cardW - m, left));
-      top = Math.max(m, Math.min(vh - cardH - m, top));
-
-      // Pointer offset along the side it sits on
+      top  = Math.max(m, Math.min(vh - cardH - m, top));
       let pointerOffset = 16;
       if (pointer === "up" || pointer === "down") {
-        const anchorCenterX = r.left + r.width / 2;
-        pointerOffset = Math.max(12, Math.min(cardW - 24, anchorCenterX - left));
+        const cx = r.left + r.width / 2;
+        pointerOffset = Math.max(12, Math.min(cardW - 24, cx - left));
       } else {
-        const anchorCenterY = r.top + r.height / 2;
-        pointerOffset = Math.max(12, Math.min(cardH - 24, anchorCenterY - top));
+        const cy = r.top + r.height / 2;
+        pointerOffset = Math.max(12, Math.min(cardH - 24, cy - top));
       }
-
       setPos({ top, left, pointer, pointerOffset });
     };
-
     measure();
     window.addEventListener("resize", measure);
     const t = setTimeout(measure, 50);
-    return () => {
-      window.removeEventListener("resize", measure);
-      clearTimeout(t);
-    };
+    return () => { window.removeEventListener("resize", measure); clearTimeout(t); };
   }, [step.anchor?.selector, step.anchor?.placement, step.id]);
 
-  // Halo overlay around the anchor
-  const haloEl = haloRect && (
-    <div
-      className="absolute pointer-events-none"
-      style={{
-        top: haloRect.top - 4,
-        left: haloRect.left - 4,
-        width: haloRect.width + 8,
-        height: haloRect.height + 8,
-        borderRadius: 12,
-        boxShadow: `0 0 0 2px ${T.CORAL}, 0 0 0 8px rgba(224,101,74,0.18), 0 16px 36px -12px rgba(224,101,74,0.40)`,
-        zIndex: 5,
-      }}
-    >
-      <div
-        className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-widest font-bold text-white whitespace-nowrap"
-        style={{ backgroundColor: T.CORAL }}
-      >
-        Step {step.id} · You are here
-      </div>
-    </div>
-  );
+  // Slide-in offset based on pointer direction (card slides toward anchor)
+  const slideFrom = (() => {
+    if (!pos) return { x: 0, y: 0 };
+    switch (pos.pointer) {
+      case "left":  return { x: -10, y: 0 };
+      case "right": return { x: 10,  y: 0 };
+      case "up":    return { x: 0,   y: -10 };
+      case "down":  return { x: 0,   y: 10 };
+    }
+  })();
 
   return (
     <>
-      {haloEl}
-      <div
+      {/* Halo with entrance animation + soft continuous breath */}
+      {haloRect && (
+        <motion.div
+          key={`halo-${step.id}`}
+          className="absolute pointer-events-none"
+          style={{
+            top: haloRect.top - 4,
+            left: haloRect.left - 4,
+            width: haloRect.width + 8,
+            height: haloRect.height + 8,
+            borderRadius: 12,
+            zIndex: 5,
+          }}
+          initial={{ opacity: 0, scale: 1.06 }}
+          animate={{
+            opacity: 1, scale: 1,
+            boxShadow: [
+              `0 0 0 2px ${T.CORAL}, 0 0 0 8px rgba(224,101,74,0.14), 0 16px 36px -12px rgba(224,101,74,0.34)`,
+              `0 0 0 2px ${T.CORAL}, 0 0 0 10px rgba(224,101,74,0.22), 0 18px 40px -12px rgba(224,101,74,0.42)`,
+              `0 0 0 2px ${T.CORAL}, 0 0 0 8px rgba(224,101,74,0.14), 0 16px 36px -12px rgba(224,101,74,0.34)`,
+            ],
+          }}
+          exit={{ opacity: 0, scale: 1.04, transition: { duration: 0.16, ease: EASE_IN } }}
+          transition={{
+            opacity: { duration: 0.28, ease: EASE_OUT },
+            scale:   { duration: 0.32, ease: EASE_OUT },
+            boxShadow: { duration: 2.4, repeat: Infinity, ease: "easeInOut" },
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: EASE_OUT, delay: 0.08 }}
+            className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-widest font-bold text-white whitespace-nowrap"
+            style={{ backgroundColor: T.CORAL }}
+          >
+            Step {step.id} · You are here
+          </motion.div>
+        </motion.div>
+      )}
+
+      <motion.div
+        key={`coach-${step.id}`}
         ref={cardRef}
         className="absolute z-10 w-[400px] rounded-2xl bg-white overflow-hidden flex flex-col"
+        initial={{ opacity: 0, x: slideFrom.x, y: slideFrom.y, scale: 0.985 }}
+        animate={{ opacity: pos ? 1 : 0, x: 0, y: 0, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.99, transition: { duration: 0.14, ease: EASE_IN } }}
+        transition={{ duration: 0.28, ease: EASE_OUT, delay: 0.04 }}
         style={{
           top: pos?.top ?? -9999,
           left: pos?.left ?? -9999,
-          opacity: pos ? 1 : 0,
-          boxShadow:
-            "0 20px 56px -16px rgba(27,42,74,0.36), 0 8px 24px -12px rgba(27,42,74,0.22), 0 0 0 1px rgba(27,42,74,0.06)",
+          boxShadow: "0 20px 56px -16px rgba(27,42,74,0.36), 0 8px 24px -12px rgba(27,42,74,0.22), 0 0 0 1px rgba(27,42,74,0.06)",
         }}
       >
-        {/* Pointer notch */}
         {pos && pos.pointer === "up" && (
-          <div
-            className="absolute"
-            style={{
-              top: -8, left: pos.pointerOffset - 8,
-              width: 0, height: 0,
-              borderLeft: "8px solid transparent",
-              borderRight: "8px solid transparent",
-              borderBottom: `8px solid ${T.CORAL}`,
-            }}
-          />
+          <div className="absolute" style={{ top: -8, left: pos.pointerOffset - 8, width: 0, height: 0,
+            borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: `8px solid ${T.CORAL}` }} />
         )}
         {pos && pos.pointer === "down" && (
-          <div
-            className="absolute"
-            style={{
-              bottom: -8, left: pos.pointerOffset - 8,
-              width: 0, height: 0,
-              borderLeft: "8px solid transparent",
-              borderRight: "8px solid transparent",
-              borderTop: `8px solid ${T.NAVY}`,
-            }}
-          />
+          <div className="absolute" style={{ bottom: -8, left: pos.pointerOffset - 8, width: 0, height: 0,
+            borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: `8px solid ${T.NAVY}` }} />
         )}
         {pos && pos.pointer === "left" && (
-          <div
-            className="absolute"
-            style={{
-              left: -8, top: pos.pointerOffset - 8,
-              width: 0, height: 0,
-              borderTop: "8px solid transparent",
-              borderBottom: "8px solid transparent",
-              borderRight: `8px solid ${T.CORAL}`,
-            }}
-          />
+          <div className="absolute" style={{ left: -8, top: pos.pointerOffset - 8, width: 0, height: 0,
+            borderTop: "8px solid transparent", borderBottom: "8px solid transparent", borderRight: `8px solid ${T.CORAL}` }} />
         )}
         {pos && pos.pointer === "right" && (
-          <div
-            className="absolute"
-            style={{
-              right: -8, top: pos.pointerOffset - 8,
-              width: 0, height: 0,
-              borderTop: "8px solid transparent",
-              borderBottom: "8px solid transparent",
-              borderLeft: `8px solid ${T.CORAL}`,
-            }}
-          />
+          <div className="absolute" style={{ right: -8, top: pos.pointerOffset - 8, width: 0, height: 0,
+            borderTop: "8px solid transparent", borderBottom: "8px solid transparent", borderLeft: `8px solid ${T.CORAL}` }} />
         )}
 
         <AccentStripe />
@@ -457,12 +406,8 @@ function CoachCard({ step }: { step: StepDef }) {
 
         <div className="px-4 pt-3 pb-2.5 flex flex-col gap-2">
           <PhaseBadge ps={step.processStep} />
-          <h2 className="text-[15px] font-semibold leading-tight" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>
-            {step.title}
-          </h2>
-          <p className="text-[11.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>
-            {step.body}
-          </p>
+          <h2 className="text-[15px] font-semibold leading-tight" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{step.title}</h2>
+          <p className="text-[11.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>{step.body}</p>
         </div>
 
         <div className="px-4 pb-3 pt-0.5 flex flex-col gap-2">
@@ -471,18 +416,21 @@ function CoachCard({ step }: { step: StepDef }) {
           )}
           <FooterActions stepId={step.id} nextLabel={step.nextLabel} />
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }
 
 // ============== ENTRY ==============
 export function TourCard({ step }: { step: StepDef }) {
-  // Fixed overlay sits on top of the page at z-10; halos and cards positioned within.
   return (
     <div className="fixed inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0">
-        {step.kind === "modal" ? <ModalCard step={step} /> : <CoachCard step={step} />}
+        <AnimatePresence mode="wait">
+          {step.kind === "modal"
+            ? <ModalCard key={`m-${step.id}`} step={step} />
+            : <CoachCard key={`c-${step.id}`} step={step} />}
+        </AnimatePresence>
       </div>
     </div>
   );
