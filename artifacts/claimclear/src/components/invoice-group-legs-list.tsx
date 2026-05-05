@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "wouter";
 import type { ClaimResponse } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,13 +17,13 @@ interface Props {
 }
 
 export function InvoiceGroupLegsList({ rides, excludedCount }: Props) {
-  // Past-deadline legs go behind a disclosure — payors won't accept
-  // them, so they shouldn't dominate the legs queue. The operator can
-  // still expand them in case they need to audit.
-  const [showOverdue, setShowOverdue] = useState(false);
+  // Past-deadline legs are never rendered. Payors won't accept them so
+  // the platform deliberately treats them as unactionable — there is no
+  // "show overdue" disclosure anymore. The split helper still runs so
+  // the empty-state copy can distinguish "no legs at all" from "all the
+  // remaining legs are past their filing deadline".
   const split = partitionOverdue(rides);
-  const visibleRides = showOverdue ? rides : split.visible;
-  const overdueHidden = showOverdue ? 0 : split.overdue.length;
+  const visibleRides = split.visible;
   return (
     <Card>
       <CardHeader>
@@ -79,25 +78,6 @@ export function InvoiceGroupLegsList({ rides, excludedCount }: Props) {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        {overdueHidden > 0 && (
-          <div
-            data-testid="overdue-disclosure-legs-queue"
-            className="mt-3 flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-          >
-            <span>
-              <span className="font-medium text-foreground">{overdueHidden}</span>{" "}
-              past-deadline {overdueHidden === 1 ? "leg is" : "legs are"} hidden — payors won't accept these.
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowOverdue(true)}
-              className="font-medium text-foreground underline-offset-2 hover:underline"
-              data-testid="overdue-disclosure-show-legs-queue"
-            >
-              Show overdue
-            </button>
           </div>
         )}
       </CardContent>

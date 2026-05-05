@@ -62,9 +62,12 @@ export function countUrgentRows(
  * if the scalar is absent so older server builds still render a
  * non-zero count instead of silently zeroing out.
  *
- * NEVER count `effectiveDaysLeft === 0` here — that filter excludes
- * past-due rows that are still urgent, which is exactly the divergence
- * Task #358 / this helper exist to prevent.
+ * NEVER count `effectiveDaysLeft === 0` here — use the server-stamped
+ * `isUrgent` flag (strict-today) so the count never disagrees with the
+ * Queue's own `isUrgent` rendering. Past-due rows are NOT urgent and
+ * the platform never surfaces them as actionable work — see the
+ * deliberate strict-equality contract in `api-server/src/lib/dates.ts`
+ * (`isUrgentDeadline`) and the must-file-today parity test.
  */
 export function getUrgentGroupCountFromSummary(
   summary: DashboardSummaryUrgentShape | null | undefined,
@@ -91,14 +94,17 @@ export function selectUrgentRows<T extends UrgentRow>(
 
 /**
  * Filter `expiringGroups` down to rows the operator should look at
- * for today's filing pass: everything strictly urgent (must file today
- * or already past-due) PLUS everything whose effective deadline is
- * tomorrow. The Dashboard "File today or tomorrow" hero renders this
- * superset so the next-day work is visible alongside what must ship
- * before EOD.
+ * for today's filing pass: everything strictly urgent (must file by
+ * EOD today) PLUS everything whose effective deadline is tomorrow.
+ * The Dashboard "File today or tomorrow" hero renders this superset
+ * so the next-day work is visible alongside what must ship before EOD.
  *
- * Past-due rows are still included via `isUrgent` (matches the server's
- * urgent semantics — see `selectUrgentRows`).
+ * Past-due rows are intentionally excluded — payors won't accept
+ * them, so surfacing them as actionable work would mislead the
+ * operator. The server's `isUrgent` flag is strict-today (see
+ * `isUrgentDeadline` in `api-server/src/lib/dates.ts`) and the
+ * `effectiveDaysLeft === 1` arm only adds tomorrow, never anything
+ * with a negative day count.
  */
 export function selectUrgentOrTomorrowRows<
   T extends UrgentRow & { effectiveDaysLeft?: number | null },

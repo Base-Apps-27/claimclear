@@ -8,7 +8,6 @@ import {
   Sparkles,
   Mail,
   Stamp,
-  Server,
   Inbox,
 } from "lucide-react";
 import {
@@ -626,15 +625,13 @@ export default function Dashboard() {
             isLoading={false}
             itemsEmpty="No filings due today or tomorrow. Nice."
             items={fileTodayOrTomorrowItems.map(g => {
-              // Day badge: "Past due" for already-late, "Today" for
-              // strictly-today urgent rows, "Tomorrow" for the day-1
-              // additions. Keeps the combined list scannable so the
+              // Day badge keeps the combined list scannable so the
               // operator never confuses tomorrow's work with today's.
-              const dayLabel = g.isUrgent
-                ? (g.effectiveDaysLeft != null && g.effectiveDaysLeft < 0
-                    ? "Past due"
-                    : "Today")
-                : "Tomorrow";
+              // Past-due rows can never reach this branch — the server's
+              // `isUrgent` flag is strict-today and the row selector
+              // explicitly excludes negative `effectiveDaysLeft`. Past
+              // deadline = unactionable; we don't display it.
+              const dayLabel = g.isUrgent ? "Today" : "Tomorrow";
               const labelTone = g.isUrgent
                 ? "hsl(var(--cc-red-fg))"
                 : "hsl(var(--cc-amber-fg))";
@@ -872,16 +869,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Footer hint — past-due moved to the Queue page */}
-      <Link
-        href="/queue?expiring=overdue"
-        className="flex items-center gap-2 text-xs px-1 text-muted-foreground hover:text-foreground transition-colors"
-        data-testid="past-due-hint"
-      >
-        <Server className="w-3 h-3" />
-        Past-due items are no longer shown here. View them on the Queue page.
-        <ChevronRight className="w-3 h-3" />
-      </Link>
     </div>
   );
 }
