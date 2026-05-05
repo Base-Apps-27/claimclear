@@ -12,6 +12,7 @@ import {
   CURRENT_TOUR_VERSION,
   TOUR_STEPS,
   routeForPage,
+  pageForLocation,
   type PageKey,
   type TourStepDef,
 } from "./tour-config";
@@ -84,6 +85,23 @@ const TARGET_WAIT_MS = 8000;
 
 function effectiveRoute(def: TourStepDef): string | null {
   return def.route ?? routeForPage(def.page);
+}
+
+// True when the current `location` already belongs to the page this
+// step targets — even if the URL has a sub-path the page itself
+// appended (e.g. responses-awaiting-review pushes `/...
+// awaiting-review/<id>` for the auto-selected first row, claim-detail
+// pushes `/claims/<id>`). Strict string equality is wrong here because
+// it kicks off a route-rewrite war: the tour forces the URL back to
+// the bare route, the page's auto-select effect re-appends the id,
+// repeat. That ping-pong was the actual cause of the
+// "/responses-awaiting-review white-screens mid-mount" crash.
+function isOnRoute(def: TourStepDef, location: string): boolean {
+  const route = effectiveRoute(def);
+  if (!route) return true;
+  if (route === location) return true;
+  if (def.page && pageForLocation(location) === def.page) return true;
+  return false;
 }
 
 function buildJoyrideStep(def: TourStepDef): Step {
@@ -188,7 +206,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         }
         const nextDef = TOUR_STEPS[next];
         const nextRoute = effectiveRoute(nextDef);
-        if (nextRoute && nextRoute !== location) {
+        if (nextRoute && !isOnRoute(nextDef, location)) {
           setLocation(nextRoute);
         }
         setStepIndex(next);
@@ -216,25 +234,20 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         }
         const nextDef = TOUR_STEPS[next];
         const nextRoute = effectiveRoute(nextDef);
-        const isCrossRoute = !!nextRoute && nextRoute !== location;
+        const isCrossRoute = !!nextRoute && !isOnRoute(nextDef, location);
         if (isCrossRoute) {
-          // Cross-route transition (e.g. step 13 /queue → step 14
-          // /responses-awaiting-review). If we just call setLocation +
-          // setStepIndex synchronously, Joyride's overlay/spotlight
-          // remains mounted while the new page mounts underneath, and
-          // the mid-transition DOM race blanked the host page on the
-          // first /responses landing. Fix: tear Joyride down BEFORE
-          // navigating, then re-arm on the next paint after the new
-          // route's DOM has had a chance to mount.
-          setRun(false);
+          // Cross-route transition. Just navigate + advance the step
+          // synchronously. Joyride polls for the next anchor up to
+          // TARGET_WAIT_MS and the centered-modal steps don't need
+          // an anchor at all. We used to tear Joyride down with
+          // setRun(false) and re-arm after two RAFs to dodge a
+          // /responses-awaiting-review crash, but that crash was
+          // caused by a route ping-pong (page auto-selects first row
+          // → tour rewrites URL back → repeat) that `isOnRoute` now
+          // prevents. Removing the teardown eliminated the ~700ms
+          // visible stall users saw on /invoice-groups and /claims.
           setStepIndex(next);
           setLocation(nextRoute!);
-          // Two RAFs ≈ "after the next paint", which is reliably after
-          // the new page's first commit + layout. Avoids depending on
-          // any specific page's data-fetch timing.
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => setRun(true));
-          });
           return;
         }
         setStepIndex(next);
@@ -287,7 +300,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     // anchor is on that exact detail surface.
     if (def.page === "group-detail" && location.startsWith("/invoice-groups/")) return;
     if (def.page === "claim-detail" && location.startsWith("/claims/")) return;
-    if (route !== location) {
+    if (!isOnRoute(def, location)) {
       setLocation(route);
     }
   }, [run, stepIndex, location, setLocation]);
@@ -333,11 +346,12 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
               // Reserve room for the sticky app header so spotlights
               // never get hidden behind it after Joyride's auto-scroll.
               scrollOffset: 96,
-              // Give a freshly route-changed page a beat to mount
-              // before Joyride paints its overlay/spotlight on top.
-              // Belt with the cross-route setRun(false) suspenders in
-              // STEP_AFTER above.
-              loaderDelay: 350,
+              // Default Joyride loader delay. We used to bump this to
+              // 350ms as part of the cross-route teardown workaround;
+              // with the route-rewrite war fixed (see isOnRoute above)
+              // the default is enough and removes a perceptible stall
+              // on the /invoice-groups and /claims transitions.
+              loaderDelay: 100,
             }}
             locale={{
               back: "Back",

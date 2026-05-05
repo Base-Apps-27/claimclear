@@ -644,7 +644,11 @@ export default function InvoiceGroupsList() {
       </StatusStrip>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-8 space-y-4 min-w-0" data-tour="invoice-groups-filters">
+        <div className="xl:col-span-8 space-y-4 min-w-0">
+          {/* The data-tour anchor is on the header strip itself (not the
+              parent column) so the tour tooltip lands right under the
+              filter row instead of below the entire 1000-row table. */}
+          <div data-tour="invoice-groups-filters">
           <ListTableHeaderStrip
             searchValue={search}
             onSearchChange={v => set({ q: v || null, page: null }, false)}
@@ -930,6 +934,7 @@ export default function InvoiceGroupsList() {
             </CardContent>
           </Card>
           </ListTableHeaderStrip>
+          </div>
 
           <CrossPageNudge
             text={<>To work one at a time with full evidence, open</>}

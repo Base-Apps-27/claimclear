@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v12";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v13";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -204,40 +204,30 @@ export const TOUR_STEPS: TourStepDef[] = [
   {
     id: 13, kind: "coach", page: "queue", processStep: "all",
     target: '[data-tour="queue-engagement-strip"]', placement: "bottom",
-    disableScrolling: true,
     title: "⚠️ Two tabs are hidden right now",
     body:
       "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
     nextLabel: "Next: Responses",
   },
 
-  // ═══════ Responses (1 modal — see history note below) ═══════
+  // ═══════ Responses (1 modal) ═══════
   //
   // History (May 5, 2026): this section used to be 1 modal + 3 anchored
-  // coach cards (id 14 modal, ids 15-17 coaches). The coaches landed on
-  // /responses-awaiting-review, which crashed mid-mount when the tour
-  // tried to walk it (page rendered briefly, then a downstream effect
-  // threw and unmounted the React tree). Three iterations failed to
-  // pinpoint the exact React throw without browser-console access. Per
-  // direct user direction ("even if the solution is a simplified card
-  // without the walk-through, we cant simply Not continue the tour"),
-  // we collapsed those four steps into ONE overview card that:
-  //   • does NOT navigate (page stays as wherever the user is — Queue,
-  //     in normal tour flow). page=null → routeForPage returns null →
-  //     admin-tour's STEP_AFTER never crosses routes for this step, so
-  //     the broken page is never visited and the crash can't fire.
-  //   • describes the three columns of the responses workspace in one
-  //     paragraph, so the operator still gets the mental model — just
-  //     without an in-place walkthrough.
-  //   • has nextLabel pointing forward to Attestation, so the tour
-  //     CONTINUES (not aborted, not "accept-the-break") — the next
-  //     navigation is to the attestation page, which works.
-  // Subsequent steps (Attestation, Invoice Groups, Group detail, Claims,
-  // Claim detail, Replay) are renumbered down by 3 (was 18-24, now
-  // 15-21). The mockup-sandbox FullTour story still shows the original
-  // 24-step deck for documentation; production ships these 21.
+  // coach cards. Those crashed because of a navigation ping-pong
+  // between the responses page (auto-selecting the first row and pushing
+  // /responses-awaiting-review/<id>) and the tour controller (forcing
+  // the URL back to bare /responses-awaiting-review on every render).
+  // The fix lives in admin-tour.tsx: route comparisons now match by
+  // page key, so a page-internal navigation (e.g. appending an /id) is
+  // treated as "still on the responses page" instead of triggering a
+  // forced URL rewrite. With the loop broken we can navigate to the
+  // real page and show a centered modal over it. We deliberately keep
+  // it as ONE overview modal (not the original 3-card walkthrough) —
+  // anchored coach cards on a 3-column layout that immediately shifts
+  // selection are fragile, and the modal+page-context combo gives the
+  // operator the mental model without depending on specific selectors.
   {
-    id: 14, kind: "modal", page: null, processStep: 5,
+    id: 14, kind: "modal", page: "responses", processStep: 5,
     target: "body", placement: "center",
     title: "Responses Awaiting Review — Step 5 lives here",
     body:
