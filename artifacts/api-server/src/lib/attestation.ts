@@ -13,16 +13,14 @@ export const APPROVED_OUTCOMES = new Set(["Approved", "Partially Approved"]);
 export type AttestationDelta = Partial<typeof claimsTable.$inferInsert>;
 
 /**
- * Per-Task #196: the trigger gate. The "outcome moving INTO
- * Approved/Partially Approved → set attestationState=pending" branch
- * only fires when the parent group has completed MAS re-attest. Before
- * that, the verdict is captured but attestation engagement waits.
- *
- * Pass either the parent group object (we read `reattestCompletedAt`)
- * or `null` when there is no parent (rare in the new model — every
- * disputed claim should have a parent invoice group). The flag
- * `requireGroupReattest` lets callers force the new gate even when the
- * group object isn't readily available.
+ * Group-context shape kept for caller compatibility: pre-2026-05 the
+ * `reattestCompletedAt` field gated the engage-on-Approved cascade
+ * (Task #196). That gate was removed after a 2026-05-05 prod audit
+ * showed it was stranding Approved legs at `not_required` whenever
+ * operators confirmed a verdict without immediately following up with
+ * the bulk-queue click — see the function docstring below for the
+ * full reasoning. The field is still accepted so existing call sites
+ * compile, but it no longer influences the delta.
  */
 export interface AttestationGroupContext {
   reattestCompletedAt: typeof invoiceGroupsTable.$inferSelect["reattestCompletedAt"] | null;
@@ -33,9 +31,20 @@ export interface AttestationGroupContext {
  * outcome is changing.
  *
  * - Outcome moving INTO Approved/Partially Approved (from anything else)
- *   primes attestationState=pending **only** when the parent group's
- *   `reattest_completed_at` is set; otherwise the delta clears stale
- *   completion stamps but parks the state at `not_required`.
+ *   primes attestationState=pending unconditionally so the leg appears
+ *   in the Open re-attestation queue immediately. The historical
+ *   Task #196 gate (only engage once `reattest_completed_at` is set)
+ *   was removed 2026-05-05 after the prod audit found it was the root
+ *   cause of stuck Approved legs: every fresh Approved verdict landed
+ *   on a group with `reattest_completed_at IS NULL`, so the gate
+ *   parked them at `not_required` and the queue page never surfaced
+ *   them. Operators were expected to manually click the group-level
+ *   bulk-queue button to recover, and that follow-up step was
+ *   routinely missed (groups 17, 18, 53, 148 in prod had verdicts
+ *   confirmed but no bulk-queue click). The bulk-queue endpoint
+ *   stays available for the "park for a teammate with portal access"
+ *   path (`pending → queued`); the change here just guarantees the
+ *   leg is visible in the queue UI the moment its verdict lands.
  * - Outcome moving OUT of Approved/Partially Approved (e.g., clawback)
  *   resets attestationState=not_required and wipes the stamps. The audit
  *   log retains the prior history.
@@ -43,33 +52,21 @@ export interface AttestationGroupContext {
  *   re-stamp `pending` if the user is already mid-attestation, and we
  *   leave non-Approved rows untouched.
  *
- * Returns an empty object when nothing should change.
+ * Returns an empty object when nothing should change. The optional
+ * `group` parameter is preserved for caller compatibility but no
+ * longer affects the result.
  */
 export function computeAttestationDelta(
   oldOutcome: string | null | undefined,
   newOutcome: string,
-  group?: AttestationGroupContext | null,
+  _group?: AttestationGroupContext | null,
 ): AttestationDelta {
   const wasApproved = oldOutcome != null && APPROVED_OUTCOMES.has(oldOutcome);
   const willBeApproved = APPROVED_OUTCOMES.has(newOutcome);
 
   if (!wasApproved && willBeApproved) {
-    // Trigger gate (Task #196): only engage attestation once the parent
-    // group's MAS re-attest is complete. Two backward-compat exceptions:
-    //   • `group === undefined` → caller didn't pass any group context;
-    //     fall back to the legacy "engage immediately" behavior so older
-    //     call sites and tests keep working.
-    //   • `group === null` → the claim has no parent invoice group at all
-    //     (standalone leg); engage immediately because there's no group
-    //     to gate against.
-    // Only when `group` is supplied AND the stamp is missing do we park
-    // at `not_required`.
-    const groupSupplied = group !== undefined;
-    const groupExists = group != null;
-    const reattestStamped = group != null && group.reattestCompletedAt != null;
-    const shouldEngage = !groupSupplied || !groupExists || reattestStamped;
     return {
-      attestationState: shouldEngage ? "pending" : "not_required",
+      attestationState: "pending",
       attestedAt: null,
       attestedBy: null,
       attestationNote: null,

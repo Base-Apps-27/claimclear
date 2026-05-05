@@ -516,10 +516,13 @@ test("all attestation endpoints reject unauthenticated callers with 401", async 
 // ---- Group cascade ------------------------------------------------------
 
 test("group outcome → Approved cascades pending attestation to disputed children (post-reattest gate)", async () => {
-  // Per Task #196, the cascade only engages once the group's MAS re-attest
-  // has been stamped complete. We pre-stamp `reattest_completed_at` here so
-  // the gate is open before the outcome flip; without that stamp, the
-  // dedicated gate-closed test below verifies the cascade stays parked.
+  // Historically the cascade was gated on the group's MAS re-attest
+  // being stamped complete (Task #196). That gate was removed
+  // 2026-05-05 after a prod audit found it was stranding Approved
+  // legs at `not_required`; this test still pre-stamps the field for
+  // continuity with the original Task #196 fixture, but the assertion
+  // below now also holds without the stamp (see the renamed
+  // companion test below).
   const group = await createSeedGroup();
   await db.update(invoiceGroupsTable)
     .set({ reattestRequired: true, reattestCompletedAt: new Date() })
@@ -546,11 +549,15 @@ test("group outcome → Approved cascades pending attestation to disputed childr
   }
 });
 
-test("group outcome → Approved with reattest gate CLOSED parks children at not_required", async () => {
-  // Mirror of the test above with the gate intentionally closed: we don't
-  // stamp `reattest_completed_at`, so even though the outcome flips to
-  // Approved the disputed children must NOT engage attestation. This is
-  // the new Task #196 behavior — verdicts capture, but engagement waits.
+test("group outcome → Approved engages disputed children even when reattest_completed_at is unset", async () => {
+  // Regression test for the 2026-05-05 prod audit: with the original
+  // Task #196 gate in place, a fresh Approved verdict on a group whose
+  // `reattest_completed_at` was still null parked every disputed child
+  // at `not_required`, and the leg never appeared in the Open queue
+  // unless the operator remembered to click the bulk-queue button.
+  // Production data showed this missed click was routine (groups 17,
+  // 18, 53, 148 had stuck Approved legs). The gate was removed so
+  // the cascade now engages unconditionally on Approved verdicts.
   const group = await createSeedGroup();
   const child = await createSeedClaim({ invoiceGroupId: group.id });
   try {
@@ -561,8 +568,8 @@ test("group outcome → Approved with reattest gate CLOSED parks children at not
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
 
     const [refreshedChild] = await db.select().from(claimsTable).where(eq(claimsTable.id, child.id));
-    assert.equal(refreshedChild.attestationState, "not_required",
-      "with reattest_completed_at unset, the gate keeps the disputed child at not_required");
+    assert.equal(refreshedChild.attestationState, "pending",
+      "with the Task #196 gate removed, an Approved verdict must engage attestationState=pending immediately so the leg surfaces in the Open re-attestation queue without a manual bulk-queue click");
   } finally {
     await cleanupGroup(group.id);
   }
