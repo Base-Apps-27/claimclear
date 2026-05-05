@@ -651,6 +651,15 @@ export type InboxGroup = {
 };
 export interface NeedsClassificationInbox {
   total: number;
+  // Task #419 — per-status group count for the inbox header. Lets
+  // operators see at a glance why an unfamiliar group (one whose
+  // parent is no longer "Needs Review", e.g. "Generating Email" or
+  // "Awaiting Response") is appearing now that Task #412 broadened the
+  // cohort beyond Needs Review only. Keys are the parent group's
+  // status string; values are the count of inbox rows in that status.
+  // Sorted by descending count, then by status name asc, so the JSON
+  // order is stable and the UI can render the entries directly.
+  byStatus: Record<string, number>;
   groups: InboxGroup[];
 }
 
@@ -690,7 +699,7 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
 
   const groupIds = Array.from(new Set(candidateLegs.map((l) => l.invoiceGroupId).filter((x): x is number => x != null)));
   if (groupIds.length === 0) {
-    return { total: 0, groups: [] };
+    return { total: 0, byStatus: {}, groups: [] };
   }
 
   const groupRows = await db
@@ -759,8 +768,25 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
     return a.id - b.id;
   });
 
+  // Per-status group count (Task #419). Tally over the surfaced inbox
+  // rows so the header totals match the visible list exactly. Sorted
+  // by descending count, then by status name asc, so the JSON order
+  // is stable across requests and the UI can render entries in array
+  // order without re-sorting.
+  const statusCounts = new Map<string, number>();
+  for (const g of inboxGroups) {
+    statusCounts.set(g.status, (statusCounts.get(g.status) ?? 0) + 1);
+  }
+  const byStatus: Record<string, number> = {};
+  Array.from(statusCounts.entries())
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .forEach(([status, n]) => {
+      byStatus[status] = n;
+    });
+
   return {
     total: inboxGroups.reduce((acc, g) => acc + g.needsClassificationCount, 0),
+    byStatus,
     groups: inboxGroups,
   };
 }

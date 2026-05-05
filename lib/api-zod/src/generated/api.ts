@@ -530,6 +530,11 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "Total needs_classification leg count across all surfaced groups.",
         ),
+      byStatus: zod
+        .record(zod.string(), zod.number())
+        .describe(
+          "Per-status count of inbox rows (groups) so the header can show a\nbreakdown like `5 Needs Review · 2 Generating Email · 1 Awaiting\nResponse`. Keys are the parent group's status string. Entries\nare pre-sorted server-side by descending count then status name\nascending, so the client can iterate in object order.\n",
+        ),
       groups: zod.array(
         zod.object({
           id: zod.number(),
@@ -613,6 +618,11 @@ export const GetNeedsClassificationInboxResponse = zod.object({
     .number()
     .describe(
       "Total needs_classification leg count across all surfaced groups.",
+    ),
+  byStatus: zod
+    .record(zod.string(), zod.number())
+    .describe(
+      "Per-status count of inbox rows (groups) so the header can show a\nbreakdown like `5 Needs Review · 2 Generating Email · 1 Awaiting\nResponse`. Keys are the parent group's status string. Entries\nare pre-sorted server-side by descending count then status name\nascending, so the client can iterate in object order.\n",
     ),
   groups: zod.array(
     zod.object({

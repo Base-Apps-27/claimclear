@@ -11,18 +11,15 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { NeedsClassificationInboxGroup } from "./needsClassificationInboxGroup";
-import type { NeedsClassificationInboxResponseByStatus } from "./needsClassificationInboxResponseByStatus";
 
-export interface NeedsClassificationInboxResponse {
-  /** Total needs_classification leg count across all surfaced groups. */
-  total: number;
-  /** Per-status count of inbox rows (groups) so the header can show a
+/**
+ * Per-status count of inbox rows (groups) so the header can show a
 breakdown like `5 Needs Review · 2 Generating Email · 1 Awaiting
 Response`. Keys are the parent group's status string. Entries
 are pre-sorted server-side by descending count then status name
 ascending, so the client can iterate in object order.
+
  */
-  byStatus: NeedsClassificationInboxResponseByStatus;
-  groups: NeedsClassificationInboxGroup[];
-}
+export type NeedsClassificationInboxResponseByStatus = {
+  [key: string]: number;
+};

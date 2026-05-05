@@ -247,6 +247,7 @@ export * from "./myProcessedTodayCount";
 export * from "./needsClassificationInboxClaim";
 export * from "./needsClassificationInboxGroup";
 export * from "./needsClassificationInboxResponse";
+export * from "./needsClassificationInboxResponseByStatus";
 export * from "./noteResponse";
 export * from "./noteResponseType";
 export * from "./notificationPreferencesResponse";

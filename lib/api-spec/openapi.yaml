@@ -5174,11 +5174,21 @@ components:
 
     NeedsClassificationInboxResponse:
       type: object
-      required: [total, groups]
+      required: [total, byStatus, groups]
       properties:
         total:
           type: integer
           description: Total needs_classification leg count across all surfaced groups.
+        byStatus:
+          type: object
+          additionalProperties:
+            type: integer
+          description: |
+            Per-status count of inbox rows (groups) so the header can show a
+            breakdown like `5 Needs Review · 2 Generating Email · 1 Awaiting
+            Response`. Keys are the parent group's status string. Entries
+            are pre-sorted server-side by descending count then status name
+            ascending, so the client can iterate in object order.
         groups:
           type: array
           items:

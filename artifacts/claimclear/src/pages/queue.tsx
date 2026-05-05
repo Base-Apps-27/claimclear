@@ -577,6 +577,11 @@ export default function Queue() {
   const inboxGroups: NeedsClassificationInboxGroup[] =
     inboxQuery.data?.needsClassificationInbox?.groups ?? [];
   const inboxTotal = inboxQuery.data?.needsClassificationInbox?.total ?? 0;
+  // Task #419 — per-status group count, surfaced under the inbox total.
+  // The server returns entries pre-sorted (desc count, then status name
+  // asc) so we just iterate Object.entries in order.
+  const inboxByStatus: Record<string, number> =
+    inboxQuery.data?.needsClassificationInbox?.byStatus ?? {};
 
   // Within each on-clock list, sort urgent rows to the top, then by remaining
   // days asc. The API already returns rows in service-date asc order, which is
@@ -933,6 +938,7 @@ export default function Queue() {
         loading={inboxQuery.isLoading}
         groups={inboxGroups}
         total={inboxTotal}
+        byStatus={inboxByStatus}
         selectedId={selectedTriageId}
         onSelect={selectTriage}
       />
@@ -1128,6 +1134,10 @@ interface ClassificationInboxProps {
   loading: boolean;
   groups: NeedsClassificationInboxGroup[];
   total: number;
+  /** Task #419 — per-status group count, surfaced under the total so
+   *  operators can see at a glance why an unfamiliar group (one whose
+   *  parent is no longer "Needs Review") is appearing. */
+  byStatus: Record<string, number>;
   selectedId: number | null;
   onSelect: (id: number) => void;
 }
@@ -1138,6 +1148,7 @@ function ClassificationInbox({
   loading,
   groups,
   total,
+  byStatus,
   selectedId,
   onSelect,
 }: ClassificationInboxProps) {
@@ -1157,12 +1168,20 @@ function ClassificationInbox({
               className="w-full flex items-center justify-between gap-3 flex-wrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
               data-testid="classification-inbox-toggle"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Inbox className="h-5 w-5 text-muted-foreground" />
                 <h3 className="text-lg font-semibold">Classification Inbox</h3>
                 <Badge variant="secondary" data-testid="badge-classification-count">
                   {total} to classify
                 </Badge>
+                {/* Task #419 — per-status group count breakdown. Lets
+                    operators see at a glance why an unfamiliar group
+                    (one whose parent is no longer "Needs Review") is
+                    appearing now that Task #412 broadened the cohort
+                    beyond Needs Review only. Server pre-sorts the
+                    entries (desc count, then status name asc) so we
+                    iterate Object.entries directly. */}
+                <ClassificationInboxStatusBreakdown byStatus={byStatus} />
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 {open ? (
@@ -1221,6 +1240,42 @@ function ClassificationInbox({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Task #419 — per-status group count strip rendered next to the
+// "{N} to classify" badge. Renders nothing when the breakdown is
+// empty (initial load) or has only a single entry that already
+// matches the parent total (no extra information). The dot separator
+// matches the spec example: `5 Needs Review · 2 Generating Email`.
+function ClassificationInboxStatusBreakdown({
+  byStatus,
+}: {
+  byStatus: Record<string, number>;
+}) {
+  const entries = Object.entries(byStatus).filter(([, n]) => n > 0);
+  if (entries.length === 0) return null;
+  // A single bucket where the only status is "Needs Review" is the
+  // historical pre-#412 cohort — the breakdown would just repeat the
+  // total badge in different words. Suppress to avoid visual noise.
+  if (entries.length === 1 && entries[0][0] === "Needs Review") return null;
+  return (
+    <span
+      className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap"
+      data-testid="classification-inbox-by-status"
+    >
+      {entries.map(([status, n], idx) => (
+        <span
+          key={status}
+          data-testid={`classification-inbox-status-${status.replace(/\s+/g, "-").toLowerCase()}`}
+          className="flex items-center gap-1"
+        >
+          {idx > 0 && <span aria-hidden className="text-muted-foreground/50">·</span>}
+          <span className="tabular-nums font-medium text-foreground">{n}</span>
+          <span>{status}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
