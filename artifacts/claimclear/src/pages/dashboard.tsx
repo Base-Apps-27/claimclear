@@ -34,13 +34,13 @@ import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/info-tooltip";
-import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import {
   getUrgentGroupCountFromSummary,
   selectUrgentRows,
+  selectUrgentOrTomorrowRows,
 } from "@/lib/urgent-count";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
@@ -405,17 +405,36 @@ export default function Dashboard() {
   const stats = summary.stats;
   const totalGroups = stats.total ?? 0;
 
-  // "File today" — every row whose effective deadline is today OR already
-  // past, mirroring the server's `urgentCount`. Both the count and the
+  // Strict "must file by EOD today" — drives the personalized readout
+  // sentence at the top of the page where "to file" literally means
+  // "before midnight". Past-due rows are folded in via `selectUrgentRows`
+  // so the count never disagrees with the Queue. Both the count and the
   // visible items go through `lib/urgent-count`, the only sanctioned
   // path for client-side urgent counting (see that module's header for
   // the regression history). Filtering by `effectiveDaysLeft === 0`
   // would silently drop past-due rows and re-introduce the
   // Dashboard-says-0-but-Queue-says-71 bug.
-  const fileTodayItems = selectUrgentRows(summary.expiringGroups).slice(0, 3);
   const fileTodayCount = getUrgentGroupCountFromSummary(summary);
+  const fileTodayOnlyItems = selectUrgentRows(summary.expiringGroups);
+
+  // Hero superset — urgent (today + past-due) AND tomorrow. Sorted so
+  // past-due / today rows surface first, then tomorrow. Top 5 rendered.
+  const fileTodayOrTomorrowAll = selectUrgentOrTomorrowRows(summary.expiringGroups);
+  const fileTodayOrTomorrowItems = [...fileTodayOrTomorrowAll]
+    .sort((a, b) => {
+      const da = a.isUrgent ? -1 : (a.effectiveDaysLeft ?? 0);
+      const db = b.isUrgent ? -1 : (b.effectiveDaysLeft ?? 0);
+      return da - db;
+    })
+    .slice(0, 5);
+  const fileTodayOrTomorrowCount = fileTodayOrTomorrowAll.length;
+  const fileTomorrowOnlyCount = fileTodayOrTomorrowAll.length - fileTodayOnlyItems.length;
+
+  // "Coming soon" footer now starts at day 2 because day 1 is in the
+  // main list. Keeps the operator aware of the next 48-hour pipeline
+  // without double-counting tomorrow.
   const fileSoonItems = summary.expiringGroups.filter(
-    g => !g.isUrgent && g.effectiveDaysLeft >= 1 && g.effectiveDaysLeft <= 3,
+    g => !g.isUrgent && g.effectiveDaysLeft >= 2 && g.effectiveDaysLeft <= 3,
   );
   const fileSoonTotal = fileSoonItems.reduce(
     (s, g) => s + (parseFloat(g.totalAmount ?? "0") || 0),
@@ -437,7 +456,7 @@ export default function Dashboard() {
   // Personalized opening line for the readout card.
   const startHint = buildStartHint({
     fileTodayCount,
-    topFileTodayInvoice: fileTodayItems[0]?.invoiceNumber ?? null,
+    topFileTodayInvoice: fileTodayOnlyItems[0]?.invoiceNumber ?? null,
     responsesCount,
     reattestCount,
   });
@@ -592,45 +611,57 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <HeroCard
-            tone={fileTodayCount === 0 ? "neutral" : "red"}
+            tone={fileTodayOrTomorrowCount === 0 ? "neutral" : "red"}
             icon={<AlertTriangle className="w-4 h-4" />}
-            eyebrow="File today"
-            count={fileTodayCount}
+            eyebrow="File today or tomorrow"
+            count={fileTodayOrTomorrowCount}
             title={
-              fileTodayCount === 1
-                ? "must be submitted before EOD"
-                : "must be submitted before EOD"
+              fileTodayCount > 0 && fileTomorrowOnlyCount > 0
+                ? `${fileTodayCount} due today · ${fileTomorrowOnlyCount} due tomorrow`
+                : fileTodayCount > 0
+                  ? "all due before EOD today"
+                  : "all due before EOD tomorrow"
             }
             seeAllHref="/queue?expiring=urgent"
             isLoading={false}
-            itemsEmpty="No filings due today. Nice."
-            headerExtra={
-              <UrgentTodayWhyLine
-                tone={fileTodayCount === 0 ? "green" : "red"}
-                urgentCountOverride={fileTodayCount}
-                testid="dashboard-urgent-today-why"
-              />
-            }
-            items={fileTodayItems.map(g => (
-              <HeroRow
-                key={g.id}
-                to={`/invoice-groups/${g.id}`}
-                testid={`file-today-row-${g.id}`}
-                primary={g.invoiceNumber}
-                sub={
-                  <>
-                    <ServiceDateCell
-                      groupId={g.id}
-                      earliestDate={g.earliestDate}
-                      reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
-                      isUrgent={g.isUrgent}
-                    />{" · "}
-                    {g.status}
-                  </>
-                }
-                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
-              />
-            ))}
+            itemsEmpty="No filings due today or tomorrow. Nice."
+            items={fileTodayOrTomorrowItems.map(g => {
+              // Day badge: "Past due" for already-late, "Today" for
+              // strictly-today urgent rows, "Tomorrow" for the day-1
+              // additions. Keeps the combined list scannable so the
+              // operator never confuses tomorrow's work with today's.
+              const dayLabel = g.isUrgent
+                ? (g.effectiveDaysLeft != null && g.effectiveDaysLeft < 0
+                    ? "Past due"
+                    : "Today")
+                : "Tomorrow";
+              const labelTone = g.isUrgent
+                ? "hsl(var(--cc-red-fg))"
+                : "hsl(var(--cc-amber-fg))";
+              return (
+                <HeroRow
+                  key={g.id}
+                  to={`/invoice-groups/${g.id}`}
+                  testid={`file-today-row-${g.id}`}
+                  primary={g.invoiceNumber}
+                  sub={
+                    <>
+                      <span style={{ color: labelTone, fontWeight: 600 }}>
+                        {dayLabel}
+                      </span>{" · "}
+                      <ServiceDateCell
+                        groupId={g.id}
+                        earliestDate={g.earliestDate}
+                        reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                        isUrgent={g.isUrgent}
+                      />{" · "}
+                      {g.status}
+                    </>
+                  }
+                  right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
+                />
+              );
+            })}
             footer={
               fileSoonItems.length > 0 ? (
                 <Link
@@ -638,7 +669,7 @@ export default function Dashboard() {
                   className="hover:underline"
                   data-testid="file-soon-footer"
                 >
-                  + <span className="font-mono font-semibold">{fileSoonItems.length}</span> more in next 3 days
+                  + <span className="font-mono font-semibold">{fileSoonItems.length}</span> more in 2–3 days
                   <HideForClerk> · {formatCurrency(fileSoonTotal)}</HideForClerk>
                 </Link>
               ) : null

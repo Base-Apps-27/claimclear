@@ -88,3 +88,24 @@ export function selectUrgentRows<T extends UrgentRow>(
   if (!rows) return [];
   return rows.filter((r): r is T => r.isUrgent === true);
 }
+
+/**
+ * Filter `expiringGroups` down to rows the operator should look at
+ * for today's filing pass: everything strictly urgent (must file today
+ * or already past-due) PLUS everything whose effective deadline is
+ * tomorrow. The Dashboard "File today or tomorrow" hero renders this
+ * superset so the next-day work is visible alongside what must ship
+ * before EOD.
+ *
+ * Past-due rows are still included via `isUrgent` (matches the server's
+ * urgent semantics — see `selectUrgentRows`).
+ */
+export function selectUrgentOrTomorrowRows<
+  T extends UrgentRow & { effectiveDaysLeft?: number | null },
+>(rows: ReadonlyArray<T> | null | undefined): T[] {
+  if (!rows) return [];
+  return rows.filter((r): r is T => {
+    if (r.isUrgent === true) return true;
+    return r.effectiveDaysLeft === 1;
+  });
+}
