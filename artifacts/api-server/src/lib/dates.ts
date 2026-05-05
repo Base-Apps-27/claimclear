@@ -253,6 +253,36 @@ export function isAtOrPastEffectiveDeadline(
  * still pass `Date` objects (e.g. weekend deadline shifting in the
  * dashboard). New code should prefer the YMD-string variants above.
  */
+/**
+ * Format a `YYYY-MM-DD` calendar string for human-facing display
+ * ("Apr 6, 2026"). Use this for any date emitted into emails, the
+ * daily brief, exports, PDFs, or other server-rendered surfaces —
+ * never `new Date(ymd).toLocaleDateString()`, which parses the bare
+ * calendar day as midnight UTC and renders one day earlier in any
+ * negative-UTC offset (ET in April: UTC-4 → 8pm Apr 5 → "Apr 5").
+ *
+ * Returns the literal `dash` argument (default em-dash) when the input
+ * is null/empty/malformed so a missing service date never looks like
+ * "Jan 1, 1970" in a brief.
+ */
+export function formatServiceDate(ymd: string | null | undefined, dash: string = "—"): string {
+  if (!ymd) return dash;
+  const slice = ymd.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(slice)) return dash;
+  const { y, m, d } = parseYMD(slice);
+  // Build the display date with `Date.UTC` + `Intl.DateTimeFormat` in
+  // UTC so the rendered day is exactly the calendar day in the input
+  // — independent of the host's TZ env var. Same approach the rest of
+  // this module uses to keep the calendar math TZ-stable.
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  return fmt.format(new Date(Date.UTC(y, m - 1, d)));
+}
+
 export function shiftDeadlineForOfficeClosure(deadline: Date): Date {
   const d = new Date(deadline);
   const dow = d.getDay();

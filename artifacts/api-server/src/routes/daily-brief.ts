@@ -10,7 +10,7 @@ import {
   emailBouncesTable,
 } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { effectiveDaysRemaining, isUrgentDeadline } from "../lib/dates";
+import { effectiveDaysRemaining, formatServiceDate, isUrgentDeadline } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { CLAIM_EXPIRING_ACTIONABLE_STATUSES } from "./dashboard";
 import { isOutlookConnected } from "../lib/outlook";
@@ -175,7 +175,7 @@ function renderAdminBody(m: AdminMetrics, yesterday: YesterdayActivity, weeklyDi
       const claimHref = `${base}/claims/${c.id}`;
       return `<tr>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;"><a href="${claimHref}" style="color:#3478F6;text-decoration:none;font-family:monospace;">${c.confNumber}</a></td>
-      <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${c.date}</td>
+      <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${formatServiceDate(c.date)}</td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;">$${c.claimAmount || "0.00"}</td>
       <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:${color};font-weight:600;">${label}</td>
     </tr>`;
