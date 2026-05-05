@@ -1886,26 +1886,28 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
   res.json(updated);
 }));
 
-// Live counter for the "Responses Awaiting Review" sidebar badge. Counts
-// invoice groups that have already been classified (errorTypeId is set) but
-// are still in Needs Review — i.e., a payor response landed and a human
-// verdict is still owed. Stage-1 unclassified items deliberately don't
-// count; those belong to the Classification Inbox surface. Lives under
-// /responses/... so the path mirrors the page route and so it doesn't
-// collide with the existing /invoice-groups/:id parametric routes.
+// Live counter for the "Responses Awaiting Review" sidebar badge. Must
+// count exactly the rows the /responses-awaiting-review page renders so
+// the rail and the page can never disagree. The page queries
+// `macroPhase=response-pending&errorTypeAssigned=true`, which means:
+//   - status ∈ {Ready to Review, Needs Review} (the response-pending
+//     macro phase — anything where a payor reply is in but no one has
+//     moved the group on to Reattest or Closed yet)
+//   - classified (errorTypeId set)
+//   - NOT in MAS-action-required state — those rows have moved to the
+//     Attestation Queue / inline checklist and are hidden from this page
+// We layer on the same reviewable-response EXISTS guard the list uses
+// (Task #299) so blank Needs-Review rows the inbox already hides can't
+// bump the badge.
 router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): Promise<void> => {
+  const responsePendingPredicate = buildMacroPhaseCondition("response-pending");
   const [row] = await db
     .select({ value: count() })
     .from(invoiceGroupsTable)
     .where(and(
-      eq(invoiceGroupsTable.status, "Needs Review"),
+      responsePendingPredicate!,
       isNotNull(invoiceGroupsTable.errorTypeId),
       ne(invoiceGroupsTable.errorTypeId, ""),
-      // Task #299: keep the sidebar/dashboard badge in sync with the
-      // Stage 2 inbox list filter — only count groups that actually
-      // have a reviewable payor reply on file. Without this, blank
-      // "Needs Review" rows that the inbox already hides would still
-      // bump the badge.
       sql`exists (
         select 1 from portal_responses pr
         where pr.invoice_group_id = ${invoiceGroupsTable.id}
