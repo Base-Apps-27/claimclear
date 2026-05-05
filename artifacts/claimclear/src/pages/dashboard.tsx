@@ -39,8 +39,8 @@ import { ServiceDateCell, type ServiceDateReason } from "@/components/service-da
 import {
   getUrgentGroupCountFromSummary,
   selectUrgentRows,
-  selectUrgentOrTomorrowRows,
 } from "@/lib/urgent-count";
+import { matchesExpiringFilter } from "@/lib/queue-urgency";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
 function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
@@ -418,7 +418,13 @@ export default function Dashboard() {
 
   // Hero superset — urgent (today + past-due) AND tomorrow. Sorted so
   // past-due / today rows surface first, then tomorrow. Top 5 rendered.
-  const fileTodayOrTomorrowAll = selectUrgentOrTomorrowRows(summary.expiringGroups);
+  // Uses `matchesExpiringFilter` with the same `today-tomorrow` token the
+  // Queue's `?expiring=today-tomorrow` view runs through, so the
+  // Dashboard's split count and the Queue hero's split count are computed
+  // from the exact same predicate and can never disagree.
+  const fileTodayOrTomorrowAll = (summary.expiringGroups ?? []).filter(g =>
+    matchesExpiringFilter(g, "today-tomorrow"),
+  );
   const fileTodayOrTomorrowItems = [...fileTodayOrTomorrowAll]
     .sort((a, b) => {
       const da = a.isUrgent ? -1 : (a.effectiveDaysLeft ?? 0);
@@ -614,13 +620,7 @@ export default function Dashboard() {
             icon={<AlertTriangle className="w-4 h-4" />}
             eyebrow="File today or tomorrow"
             count={fileTodayOrTomorrowCount}
-            title={
-              fileTodayCount > 0 && fileTomorrowOnlyCount > 0
-                ? `${fileTodayCount} due today · ${fileTomorrowOnlyCount} due tomorrow`
-                : fileTodayCount > 0
-                  ? "all due before EOD today"
-                  : "all due before EOD tomorrow"
-            }
+            title={`${fileTodayCount} due today · ${fileTomorrowOnlyCount} due tomorrow`}
             seeAllHref="/queue?expiring=today-tomorrow"
             isLoading={false}
             itemsEmpty="No filings due today or tomorrow. Nice."
