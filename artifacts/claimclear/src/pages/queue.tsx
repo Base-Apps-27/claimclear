@@ -449,9 +449,23 @@ export default function Queue() {
   // tabs doesn't surprise the operator with a stale filter applied
   // somewhere they can't see. Matches invoice number, client number,
   // and error type name (consistent with the Invoice Groups list).
-  const [searchActionable, setSearchActionable] = useState("");
-  const [searchPortalQueued, setSearchPortalQueued] = useState("");
-  const [searchOnHold, setSearchOnHold] = useState("");
+  // Persisted via the URL (`?qActionable=…`, `?qPortalQueued=…`,
+  // `?qOnHold=…`) so refreshing the page or sharing the link restores
+  // the same filtered view — consistent with the other Queue filters
+  // (tab, urgency, engagement, past-deadline) which all round-trip
+  // through the URL.
+  const searchActionable = get("qActionable");
+  const searchPortalQueued = get("qPortalQueued");
+  const searchOnHold = get("qOnHold");
+  const setSearchActionable = (value: string) => {
+    set({ qActionable: value === "" ? null : value }, false);
+  };
+  const setSearchPortalQueued = (value: string) => {
+    set({ qPortalQueued: value === "" ? null : value }, false);
+  };
+  const setSearchOnHold = (value: string) => {
+    set({ qOnHold: value === "" ? null : value }, false);
+  };
 
   useInvoiceGroupEvents(selectedWorkflowId ?? undefined);
   // Presence is intentionally informational-only: the `viewers` array
