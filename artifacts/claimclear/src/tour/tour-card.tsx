@@ -334,7 +334,17 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
       )}
 
       <div className="px-5 pb-4 pt-1 flex flex-col gap-2.5">
-        {!isClosing && <PhasePipelineFull current={def.processStep} />}
+        {/*
+          Only the actual playbook walkthrough modals (steps 2–6, one per
+          process step) get the full Upload→Understand→Gather→Submit→Respond
+          pipeline. The welcome (1), the post-playbook recap (7), and every
+          page-intro modal after that (dashboard, queue, responses, etc.)
+          would just be repeating what the operator already saw — the phase
+          pill at the top is enough context for those.
+        */}
+        {!isClosing && def.id >= 2 && def.id <= 6 && (
+          <PhasePipelineFull current={def.processStep} />
+        )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
     </motion.div>
