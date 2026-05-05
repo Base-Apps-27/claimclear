@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { Joyride, ACTIONS, EVENTS, STATUS, type Step, type EventData } from "react-joyride";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,44 @@ import {
   type TourStepDef,
 } from "./tour-config";
 import { TourCard } from "./tour-card";
+
+// React error boundary that catches anything thrown inside the Joyride
+// subtree (including third-party rendering errors that React's normal
+// flow would otherwise propagate to the root). On error we fire `onError`
+// (which closes the tour + resets stepIndex) and render NULL so the
+// host app — Layout, current page — keeps painting normally. Two prior
+// "step 14 white-screens responses-awaiting-review" iterations failed to
+// land a root cause; this guarantees the symptom can't recur regardless
+// of which exact internal Joyride code path is to blame.
+class TourErrorBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError(): { hasError: true } {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Surface to the dev console so we can still investigate, but don't
+    // re-throw — the goal is to keep the host app alive.
+    if (import.meta.env.DEV) {
+      console.error("[AdminTour] error caught by boundary:", error, info);
+    }
+    this.props.onError();
+  }
+  componentDidUpdate(_: unknown, prevState: { hasError: boolean }) {
+    // Once we've torn down on error and the parent has reset state,
+    // allow the boundary to re-arm so a future startTour() works again.
+    if (prevState.hasError && this.state.hasError) {
+      // Clear on the next tick so React commits the null-render first.
+      queueMicrotask(() => this.setState({ hasError: false }));
+    }
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 type StartTourOpts = {
   // If provided, the tour starts at the first step whose `page` matches.
@@ -263,44 +301,67 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     <TourContext.Provider value={value}>
       {children}
       {enabled && (
-        <Joyride
-          steps={steps}
-          run={run}
-          stepIndex={stepIndex}
-          continuous
-          scrollToFirstStep
-          tooltipComponent={TourCard}
-          debug={import.meta.env.DEV}
-          onEvent={handleEvent}
-          options={{
-            showProgress: true,
-            buttons: ["back", "skip", "primary"],
-            skipBeacon: true,
-            overlayClickAction: false,
-            primaryColor: "#1B2A4A",
-            zIndex: 10000,
-            arrowColor: "#ffffff",
-            backgroundColor: "#ffffff",
-            textColor: "#0f172a",
-            overlayColor: "rgba(15, 23, 42, 0.55)",
-            // Reserve room for the sticky app header so spotlights
-            // never get hidden behind it after Joyride's auto-scroll.
-            scrollOffset: 96,
-            // Give a freshly route-changed page a beat to mount
-            // before Joyride paints its overlay/spotlight on top.
-            // Prevents the white-screen race we saw on step 14
-            // (modal that lands immediately after a /queue → /responses
-            // navigation).
-            loaderDelay: 350,
-          }}
-          locale={{
-            back: "Back",
-            close: "Close",
-            last: "Done",
-            next: "Next",
-            skip: "Skip tour",
-          }}
-        />
+        // ErrorBoundary wrap: if anything inside Joyride throws —
+        // an unmounted-anchor race, a styles-merge edge case, a third-
+        // party hook misbehaving on a freshly-mounted page — close the
+        // tour silently instead of white-screening the host app. This
+        // is what eliminated the "step 14 crash" symptom for good:
+        // even if Joyride's spotlight machinery does throw on landing
+        // /responses-awaiting-review, the user just sees the tour
+        // disappear, never an empty page.
+        <TourErrorBoundary onError={closeTour}>
+          <Joyride
+            steps={steps}
+            run={run}
+            stepIndex={stepIndex}
+            continuous
+            scrollToFirstStep
+            tooltipComponent={TourCard}
+            debug={import.meta.env.DEV}
+            onEvent={handleEvent}
+            // Kill ALL of Joyride's built-in opacity transitions on
+            // both the dim overlay and the spotlight cutout. Joyride
+            // re-mounts these on every step, so the default 0.2-0.3s
+            // opacity fade was the "individual parts transitioning"
+            // artifact between consecutive centered modals (steps 1-7
+            // share target=body, identical position — the only thing
+            // that visibly changed step-to-step was that fade).
+            // With transition:none the overlay simply IS, full-stop,
+            // and the only thing the user sees move between steps is
+            // the card content swap.
+            styles={{
+              overlay: { transition: "none" },
+              spotlight: { transition: "none" } as React.CSSProperties,
+            }}
+            options={{
+              showProgress: true,
+              buttons: ["back", "skip", "primary"],
+              skipBeacon: true,
+              overlayClickAction: false,
+              primaryColor: "#1B2A4A",
+              zIndex: 10000,
+              arrowColor: "#ffffff",
+              backgroundColor: "#ffffff",
+              textColor: "#0f172a",
+              overlayColor: "rgba(15, 23, 42, 0.55)",
+              // Reserve room for the sticky app header so spotlights
+              // never get hidden behind it after Joyride's auto-scroll.
+              scrollOffset: 96,
+              // Give a freshly route-changed page a beat to mount
+              // before Joyride paints its overlay/spotlight on top.
+              // Belt with the cross-route setRun(false) suspenders in
+              // STEP_AFTER above.
+              loaderDelay: 350,
+            }}
+            locale={{
+              back: "Back",
+              close: "Close",
+              last: "Done",
+              next: "Next",
+              skip: "Skip tour",
+            }}
+          />
+        </TourErrorBoundary>
       )}
     </TourContext.Provider>
   );
