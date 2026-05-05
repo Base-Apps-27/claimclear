@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v5";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v6";
 
 export type TourStepDef = {
   // Element selector or "body" for an unanchored center modal.
@@ -113,25 +113,25 @@ export const TOUR_STEPS: TourStepDef[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-tour="page-main"]',
+    target: "body",
     route: "/queue",
-    placement: "top",
+    placement: "center",
     title: "Queue — Steps 3 and 4 happen here",
     body: "The Queue is where you actually move work: gather evidence (Step 3) and submit the dispute (Step 4). Each lane represents a stage in the dispute workflow. Pick the leftmost non-empty lane and walk it down.",
     disableBeacon: true,
   },
   {
-    target: '[data-tour="page-main"]',
+    target: "body",
     route: "/responses-awaiting-review",
-    placement: "top",
+    placement: "center",
     title: "Responses Awaiting Review — Step 5",
     body: "When a payor sends something back, it lands here with a verdict pending. Master/detail layout: the response thread on the left, the AI's read in the middle, and the verdict actions on the right. This is where you decide if we can re-attest.",
     disableBeacon: true,
   },
   {
-    target: '[data-tour="page-main"]',
+    target: "body",
     route: "/attestation-queue",
-    placement: "top",
+    placement: "center",
     title: "Attestation Queue — closing the loop",
     body: "Invoice groups with approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count of groups owed off-system. Once a group clears, every ride in it is recovered revenue.",
     disableBeacon: true,
