@@ -26,6 +26,23 @@ function splitDetailIntoPieces(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+// Priority-piece rule (Task: classify multi-piece error descriptions,
+// 2026-05-04 follow-up): the per-piece consensus rule alone leaves the
+// 90%+ of multi-detail combos that mix "travel time too short" with a
+// GPS-pickup piece stuck in manual review, because the two pieces map
+// to different error types. Operationally those claims all walk down
+// the same remediation path as a pure travel-time claim, so when a
+// multi-detail string contains a high-priority piece we let that piece
+// win outright — even if the other pieces resolve to a different type.
+//
+// Order matters: the first entry wins if multiple priority pieces are
+// present. Adding a new phrase here is intentionally a code change so
+// that the priority semantics get reviewed in code review rather than
+// being editable through the operator-facing mapping UI.
+const PRIORITY_PIECE_NORMALIZED_TEXTS = [
+  "travel time is too short for distance traveled",
+];
+
 router.post("/error-detail-mappings/lookup", asyncHandler(async (req, res): Promise<void> => {
   const { errorDetails } = req.body;
   if (!Array.isArray(errorDetails) || errorDetails.length === 0) {
@@ -74,7 +91,37 @@ router.post("/error-detail-mappings/lookup", asyncHandler(async (req, res): Prom
       };
     }
 
-    // 2) Per-piece consensus for multi-detail strings. Single-piece
+    // 2) Priority-piece override (multi-detail only). If any piece is
+    //    in the PRIORITY_PIECE_NORMALIZED_TEXTS list AND has a mapping,
+    //    that mapping wins regardless of what the other pieces resolve
+    //    to. Single-piece inputs skip this — they would just collapse
+    //    to the consensus rule below with the same outcome.
+    const pieceKeysForPriority = pieceNormalizedByInput[i];
+    if (pieceKeysForPriority.length > 1) {
+      for (const priorityKey of PRIORITY_PIECE_NORMALIZED_TEXTS) {
+        if (!pieceKeysForPriority.includes(priorityKey)) continue;
+        const priorityMatch = mappingMap.get(priorityKey);
+        if (!priorityMatch) continue;
+        return {
+          originalText: text,
+          normalizedText: norm,
+          matched: true,
+          errorTypeId: priorityMatch.errorTypeId,
+          errorTypeName: priorityMatch.errorTypeName,
+          pieces: pieceKeysForPriority.map((k) => {
+            const mm = mappingMap.get(k) ?? null;
+            return {
+              normalizedText: k,
+              matched: !!mm,
+              errorTypeId: mm?.errorTypeId ?? null,
+              errorTypeName: mm?.errorTypeName ?? null,
+            };
+          }),
+        };
+      }
+    }
+
+    // 3) Per-piece consensus for multi-detail strings. Single-piece
     //    inputs fall through here too but with a length-1 piece array,
     //    so the behaviour collapses back to "either matches or it
     //    doesn't" — identical to the pre-Task lookup for callers that
