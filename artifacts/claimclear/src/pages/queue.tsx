@@ -1074,8 +1074,8 @@ export default function Queue() {
 
         {selectedWorkflowId && (
           <div ref={workflowPanelRef} className="scroll-mt-4 lg:col-span-2">
-            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3">
-              <div className="flex items-center justify-between gap-2">
+            <div className="space-y-3 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:space-y-0 lg:flex lg:flex-col lg:gap-3">
+              <div className="flex items-center justify-between gap-2 lg:shrink-0">
                 <h3 className="text-lg font-semibold">
                   Process Invoice Group
                   {selectedWorkflowGroupSummary && (
@@ -1100,8 +1100,21 @@ export default function Queue() {
                   </Button>
                 </div>
               </div>
-              <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
-              <InlineGroupWorkspace groupId={selectedWorkflowId} />
+              <div className="lg:shrink-0">
+                <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
+              </div>
+              {/* Scrollable body — flex-1 + min-h-0 lets the inner
+                  region take the leftover panel height and scroll on
+                  large screens, so the bottom action buttons (Save
+                  draft / Mark reviewed / Submit to portal) stay
+                  reachable even when a leg is expanded and the
+                  worktree + submission preview push the content well
+                  past the viewport. On smaller breakpoints there's no
+                  sticky/height cap, so the panel just flows down the
+                  page. */}
+              <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+                <InlineGroupWorkspace groupId={selectedWorkflowId} />
+              </div>
             </div>
           </div>
         )}
