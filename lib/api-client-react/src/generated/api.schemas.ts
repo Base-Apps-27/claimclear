@@ -3098,6 +3098,15 @@ export interface LookupMappingsBody {
   errorDetails: string[];
 }
 
+export interface MappingPieceResult {
+  normalizedText: string;
+  matched: boolean;
+  /** @nullable */
+  errorTypeId?: number | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+}
+
 export interface MappingResult {
   originalText: string;
   normalizedText: string;
@@ -3106,6 +3115,7 @@ export interface MappingResult {
   errorTypeId?: number | null;
   /** @nullable */
   errorTypeName?: string | null;
+  pieces?: null | MappingPieceResult[];
 }
 
 export interface LookupMappingsResponse {

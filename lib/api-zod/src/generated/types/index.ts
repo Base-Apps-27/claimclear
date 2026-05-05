@@ -237,6 +237,7 @@ export * from "./listWithdrawalsParams";
 export * from "./listWithdrawalsSort";
 export * from "./lookupMappingsBody";
 export * from "./lookupMappingsResponse";
+export * from "./mappingPieceResult";
 export * from "./mappingResult";
 export * from "./markAwaitingPayorAgainRequest";
 export * from "./markInvoiceGroupMasEligible200";

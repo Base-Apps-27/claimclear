@@ -437,16 +437,18 @@ export default function Import() {
       return;
     }
 
-    const singleErrorDetails = uniqueDetails.filter(d => !hasMultipleErrors(d));
-    const multiErrorDetails = uniqueDetails.filter(d => hasMultipleErrors(d));
-
+    // Multi-detail strings (containing `;`) used to be filtered out of
+    // the lookup entirely — every one fell through to manual triage.
+    // The server-side endpoint now splits them and returns a confident
+    // match when every piece resolves to the same error type, so we
+    // send the full set of unique details through one call. Multi-detail
+    // strings that don't reach a clean consensus still come back with
+    // matched=false and `pieces` populated — those keep the existing
+    // "Multiple" badge / per-claim manual flow.
     setClassifyLoading(true);
     try {
-      let mappings: { originalText: string; matched: boolean; errorTypeId: number | null; errorTypeName: string | null }[] = [];
-      if (singleErrorDetails.length > 0) {
-        const res = await lookupMappings.mutateAsync({ data: { errorDetails: singleErrorDetails } });
-        mappings = res.mappings as typeof mappings;
-      }
+      const res = await lookupMappings.mutateAsync({ data: { errorDetails: uniqueDetails } });
+      const mappings = res.mappings;
 
       const countMap = new Map<string, number>();
       for (const row of rows) {
@@ -454,8 +456,9 @@ export default function Import() {
         countMap.set(d, (countMap.get(d) || 0) + 1);
       }
 
-      const singleGroups: ClassifyGroup[] = singleErrorDetails.map(detail => {
+      const allGroups: ClassifyGroup[] = uniqueDetails.map(detail => {
         const mapping = mappings.find((m) => m.originalText === detail);
+        const isMulti = hasMultipleErrors(detail);
         return {
           errorDetails: detail,
           count: countMap.get(detail) || 0,
@@ -464,22 +467,13 @@ export default function Import() {
           errorTypeName: mapping?.errorTypeName ?? null,
           selectedErrorTypeId: mapping?.errorTypeId ? String(mapping.errorTypeId) : "",
           selectedErrorTypeName: mapping?.errorTypeName ?? "",
-          isMultiError: false,
+          // Only treat a multi-detail row as "Multiple" (manual-only)
+          // when the server couldn't reach a per-piece consensus.
+          isMultiError: isMulti && !(mapping?.matched ?? false),
         };
       });
 
-      const multiGroups: ClassifyGroup[] = multiErrorDetails.map(detail => ({
-        errorDetails: detail,
-        count: countMap.get(detail) || 0,
-        matched: false,
-        errorTypeId: null,
-        errorTypeName: null,
-        selectedErrorTypeId: "",
-        selectedErrorTypeName: "",
-        isMultiError: true,
-      }));
-
-      const groups = [...singleGroups, ...multiGroups];
+      const groups = allGroups;
       groups.sort((a, b) => {
         if (a.matched && !b.matched) return -1;
         if (!a.matched && b.matched) return 1;

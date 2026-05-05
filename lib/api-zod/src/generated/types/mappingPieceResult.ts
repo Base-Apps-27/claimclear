@@ -11,15 +11,12 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { MappingPieceResult } from "./mappingPieceResult";
 
-export interface MappingResult {
-  originalText: string;
+export interface MappingPieceResult {
   normalizedText: string;
   matched: boolean;
   /** @nullable */
   errorTypeId?: number | null;
   /** @nullable */
   errorTypeName?: string | null;
-  pieces?: null | MappingPieceResult[];
 }

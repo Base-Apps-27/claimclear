@@ -18364,6 +18364,19 @@ export const LookupErrorDetailMappingsResponse = zod.object({
       matched: zod.boolean(),
       errorTypeId: zod.number().nullish(),
       errorTypeName: zod.string().nullish(),
+      pieces: zod
+        .union([
+          zod.null(),
+          zod.array(
+            zod.object({
+              normalizedText: zod.string(),
+              matched: zod.boolean(),
+              errorTypeId: zod.number().nullish(),
+              errorTypeName: zod.string().nullish(),
+            }),
+          ),
+        ])
+        .optional(),
     }),
   ),
 });

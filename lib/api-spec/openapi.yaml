@@ -8043,6 +8043,21 @@ components:
       required:
         - errorDetails
 
+    MappingPieceResult:
+      type: object
+      properties:
+        normalizedText:
+          type: string
+        matched:
+          type: boolean
+        errorTypeId:
+          type: ["integer", "null"]
+        errorTypeName:
+          type: ["string", "null"]
+      required:
+        - normalizedText
+        - matched
+
     MappingResult:
       type: object
       properties:
@@ -8056,6 +8071,17 @@ components:
           type: ["integer", "null"]
         errorTypeName:
           type: ["string", "null"]
+        # Per-piece breakdown for semicolon-separated multi-detail
+        # strings. Null for single-piece inputs and for multi-piece
+        # inputs where the operator has saved a literal whole-string
+        # mapping (in which case the whole-string match wins and the
+        # piece breakdown is irrelevant).
+        pieces:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/MappingPieceResult"
       required:
         - originalText
         - normalizedText
