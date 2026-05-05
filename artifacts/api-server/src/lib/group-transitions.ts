@@ -445,6 +445,10 @@ export async function transitionGroupStatus(opts: {
       userName: actor.userName,
       userEmail: actor.userEmail,
       timestamp: new Date().toISOString(),
+      // Carry the new status so the streak-pip listener can bump the
+      // personal counter on Portal Queued transitions without having
+      // to refetch the row.
+      toStatus: newStatus,
     });
 
     // Day-complete celebration: re-check after every status change because

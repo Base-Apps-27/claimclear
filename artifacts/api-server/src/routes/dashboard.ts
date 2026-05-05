@@ -670,14 +670,22 @@ function dayKeyInTz(now: Date, tz: string): string {
   }).format(now);
 }
 
-// Streak pip on the user avatar (Task #317). Returns the count of claims
-// the calling user transitioned into "Processed" since the start of
-// "today" in their local timezone. Drawn straight from the per-claim
-// status-transition history (`audit_logs.action IN ('status_changed',
-// 'claim_status_changed')` with `metadata->>'to' = 'Processed'`), so
-// both direct manual transitions and group-cascaded ones initiated by
-// the user count toward their personal momentum. Never exposes anything
-// about other users — the actor filter is pinned to `req.user.email`.
+// Streak pip on the user avatar (Task #317). Returns the count of
+// invoice groups the calling user "processed" — i.e. finished the
+// worktree and queued for portal submission — since the start of
+// "today" in their local timezone.
+//
+// Sourced from group-level status transitions: every audit row with
+// `action = 'group_status_changed'` and `metadata->>'to' = 'Portal
+// Queued'`, filtered by the actor's `userEmail`. This is what fires
+// when the operator clicks Submit on a packaged group and it lands
+// in the Portal Queued lane. Earlier the count read claim-leg
+// transitions into `Processed`, but operators rarely flip individual
+// legs through that intermediate status — the meaningful "I finished
+// this one" event is the group-level Portal Queued transition.
+//
+// Never exposes anything about other users — the actor filter is
+// pinned to `req.user.email`.
 router.get("/dashboard/my-processed-today", asyncHandler(async (req, res): Promise<void> => {
   const userEmail = req.user?.email;
   if (!userEmail) {
@@ -700,8 +708,8 @@ router.get("/dashboard/my-processed-today", asyncHandler(async (req, res): Promi
     .from(auditLogsTable)
     .where(and(
       eq(auditLogsTable.userEmail, userEmail),
-      inArray(auditLogsTable.action, ["status_changed", "claim_status_changed"]),
-      sql`${auditLogsTable.metadata}->>'to' = 'Processed'`,
+      eq(auditLogsTable.action, "group_status_changed"),
+      sql`${auditLogsTable.metadata}->>'to' = 'Portal Queued'`,
       sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date = ${dayKey}::date`,
     ));
 

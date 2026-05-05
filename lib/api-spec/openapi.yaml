@@ -3323,13 +3323,15 @@ paths:
     get:
       operationId: getMyProcessedToday
       tags: [dashboard]
-      summary: Count of claims the current user transitioned into Processed today
+      summary: Count of invoice groups the current user processed (queued for portal submission) today
       description: |
         Powers the personal "streak pip" overlay on the sidebar avatar. Counts
-        every claim that the currently-authenticated user moved into the
-        `Processed` status since the start of "today" in the user's local
-        timezone. Sourced from the per-claim status-transition history
-        (`audit_logs`), filtered by `userEmail` of the actor.
+        every invoice group that the currently-authenticated user moved into
+        the `Portal Queued` status — i.e. finished the worktree and queued for
+        portal submission — since the start of "today" in the user's local
+        timezone. Sourced from the group-level status-transition history
+        (`audit_logs.action = 'group_status_changed'`,
+        `metadata.to = 'Portal Queued'`), filtered by `userEmail` of the actor.
 
         The pip is private — only the requesting user's count is returned, and
         nothing is exposed about other users.
@@ -7688,7 +7690,7 @@ components:
     MyProcessedTodayCount:
       type: object
       description: |
-        Personal "claims processed today" counter for the streak pip on the
+        Personal "invoices processed today" counter for the streak pip on the
         sidebar avatar. The pip is private — only the requesting user's count
         is returned.
       properties:
@@ -7696,9 +7698,9 @@ components:
           type: integer
           minimum: 0
           description: |
-            Number of claims the current user transitioned into the
-            `Processed` status since the start of "today" in the supplied
-            timezone.
+            Number of invoice groups the current user transitioned into the
+            `Portal Queued` status (finished worktree, queued for portal
+            submission) since the start of "today" in the supplied timezone.
         timezone:
           type: string
           description: |

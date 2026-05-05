@@ -1002,12 +1002,24 @@ export default function Queue() {
   const onHoldUrgent = expiringFilter === "urgent"
     ? onHoldTotal
     : onHoldAll.filter(g => g.isUrgent).length;
-  // Hero count: under `?expiring=urgent` the sum of lane totals IS
-  // the urgent count; otherwise delegate to the shared helper so the
-  // Queue and Dashboard provably agree.
+  // Hero count: filing-clock counter, mirrors the Dashboard's
+  // "must file today" hero. Portal Queued is intentionally EXCLUDED
+  // because the filing clock is satisfied the moment a group is
+  // packaged into Portal Queued — Portal Queued rows whose deadline
+  // then slips are surfaced separately as `stuckCount`. Without this
+  // exclusion the Queue would keep counting submitted-but-unconfirmed
+  // groups while the Dashboard had already dropped them, and the two
+  // surfaces would disagree until the external portal acknowledged
+  // the submission. See `GROUP_EXPIRING_ACTIONABLE_STATUSES` on the
+  // server (which the Dashboard hero uses) — it is exactly
+  // `{ New, Needs Evidence, Generating Email, On Hold }`.
+  //
+  // Under `?expiring=urgent` the lane queries are server-narrowed,
+  // so the sum of Action Required + On Hold totals IS the urgent
+  // count; otherwise delegate to the shared helper.
   const urgentCount = expiringFilter === "urgent"
-    ? actionableTotal + portalQueuedTotal + onHoldTotal
-    : computeAggregateUrgentCount(actionableAll, portalQueuedAll, onHoldAll);
+    ? actionableTotal + onHoldTotal
+    : computeAggregateUrgentCount(actionableAll, onHoldAll);
 
   // Task #352 — "Stuck after submission" count. Only Portal Queued
   // can carry `submittedStuck=true`.
@@ -1045,17 +1057,22 @@ export default function Queue() {
     ? actionableMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
     : actionableTotal + portalQueuedTotal + onHoldTotal;
 
-  // Today / Tomorrow split for the multi-chip filter UI under
-  // today-tomorrow / tomorrow / urgent. We split the post-filter
-  // arrays so the chip counts always match the rows the operator sees.
+  // Today / Tomorrow split for the hero and the multi-chip filter UI
+  // under today-tomorrow / tomorrow / urgent. Portal Queued is excluded
+  // for the same reason as `urgentCount` above: the filing clock is
+  // satisfied at Portal Queued, so a packaged group should drop out of
+  // the today/tomorrow numbers immediately, matching the Dashboard's
+  // "File today or tomorrow" hero. The Portal Queued tab badge keeps
+  // its own counts so an operator working that lane still sees what's
+  // slipping there.
   const filterTodayCount =
     expiringFilter === "urgent"
-      ? actionableTotal + portalQueuedTotal + onHoldTotal
-      : countUrgentRows(actionableGroups, portalQueuedSorted, onHoldSorted);
+      ? actionableTotal + onHoldTotal
+      : countUrgentRows(actionableGroups, onHoldSorted);
   const filterTomorrowCount =
     expiringFilter === "tomorrow"
-      ? actionableMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
-      : [actionableGroups, portalQueuedSorted, onHoldSorted]
+      ? actionableMatchingCount + onHoldMatchingCount
+      : [actionableGroups, onHoldSorted]
           .flat()
           .filter(g => !g.isUrgent && g.effectiveDaysLeft === 1).length;
 

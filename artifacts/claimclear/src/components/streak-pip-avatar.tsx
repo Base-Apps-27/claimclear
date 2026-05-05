@@ -177,10 +177,10 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
 
   const tooltipLabel =
     displayCount === 0
-      ? "No claims processed yet today"
+      ? "No invoices processed yet today"
       : displayCount === 1
-        ? "1 claim processed today"
-        : `${displayCount} claims processed today`;
+        ? "1 invoice processed today"
+        : `${displayCount} invoices processed today`;
 
   // SVG geometry. The ring sits flush around the 36px avatar with a
   // tiny outer halo so it reads against either the dark sidebar or
@@ -259,12 +259,13 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
 
 // Optimistic-bump hook. Keep this colocated with the pip so the only
 // SSE consumer that touches the personal counter lives next to the
-// component that renders it. Listens to the existing claims-list SSE
-// channel (already mounted by the layout via `useDashboardLiveUpdates`
-// and the queue/list pages); when a `status_changed` event arrives
-// whose actor is the current user and whose new status is `Processed`,
-// bumps the cached count by 1. The polling refetch in
-// `StreakPipAvatar` invalidates as a safety net.
+// component that renders it. Listens to the global invoice-group SSE
+// channel; when a `status_changed` event arrives whose actor is the
+// current user and whose new status is `Portal Queued` (operator
+// finished the worktree and submitted to the portal), bumps the
+// cached count by 1. The polling refetch in `StreakPipAvatar`
+// invalidates as a safety net. Server-side definition lives in
+// `GET /dashboard/my-processed-today`.
 export function useStreakPipLiveUpdates() {
   const queryClient = useQueryClient();
   const { user, isAuthenticated } = useAuth();
@@ -297,19 +298,19 @@ export function useStreakPipLiveUpdates() {
       try {
         const data = JSON.parse(event.data) as {
           type?: string;
-          claimId?: number;
+          invoiceGroupId?: number;
           userEmail?: string | null;
           toStatus?: string | null;
           timestamp?: string;
         };
         if (data.type !== "status_changed") return;
-        if (data.toStatus !== "Processed") return;
+        if (data.toStatus !== "Portal Queued") return;
         if (!data.userEmail || data.userEmail !== userEmail) return;
         // Dedupe — the SSE channel can occasionally double-deliver
-        // on reconnect. Pin on (claimId, timestamp) so a real
-        // legitimate second transition into Processed (e.g. moved
+        // on reconnect. Pin on (invoiceGroupId, timestamp) so a real
+        // legitimate second transition into Portal Queued (e.g. moved
         // out and back in) still counts.
-        const dedupeKey = `${data.claimId ?? "?"}::${data.timestamp ?? ""}`;
+        const dedupeKey = `${data.invoiceGroupId ?? "?"}::${data.timestamp ?? ""}`;
         if (seenIds.current.has(dedupeKey)) return;
         seenIds.current.add(dedupeKey);
         if (seenIds.current.size > 200) {
@@ -327,10 +328,10 @@ export function useStreakPipLiveUpdates() {
     function connect() {
       if (cancelled) return;
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/claims/events`, {
+      es = new EventSource(`${base}/api/invoice-groups/events`, {
         withCredentials: true,
       });
-      es.addEventListener("claim_update", onStatusChanged);
+      es.addEventListener("group_update", onStatusChanged);
       es.onopen = () => {
         retry = 0;
       };
