@@ -34,7 +34,7 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { ClosureActions } from "@/components/closure/closure-actions";
+import { useClosureConfirmLauncher } from "@/components/closure/closure-launcher";
 
 function getErrorMessage(err: unknown): string | undefined {
   if (err instanceof Error) return err.message;
@@ -153,6 +153,12 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const updateStatus = useUpdateInvoiceGroupStatus();
+  // Light "confirm" launcher: this lane records a closure that the
+  // payor — not us — decided. The full structured intake (category /
+  // root cause / narrative / accountability) doesn't apply because the
+  // payor's response is the record. The confirm dialog auto-fills every
+  // required server-side field and just asks the operator to confirm.
+  const closureConfirm = useClosureConfirmLauncher();
 
   const { data: detail, isLoading: detailLoading } = useGetInvoiceGroup(group.id);
   const { data: validTransitions } = useGetInvoiceGroupValidTransitions(group.id);
@@ -451,24 +457,42 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
             <div className="text-xs font-semibold text-muted-foreground">
               Closure — payor formally denied
             </div>
-            <ClosureActions
-              target={{ kind: "invoice_group", id: group.id }}
-              outcome={group.outcome}
-              closureReason={group.closureReason}
-              triggers={[
-                {
-                  reason: "denied_by_payor",
-                  label: "Denied by Payor",
-                  sub: "Payor formally denied — close out, no further dispute",
-                  icon: <ArrowRight className="h-4 w-4" />,
-                  testId: "button-closure-denied-by-payor",
-                },
-              ]}
-              onAfterSuccess={() => {
-                invalidate();
-                onCompleted(`#${group.invoiceNumber} closed as Denied by Payor`);
-              }}
-            />
+            <Button
+              variant="outline"
+              className="h-auto py-2 px-3 flex flex-col items-start gap-0.5 bg-red-50 hover:bg-red-100 border-red-300 text-red-900 w-full"
+              disabled={isPending}
+              onClick={() =>
+                closureConfirm.open({
+                  target: { kind: "group", id: group.id },
+                  response: latestResponse
+                    ? {
+                        responseId: latestResponse.id,
+                        source: latestResponse.source,
+                        senderName: latestResponse.senderName,
+                        senderEmail: latestResponse.senderEmail,
+                        receivedAt: latestResponse.receivedAt,
+                        responseType: latestResponse.responseType,
+                        responseTypeLabel: getResponseTypeLabel(latestResponse.responseType),
+                        aiSummary: latestResponse.aiSummary,
+                      }
+                    : null,
+                  onSuccess: () => {
+                    invalidate();
+                    onCompleted(`#${group.invoiceNumber} closed as Denied by Payor`);
+                  },
+                })
+              }
+              data-testid="button-closure-denied-by-payor"
+            >
+              <span className="flex items-center gap-2 font-semibold text-sm">
+                <ArrowRight className="h-4 w-4" />
+                Denied by Payor
+              </span>
+              <span className="text-xs font-normal opacity-80 text-left">
+                Payor formally denied — close out, no further dispute
+              </span>
+            </Button>
+            {closureConfirm.dialog}
           </div>
         </div>
 

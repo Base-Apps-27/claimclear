@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import { ClosureIntakeDialog } from "./closure-intake-dialog";
+import {
+  ClosureConfirmDialog,
+  type ConfirmResponseContext,
+} from "./closure-confirm-dialog";
 import type { ClosureReasonKey } from "./closure-options";
 
 /**
@@ -75,6 +79,66 @@ export function useClosureLauncher(): ClosureLauncher {
       target={args?.target ?? { kind: "claim", id: 0 }}
       reason={args?.reason ?? "non_issue"}
       prefill={args?.prefill}
+      beforeSubmit={args?.beforeSubmit}
+      onSuccess={() => {
+        const cur = argsRef.current;
+        argsRef.current = null;
+        cur?.onSuccess?.();
+      }}
+    />
+  );
+
+  return { open, dialog };
+}
+
+/**
+ * Headless launcher for the LIGHT closure confirm dialog used only by the
+ * response-driven Denied-by-Payor paths (queue response review, Step 4
+ * close-out, group rail "Denied by Payor" trigger). The full structured
+ * intake doesn't apply on these paths because the payor — not us —
+ * decided the outcome; the response itself is the record. See
+ * <ClosureConfirmDialog> for the auto-fill payload it submits.
+ *
+ * Mirrors useClosureLauncher's lifecycle: single mounted dialog, ref-
+ * backed args so onSuccess fires after onOpenChange(false), microtask
+ * cleanup so a true cancel never leaves stale args behind.
+ */
+export type ClosureConfirmLauncherArgs = {
+  target: ClosureLauncherTarget;
+  /** The payor response we're closing against — drives the summary block
+   *  in the dialog and seeds the auto-built audit narrative. */
+  response: ConfirmResponseContext | null;
+  beforeSubmit?: () => Promise<void>;
+  onSuccess?: () => void;
+};
+
+export type ClosureConfirmLauncher = {
+  open: (args: ClosureConfirmLauncherArgs) => void;
+  dialog: React.ReactElement;
+};
+
+export function useClosureConfirmLauncher(): ClosureConfirmLauncher {
+  const [args, setArgs] = useState<ClosureConfirmLauncherArgs | null>(null);
+  const argsRef = useRef<ClosureConfirmLauncherArgs | null>(null);
+
+  const open = useCallback((next: ClosureConfirmLauncherArgs) => {
+    argsRef.current = next;
+    setArgs(next);
+  }, []);
+
+  const dialog = (
+    <ClosureConfirmDialog
+      open={args !== null}
+      onOpenChange={(o) => {
+        if (!o) {
+          setArgs(null);
+          queueMicrotask(() => {
+            argsRef.current = null;
+          });
+        }
+      }}
+      target={args?.target ?? { kind: "claim", id: 0 }}
+      response={args?.response ?? null}
       beforeSubmit={args?.beforeSubmit}
       onSuccess={() => {
         const cur = argsRef.current;

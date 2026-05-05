@@ -13,7 +13,11 @@ import type {
   InvoiceGroupResponse,
   PortalResponseItem,
 } from "@workspace/api-client-react";
-import { useClosureLauncher } from "@/components/closure/closure-launcher";
+import { useClosureConfirmLauncher } from "@/components/closure/closure-launcher";
+import {
+  pickLatestReviewableResponse,
+  getResponseTypeLabel,
+} from "@/components/queue-response-review-panel";
 import {
   deriveVerdictMix,
   pickSuggestedNewInvoiceNumber,
@@ -88,7 +92,13 @@ export function WhatsNextCard({
 }: Props) {
   const queryClient = useQueryClient();
   const promoteDrafts = usePromoteVerdictDrafts();
-  const closureLauncher = useClosureLauncher();
+  // Light "confirm" launcher: Step 4 close-out is the per-claim group's
+  // recording of a payor-driven denial. The full structured intake
+  // doesn't apply (they decided, not us); the payor response is the
+  // record. The confirm dialog auto-fills every required server-side
+  // field and still runs the same `beforeSubmit` (promote-drafts) hook
+  // so close-out and draft promotion stay in one operator gesture.
+  const closureConfirm = useClosureConfirmLauncher();
   const markWaiting = useMarkAwaitingPayorAgain();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -168,9 +178,21 @@ export function WhatsNextCard({
   //     the backend ordering of "scan-then-phase-guard" makes this
   //     explicit.
   const openCloseOut = () => {
-    closureLauncher.open({
+    const latestResponse = pickLatestReviewableResponse([...responses]);
+    closureConfirm.open({
       target: { kind: "group", id: group.id },
-      reason: "denied_by_payor",
+      response: latestResponse
+        ? {
+            responseId: latestResponse.id,
+            source: latestResponse.source,
+            senderName: latestResponse.senderName,
+            senderEmail: latestResponse.senderEmail,
+            receivedAt: latestResponse.receivedAt,
+            responseType: latestResponse.responseType,
+            responseTypeLabel: getResponseTypeLabel(latestResponse.responseType),
+            aiSummary: latestResponse.aiSummary,
+          }
+        : null,
       beforeSubmit: async () => {
         await promoteDrafts.mutateAsync({ id: group.id });
         // Refetch so the closure mutation that follows sees the
@@ -365,7 +387,7 @@ export function WhatsNextCard({
         }}
       />
 
-      {closureLauncher.dialog}
+      {closureConfirm.dialog}
     </div>
   );
 }

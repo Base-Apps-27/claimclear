@@ -62,6 +62,12 @@ import {
   buildOfflineReattestPayload,
 } from "@/lib/reattest-offline-modal-helpers";
 import { ClosureActions } from "@/components/closure/closure-actions";
+import { useClosureConfirmLauncher } from "@/components/closure/closure-launcher";
+import {
+  pickLatestReviewableResponse,
+  getResponseTypeLabel,
+} from "@/components/queue-response-review-panel";
+import { ActionRow } from "@/components/actions-rail";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import {
@@ -237,6 +243,89 @@ function authorInitial(name: string | null | undefined): string {
    src/lib/reattest-offline-modal-helpers.ts so the right-rail flow can
    be regression-tested from node:test without dragging the page's
    hook graph into the test runtime (Task #335). */
+
+/* ====================== Denied by Payor confirm row =================== */
+
+/**
+ * Right-rail trigger for the LIGHT Denied-by-Payor confirm dialog.
+ * Mirrors the visual contract of the buttons emitted by <ClosureActions>
+ * (ActionRow, destructive tone, same disabled gate when no response is on
+ * file) but routes through useClosureConfirmLauncher instead of the full
+ * structured intake — the payor decided this outcome and the response
+ * is the record, so the operator just confirms.
+ *
+ * If the group is already closed via this reason, we render the same
+ * "already closed via this lane" hint <ClosureActions> would, so the
+ * rail's affordances stay consistent across closed/open groups.
+ */
+function DeniedByPayorConfirmRow({
+  groupId,
+  outcome,
+  closureReason,
+  hasResponse,
+  responses,
+  onAfterSuccess,
+}: {
+  groupId: number;
+  outcome: string | null | undefined;
+  closureReason: string | null | undefined;
+  hasResponse: boolean;
+  responses: PortalResponseItem[];
+  onAfterSuccess?: () => void;
+}) {
+  const launcher = useClosureConfirmLauncher();
+  // vocab-allow-next-line — comparing the API enum literals.
+  const alreadyClosedHere = outcome === "Denied" && closureReason === "denied_by_payor";
+
+  if (alreadyClosedHere) {
+    return (
+      <p
+        className="text-xs italic"
+        style={{ color: "var(--cc-muted-fg)" }}
+        data-testid="v2-group-close-denied-by-payor-already"
+      >
+        Already closed via Denied by Payor.
+      </p>
+    );
+  }
+
+  const latestResponse = pickLatestReviewableResponse(responses);
+
+  return (
+    <>
+      <ActionRow
+        label="Denied by Payor"
+        sub="Payor formally denied — recorded response required"
+        disabled={!hasResponse}
+        disabledReason={
+          hasResponse
+            ? "Close because the payor formally denied this group."
+            : "Disabled because no portal or email response has been recorded yet."
+        }
+        testId="v2-group-close-denied-by-payor"
+        onClick={() =>
+          launcher.open({
+            target: { kind: "group", id: groupId },
+            response: latestResponse
+              ? {
+                  responseId: latestResponse.id,
+                  source: latestResponse.source,
+                  senderName: latestResponse.senderName,
+                  senderEmail: latestResponse.senderEmail,
+                  receivedAt: latestResponse.receivedAt,
+                  responseType: latestResponse.responseType,
+                  responseTypeLabel: getResponseTypeLabel(latestResponse.responseType),
+                  aiSummary: latestResponse.aiSummary,
+                }
+              : null,
+            onSuccess: () => onAfterSuccess?.(),
+          })
+        }
+      />
+      {launcher.dialog}
+    </>
+  );
+}
 
 /* ============================== Page ================================== */
 
@@ -1746,33 +1835,44 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   {group.closureReason ? ` · ${group.closureReason}` : ""}.
                 </p>
               ) : (
-                <ClosureActions
-                  target={{ kind: "invoice_group", id: groupId }}
-                  outcome={group.outcome}
-                  closureReason={group.closureReason}
-                  triggers={[
-                    {
-                      reason: "denied_by_payor",
-                      label: "Denied by Payor",
-                      sub: "Payor formally denied — recorded response required",
-                      disabled: !validTransitions?.hasResponse,
-                      disabledReason: validTransitions?.hasResponse
-                        ? "Close because the payor formally denied this group."
-                        : "Disabled because no portal or email response has been recorded yet.",
-                      testId: "v2-group-close-denied-by-payor",
-                    },
-                    ...(validTransitions?.hasBeenSubmitted
-                      ? []
-                      : [{
+                <>
+                  {/* Denied by Payor uses the LIGHT confirm dialog — the
+                      payor decided the outcome, so the structured intake
+                      doesn't apply here. The button is enabled only when a
+                      portal/email response has been recorded (same gate as
+                      before); the dialog summarizes that response and
+                      auto-fills every required closure field. */}
+                  <DeniedByPayorConfirmRow
+                    groupId={groupId}
+                    outcome={group.outcome}
+                    closureReason={group.closureReason}
+                    hasResponse={!!validTransitions?.hasResponse}
+                    responses={detail.responses ?? []}
+                    onAfterSuccess={invalidateGroup}
+                  />
+
+                  {/* Cannot-Dispute is a manual operator decision (we
+                      decided not to dispute), so the full structured
+                      intake still belongs here. */}
+                  {!validTransitions?.hasBeenSubmitted && (
+                    <ClosureActions
+                      target={{ kind: "invoice_group", id: groupId }}
+                      outcome={group.outcome}
+                      closureReason={group.closureReason}
+                      triggers={[
+                        {
                           reason: "cannot_dispute" as const,
                           label: "Withdraw — Cannot Dispute",
                           sub: "No clear path to recover",
-                          disabledReason: "Close because we decided not to dispute (no clear path to recover).",
+                          disabledReason:
+                            "Close because we decided not to dispute (no clear path to recover).",
                           testId: "v2-group-close-cannot-dispute",
-                        }]),
-                  ]}
-                  onAfterSuccess={invalidateGroup}
-                />
+                        },
+                      ]}
+                      onAfterSuccess={invalidateGroup}
+                    />
+                  )}
+                </>
               )}
             </CcCard>
 

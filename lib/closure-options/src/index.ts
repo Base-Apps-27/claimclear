@@ -19,6 +19,7 @@ export const CLOSURE_CATEGORIES: ClosureCategory[] = [
   { value: "data_quirk", label: "Data quirk in upload" },
   { value: "already_paid", label: "Already paid" },
   { value: "duplicate_claim", label: "Duplicate claim" },
+  { value: "payor_denial", label: "Payor denial (final)" },
   { value: "other", label: "Other" },
 ];
 
@@ -94,6 +95,14 @@ export const ROOT_CAUSES_BY_CATEGORY: Record<string, ClosureRootCause[]> = {
   duplicate_claim: [
     { value: "duplicate_within_batch", label: "Duplicate within batch" },
     { value: "duplicate_across_batches", label: "Duplicate across batches" },
+    OTHER_ROOT_CAUSE,
+  ],
+  payor_denial: [
+    { value: "denied_no_recourse", label: "Payor denied — no path to appeal" },
+    { value: "denied_late_filing", label: "Denied — late filing" },
+    { value: "denied_documentation", label: "Denied — insufficient documentation" },
+    { value: "denied_eligibility", label: "Denied — member eligibility" },
+    { value: "denied_duplicate", label: "Denied — duplicate claim" },
     OTHER_ROOT_CAUSE,
   ],
   other: [],

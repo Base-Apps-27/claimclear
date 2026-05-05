@@ -270,9 +270,16 @@ export function ClosureIntakeDialog({
   const tagOtherValid = !tags.includes("other") || tagOther.trim().length > 0;
 
   const categoryValid = !!category && (category !== "other" || categoryOther.trim().length > 0);
+  // When category is "Other", the standard root-cause taxonomy doesn't
+  // apply (each list is scoped per category), so we ask for a free-text
+  // root cause instead. Mirrors the existing `*-other` pattern: send
+  // closureRootCause: "other" + closureRootCauseOther: <text>. Backend
+  // requires a non-null root cause for these closure reasons, so the UI
+  // must collect one — previously this field was hidden, producing the
+  // unactionable HTTP 400 the operator hit on the response-review screen.
   const rootCauseValid =
     category === "other"
-      ? true
+      ? rootCauseOther.trim().length > 0
       : !!rootCause && (rootCause !== "other" || rootCauseOther.trim().length > 0);
 
   const canSubmit =
@@ -400,8 +407,14 @@ export function ClosureIntakeDialog({
     const closureReason: ApiClosureReason = reason;
     const closureCategory = category;
     const closureCategoryOther = category === "other" ? categoryOther.trim() : null;
-    const closureRootCause = category === "other" ? null : rootCause;
-    const closureRootCauseOther = rootCause === "other" ? rootCauseOther.trim() : null;
+    // When category is "Other" we don't have a per-category root-cause
+    // taxonomy, so we send the conventional "other" sentinel and let
+    // closureRootCauseOther carry the operator's free-text explanation.
+    // Otherwise the dropdown value flows through as-is, with the same
+    // "other"/Other-text pattern at the root-cause level.
+    const closureRootCause = category === "other" ? "other" : rootCause;
+    const closureRootCauseOther =
+      category === "other" || rootCause === "other" ? rootCauseOther.trim() : null;
     const closureAccountabilityOther = tags.includes("other") ? tagOther.trim() : null;
     const closureDrivers = tags.includes("driver") ? personListToPayload(drivers) : null;
     const closureDispatchers = tags.includes("dispatcher")
@@ -579,6 +592,25 @@ export function ClosureIntakeDialog({
                   data-testid="closure-root-cause-other-input"
                 />
               )}
+            </div>
+          )}
+
+          {category === "other" && (
+            <div>
+              <Label className="text-xs">
+                Root cause <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                className="mt-1"
+                value={rootCauseOther}
+                onChange={(e) => setRootCauseOther(e.target.value)}
+                placeholder="Describe the root cause"
+                data-testid="closure-root-cause-other-input"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Since you picked "Other" as the category, describe the root cause
+                in your own words.
+              </p>
             </div>
           )}
 
