@@ -81,7 +81,6 @@ function render(node: import("react").ReactElement): string {
 
 function claim(over: Partial<ClaimResponse> & { id: number }): ClaimResponse {
   return {
-    id: over.id,
     confNumber: `CLM-${over.id}`,
     status: "New",
     outcome: null,

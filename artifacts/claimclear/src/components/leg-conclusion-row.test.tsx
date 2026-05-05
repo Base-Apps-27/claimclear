@@ -72,7 +72,6 @@ function render(node: import("react").ReactElement): string {
 // generated schema's strict shape without enumerating its 80+ fields.
 function claim(over: Partial<ClaimResponse> & { id: number }): ClaimResponse {
   return {
-    id: over.id,
     confNumber: `CLM-${over.id}`,
     status: "New",
     outcome: null,
