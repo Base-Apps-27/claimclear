@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
 import { useAdminTour } from "@/tour/admin-tour";
+import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
 import { StreakPipAvatar, useStreakPipLiveUpdates } from "@/components/streak-pip-avatar";
 import { 
@@ -478,19 +479,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="mr-4" />
             <h1 className="font-semibold text-sm text-muted-foreground">NEMT Claims Dispute Command Center</h1>
             <div className="ml-auto flex items-center gap-3">
-              {tourAvailable && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => startTour()}
-                  className="gap-1.5 text-muted-foreground hover:text-foreground"
-                  data-tour="header-take-tour"
-                  data-testid="header-take-tour"
-                >
-                  <HelpCircle className="h-4 w-4" />
-                  <span>Take the tour</span>
-                </Button>
-              )}
+              {tourAvailable && <HelpPopover />}
               <BatchStatusPill />
             </div>
           </header>

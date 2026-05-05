@@ -1019,13 +1019,15 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 (New / Needs Evidence) — once it's past pre-submit the surface
                 has nothing actionable, so we hide the whole card per Task #289. */}
             {isPreSubmit && (
-              <CcCard
-                title="Submission preview"
-                icon={<Sparkles className="w-3.5 h-3.5" />}
-                testId="submission-preview-card"
-              >
-                <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} bare />
-              </CcCard>
+              <div data-tour="group-gauntlet">
+                <CcCard
+                  title="Submission preview"
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                  testId="submission-preview-card"
+                >
+                  <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} bare />
+                </CcCard>
+              </div>
             )}
 
             {/* Communication thread */}

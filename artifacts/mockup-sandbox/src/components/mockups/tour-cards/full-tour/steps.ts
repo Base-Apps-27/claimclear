@@ -14,105 +14,113 @@ export type StepDef = {
   nextLabel: string;
 };
 
+// Copy rules (V2):
+// - 8th-grade reading level, ESL-friendly. Short sentences.
+// - Define ClaimClear words once: MAS = the payor we bill. "Dispute" =
+//   our ask to MAS to fix an invoice. "Re-attest" = re-bill after a fix.
+// - Avoid idioms: no "drop everything", "boss for the day", "in flight",
+//   "plow through", "your worklist", "kick the ride".
+// - Modals: ~100 words. Coach cards: ~60 words.
+// - Same copy lives in artifacts/claimclear/src/tour/tour-config.ts.
 export const STEPS: StepDef[] = [
   // ═══════ Process orientation (7 modal steps) ═══════
   {
     id: 1, kind: "modal", page: "dashboard", processStep: "transition",
     title: "Welcome to ClaimClear",
     body:
-      "Every claim that lands in ClaimClear is one our automated attestation system already tried — and rejected. The auto-system couldn't safely attest it, so it kicked the ride to us to work by hand. ClaimClear is the playbook for that hand-work: a single repeatable process that turns those rejected rides into rides we can attest, and the revenue that comes with them. Before we tour the screens, let's anchor on the five steps you'll repeat for every batch. About three minutes, no clicks required — just hit Next.",
+      "Every claim here is one our system tried to bill on its own and couldn't. A person has to fix it by hand. ClaimClear is the playbook for that work. Same five steps, every time. Run them, and rides we couldn't bill turn into rides we can. The next few cards walk through those five steps. About three minutes — just hit Next.",
     nextLabel: "Start tour",
   },
   {
     id: 2, kind: "modal", page: "dashboard", processStep: 1,
-    title: "Step 1 of 5 — Upload the transactions",
+    title: "Step 1 of 5 — Upload the rides",
     body:
-      "Start by importing the rides that weren't attestable at attestation time. These are rides we now want to attest, but to do that we first have to ask MAS to make a change on the invoice. Every dispute starts its life as a transaction in this upload.",
+      "Start by uploading the rides we couldn't bill yet. To bill them, we have to ask MAS (the payor we bill) to fix something on the invoice first. Every dispute starts as one row in this upload.",
     nextLabel: "Next: Understand",
   },
   {
     id: 3, kind: "modal", page: "dashboard", processStep: 2,
-    title: "Step 2 of 5 — Understand what's wrong with each invoice",
+    title: "Step 2 of 5 — Find what's wrong",
     body:
-      "For every invoice, figure out what specifically MAS got wrong (or what's missing) and what evidence we'd need to prove it. This is the difference between a dispute that lands and one that gets denied: the right ask, paired with the right proof.",
+      "For each invoice, figure out what MAS got wrong or what's missing. Then decide what proof we need to fix it. The right ask plus the right proof is what wins a dispute.",
     nextLabel: "Next: Gather",
   },
   {
     id: 4, kind: "modal", page: "dashboard", processStep: 3,
-    title: "Step 3 of 5 — Gather the evidence",
+    title: "Step 3 of 5 — Gather the proof",
     body:
-      "Use the Queue or the invoice page to kick off our fact-finding process. That process pulls together the documents, GPS, signatures, and notes that back up the change we're asking MAS to make.",
+      "Open the Queue or the invoice page to start fact-finding. Fact-finding pulls together the documents, GPS, signatures, and notes that back up the change we want MAS to make.",
     nextLabel: "Next: Submit",
   },
   {
     id: 5, kind: "modal", page: "dashboard", processStep: 4,
-    title: "Step 4 of 5 — Submit the dispute",
+    title: "Step 4 of 5 — Send it to MAS",
     body:
-      "Once fact-finding produces clean evidence, submit the dispute to MAS — either through the payor portal or by email, depending on what each invoice requires. The app routes you to the right channel.",
+      "When the proof is clean, send the dispute to MAS. Some go through MAS's website (the portal). Some go by email. The app picks the right channel for each invoice — you don't have to guess.",
     nextLabel: "Next: Respond",
   },
   {
     id: 6, kind: "modal", page: "dashboard", processStep: 5,
-    title: "Step 5 of 5 — Read the response and decide, right then",
+    title: "Step 5 of 5 — Read the reply, decide right then",
     body:
-      "When MAS responds, it lands on the Responses page. The decision happens in that moment: read it back, and either (a) re-attest the ride right there if you have the authority and the response is clean, or (b) queue it at the station for a billing supervisor to process. Either way the call is made when you read the response — nothing sits unowned. Reattested rides are revenue we recovered.",
+      "When MAS writes back, the reply lands on the Responses page. Read it and choose, in that moment: re-bill the ride now if you're allowed and the reply is clean, or hand it to a supervisor. Nothing waits without a decision. Re-billed rides are money we got back.",
     nextLabel: "Next",
   },
   {
     id: 7, kind: "modal", page: "dashboard", processStep: "transition",
-    title: "Now let's see where this lives in the app",
+    title: "Now let's see where this lives",
     body:
-      "That's the loop. The rest of the tour shows you exactly which screen corresponds to each of those five steps, so you know where to go when you're working a real batch.",
+      "Those are the five steps. The rest of the tour shows you which screen each step lives on, so you know where to go on a real day.",
     nextLabel: "See the app",
   },
 
   // ═══════ Dashboard — one full-screen overview ═══════
   {
     id: 8, kind: "modal", page: "dashboard", processStep: 5,
-    title: "Dashboard — your money model and your work surface, on one screen",
+    title: "Dashboard — the whole money picture, on one screen",
     body:
-      "The sidebar on the left is the whole app — Today's work up top, Browse below. The KPI strip across the top is the money model: every group lands in exactly one bucket — At risk (in flight), Already lost (denied or expired), or Reclaimed (recovered). The numbers reconcile, so the totals are trustworthy. Below it, four hero columns surface what each of the five steps owes you today: file today, stuck after submit, respond, re-attest. Empty column = clean lane. Click any row to jump straight into a group.",
+      "The menu on the left is the whole app — Today's work up top, Browse below. Across the top, three numbers tell you where every group is: At risk (still working), Already lost (denied or expired), Reclaimed (got it back). Below, four columns show what each step owes you today. An empty column means that step is clean. Click any row to jump straight in.",
     nextLabel: "Next: the Queue",
   },
 
-  // ═══════ Queue — intro + 4 anchored coaches matching real layout ═══════
+  // ═══════ Queue — intro + 4 anchored coaches ═══════
   {
     id: 9, kind: "modal", page: "queue", processStep: 3,
-    title: "The Queue — where most of your day actually happens",
+    title: "The Queue — where most of your day happens",
     body:
-      "Steps 2, 3, and 4 of the loop all live on this page. It's four things stacked top to bottom: a status banner up top that tells you how urgent the day is, the Classification Inbox for brand-new uploads, the Actionable lane below that, and a side workspace that opens when you click into a group. Let's walk it top to bottom.",
+      "Steps 2, 3, and 4 of the playbook all live here. The page has four parts, stacked top to bottom: a status banner, a Classification Inbox, an Actionable list, and a side workspace that opens when you click a group. Let's walk down the page.",
     nextLabel: "Next: the urgency banner",
   },
   {
     id: 10, kind: "coach", page: "queue", processStep: 4,
     anchor: { selector: '[data-tour="queue-urgency-hero"]', placement: "bottom" },
-    title: "The urgency hero — your boss for the day",
+    title: "The urgency banner — your priority for today",
     body:
-      "Three states: red means drop everything and file before EOD (the big number is exactly how many groups owe you that). Amber means soon — due in the next 3 days, or already submitted but unconfirmed past deadline. Green means clear, you're ahead. The 'Show urgent only' button on the right collapses the whole page to just the items in the red bucket so you can plow through them.",
+      "Three colors. Red means file before end of day; the big number is how many groups are due. Amber means soon — next 3 days, or already sent but not yet confirmed. Green means you're caught up. 'Show urgent only' hides everything except the red ones so you can clear them fast.",
     nextLabel: "Next: Classification Inbox",
   },
   {
     id: 11, kind: "coach", page: "queue", processStep: 2,
     anchor: { selector: '[data-tour="queue-classification-inbox"]', placement: "bottom" },
-    title: "Classification Inbox — Step 2 of the loop, and a gate",
+    title: "Classification Inbox — Step 2, and a gate",
     body:
-      "Brand-new uploads land here without an error type yet. Open a row, classify what MAS got wrong (wrong distance, missing signature, wrong code, etc.), and the group leaves the inbox into the Actionable lane below. Nothing moves to evidence-gathering until it's classified — this inbox is the gate. If it has rows, work it before the lane.",
+      "New uploads land here without an error type. Open a row, pick what MAS got wrong (wrong distance, missing signature, etc.), and the row moves down into Actionable. Until you do this, the group can't move forward. If this inbox has rows, work it before the list below.",
     nextLabel: "Next: Actionable",
   },
   {
     id: 12, kind: "coach", page: "queue", processStep: 3,
     anchor: { selector: '[data-tour="queue-tab-actionable"]', placement: "bottom" },
-    title: "Actionable lane — every group ready to work",
+    title: "Actionable — every group ready to work today",
     body:
-      "After classification, groups land here in the Actionable lane: New, Needs Evidence, Generating Email — anything that needs your hands today. Click a group and the Submission Gauntlet (the same one we'll see on the Group Detail page) opens to the right. Pick by deadline, work top-to-bottom, ship.",
+      "After you classify a group, it shows up here: New, Needs Evidence, or Generating Email. Click a row and a side workspace opens on the right. Pick by deadline, work top to bottom, send.",
     nextLabel: "Next: hidden tabs",
   },
   {
     id: 13, kind: "coach", page: "queue", processStep: "all",
     anchor: { selector: '[data-tour="queue-engagement-strip"]', placement: "bottom" },
-    title: "⚠️ Two tabs are hidden right now — Needs Engagement is on",
+    title: "⚠️ Two tabs are hidden right now",
     body:
-      "By default the Queue only shows the Actionable tab. 'Portal Queued' (groups already submitted, waiting for MAS to confirm receipt) and 'On Hold' (manually parked or blocked) are hidden because they don't need your hands today. If a group seems to have vanished from the Queue, flip 'Needs engagement' to 'All' and the two hidden tabs come back. Same trap shows up on the Browse pages later — different shape, same idea.",
+      "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
     nextLabel: "Next: Responses",
   },
 
@@ -121,31 +129,31 @@ export const STEPS: StepDef[] = [
     id: 14, kind: "modal", page: "responses", processStep: 5,
     title: "Responses Awaiting Review — Step 5 lives here",
     body:
-      "When MAS replies to a submitted dispute, it lands here with a verdict pending. Three columns work together: the response thread on the left, the AI's read in the middle, and your verdict on the right. Same rule as the Queue — let's walk them column by column.",
+      "When MAS replies to a dispute, it comes here for a decision. Three columns work together: the message thread on the left, the AI's read in the middle, and your decision on the right. Like the Queue, let's walk it column by column.",
     nextLabel: "Next: the thread",
   },
   {
     id: 15, kind: "coach", page: "responses", processStep: 5,
     anchor: { selector: '[data-tour="responses-thread"]', placement: "right" },
-    title: "Thread — every MAS reply, oldest first",
+    title: "Thread — every reply, oldest first",
     body:
-      "All open responses across every group, sorted by oldest. Click one to open it for review. The bold rows are responses you haven't read yet — that's your worklist for the day. Empty list = nothing pending.",
-    nextLabel: "Next: AI read",
+      "All open replies, sorted oldest first. Click one to read it. Bold rows haven't been opened yet — that's your list for the day. An empty list means nothing is waiting.",
+    nextLabel: "Next: AI Read",
   },
   {
     id: 16, kind: "coach", page: "responses", processStep: 5,
     anchor: { selector: '[data-tour="responses-airead"]', placement: "top" },
     title: "AI Read — what MAS said, summarized",
     body:
-      "MAS's actual reply on top, the AI's summary and recommended verdict below. Use the AI as a second pair of eyes, not a decision: it tells you what it would do, but you make the call. Always read the original reply before trusting the summary.",
-    nextLabel: "Next: Verdict",
+      "MAS's actual reply is on top, the AI's summary and suggestion below. Use the AI as a second pair of eyes — not a decider. Always read the original reply first, then check what the AI thinks.",
+    nextLabel: "Next: Decide",
   },
   {
     id: 17, kind: "coach", page: "responses", processStep: 5,
     anchor: { selector: '[data-tour="responses-verdict"]', placement: "left" },
-    title: "Verdict — decide right then, in the moment of reading",
+    title: "Decide right then",
     body:
-      "Three buttons, one of them gets clicked before you move on: Re-attest if the response is clean and you have the authority, Queue at station if a billing supervisor needs to handle it, Mark lost if MAS denied. Nothing sits unowned. The decision is final the moment you click.",
+      "Three buttons. Pick one before you move on: Re-bill (the reply is clean and you're allowed), Hand to supervisor (it needs more than you can do), or Mark lost (MAS denied). Nothing sits without a decision. Once you click, it's done.",
     nextLabel: "Next: Attestation",
   },
 
@@ -154,47 +162,47 @@ export const STEPS: StepDef[] = [
     id: 18, kind: "modal", page: "attestation", processStep: 5,
     title: "Attestation Queue — closing the loop",
     body:
-      "Invoice groups with approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count of groups owed off-system. Once a group clears, every ride in it is recovered revenue.",
+      "Groups MAS approved that still need to be re-billed in MAS's website. The amber number in the side menu is how many groups are owed. Once a group clears, the rides in it become money we recovered.",
     nextLabel: "Next: Browse",
   },
 
-  // ═══════ Browse section — Invoice Groups + Claims (with the filter trap) ═══════
+  // ═══════ Browse — Invoice Groups + Claims ═══════
   {
     id: 19, kind: "modal", page: "invoice-groups", processStep: "transition",
-    title: "Invoice Groups — every group, every state, in one list",
+    title: "Invoice Groups — every group, in one list",
     body:
-      "When the dashboard's hero columns aren't enough — when you need to find a specific group, audit a status, or do bulk work — this is the catalog. Every invoice group ever uploaded lives here, regardless of which step it's on. The filter bar at the top makes this page usable. It also makes it easy to get lost. Let's look at it next, because there's one thing every new operator gets caught by.",
+      "When the Dashboard isn't enough — when you need to find one specific group, audit a status, or do bulk work — come here. Every group ever uploaded is in this list, no matter what step it's on. The filter bar at the top makes the page useful. It also makes it easy to lose rows. Let's look at what catches new people.",
     nextLabel: "Next: the filter trap",
   },
   {
     id: 20, kind: "coach", page: "invoice-groups", processStep: "all",
     anchor: { selector: '[data-tour="invoice-groups-filters"]', placement: "bottom" },
-    title: "⚠️ Two filters hide rows by default — read this carefully",
+    title: "⚠️ Two filters are hiding rows by default",
     body:
-      "By default this page hides anything you can't act on right now. 'Engagement: Needs engagement' is set, which hides resolved and awaiting-response groups. 'Show past-deadline' is OFF, which hides expired groups (47 hidden right now, see the badge). If you hunt for a group and it doesn't appear — these are why. Flip 'Engagement' to All, or check 'Show past-deadline', and the missing rows come back. The exact same two filters apply on the Claims page — same trap.",
+      "This page hides anything you can't act on right now. 'Engagement: Needs engagement' hides finished and waiting groups. 'Show past-deadline' is OFF, which hides expired ones (the badge shows how many). If a group isn't there when you search, switch 'Engagement' to 'All' or turn 'Show past-deadline' on. The Claims page has the same two filters.",
     nextLabel: "Next: opening a group",
   },
   {
     id: 21, kind: "coach", page: "group-detail", processStep: "all",
     anchor: { selector: '[data-tour="group-gauntlet"]', placement: "left" },
-    title: "Group detail — the Submission Gauntlet is the path to done",
+    title: "Group detail — the Gauntlet shows the path to done",
     body:
-      "When you open a group, this is your workspace. The legs on the left are every ride in the group; the Submission Gauntlet on the right is a 4-step checklist that takes the group from 'needs evidence' to 'submitted to MAS'. Follow it top to bottom — when the last step lights up, the group is in flight. The 'What's next' card under the gauntlet gives you AI-driven suggestions if you're stuck on what to do.",
+      "When you open a group, this is your workspace. The list on the left is every ride in the group. The Gauntlet on the right is a 4-step checklist that takes the group from 'needs evidence' to 'sent to MAS'. Work top to bottom. When the last step lights up, the group is on its way. The 'What's next' card gives you AI hints if you're stuck.",
     nextLabel: "Next: Claims",
   },
   {
     id: 22, kind: "modal", page: "claims", processStep: "transition",
-    title: "Claims — same idea as Groups, but one ride at a time",
+    title: "Claims — same idea as Groups, one ride at a time",
     body:
-      "Sometimes you're not looking for a group, you're looking for a specific ride — by car number, client, or date. That's this page. The sub-status pills at the top (Investigating, Ready, Blocked, Submitted) jump you straight to a workflow state. ⚠️ The same two default filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off (128 hidden right now). If a leg seems missing, those filters are why.",
+      "Sometimes you need a single ride — by car number, client, or date. That's this page. The pills across the top (Investigating, Ready, Blocked, Submitted) jump you to a workflow state. ⚠️ Same two filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off. If a ride isn't showing, those are why.",
     nextLabel: "Next: a single claim",
   },
   {
     id: 23, kind: "coach", page: "claim-detail", processStep: "all",
     anchor: { selector: '[data-tour="claim-sop-player"]', placement: "left" },
-    title: "Claim detail — the SOP Player is the source of truth",
+    title: "Claim detail — the SOP Player tells you what to do",
     body:
-      "Open any claim and this is what you get. The SOP Player walks you through a decision tree custom-built for this claim's error type — answer each question in order, and at the end you have a fully-justified ask, evidence attached and ready to roll up into the group's submission. Whatever the SOP Player says, that IS the SOP. No off-script work, no improvising.",
+      "Open any claim and you'll see this. The SOP Player walks you through a set of questions made for that claim's error type. Answer each one in order. At the end, you have a finished ask with proof attached, ready to roll up into the group. Whatever the SOP Player says — that is the rule. No improvising.",
     nextLabel: "Next: Replay",
   },
 
@@ -204,7 +212,7 @@ export const STEPS: StepDef[] = [
     anchor: { selector: '[data-tour="sidebar-take-tour"]', placement: "right" },
     title: "Replay anytime",
     body:
-      "That's the whole loop, and the whole tour. You can re-launch it whenever you want from the Help section in the sidebar — handy when onboarding a new teammate. Welcome aboard.",
+      "That's the playbook, and that's the tour. To run it again, click 'Take the tour' in the side menu under Help — handy when training a new teammate. Welcome to the team.",
     nextLabel: "Finish",
   },
 ];

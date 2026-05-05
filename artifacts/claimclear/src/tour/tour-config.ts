@@ -6,145 +6,303 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v6";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v7";
+
+export type ProcessStepValue =
+  | 1 | 2 | 3 | 4 | 5
+  | "all" | "transition" | "closing";
+
+export type PageKey =
+  | "dashboard" | "queue" | "responses" | "attestation"
+  | "invoice-groups" | "group-detail" | "claims" | "claim-detail";
 
 export type TourStepDef = {
-  // Element selector or "body" for an unanchored center modal.
-  target: string;
+  // Stable id used by the custom tooltip component as a render key for
+  // framer-motion entrance animations. Matches the 1-based slot in the
+  // TOUR_STEPS array.
+  id: number;
+  // Visual treatment: centered modal (no anchor) vs anchored coach card.
+  kind: "modal" | "coach";
+  // Which surface this step belongs to. Drives the page-scoped
+  // "Walk this page" entry in the header help popover, and the route
+  // the tour controller navigates to before showing the step.
+  page: PageKey | null;
+  // Optional explicit route override. If absent, derived from `page`.
+  route?: string;
+  // Which step of the 5-step process this card represents (or one of
+  // the meta-buckets: "transition", "all", "closing"). Drives the
+  // phase pill + pipeline visual on the card.
+  processStep: ProcessStepValue;
   title: string;
   body: string;
-  // Optional: route the tour should be on for this step. The controller
-  // navigates here before showing the step and waits for the target to
-  // mount.
-  route?: string;
-  // Skip the spotlight cutout — for chrome (sidebar, header) where the
-  // halo can clip.
-  disableBeacon?: boolean;
-  // For modals not anchored to anything (welcome / outro).
-  placement?: "auto" | "center" | "top" | "bottom" | "left" | "right";
+  nextLabel: string;
+  // Joyride passes this through to the tooltip positioner. For modals
+  // use `body` + placement `center`; for coaches use a real selector.
+  target: string;
+  placement: "auto" | "center" | "top" | "bottom" | "left" | "right";
 };
 
-// Tour structure:
-//   1. Process orientation (modals): why ClaimClear exists and the five
-//      repeatable steps the whole team runs for every batch of disputes.
-//      This front-loads the mental model so a brand-new hire understands
-//      the loop BEFORE they're shown which buttons live where.
-//   2. UI walkthrough: where each of those five steps lives in the app.
-//      Each UI step references its process-step number so the anchoring
-//      from part 1 carries through.
+// Map page → default route for navigation before showing each step.
+// group-detail and claim-detail fall back to their list pages when no
+// id is in the URL — the popover only offers "Walk this page" when the
+// user is already on a detail surface, so the fallback is defensive.
+export function routeForPage(page: PageKey | null): string | null {
+  switch (page) {
+    case "dashboard":       return "/dashboard";
+    case "queue":           return "/queue";
+    case "responses":       return "/responses-awaiting-review";
+    case "attestation":     return "/attestation-queue";
+    case "invoice-groups":  return "/invoice-groups";
+    case "group-detail":    return "/invoice-groups";
+    case "claims":          return "/claims";
+    case "claim-detail":    return "/claims";
+    default:                return null;
+  }
+}
+
+// Reverse map: which page a wouter `useLocation()` value belongs to.
+// Used by the HelpPopover to derive the current page-scoped tour.
+export function pageForLocation(location: string): PageKey | null {
+  if (location.startsWith("/invoice-groups/")) return "group-detail";
+  if (location === "/invoice-groups")          return "invoice-groups";
+  if (location.startsWith("/claims/"))         return "claim-detail";
+  if (location === "/claims")                  return "claims";
+  if (location.startsWith("/queue"))           return "queue";
+  if (location.startsWith("/responses-awaiting-review")) return "responses";
+  if (location.startsWith("/attestation-queue"))         return "attestation";
+  if (location === "/" || location.startsWith("/dashboard")) return "dashboard";
+  return null;
+}
+
+// Tour structure (V2):
+//   1. Process orientation (steps 1–7): the five-step playbook every
+//      claim travels through. Front-loaded so a brand-new hire holds
+//      the mental model before any UI is shown.
+//   2. UI walkthrough (steps 8–24): which screen each playbook step
+//      lives on, walked column-by-column where the page has more than
+//      one part. Anchored coach cards point at real selectors with
+//      `data-tour="..."` attributes on the live pages.
+//
+// Copy rules (V2):
+//   • 8th-grade reading level, ESL-friendly. Short sentences.
+//   • Define ClaimClear words once: MAS = the payor we bill.
+//   • No idioms ("drop everything", "in flight", "plow through").
+//   • Modals ~100 words, coach cards ~60 words.
+//   • Mirrored byte-for-byte in the mockup at
+//     artifacts/mockup-sandbox/src/components/mockups/tour-cards/full-tour/steps.ts
 export const TOUR_STEPS: TourStepDef[] = [
-  // ────────────────────────────────────────────────────────────────
-  // Part 1 — Process orientation
-  // ────────────────────────────────────────────────────────────────
+  // ═══════ Process orientation (7 modals) ═══════
   {
-    target: "body",
-    placement: "center",
+    id: 1, kind: "modal", page: "dashboard", processStep: "transition",
+    target: "body", placement: "center",
     title: "Welcome to ClaimClear",
-    body: "Every claim that lands in ClaimClear is one our automated attestation system already tried — and rejected. The auto-system couldn't safely attest it, so it kicked the ride to us to work by hand. ClaimClear is the playbook for that hand-work: a single repeatable process that turns those rejected rides into rides we can attest, and the revenue that comes with them. Before we tour the screens, let's anchor on the five steps you'll repeat for every batch. About three minutes, no clicks required — just hit Next.",
-    disableBeacon: true,
+    body:
+      "Every claim here is one our system tried to bill on its own and couldn't. A person has to fix it by hand. ClaimClear is the playbook for that work. Same five steps, every time. Run them, and rides we couldn't bill turn into rides we can. The next few cards walk through those five steps. About three minutes — just hit Next.",
+    nextLabel: "Start tour",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Step 1 of 5 — Upload the transactions",
-    body: "Start by importing the rides that weren't attestable at attestation time. These are rides we now want to attest, but to do that we first have to ask MAS to make a change on the invoice. Every dispute starts its life as a transaction in this upload.",
-    disableBeacon: true,
+    id: 2, kind: "modal", page: "dashboard", processStep: 1,
+    target: "body", placement: "center",
+    title: "Step 1 of 5 — Upload the rides",
+    body:
+      "Start by uploading the rides we couldn't bill yet. To bill them, we have to ask MAS (the payor we bill) to fix something on the invoice first. Every dispute starts as one row in this upload.",
+    nextLabel: "Next: Understand",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Step 2 of 5 — Understand what's wrong with each invoice",
-    body: "For every invoice, figure out what specifically MAS got wrong (or what's missing) and what evidence we'd need to prove it. This is the difference between a dispute that lands and one that gets denied: the right ask, paired with the right proof.",
-    disableBeacon: true,
+    id: 3, kind: "modal", page: "dashboard", processStep: 2,
+    target: "body", placement: "center",
+    title: "Step 2 of 5 — Find what's wrong",
+    body:
+      "For each invoice, figure out what MAS got wrong or what's missing. Then decide what proof we need to fix it. The right ask plus the right proof is what wins a dispute.",
+    nextLabel: "Next: Gather",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Step 3 of 5 — Gather the evidence",
-    body: "Use the Queue or the invoice page to kick off our fact-finding process. That process pulls together the documents, GPS, signatures, and notes that back up the change we're asking MAS to make.",
-    disableBeacon: true,
+    id: 4, kind: "modal", page: "dashboard", processStep: 3,
+    target: "body", placement: "center",
+    title: "Step 3 of 5 — Gather the proof",
+    body:
+      "Open the Queue or the invoice page to start fact-finding. Fact-finding pulls together the documents, GPS, signatures, and notes that back up the change we want MAS to make.",
+    nextLabel: "Next: Submit",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Step 4 of 5 — Submit the dispute",
-    body: "Once fact-finding produces clean evidence, submit the dispute to MAS — either through the payor portal or by email, depending on what each invoice requires. The app routes you to the right channel.",
-    disableBeacon: true,
+    id: 5, kind: "modal", page: "dashboard", processStep: 4,
+    target: "body", placement: "center",
+    title: "Step 4 of 5 — Send it to MAS",
+    body:
+      "When the proof is clean, send the dispute to MAS. Some go through MAS's website (the portal). Some go by email. The app picks the right channel for each invoice — you don't have to guess.",
+    nextLabel: "Next: Respond",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Step 5 of 5 — Read the response and decide, right then",
-    body: "When MAS responds, it lands on the Responses page. The decision happens in that moment: read it back, and either (a) re-attest the ride right there if you have the authority and the response is clean, or (b) queue it at the station for a billing supervisor to process. Either way the call is made when you read the response — nothing sits unowned. Reattested rides are revenue we recovered.",
-    disableBeacon: true,
+    id: 6, kind: "modal", page: "dashboard", processStep: 5,
+    target: "body", placement: "center",
+    title: "Step 5 of 5 — Read the reply, decide right then",
+    body:
+      "When MAS writes back, the reply lands on the Responses page. Read it and choose, in that moment: re-bill the ride now if you're allowed and the reply is clean, or hand it to a supervisor. Nothing waits without a decision. Re-billed rides are money we got back.",
+    nextLabel: "Next",
   },
   {
-    target: "body",
-    placement: "center",
-    title: "Now let's see where this lives in the app",
-    body: "That's the loop. The rest of the tour shows you exactly which screen corresponds to each of those five steps, so you know where to go when you're working a real batch.",
-    disableBeacon: true,
+    id: 7, kind: "modal", page: "dashboard", processStep: "transition",
+    target: "body", placement: "center",
+    title: "Now let's see where this lives",
+    body:
+      "Those are the five steps. The rest of the tour shows you which screen each step lives on, so you know where to go on a real day.",
+    nextLabel: "See the app",
   },
 
-  // ────────────────────────────────────────────────────────────────
-  // Part 2 — UI walkthrough (anchored back to the five steps)
-  // ────────────────────────────────────────────────────────────────
+  // ═══════ Dashboard ═══════
   {
-    target: '[data-tour="sidebar"]',
-    placement: "right",
-    title: "Your sidebar — every workflow lives here",
-    body: "Today's work up top (Dashboard, Queue, Responses, Attestation). Browse for everything in flight. Setup for imports — that's where Step 1 (upload) starts. Badges count what's owed.",
-    disableBeacon: true,
+    id: 8, kind: "modal", page: "dashboard", processStep: 5,
+    target: "body", placement: "center",
+    title: "Dashboard — the whole money picture, on one screen",
+    body:
+      "The menu on the left is the whole app — Today's work up top, Browse below. Across the top, three numbers tell you where every group is: At risk (still working), Already lost (denied or expired), Reclaimed (got it back). Below, four columns show what each step owes you today. An empty column means that step is clean. Click any row to jump straight in.",
+    nextLabel: "Next: the Queue",
+  },
+
+  // ═══════ Queue (1 modal + 4 coaches) ═══════
+  {
+    id: 9, kind: "modal", page: "queue", processStep: 3,
+    target: "body", placement: "center",
+    title: "The Queue — where most of your day happens",
+    body:
+      "Steps 2, 3, and 4 of the playbook all live here. The page has four parts, stacked top to bottom: a status banner, a Classification Inbox, an Actionable list, and a side workspace that opens when you click a group. Let's walk down the page.",
+    nextLabel: "Next: the urgency banner",
   },
   {
-    target: '[data-tour="dashboard-kpis"]',
-    route: "/dashboard",
-    placement: "bottom",
-    title: "Dashboard — the money model",
-    body: "Every group lands in exactly one bucket: At risk (in flight), Already lost (expired or denied), or Reclaimed (approved). The numbers always reconcile, so you can trust the totals — this is how you see Step 5 outcomes adding up over time.",
-    disableBeacon: true,
+    id: 10, kind: "coach", page: "queue", processStep: 4,
+    target: '[data-tour="queue-urgency-hero"]', placement: "bottom",
+    title: "The urgency banner — your priority for today",
+    body:
+      "Three colors. Red means file before end of day; the big number is how many groups are due. Amber means soon — next 3 days, or already sent but not yet confirmed. Green means you're caught up. 'Show urgent only' hides everything except the red ones so you can clear them fast.",
+    nextLabel: "Next: Classification Inbox",
   },
   {
-    target: '[data-tour="dashboard-today"]',
-    route: "/dashboard",
-    placement: "top",
-    title: "Today's work",
-    body: "Four hero columns surface what each of the five steps owes you today: file today (Steps 3–4), stuck after submission, respond (Step 5), re-attest (post-Step 5). Empty column = clean lane. Click any row to jump straight into the group.",
-    disableBeacon: true,
+    id: 11, kind: "coach", page: "queue", processStep: 2,
+    target: '[data-tour="queue-classification-inbox"]', placement: "bottom",
+    title: "Classification Inbox — Step 2, and a gate",
+    body:
+      "New uploads land here without an error type. Open a row, pick what MAS got wrong (wrong distance, missing signature, etc.), and the row moves down into Actionable. Until you do this, the group can't move forward. If this inbox has rows, work it before the list below.",
+    nextLabel: "Next: Actionable",
   },
   {
-    target: "body",
-    route: "/queue",
-    placement: "center",
-    title: "Queue — Steps 3 and 4 happen here",
-    body: "The Queue is where you actually move work: gather evidence (Step 3) and submit the dispute (Step 4). Each lane represents a stage in the dispute workflow. Pick the leftmost non-empty lane and walk it down.",
-    disableBeacon: true,
+    id: 12, kind: "coach", page: "queue", processStep: 3,
+    target: '[data-tour="queue-tab-actionable"]', placement: "bottom",
+    title: "Actionable — every group ready to work today",
+    body:
+      "After you classify a group, it shows up here: New, Needs Evidence, or Generating Email. Click a row and a side workspace opens on the right. Pick by deadline, work top to bottom, send.",
+    nextLabel: "Next: hidden tabs",
   },
   {
-    target: "body",
-    route: "/responses-awaiting-review",
-    placement: "center",
-    title: "Responses Awaiting Review — Step 5",
-    body: "When a payor sends something back, it lands here with a verdict pending. Master/detail layout: the response thread on the left, the AI's read in the middle, and the verdict actions on the right. This is where you decide if we can re-attest.",
-    disableBeacon: true,
+    id: 13, kind: "coach", page: "queue", processStep: "all",
+    target: '[data-tour="queue-engagement-strip"]', placement: "bottom",
+    title: "⚠️ Two tabs are hidden right now",
+    body:
+      "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
+    nextLabel: "Next: Responses",
+  },
+
+  // ═══════ Responses (1 modal + 3 coaches) ═══════
+  {
+    id: 14, kind: "modal", page: "responses", processStep: 5,
+    target: "body", placement: "center",
+    title: "Responses Awaiting Review — Step 5 lives here",
+    body:
+      "When MAS replies to a dispute, it comes here for a decision. Three columns work together: the message thread on the left, the AI's read in the middle, and your decision on the right. Like the Queue, let's walk it column by column.",
+    nextLabel: "Next: the thread",
   },
   {
-    target: "body",
-    route: "/attestation-queue",
-    placement: "center",
+    id: 15, kind: "coach", page: "responses", processStep: 5,
+    target: '[data-tour="responses-thread"]', placement: "right",
+    title: "Thread — every reply, oldest first",
+    body:
+      "All open replies, sorted oldest first. Click one to read it. Bold rows haven't been opened yet — that's your list for the day. An empty list means nothing is waiting.",
+    nextLabel: "Next: AI Read",
+  },
+  {
+    id: 16, kind: "coach", page: "responses", processStep: 5,
+    target: '[data-tour="responses-airead"]', placement: "top",
+    title: "AI Read — what MAS said, summarized",
+    body:
+      "MAS's actual reply is on top, the AI's summary and suggestion below. Use the AI as a second pair of eyes — not a decider. Always read the original reply first, then check what the AI thinks.",
+    nextLabel: "Next: Decide",
+  },
+  {
+    id: 17, kind: "coach", page: "responses", processStep: 5,
+    target: '[data-tour="responses-verdict"]', placement: "left",
+    title: "Decide right then",
+    body:
+      "Three buttons. Pick one before you move on: Re-bill (the reply is clean and you're allowed), Hand to supervisor (it needs more than you can do), or Mark lost (MAS denied). Nothing sits without a decision. Once you click, it's done.",
+    nextLabel: "Next: Attestation",
+  },
+
+  // ═══════ Attestation ═══════
+  {
+    id: 18, kind: "modal", page: "attestation", processStep: 5,
+    target: "body", placement: "center",
     title: "Attestation Queue — closing the loop",
-    body: "Invoice groups with approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count of groups owed off-system. Once a group clears, every ride in it is recovered revenue.",
-    disableBeacon: true,
+    body:
+      "Groups MAS approved that still need to be re-billed in MAS's website. The amber number in the side menu is how many groups are owed. Once a group clears, the rides in it become money we recovered.",
+    nextLabel: "Next: Browse",
+  },
+
+  // ═══════ Invoice Groups (1 modal + 1 coach) ═══════
+  {
+    id: 19, kind: "modal", page: "invoice-groups", processStep: "transition",
+    target: "body", placement: "center",
+    title: "Invoice Groups — every group, in one list",
+    body:
+      "When the Dashboard isn't enough — when you need to find one specific group, audit a status, or do bulk work — come here. Every group ever uploaded is in this list, no matter what step it's on. The filter bar at the top makes the page useful. It also makes it easy to lose rows. Let's look at what catches new people.",
+    nextLabel: "Next: the filter trap",
   },
   {
-    // Anchor on the sidebar Help entry — that's where operators look
-    // for "replay the tour" first. The header button stays as a
-    // backup but isn't the primary discovery surface anymore.
-    target: '[data-tour="sidebar-take-tour"]',
-    route: "/dashboard",
-    placement: "right",
+    id: 20, kind: "coach", page: "invoice-groups", processStep: "all",
+    target: '[data-tour="invoice-groups-filters"]', placement: "bottom",
+    title: "⚠️ Two filters are hiding rows by default",
+    body:
+      "This page hides anything you can't act on right now. 'Engagement: Needs engagement' hides finished and waiting groups. 'Show past-deadline' is OFF, which hides expired ones (the badge shows how many). If a group isn't there when you search, switch 'Engagement' to 'All' or turn 'Show past-deadline' on. The Claims page has the same two filters.",
+    nextLabel: "Next: opening a group",
+  },
+
+  // ═══════ Group detail (1 coach — anchor only present on a real
+  // detail page; tour controller falls back to /invoice-groups list
+  // when no group is selected, and Joyride's TARGET_NOT_FOUND handler
+  // skips this step gracefully if the user has no group open) ═══════
+  {
+    id: 21, kind: "coach", page: "group-detail", processStep: "all",
+    route: "/invoice-groups",
+    target: '[data-tour="group-gauntlet"]', placement: "left",
+    title: "Group detail — the Gauntlet shows the path to done",
+    body:
+      "When you open a group, this is your workspace. The list on the left is every ride in the group. The Gauntlet on the right is a 4-step checklist that takes the group from 'needs evidence' to 'sent to MAS'. Work top to bottom. When the last step lights up, the group is on its way. The 'What's next' card gives you AI hints if you're stuck.",
+    nextLabel: "Next: Claims",
+  },
+
+  // ═══════ Claims (1 modal + 1 coach on detail) ═══════
+  {
+    id: 22, kind: "modal", page: "claims", processStep: "transition",
+    target: "body", placement: "center",
+    title: "Claims — same idea as Groups, one ride at a time",
+    body:
+      "Sometimes you need a single ride — by car number, client, or date. That's this page. The pills across the top (Investigating, Ready, Blocked, Submitted) jump you to a workflow state. ⚠️ Same two filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off. If a ride isn't showing, those are why.",
+    nextLabel: "Next: a single claim",
+  },
+  {
+    id: 23, kind: "coach", page: "claim-detail", processStep: "all",
+    route: "/claims",
+    target: '[data-tour="claim-sop-player"]', placement: "left",
+    title: "Claim detail — the SOP Player tells you what to do",
+    body:
+      "Open any claim and you'll see this. The SOP Player walks you through a set of questions made for that claim's error type. Answer each one in order. At the end, you have a finished ask with proof attached, ready to roll up into the group. Whatever the SOP Player says — that is the rule. No improvising.",
+    nextLabel: "Next: Replay",
+  },
+
+  // ═══════ Replay anchor ═══════
+  {
+    id: 24, kind: "coach", page: "dashboard", processStep: "closing",
+    target: '[data-tour="sidebar-take-tour"]', placement: "right",
     title: "Replay anytime",
-    body: "That's the whole loop, and the whole tour. You can re-launch it whenever you want from the Help section in the sidebar — handy when onboarding a new teammate. Welcome aboard.",
-    disableBeacon: true,
+    body:
+      "That's the playbook, and that's the tour. To run it again, click 'Take the tour' in the side menu under Help — handy when training a new teammate. Welcome to the team.",
+    nextLabel: "Finish",
   },
 ];

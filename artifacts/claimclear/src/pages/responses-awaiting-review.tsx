@@ -467,7 +467,7 @@ function Workspace({
         step-1 pill stays glued to the list card. Sticky moved off the
         Card itself onto the wrapper so the pill scrolls with it.
       */}
-      <div className="lg:sticky lg:top-4 space-y-2">
+      <div className="lg:sticky lg:top-4 space-y-2" data-tour="responses-thread">
         <StepPill
           number={1}
           label="Pick a response"
@@ -687,6 +687,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
       <div
         className="space-y-2 min-w-0"
         data-testid={`detail-pane-${group.id}`}
+        data-tour="responses-airead"
       >
         {/*
           Step 2 pill — sits flush above the email thread so the 1-2-3
@@ -964,7 +965,7 @@ function ActionRail({
   );
 
   return (
-    <div className="space-y-3" data-testid="action-rail">
+    <div className="space-y-3" data-testid="action-rail" data-tour="responses-verdict">
       {detail && (
         <PerLegVerdictRailSection
           actionableRides={actionableRides}

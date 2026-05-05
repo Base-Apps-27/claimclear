@@ -586,7 +586,7 @@ export default function ClaimsList() {
       </StatusStrip>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-8 space-y-4 min-w-0">
+        <div className="xl:col-span-8 space-y-4 min-w-0" data-tour="claims-filters">
           <ListTableHeaderStrip
             searchValue={search}
             onSearchChange={v => set({ q: v || null, page: null }, false)}

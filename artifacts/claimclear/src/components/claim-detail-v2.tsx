@@ -1270,6 +1270,7 @@ export function ClaimDetailV2({
                 </div>
               )}
               {!isDuplicate && tree && canShowPlayer && (
+                <div data-tour="claim-sop-player">
                 <SopAdvancePlayer
                   leg={{
                     id: claim.id,
@@ -1309,6 +1310,7 @@ export function ClaimDetailV2({
                       : null
                   }
                 />
+                </div>
               )}
               {!isDuplicate && tree && !canShowPlayer && playerDisabledReason && (
                 <div

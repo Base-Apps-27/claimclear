@@ -8,10 +8,24 @@ import {
   useUpdateUserTourState,
   getGetUserTourStateQueryKey,
 } from "@workspace/api-client-react";
-import { CURRENT_TOUR_VERSION, TOUR_STEPS, type TourStepDef } from "./tour-config";
+import {
+  CURRENT_TOUR_VERSION,
+  TOUR_STEPS,
+  routeForPage,
+  type PageKey,
+  type TourStepDef,
+} from "./tour-config";
+import { TourCard } from "./tour-card";
+
+type StartTourOpts = {
+  // If provided, the tour starts at the first step whose `page` matches.
+  // Used by the header "Help on this page" popover so a teammate can
+  // walk just the page they're on instead of the full 24-step tour.
+  pageScope?: PageKey;
+};
 
 type TourContextValue = {
-  startTour: () => void;
+  startTour: (opts?: StartTourOpts) => void;
   isAvailable: boolean;
 };
 
@@ -30,15 +44,22 @@ export function useAdminTour() {
 // appears in the DOM.
 const TARGET_WAIT_MS = 8000;
 
+function effectiveRoute(def: TourStepDef): string | null {
+  return def.route ?? routeForPage(def.page);
+}
+
 function buildJoyrideStep(def: TourStepDef): Step {
   return {
     target: def.target,
-    placement: def.placement ?? "auto",
+    placement: def.placement,
     title: def.title,
     content: def.body,
-    skipBeacon: def.disableBeacon ?? false,
+    skipBeacon: true,
     targetWaitTimeout: TARGET_WAIT_MS,
-  };
+    // Stash the full def on the step so our custom tooltipComponent
+    // can read kind / processStep / nextLabel without re-deriving.
+    data: def,
+  } as Step;
 }
 
 export function AdminTourProvider({ children }: { children: React.ReactNode }) {
@@ -104,16 +125,13 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     (data: EventData) => {
       const { action, index, status, type } = data;
 
-      // Joyride mounted a step's tooltip — proof that the user actually saw
-      // something. This is the gate for any "mark seen" write below.
       if (type === EVENTS.TOOLTIP) {
         sawAtLeastOneStepRef.current = true;
       }
 
       // Target not found even after the per-step poll timeout. Skip past
       // this broken step instead of killing the whole tour — one missing
-      // anchor shouldn't strand the user. If we've already shown them
-      // something, keep advancing; if we walked off the end, finish.
+      // anchor shouldn't strand the user.
       if (type === EVENTS.TARGET_NOT_FOUND) {
         const next = index + 1;
         if (next >= TOUR_STEPS.length) {
@@ -125,15 +143,14 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const nextDef = TOUR_STEPS[next];
-        if (nextDef.route && nextDef.route !== location) {
-          setLocation(nextDef.route);
+        const nextRoute = effectiveRoute(nextDef);
+        if (nextRoute && nextRoute !== location) {
+          setLocation(nextRoute);
         }
         setStepIndex(next);
         return;
       }
 
-      // Explicit completion or user-initiated skip from joyride status.
-      // Defensive: only persist "seen" if at least one step actually rendered.
       if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
         if (sawAtLeastOneStepRef.current) {
           finishAndMarkSeen();
@@ -143,7 +160,6 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Normal step transition (Next/Back/Close on a rendered step).
       if (type === EVENTS.STEP_AFTER) {
         const next = index + (action === ACTIONS.PREV ? -1 : 1);
         if (next < 0 || next >= TOUR_STEPS.length) {
@@ -154,13 +170,10 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        // If the next step lives on a different route, kick off the
-        // navigation now. Joyride's built-in targetWaitTimeout polls
-        // for the new step's anchor element, so we just have to set
-        // stepIndex and let the engine wait for the route swap to land.
         const nextDef = TOUR_STEPS[next];
-        if (nextDef.route && nextDef.route !== location) {
-          setLocation(nextDef.route);
+        const nextRoute = effectiveRoute(nextDef);
+        if (nextRoute && nextRoute !== location) {
+          setLocation(nextRoute);
         }
         setStepIndex(next);
       }
@@ -168,25 +181,52 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
     [closeTour, finishAndMarkSeen, location, setLocation],
   );
 
-  const startTour = useCallback(() => {
+  const startTour = useCallback((opts?: StartTourOpts) => {
     autoStartedRef.current = true;
     sawAtLeastOneStepRef.current = false;
-    // Force a clean false→true transition on the next tick so Joyride's
-    // usePropSync sees `run` change even if we were mid-tour.
+    // Resolve the starting index. If a pageScope is provided, jump to the
+    // first step belonging to that page; otherwise start from the top.
+    let startIndex = 0;
+    if (opts?.pageScope) {
+      const found = TOUR_STEPS.findIndex((s) => s.page === opts.pageScope);
+      if (found >= 0) startIndex = found;
+    }
+    // Navigate to the right route up-front so Joyride's anchor poll has a
+    // shot at finding the first step's target on mount. Group-detail and
+    // claim-detail steps deliberately leave the URL alone — those scopes
+    // are only ever launched from a detail page (the popover is the only
+    // entry point and only renders the option when the user is already on
+    // that surface), so the in-URL id is preserved.
+    const startDef = TOUR_STEPS[startIndex];
+    if (startDef) {
+      const isDetailScope = startDef.page === "group-detail" || startDef.page === "claim-detail";
+      if (!isDetailScope) {
+        const startRoute = effectiveRoute(startDef);
+        if (startRoute && startRoute !== location) {
+          setLocation(startRoute);
+        }
+      }
+    }
+    // Force a clean false→true transition so Joyride sees `run` change
+    // even if we were mid-tour.
     setRun(false);
-    setStepIndex(0);
+    setStepIndex(startIndex);
     queueMicrotask(() => setRun(true));
-  }, []);
+  }, [location, setLocation]);
 
-  // If the tour starts on a step that has a `route` set, make sure we're
-  // actually on that route. This handles the (rare) case of auto-start
-  // landing on a non-default first step in a future tour revision.
+  // If the tour starts on a step that has a route, ensure we're on it.
   useEffect(() => {
     if (!run) return;
     const def = TOUR_STEPS[stepIndex];
-    if (!def?.route) return;
-    if (def.route !== location) {
-      setLocation(def.route);
+    if (!def) return;
+    const route = effectiveRoute(def);
+    if (!route) return;
+    // Don't yank the user off a detail page when the current step's
+    // anchor is on that exact detail surface.
+    if (def.page === "group-detail" && location.startsWith("/invoice-groups/")) return;
+    if (def.page === "claim-detail" && location.startsWith("/claims/")) return;
+    if (route !== location) {
+      setLocation(route);
     }
   }, [run, stepIndex, location, setLocation]);
 
@@ -205,6 +245,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
           stepIndex={stepIndex}
           continuous
           scrollToFirstStep
+          tooltipComponent={TourCard}
           debug={import.meta.env.DEV}
           onEvent={handleEvent}
           options={{

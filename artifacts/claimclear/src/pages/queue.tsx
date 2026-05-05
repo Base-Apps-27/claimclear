@@ -216,6 +216,7 @@ function QueueUrgencyHero({
   return (
     <div
       data-testid="queue-urgency-hero"
+      data-tour="queue-urgency-hero"
       data-tone="green"
       className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
       style={{
@@ -966,7 +967,7 @@ export default function Queue() {
 
       <div className={`grid grid-cols-1 gap-6 ${selectedWorkflowId ? "lg:grid-cols-3" : ""}`}>
         <div className={`space-y-4 ${selectedWorkflowId ? "lg:col-span-1" : ""}`}>
-          <div className="flex flex-wrap items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3" data-tour="queue-engagement-strip">
             <NeedsEngagementToggle
               mode={engagementMode}
               onChange={(next) => set({ engagement: next === "needs" ? null : "all", tab: null }, false)}
@@ -980,7 +981,7 @@ export default function Queue() {
           </div>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="max-w-full overflow-x-auto">
-              <TabsTrigger value="actionable" data-testid="tab-actionable">
+              <TabsTrigger value="actionable" data-testid="tab-actionable" data-tour="queue-tab-actionable">
                 Action Required
                 <TabBadgeSplit
                   total={actionableTotal}
@@ -1170,7 +1171,7 @@ function ClassificationInbox({
   // expandable and the count badge prominent.
   const hasWork = total > 0;
   return (
-    <div className="space-y-3" data-testid="triage-inbox">
+    <div className="space-y-3" data-testid="triage-inbox" data-tour="queue-classification-inbox">
       <Card className={hasWork ? "" : "bg-muted/30"}>
         <CardContent className="p-4 space-y-3">
           {hasWork ? (
