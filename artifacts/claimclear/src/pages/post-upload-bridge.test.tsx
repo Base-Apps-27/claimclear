@@ -178,6 +178,39 @@ test("PostUploadBridge shows an inline retry — NOT the misleading 'all clean' 
   );
 });
 
+test("PostUploadBridge also takes the retry branch when ONLY the error-types query fails (the picker is required for triage, so the bridge can't function without it)", () => {
+  // The list query succeeds with a real group, but the error-types
+  // picker errored. Without the picker the operator can't actually
+  // triage the row, so the bridge must take the same retry-fallback
+  // path as a list-query failure — NOT silently render rows with a
+  // broken picker underneath.
+  listQueryState = {
+    data: {
+      groups: [
+        {
+          id: 99,
+          invoiceNumber: "INV-99",
+          rideCount: 1,
+          totalAmount: "10.00",
+          clientNumber: null,
+          status: "Needs Review",
+          errorDetails: null,
+        },
+      ],
+      total: 1,
+      today: "2026-05-05",
+    },
+    isLoading: false,
+    isError: false,
+  };
+  errorTypesQueryState = { data: undefined, isLoading: false, isError: true };
+
+  const html = render();
+  assert.match(html, /data-testid="bridge-retry"/);
+  // The row must NOT render — the bridge degraded to the retry state.
+  assert.equal(/data-testid="bridge-row-99"/.test(html), false);
+});
+
 test("PostUploadBridge tolerates a non-numeric totalAmount string instead of rendering '$NaN'", () => {
   listQueryState = {
     data: {
