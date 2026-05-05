@@ -23693,3 +23693,75 @@ export const BulkAddressWithdrawalsBody = zod.object({
 export const BulkAddressWithdrawalsResponse = zod.object({
   updated: zod.number(),
 });
+
+/**
+ * @summary Universal header search across invoice groups, claims, withdrawals, and portal submissions
+ */
+export const GlobalSearchQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text query. Substring\/ILIKE match against the same fields the dedicated list pages search.",
+    ),
+});
+
+export const GlobalSearchResponse = zod.object({
+  query: zod.string(),
+  invoiceGroups: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceNumber: zod.string().nullable(),
+      clientNumber: zod.string().nullable(),
+      errorTypeName: zod.string().nullable(),
+      status: zod.string().nullable(),
+      totalAmount: zod
+        .string()
+        .nullish()
+        .describe(
+          "Numeric, serialized as string. Null for clerks (money scrubbed).",
+        ),
+    }),
+  ),
+  claims: zod.array(
+    zod.object({
+      id: zod.number(),
+      confNumber: zod.string().nullable(),
+      refNumber: zod.string().nullish(),
+      clientNumber: zod.string().nullable(),
+      errorTypeName: zod.string().nullish(),
+      status: zod.string().nullable(),
+      claimAmount: zod
+        .string()
+        .nullish()
+        .describe(
+          "Numeric, serialized as string. Null for clerks (money scrubbed).",
+        ),
+    }),
+  ),
+  withdrawals: zod.array(
+    zod.object({
+      kind: zod.enum(["claim", "group"]),
+      id: zod.number(),
+      identifier: zod.string().describe("Conf"),
+      clientNumber: zod.string().nullish(),
+      amount: zod
+        .string()
+        .nullish()
+        .describe("Numeric, serialized as string. Null for clerks."),
+      closureReason: zod.string().nullish(),
+    }),
+  ),
+  portalSubmissions: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceGroupId: zod.number(),
+      invoiceNumber: zod.string().nullish(),
+      confNumber: zod.string().nullish(),
+      clientNumber: zod.string().nullish(),
+      errorTypeName: zod.string().nullish(),
+      status: zod.string().nullable(),
+      portalTicketId: zod.string().nullish(),
+    }),
+  ),
+});

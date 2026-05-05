@@ -28,6 +28,7 @@ import withdrawalsRouter from "./withdrawals";
 import adminRouter from "./admin";
 import systemHealthRouter from "./system-health";
 import aiCalibrationRouter from "./ai-calibration";
+import searchRouter from "./search";
 
 const router: IRouter = Router();
 
@@ -65,6 +66,7 @@ router.use(withdrawalsRouter);
 router.use(adminRouter);
 router.use(systemHealthRouter);
 router.use(aiCalibrationRouter);
+router.use(searchRouter);
 router.use("/anthropic/conversations", anthropicRouter);
 
 export default router;

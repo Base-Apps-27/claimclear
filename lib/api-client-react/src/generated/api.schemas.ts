@@ -3698,6 +3698,65 @@ export interface ClassifierStatsResponse {
   generatedAt: string;
 }
 
+export interface GlobalSearchInvoiceGroup {
+  id: number;
+  invoiceNumber: string | null;
+  clientNumber: string | null;
+  errorTypeName: string | null;
+  status: string | null;
+  /** Numeric, serialized as string. Null for clerks (money scrubbed). */
+  totalAmount?: string | null;
+}
+
+export interface GlobalSearchClaim {
+  id: number;
+  confNumber: string | null;
+  refNumber?: string | null;
+  clientNumber: string | null;
+  errorTypeName?: string | null;
+  status: string | null;
+  /** Numeric, serialized as string. Null for clerks (money scrubbed). */
+  claimAmount?: string | null;
+}
+
+export type GlobalSearchWithdrawalKind =
+  (typeof GlobalSearchWithdrawalKind)[keyof typeof GlobalSearchWithdrawalKind];
+
+export const GlobalSearchWithdrawalKind = {
+  claim: "claim",
+  group: "group",
+} as const;
+
+export interface GlobalSearchWithdrawal {
+  kind: GlobalSearchWithdrawalKind;
+  id: number;
+  /** Conf */
+  identifier: string;
+  clientNumber?: string | null;
+  /** Numeric, serialized as string. Null for clerks. */
+  amount?: string | null;
+  closureReason?: string | null;
+}
+
+export interface GlobalSearchPortalSubmission {
+  id: number;
+  invoiceGroupId: number;
+  invoiceNumber?: string | null;
+  confNumber?: string | null;
+  clientNumber?: string | null;
+  errorTypeName?: string | null;
+  status: string | null;
+  portalTicketId?: string | null;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  invoiceGroups: GlobalSearchInvoiceGroup[];
+  claims: GlobalSearchClaim[];
+  withdrawals: GlobalSearchWithdrawal[];
+  portalSubmissions: GlobalSearchPortalSubmission[];
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -4621,3 +4680,10 @@ export const ExportWithdrawalsCsvDir = {
   asc: "asc",
   desc: "desc",
 } as const;
+
+export type GlobalSearchParams = {
+  /**
+   * Free-text query. Substring/ILIKE match against the same fields the dedicated list pages search.
+   */
+  q?: string;
+};

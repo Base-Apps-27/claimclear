@@ -57,6 +57,8 @@ tags:
     description: Closure (withdrawal / non-issue) review queue
   - name: systemHealth
     description: System health, cron runs, connector status, bounces (admin)
+  - name: search
+    description: Universal cross-record header search
 
 paths:
   /healthz:
@@ -4571,6 +4573,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkAddressResponse"
+
+  /search:
+    get:
+      operationId: globalSearch
+      tags: [search]
+      summary: Universal header search across invoice groups, claims, withdrawals, and portal submissions
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Free-text query. Substring/ILIKE match against the same fields the dedicated list pages search.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Capped, grouped match list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalSearchResponse"
 
 components:
   schemas:
@@ -9101,3 +9123,81 @@ components:
             $ref: "#/components/schemas/ClassifierStatsAlert"
         generatedAt:
           type: string
+
+    GlobalSearchInvoiceGroup:
+      type: object
+      required: [id, invoiceNumber, clientNumber, errorTypeName, status]
+      properties:
+        id: { type: integer }
+        invoiceNumber: { type: string, nullable: true }
+        clientNumber: { type: string, nullable: true }
+        errorTypeName: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        totalAmount:
+          type: string
+          nullable: true
+          description: Numeric, serialized as string. Null for clerks (money scrubbed).
+
+    GlobalSearchClaim:
+      type: object
+      required: [id, confNumber, clientNumber, status]
+      properties:
+        id: { type: integer }
+        confNumber: { type: string, nullable: true }
+        refNumber: { type: string, nullable: true }
+        clientNumber: { type: string, nullable: true }
+        errorTypeName: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        claimAmount:
+          type: string
+          nullable: true
+          description: Numeric, serialized as string. Null for clerks (money scrubbed).
+
+    GlobalSearchWithdrawal:
+      type: object
+      required: [kind, id, identifier]
+      properties:
+        kind:
+          type: string
+          enum: [claim, group]
+        id: { type: integer }
+        identifier:
+          type: string
+          description: Conf # for claims, invoice # for groups (or fallback "Group #N").
+        clientNumber: { type: string, nullable: true }
+        amount:
+          type: string
+          nullable: true
+          description: Numeric, serialized as string. Null for clerks.
+        closureReason: { type: string, nullable: true }
+
+    GlobalSearchPortalSubmission:
+      type: object
+      required: [id, invoiceGroupId, status]
+      properties:
+        id: { type: integer }
+        invoiceGroupId: { type: integer }
+        invoiceNumber: { type: string, nullable: true }
+        confNumber: { type: string, nullable: true }
+        clientNumber: { type: string, nullable: true }
+        errorTypeName: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        portalTicketId: { type: string, nullable: true }
+
+    GlobalSearchResponse:
+      type: object
+      required: [query, invoiceGroups, claims, withdrawals, portalSubmissions]
+      properties:
+        query: { type: string }
+        invoiceGroups:
+          type: array
+          items: { $ref: "#/components/schemas/GlobalSearchInvoiceGroup" }
+        claims:
+          type: array
+          items: { $ref: "#/components/schemas/GlobalSearchClaim" }
+        withdrawals:
+          type: array
+          items: { $ref: "#/components/schemas/GlobalSearchWithdrawal" }
+        portalSubmissions:
+          type: array
+          items: { $ref: "#/components/schemas/GlobalSearchPortalSubmission" }

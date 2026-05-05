@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
+import { HeaderSearch } from "@/components/header-search";
 import { useAdminTour } from "@/tour/admin-tour";
 import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
@@ -477,7 +478,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-14 border-b bg-card flex items-center px-4 sticky top-0 z-10 shrink-0">
             <SidebarTrigger className="mr-4" />
-            <h1 className="font-semibold text-sm text-muted-foreground">NEMT Claims Dispute Command Center</h1>
+            <HeaderSearch />
             <div className="ml-auto flex items-center gap-3">
               {tourAvailable && <HelpPopover />}
               <BatchStatusPill />
