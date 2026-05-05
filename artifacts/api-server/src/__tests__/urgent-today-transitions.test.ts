@@ -17,6 +17,7 @@ import { eq, inArray } from "drizzle-orm";
 import dashboardRouter, { etMidnightUtcInstant } from "../routes/dashboard";
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
 import { addDaysToYMD, isUrgentDeadline, serverTodayKey } from "../lib/dates";
+import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import {
   db,
   pool,
@@ -141,6 +142,15 @@ async function seedUrgentGroup(opts: SeedGroupOpts): Promise<{ groupId: number; 
     date: ymd,
   }).returning();
   seededClaimIds.push(claim.id);
+
+  // Mirror the production write-path contract: any code path that
+  // creates/changes a child claim MUST funnel through
+  // `recomputeGroupServiceDate` so `invoice_groups.service_date` (the
+  // canonical column read by `computeUrgentSnapshot` and the cleared-
+  // today join in /dashboard/urgent-today/transitions) is populated.
+  // Without this, every assertion downstream of the snapshot silently
+  // drops the seeded row.
+  await recomputeGroupServiceDate(group.id);
 
   return { groupId: group.id, claimId: claim.id };
 }
