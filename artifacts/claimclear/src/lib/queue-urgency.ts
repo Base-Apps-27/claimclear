@@ -9,14 +9,49 @@ import { countUrgentRows } from "./urgent-count";
 // is the post-submit set (Portal Queued / Processed) rather than the
 // pre-submit actionable set. The backend's `?expiring=stuck` uses the
 // same ExpiringMode type, so these two values stay in sync.
-export type ExpiringFilter = "urgent" | "soon" | "stuck" | null;
+//
+// Task #452 — "tomorrow" surfaces the day-1 band on its own, and
+// "today-tomorrow" is the combined urgent + tomorrow superset that the
+// Dashboard's "File today or tomorrow" hero summarises. Both new modes
+// are derivable from `isUrgent` / `effectiveDaysLeft` alone, so the
+// backend filter vocabulary stays at urgent/soon/stuck — the new modes
+// are filtered client-side by the Queue.
+export type ExpiringFilter =
+  | "urgent"
+  | "soon"
+  | "stuck"
+  | "tomorrow"
+  | "today-tomorrow"
+  | null;
 
-/** Validate the raw `?expiring=` URL param. Anything else collapses to null. */
+/** Validate the raw `?expiring=` URL param. Anything else collapses to null.
+ *
+ * Accepts both the canonical `today-tomorrow` token and the comma form
+ * (`urgent,tomorrow` / `tomorrow,urgent`) so a thoughtfully-typed URL
+ * still lands on the combined view. Anything outside the known
+ * vocabulary collapses to null so a stale share link can't pin the
+ * Queue to a state that no longer exists. */
 export function parseExpiringParam(raw: string | null | undefined): ExpiringFilter {
+  if (raw == null || raw === "") return null;
   if (raw === "urgent") return "urgent";
   if (raw === "soon") return "soon";
   if (raw === "stuck") return "stuck";
+  if (raw === "tomorrow") return "tomorrow";
+  if (raw === "today-tomorrow") return "today-tomorrow";
+  if (raw.includes(",")) {
+    const parts = new Set(raw.split(",").map(s => s.trim()).filter(Boolean));
+    if (parts.size === 2 && parts.has("urgent") && parts.has("tomorrow")) {
+      return "today-tomorrow";
+    }
+  }
   return null;
+}
+
+/** Serialise an `ExpiringFilter` back to the URL token. The combined
+ *  mode round-trips through the canonical `today-tomorrow` form so the
+ *  URL stays stable — the comma form is only an inbound convenience. */
+export function serializeExpiringParam(filter: ExpiringFilter): string | null {
+  return filter ?? null;
 }
 
 export interface UrgencyShape {
@@ -40,6 +75,13 @@ export interface UrgencyShapeWithStuck extends UrgencyShape {
  * These rows live in the Portal Queued lane and already have a separate
  * `submittedStuck` flag computed by the backend; the filter simply
  * surfaces them without any extra date math on the client.
+ *
+ * Task #452:
+ * - `tomorrow` matches non-urgent rows whose effective deadline is
+ *   exactly day-1 (and not stuck — stuck rows have their own lane).
+ * - `today-tomorrow` is the union: any urgent row plus any non-urgent
+ *   row exactly day-1. Stuck rows are excluded so the combined view
+ *   matches the Dashboard "File today or tomorrow" superset.
  */
 export function matchesExpiringFilter(
   group: UrgencyShapeWithStuck,
@@ -48,6 +90,15 @@ export function matchesExpiringFilter(
   if (filter == null) return true;
   if (filter === "urgent") return !!group.isUrgent && !group.submittedStuck;
   if (filter === "stuck") return !!group.submittedStuck;
+  if (filter === "tomorrow") {
+    if (group.submittedStuck) return false;
+    return !group.isUrgent && group.effectiveDaysLeft === 1;
+  }
+  if (filter === "today-tomorrow") {
+    if (group.submittedStuck) return false;
+    if (group.isUrgent) return true;
+    return group.effectiveDaysLeft === 1;
+  }
   if (group.isUrgent) return false;
   const d = group.effectiveDaysLeft;
   return d != null && d >= 1 && d <= 3;
@@ -66,15 +117,27 @@ export function filterByExpiringParam<T extends UrgencyShapeWithStuck>(
  * legend text. "later" is the catch-all for anything past a week so
  * every on-clock row gets *some* indicator (the legend used to lie
  * about this).
+ *
+ * Task #452 splits the old "soon" band so day-1 ("tomorrow") gets its
+ * own tier and renders in a clearly distinct yellow from the 2–3-day
+ * rows. The 2–3 day band keeps the "soon" name but renders softer so
+ * "tomorrow" reads as the more urgent of the yellows.
  */
-export type DeadlineTier = "overdue" | "today" | "soon" | "week" | "later";
+export type DeadlineTier =
+  | "overdue"
+  | "today"
+  | "tomorrow"
+  | "soon"
+  | "week"
+  | "later";
 
 export function computeDeadlineTier(group: UrgencyShape): DeadlineTier | null {
   const days = group.effectiveDaysLeft;
   if (days == null) return null;
   if (group.isUrgent) return "today";
   if (days < 0) return "overdue";
-  if (days <= 2) return "soon";
+  if (days === 1) return "tomorrow";
+  if (days <= 3) return "soon";
   if (days <= 7) return "week";
   return "later";
 }
@@ -125,7 +188,7 @@ export function formatShortMonthDay(d: Date): string {
 
 export interface DeadlineLabel {
   tier: DeadlineTier;
-  /** Short text shown inside the pill, e.g. "Today · 5/1", "≤2d · 5/3". */
+  /** Short text shown inside the pill, e.g. "Today · 5/1", "≤3d · 5/3". */
   label: string;
   /** Long-form tooltip that explains the tier and concrete date. */
   tooltip: string;
@@ -157,10 +220,16 @@ export function formatDeadlineLabel(
         label: `Overdue · ${date}`,
         tooltip: `Past the filing deadline (${date}). File immediately.`,
       };
+    case "tomorrow":
+      return {
+        tier,
+        label: `Tomorrow · ${date}`,
+        tooltip: `Filing deadline is tomorrow (${date}). One day left.`,
+      };
     case "soon":
       return {
         tier,
-        label: `≤2d · ${date}`,
+        label: `≤3d · ${date}`,
         tooltip: `${days} day${days === 1 ? "" : "s"} until the filing deadline (${date}).`,
       };
     case "week":
@@ -187,6 +256,11 @@ export interface TabBadge {
   /** Soon-only count text, populated under `?expiring=soon` so the
    *  badge reflects what the operator actually sees in that lane. */
   soon: string | null;
+  /** Tomorrow-only count text, populated under `?expiring=tomorrow`. */
+  tomorrow: string | null;
+  /** Combined today+tomorrow count text, populated under
+   *  `?expiring=today-tomorrow`. */
+  todayTomorrow: string | null;
 }
 
 /**
@@ -197,33 +271,54 @@ export interface TabBadge {
  *   rows from view.
  * - `?expiring=soon`   → drop totals + urgent split (urgent rows are
  *   filtered out by the soon set), show the soon count for the lane.
+ * - `?expiring=tomorrow` → drop totals + urgent, show the tomorrow
+ *   count for this lane only.
+ * - `?expiring=today-tomorrow` → show the combined count for this lane
+ *   only — totals would mislead since the filter is hiding everything
+ *   beyond day-1.
  * - no filter         → "<total> · <N> urgent" split when urgent items
  *   exist, plain total otherwise.
  *
- * `soonInLane` is the count of rows that match the soon filter inside
- * this tab; only consulted under the soon filter mode.
+ * `matchingInLane` is the count of rows that match the active filter
+ * inside this tab; consulted under the soon / tomorrow / today-tomorrow
+ * filter modes.
  */
 export function formatTabBadge(
   total: number,
   urgent: number,
   filterMode: ExpiringFilter,
-  soonInLane = 0,
+  matchingInLane = 0,
 ): TabBadge {
+  const empty: TabBadge = {
+    total: null,
+    urgent: null,
+    soon: null,
+    tomorrow: null,
+    todayTomorrow: null,
+  };
   if (filterMode === "urgent") {
-    if (urgent > 0) return { total: null, urgent: String(urgent), soon: null };
-    return { total: null, urgent: null, soon: null };
+    if (urgent > 0) return { ...empty, urgent: String(urgent) };
+    return empty;
   }
   if (filterMode === "soon") {
-    if (soonInLane > 0) return { total: null, urgent: null, soon: String(soonInLane) };
-    return { total: null, urgent: null, soon: null };
+    if (matchingInLane > 0) return { ...empty, soon: String(matchingInLane) };
+    return empty;
+  }
+  if (filterMode === "tomorrow") {
+    if (matchingInLane > 0) return { ...empty, tomorrow: String(matchingInLane) };
+    return empty;
+  }
+  if (filterMode === "today-tomorrow") {
+    if (matchingInLane > 0) return { ...empty, todayTomorrow: String(matchingInLane) };
+    return empty;
   }
   if (urgent > 0) {
-    return { total: String(total), urgent: `${urgent} urgent`, soon: null };
+    return { ...empty, total: String(total), urgent: `${urgent} urgent` };
   }
   if (total > 0) {
-    return { total: String(total), urgent: null, soon: null };
+    return { ...empty, total: String(total) };
   }
-  return { total: null, urgent: null, soon: null };
+  return empty;
 }
 
 /**
@@ -261,6 +356,16 @@ export function emptyStateCopy(
     if (lane === "actionable") return "No due-within-3-days groups in Action Required.";
     if (lane === "portal-queued") return "No due-within-3-days groups in Portal Queued.";
     return "No due-within-3-days groups on hold.";
+  }
+  if (filter === "tomorrow") {
+    if (lane === "actionable") return "No file-tomorrow groups in Action Required.";
+    if (lane === "portal-queued") return "No file-tomorrow groups in Portal Queued.";
+    return "No file-tomorrow groups on hold.";
+  }
+  if (filter === "today-tomorrow") {
+    if (lane === "actionable") return "No file-today-or-tomorrow groups in Action Required.";
+    if (lane === "portal-queued") return "No file-today-or-tomorrow groups in Portal Queued.";
+    return "No file-today-or-tomorrow groups on hold.";
   }
   // Task #352 — "stuck" only ever appears in the portal-queued lane;
   // other lanes will show the normal unfiltered empty-state instead.

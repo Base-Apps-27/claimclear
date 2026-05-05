@@ -18,11 +18,19 @@ import {
 test("parseExpiringParam validates the URL token", () => {
   assert.equal(parseExpiringParam("urgent"), "urgent");
   assert.equal(parseExpiringParam("soon"), "soon");
+  assert.equal(parseExpiringParam("tomorrow"), "tomorrow");
+  assert.equal(parseExpiringParam("today-tomorrow"), "today-tomorrow");
+  // Comma form is the human-typed alias the Dashboard hero never uses
+  // but a thoughtfully-crafted URL might. It must round-trip to the
+  // canonical token.
+  assert.equal(parseExpiringParam("urgent,tomorrow"), "today-tomorrow");
+  assert.equal(parseExpiringParam("tomorrow,urgent"), "today-tomorrow");
   assert.equal(parseExpiringParam(""), null);
   assert.equal(parseExpiringParam(null), null);
   assert.equal(parseExpiringParam(undefined), null);
   assert.equal(parseExpiringParam("URGENT"), null, "case-sensitive: bogus tokens drop");
   assert.equal(parseExpiringParam("nope"), null);
+  assert.equal(parseExpiringParam("urgent,soon"), null, "only urgent+tomorrow is the recognised combo");
 });
 
 test("matchesExpiringFilter — urgent matches isUrgent only", () => {
@@ -32,6 +40,9 @@ test("matchesExpiringFilter — urgent matches isUrgent only", () => {
 });
 
 test("matchesExpiringFilter — soon matches 1..3 days, never urgent rows", () => {
+  // The server's `?expiring=soon` predicate stays at 1..3 days
+  // (Task #452 splits the *visual* tier but keeps the server filter
+  // identical so the URL still serves the existing audience).
   assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 1 }, "soon"), true);
   assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 3 }, "soon"), true);
   assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 4 }, "soon"), false);
@@ -41,12 +52,41 @@ test("matchesExpiringFilter — soon matches 1..3 days, never urgent rows", () =
   assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: null }, "soon"), false);
 });
 
+test("matchesExpiringFilter — tomorrow matches non-urgent day-1 rows only (Task #452)", () => {
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 1 }, "tomorrow"), true);
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 0 }, "tomorrow"), false);
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 2 }, "tomorrow"), false);
+  assert.equal(matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 1 }, "tomorrow"), false,
+    "urgent rows belong to the today filter, never to tomorrow");
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 1, submittedStuck: true }, "tomorrow"),
+    false,
+    "stuck rows have their own lane and never bleed into the tomorrow filter",
+  );
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: null }, "tomorrow"), false);
+});
+
+test("matchesExpiringFilter — today-tomorrow is the union of urgent + day-1 (Task #452)", () => {
+  assert.equal(matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0 }, "today-tomorrow"), true);
+  assert.equal(matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: -2 }, "today-tomorrow"), true,
+    "past-due-but-still-urgent rows count as 'today' in the combined view");
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 1 }, "today-tomorrow"), true);
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 2 }, "today-tomorrow"), false);
+  assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 0 }, "today-tomorrow"), false,
+    "due-today-but-not-urgent shouldn't appear here — only the server's isUrgent flag promotes a row to today");
+  assert.equal(
+    matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0, submittedStuck: true }, "today-tomorrow"),
+    false,
+    "stuck rows have their own lane and never bleed into today-tomorrow",
+  );
+});
+
 test("matchesExpiringFilter — null filter is a passthrough", () => {
   assert.equal(matchesExpiringFilter({ isUrgent: true, effectiveDaysLeft: 0 }, null), true);
   assert.equal(matchesExpiringFilter({ isUrgent: false, effectiveDaysLeft: 99 }, null), true);
 });
 
-test("filterByExpiringParam narrows arrays for both tones", () => {
+test("filterByExpiringParam narrows arrays for every tone", () => {
   const rows = [
     { id: 1, isUrgent: true, effectiveDaysLeft: 0 },
     { id: 2, isUrgent: false, effectiveDaysLeft: 1 },
@@ -56,6 +96,8 @@ test("filterByExpiringParam narrows arrays for both tones", () => {
   ];
   assert.deepEqual(filterByExpiringParam(rows, "urgent").map(r => r.id), [1, 5]);
   assert.deepEqual(filterByExpiringParam(rows, "soon").map(r => r.id), [2]);
+  assert.deepEqual(filterByExpiringParam(rows, "tomorrow").map(r => r.id), [2]);
+  assert.deepEqual(filterByExpiringParam(rows, "today-tomorrow").map(r => r.id), [1, 2, 5]);
   assert.deepEqual(filterByExpiringParam(rows, null).map(r => r.id), [1, 2, 3, 4, 5]);
 });
 
@@ -64,9 +106,12 @@ test("computeDeadlineTier covers every on-clock row, including past a week", () 
   assert.equal(computeDeadlineTier({ isUrgent: true, effectiveDaysLeft: 0 }), "today");
   assert.equal(computeDeadlineTier({ isUrgent: true, effectiveDaysLeft: -3 }), "today");
   assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: -1 }), "overdue");
-  assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 1 }), "soon");
+  // Task #452: day-1 splits out into its own "tomorrow" tier so the
+  // pill renders in a clearly distinct yellow from the 2–3-day rows.
+  assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 1 }), "tomorrow");
   assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 2 }), "soon");
-  assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 3 }), "week");
+  assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 3 }), "soon");
+  assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 4 }), "week");
   assert.equal(computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 7 }), "week");
   assert.equal(
     computeDeadlineTier({ isUrgent: false, effectiveDaysLeft: 30 }),
@@ -114,9 +159,13 @@ test("formatDeadlineLabel surfaces the date alongside the tier word", () => {
   assert.equal(todayLbl?.tier, "today");
   assert.equal(todayLbl?.label, "Today · 5/1");
 
+  const tomorrowLbl = formatDeadlineLabel({ isUrgent: false, effectiveDaysLeft: 1 }, now);
+  assert.equal(tomorrowLbl?.tier, "tomorrow");
+  assert.equal(tomorrowLbl?.label, "Tomorrow · 5/2");
+
   const soonLbl = formatDeadlineLabel({ isUrgent: false, effectiveDaysLeft: 2 }, now);
   assert.equal(soonLbl?.tier, "soon");
-  assert.equal(soonLbl?.label, "≤2d · 5/3");
+  assert.equal(soonLbl?.label, "≤3d · 5/3");
 
   const weekLbl = formatDeadlineLabel({ isUrgent: false, effectiveDaysLeft: 7 }, now);
   assert.equal(weekLbl?.tier, "week");
@@ -133,17 +182,28 @@ test("formatDeadlineLabel surfaces the date alongside the tier word", () => {
   assert.equal(formatDeadlineLabel({ isUrgent: false, effectiveDaysLeft: null }, now), null);
 });
 
+// Task #452 — formatTabBadge gained `tomorrow` / `todayTomorrow` slots
+// alongside the existing soon slot. Tests use deepEqual so every slot
+// must be enumerated explicitly. EMPTY is the all-null baseline.
+const EMPTY_BADGE = {
+  total: null,
+  urgent: null,
+  soon: null,
+  tomorrow: null,
+  todayTomorrow: null,
+} as const;
+
 test("formatTabBadge — split shown when urgent items exist (no filter)", () => {
   assert.deepEqual(
     formatTabBadge(852, 62, null),
-    { total: "852", urgent: "62 urgent", soon: null },
+    { ...EMPTY_BADGE, total: "852", urgent: "62 urgent" },
   );
 });
 
 test("formatTabBadge — urgent filter collapses to just the urgent count", () => {
   assert.deepEqual(
     formatTabBadge(852, 62, "urgent"),
-    { total: null, urgent: "62", soon: null },
+    { ...EMPTY_BADGE, urgent: "62" },
   );
 });
 
@@ -153,29 +213,36 @@ test("formatTabBadge — soon filter shows soon count for the lane, never urgent
   // the operator sees. The badge reflects the filtered count instead.
   assert.deepEqual(
     formatTabBadge(852, 62, "soon", 28),
-    { total: null, urgent: null, soon: "28" },
+    { ...EMPTY_BADGE, soon: "28" },
   );
 });
 
 test("formatTabBadge — soon filter with zero matches drops to nothing", () => {
+  assert.deepEqual(formatTabBadge(852, 62, "soon", 0), { ...EMPTY_BADGE });
+});
+
+test("formatTabBadge — tomorrow filter populates the tomorrow slot only (Task #452)", () => {
   assert.deepEqual(
-    formatTabBadge(852, 62, "soon", 0),
-    { total: null, urgent: null, soon: null },
+    formatTabBadge(852, 62, "tomorrow", 14),
+    { ...EMPTY_BADGE, tomorrow: "14" },
   );
+  assert.deepEqual(formatTabBadge(852, 62, "tomorrow", 0), { ...EMPTY_BADGE });
+});
+
+test("formatTabBadge — today-tomorrow filter populates the combined slot only (Task #452)", () => {
+  assert.deepEqual(
+    formatTabBadge(852, 62, "today-tomorrow", 76),
+    { ...EMPTY_BADGE, todayTomorrow: "76" },
+  );
+  assert.deepEqual(formatTabBadge(852, 62, "today-tomorrow", 0), { ...EMPTY_BADGE });
 });
 
 test("formatTabBadge — falls back to plain total when nothing urgent", () => {
-  assert.deepEqual(
-    formatTabBadge(120, 0, null),
-    { total: "120", urgent: null, soon: null },
-  );
+  assert.deepEqual(formatTabBadge(120, 0, null), { ...EMPTY_BADGE, total: "120" });
 });
 
 test("formatTabBadge — empty tab returns no text at all", () => {
-  assert.deepEqual(
-    formatTabBadge(0, 0, null),
-    { total: null, urgent: null, soon: null },
-  );
+  assert.deepEqual(formatTabBadge(0, 0, null), { ...EMPTY_BADGE });
 });
 
 test("formatTabBadge — urgent filter, tab has zero urgent → no badge at all", () => {
@@ -183,10 +250,7 @@ test("formatTabBadge — urgent filter, tab has zero urgent → no badge at all"
   // want a dangling "120" total to suggest the tab still has work
   // matching the filter. All slots drop, callers render the empty-state
   // copy instead.
-  assert.deepEqual(
-    formatTabBadge(120, 0, "urgent"),
-    { total: null, urgent: null, soon: null },
-  );
+  assert.deepEqual(formatTabBadge(120, 0, "urgent"), { ...EMPTY_BADGE });
 });
 
 // --- Page-level behavior, exercised through helpers used by queue.tsx ---
@@ -312,6 +376,12 @@ test("emptyStateCopy reflects the active filter on every lane", () => {
   // Soon filter — copy must mention "due-within-3-days".
   for (const lane of ["actionable", "portal-queued", "on-hold"] as const) {
     assert.match(emptyStateCopy(lane, "soon"), /due-within-3-days/);
+  }
+  // Task #452 — tomorrow and today-tomorrow get their own copy so the
+  // operator immediately understands which subset is being filtered.
+  for (const lane of ["actionable", "portal-queued", "on-hold"] as const) {
+    assert.match(emptyStateCopy(lane, "tomorrow"), /file-tomorrow/);
+    assert.match(emptyStateCopy(lane, "today-tomorrow"), /file-today-or-tomorrow/);
   }
 });
 

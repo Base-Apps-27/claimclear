@@ -621,7 +621,7 @@ export default function Dashboard() {
                   ? "all due before EOD today"
                   : "all due before EOD tomorrow"
             }
-            seeAllHref="/queue?expiring=urgent"
+            seeAllHref="/queue?expiring=today-tomorrow"
             isLoading={false}
             itemsEmpty="No filings due today or tomorrow. Nice."
             items={fileTodayOrTomorrowItems.map(g => {

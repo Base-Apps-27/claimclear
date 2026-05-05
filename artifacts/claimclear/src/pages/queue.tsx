@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import {
   parseExpiringParam,
+  filterByExpiringParam,
   formatDeadlineLabel,
   formatTabBadge,
   computeAggregateUrgentCount,
@@ -79,6 +80,7 @@ function QueueUrgencyHero({
   urgentCount,
   stuckCount,
   soonCount,
+  tomorrowCount,
   filter,
   onSelectUrgentGroup,
 }: {
@@ -86,12 +88,128 @@ function QueueUrgencyHero({
   /** Task #352 — Portal Queued groups whose deadline slipped without ack. */
   stuckCount: number;
   soonCount: number;
+  /** Task #452 — count of day-1 (tomorrow) rows visible across the
+   *  on-clock lanes; drives the tomorrow-only and today-tomorrow heroes. */
+  tomorrowCount: number;
   filter: ExpiringFilter;
   /** Task #410 — Queue's `selectWorkflow`, threaded down to the
    *  File-today activity panel so currently-urgent rows jump to the
    *  inline workspace instead of leaving the Queue. */
   onSelectUrgentGroup: (id: number) => void;
 }) {
+  // Task #452 — dedicated hero for the "tomorrow" filter: amber tone,
+  // softer than today's red but stronger than the 2–3-day "soon" view
+  // because tomorrow is the next thing on the clock.
+  if (filter === "tomorrow") {
+    return (
+      <div
+        data-testid="queue-urgency-hero"
+        data-tone="amber"
+        className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+        style={{
+          background: "hsl(var(--cc-amber-bg))",
+          borderColor: "hsl(var(--cc-amber-border))",
+          color: "hsl(var(--cc-amber-fg))",
+        }}
+      >
+        <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span
+              className="text-3xl font-bold tabular-nums"
+              data-testid="queue-urgency-hero-count"
+            >
+              {tomorrowCount}
+            </span>
+            <span className="text-sm">due tomorrow · stage them today so EOD doesn't catch you</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Task #452 — combined today+tomorrow hero. Urgent rows (today /
+  // past-due) still dominate the tone (red, intensified+sticky like
+  // the urgent-only hero) but the headline calls out the tomorrow
+  // share so the operator sees both halves of the click-through.
+  if (filter === "today-tomorrow") {
+    const total = urgentCount + tomorrowCount;
+    const intensified = true;
+    if (urgentCount > 0) {
+      return (
+        <div
+          data-testid="queue-urgency-hero"
+          data-tone="red"
+          data-intensified={intensified ? "true" : undefined}
+          className="rounded-lg border-2 px-5 py-4 flex items-center gap-4 sticky top-0 z-20 shadow-lg"
+          style={{
+            background: "hsl(var(--cc-red-bg))",
+            borderColor: "hsl(var(--cc-red-border))",
+            color: "hsl(var(--cc-red-fg))",
+          }}
+        >
+          <AlertTriangle className="h-7 w-7 shrink-0" style={{ color: "hsl(var(--destructive))" }} />
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span
+                className="text-4xl font-bold tabular-nums"
+                style={{ color: "hsl(var(--destructive))" }}
+                data-testid="queue-urgency-hero-count"
+              >
+                {total}
+              </span>
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold">
+                  {urgentCount} due today · {tomorrowCount} due tomorrow
+                </span>
+                <span className="text-xs opacity-80">
+                  Combined "file today or tomorrow" view from the Dashboard. Today's red
+                  rows must ship before EOD; tomorrow's amber rows are next on the clock.
+                </span>
+              </div>
+            </div>
+            <UrgentTodayWhyLine
+              tone="red"
+              urgentCountOverride={urgentCount}
+              testid="queue-urgent-today-why-red"
+              onSelectUrgentGroup={onSelectUrgentGroup}
+            />
+          </div>
+        </div>
+      );
+    }
+    // No urgent rows but tomorrow rows present — fall through to the
+    // amber tone so we don't render the green "all clear" relief over
+    // a non-empty filter.
+    return (
+      <div
+        data-testid="queue-urgency-hero"
+        data-tone="amber"
+        className="rounded-lg border-2 px-5 py-4 flex items-center gap-4"
+        style={{
+          background: "hsl(var(--cc-amber-bg))",
+          borderColor: "hsl(var(--cc-amber-border))",
+          color: "hsl(var(--cc-amber-fg))",
+        }}
+      >
+        <AlertTriangle className="h-6 w-6 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span
+              className="text-3xl font-bold tabular-nums"
+              data-testid="queue-urgency-hero-count"
+            >
+              {tomorrowCount}
+            </span>
+            <span className="text-sm">
+              due tomorrow · nothing must file today yet
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Task #352 — "stuck after submission" filter state. Amber-orange tone
   // distinct from the pre-submit urgency red — the action here is "chase
   // confirmation", not "file now".
@@ -272,61 +390,175 @@ function QueueUrgencyHero({
 }
 
 /**
- * Inline filter chip below the hero — lets the operator see (and clear)
- * the `?expiring=` filter without spelunking the URL bar.
+ * Single chip element — visual atom used by `ExpiringFilterChip` to
+ * render one tone-coded pill per active filter "side" (Today /
+ * Tomorrow / Soon / Stuck). Each chip has its own clear button so the
+ * operator can drop one side of the today+tomorrow combination
+ * without losing the other.
  */
-function ExpiringFilterChip({
-  filter,
-  count,
+function FilterChipPill({
+  tone,
+  label,
+  testid,
+  clearLabel,
   onClear,
 }: {
-  filter: NonNullable<ExpiringFilter>;
-  count: number;
+  tone: "red" | "amber" | "amber-soft";
+  label: string;
+  testid: string;
+  clearLabel: string;
   onClear: () => void;
 }) {
-  const tone =
-    filter === "urgent"
+  const palette =
+    tone === "red"
       ? {
           bg: "hsl(var(--cc-red-bg))",
           border: "hsl(var(--cc-red-border))",
           fg: "hsl(var(--cc-red-fg))",
-          label: `Urgent — file today (${count})`,
         }
-      : filter === "stuck"
-        ? {
-            bg: "hsl(var(--cc-amber-bg))",
-            border: "hsl(var(--cc-amber-border))",
-            fg: "hsl(var(--cc-amber-fg))",
-            label: `Stuck after submission (${count})`,
-          }
-        : {
-            bg: "hsl(var(--cc-amber-bg))",
-            border: "hsl(var(--cc-amber-border))",
-            fg: "hsl(var(--cc-amber-fg))",
-            label: `Due within 3 days (${count})`,
-          };
+      : {
+          bg: "hsl(var(--cc-amber-bg))",
+          border: "hsl(var(--cc-amber-border))",
+          fg: "hsl(var(--cc-amber-fg))",
+        };
   return (
-    <div className="flex items-center gap-2" data-testid="expiring-filter-chip">
-      <span className="text-xs text-muted-foreground">Showing:</span>
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
-        style={{ background: tone.bg, borderColor: tone.border, color: tone.fg }}
-      >
-        {tone.label}
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label="Clear filter"
-          data-testid="expiring-filter-chip-clear"
-          className="rounded-full p-0.5 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-1"
-          style={{ color: tone.fg }}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </span>
+    <span
+      data-testid={testid}
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+      style={{
+        background: palette.bg,
+        borderColor: palette.border,
+        color: palette.fg,
+        opacity: tone === "amber-soft" ? 0.85 : 1,
+      }}
+    >
+      {label}
       <button
         type="button"
         onClick={onClear}
+        aria-label={clearLabel}
+        data-testid={`${testid}-clear`}
+        className="rounded-full p-0.5 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-1"
+        style={{ color: palette.fg }}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * Inline filter chip area below the hero — lets the operator see (and
+ * adjust) the `?expiring=` filter without spelunking the URL bar.
+ *
+ * Task #452 — when "today" and "tomorrow" are both active (the
+ * `today-tomorrow` mode the Dashboard's "File today or tomorrow" hero
+ * links to) we render one chip per side with its own clear button, so
+ * dropping "today" leaves you on "tomorrow" alone (and vice-versa)
+ * without leaving the page. When only one of them is active, we
+ * surface a small "+ Tomorrow" / "+ Today" affordance to add the other
+ * side in a single click. Soon / Stuck remain single-chip.
+ */
+function ExpiringFilterChip({
+  filter,
+  todayCount,
+  tomorrowCount,
+  count,
+  onSetFilter,
+}: {
+  filter: NonNullable<ExpiringFilter>;
+  /** Count of today/urgent rows actually visible — drives the chip and
+   *  is used for the "+ Today" affordance copy when only tomorrow is on. */
+  todayCount: number;
+  /** Count of tomorrow rows actually visible — drives the chip and the
+   *  "+ Tomorrow" affordance copy when only today is on. */
+  tomorrowCount: number;
+  /** Total count for non-today/tomorrow filters (soon, stuck). */
+  count: number;
+  /** Apply a new filter mode in place. Pass `null` to clear. */
+  onSetFilter: (next: ExpiringFilter) => void;
+}) {
+  // Soon / Stuck — one chip, no add-other affordance.
+  if (filter === "soon" || filter === "stuck") {
+    return (
+      <div className="flex items-center gap-2 flex-wrap" data-testid="expiring-filter-chip">
+        <span className="text-xs text-muted-foreground">Showing:</span>
+        <FilterChipPill
+          tone="amber"
+          testid={filter === "stuck" ? "expiring-filter-chip-stuck" : "expiring-filter-chip-soon"}
+          label={
+            filter === "stuck"
+              ? `Stuck after submission (${count})`
+              : `Due within 3 days (${count})`
+          }
+          clearLabel="Clear filter"
+          onClear={() => onSetFilter(null)}
+        />
+        <button
+          type="button"
+          onClick={() => onSetFilter(null)}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          Clear filter
+        </button>
+      </div>
+    );
+  }
+
+  // Today / Tomorrow / both — multi-chip rendering with per-side
+  // clear buttons and a single-click affordance to add the other side.
+  const showToday = filter === "urgent" || filter === "today-tomorrow";
+  const showTomorrow = filter === "tomorrow" || filter === "today-tomorrow";
+  return (
+    <div className="flex items-center gap-2 flex-wrap" data-testid="expiring-filter-chip">
+      <span className="text-xs text-muted-foreground">Showing:</span>
+      {showToday && (
+        <FilterChipPill
+          tone="red"
+          testid="expiring-filter-chip-today"
+          label={`Today (${todayCount})`}
+          clearLabel="Remove Today filter"
+          // Clearing "Today" while Tomorrow is also active drops to
+          // tomorrow-only; clearing it when it's the only active side
+          // clears the filter entirely.
+          onClear={() => onSetFilter(filter === "today-tomorrow" ? "tomorrow" : null)}
+        />
+      )}
+      {showTomorrow && (
+        <FilterChipPill
+          tone="amber"
+          testid="expiring-filter-chip-tomorrow"
+          label={`Tomorrow (${tomorrowCount})`}
+          clearLabel="Remove Tomorrow filter"
+          onClear={() => onSetFilter(filter === "today-tomorrow" ? "urgent" : null)}
+        />
+      )}
+      {filter === "urgent" && (
+        <button
+          type="button"
+          data-testid="expiring-filter-add-tomorrow"
+          onClick={() => onSetFilter("today-tomorrow")}
+          className="text-xs font-medium underline-offset-2 hover:underline"
+          style={{ color: "hsl(var(--cc-amber-fg))" }}
+        >
+          + Tomorrow
+        </button>
+      )}
+      {filter === "tomorrow" && (
+        <button
+          type="button"
+          data-testid="expiring-filter-add-today"
+          onClick={() => onSetFilter("today-tomorrow")}
+          className="text-xs font-medium underline-offset-2 hover:underline"
+          style={{ color: "hsl(var(--cc-red-fg))" }}
+        >
+          + Today
+        </button>
+      )}
+      <button
+        type="button"
+        data-testid="expiring-filter-chip-clear"
+        onClick={() => onSetFilter(null)}
         className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
       >
         Clear filter
@@ -347,18 +579,27 @@ function ExpiringFilterChip({
 function TabBadgeSplit({
   total,
   urgent,
-  soon,
+  matching,
   filterMode,
   testid,
 }: {
   total: number;
   urgent: number;
-  soon: number;
+  /** Count of rows in this lane that match the active filter mode —
+   *  used for soon / tomorrow / today-tomorrow badges. */
+  matching: number;
   filterMode: ExpiringFilter;
   testid?: string;
 }) {
-  const badge = formatTabBadge(total, urgent, filterMode, soon);
-  if (!badge.total && !badge.urgent && !badge.soon) return null;
+  const badge = formatTabBadge(total, urgent, filterMode, matching);
+  if (
+    !badge.total &&
+    !badge.urgent &&
+    !badge.soon &&
+    !badge.tomorrow &&
+    !badge.todayTomorrow
+  )
+    return null;
   return (
     <span className="ml-2 inline-flex items-center gap-1" data-testid={testid}>
       {badge.total != null && (
@@ -389,9 +630,38 @@ function TabBadgeSplit({
             borderColor: "hsl(var(--cc-amber-border))",
             color: "hsl(var(--cc-amber-fg))",
             fontWeight: 700,
+            opacity: 0.85,
           }}
         >
           {badge.soon}
+        </Badge>
+      )}
+      {badge.tomorrow != null && (
+        <Badge
+          variant="outline"
+          data-testid={testid ? `${testid}-tomorrow` : undefined}
+          style={{
+            background: "hsl(var(--cc-amber-bg))",
+            borderColor: "hsl(var(--cc-amber-border))",
+            color: "hsl(var(--cc-amber-fg))",
+            fontWeight: 700,
+          }}
+        >
+          {badge.tomorrow}
+        </Badge>
+      )}
+      {badge.todayTomorrow != null && (
+        <Badge
+          variant="outline"
+          data-testid={testid ? `${testid}-today-tomorrow` : undefined}
+          style={{
+            background: "hsl(var(--cc-amber-bg))",
+            borderColor: "hsl(var(--cc-red-border))",
+            color: "hsl(var(--destructive))",
+            fontWeight: 700,
+          }}
+        >
+          {badge.todayTomorrow}
         </Badge>
       )}
     </span>
@@ -429,7 +699,9 @@ export default function Queue() {
   // Anything else collapses to null so a stale share link can't pin the
   // queue to a state that no longer exists.
   const expiringFilter: ExpiringFilter = parseExpiringParam(get("expiring"));
-  const clearExpiringFilter = () => set({ expiring: null }, false);
+  const setExpiringFilter = (next: ExpiringFilter) =>
+    set({ expiring: next == null ? null : next }, false);
+  const clearExpiringFilter = () => setExpiringFilter(null);
 
   // URL-persisted: which workflow group is open in the inline workspace,
   // whether the Classification Inbox is expanded, and which triage row's
@@ -535,10 +807,27 @@ export default function Queue() {
   // `includeExpired: true` to bypass the default past-deadline guard;
   // `soon` does not (its SQL is strictly future). The "Show past-deadline"
   // toggle below also flips `includeExpired` regardless of filter mode.
-  const expiringForLanes = expiringFilter ?? undefined;
+  // Server-side narrowing only applies to filters the API understands
+  // (urgent / soon / stuck). The Task #452 modes (tomorrow,
+  // today-tomorrow) are derived from `isUrgent` / `effectiveDaysLeft`
+  // alone, so we leave the lane queries unfiltered server-side and
+  // narrow client-side via `filterByExpiringParam` below.
+  const expiringForLanes: "urgent" | "soon" | "stuck" | undefined =
+    expiringFilter === "urgent" ||
+    expiringFilter === "soon" ||
+    expiringFilter === "stuck"
+      ? expiringFilter
+      : undefined;
   const showPastDeadline = get("showPastDeadline") === "true";
+  // `today-tomorrow` includes urgent rows (which can be past-due), so
+  // tell the server to surface past-deadline rows too — otherwise the
+  // combined view would silently drop rows the operator just clicked
+  // through from the Dashboard.
   const includeExpiredForLanes =
-    showPastDeadline || expiringFilter === "urgent" || expiringFilter === "stuck"
+    showPastDeadline ||
+    expiringFilter === "urgent" ||
+    expiringFilter === "stuck" ||
+    expiringFilter === "today-tomorrow"
       ? true
       : undefined;
   const newParams = { status: "New", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
@@ -637,11 +926,23 @@ export default function Queue() {
   const portalQueuedAll = sortByUrgency(portalQueuedGroups);
   const onHoldAll = sortByUrgency(onHoldGroups);
 
-  // Past-deadline rows + `?expiring=` filtering are both server-side
-  // now, so the lane payload is exactly what the operator sees.
-  const actionableGroups = actionableAll;
-  const portalQueuedSorted = portalQueuedAll;
-  const onHoldSorted = onHoldAll;
+  // Past-deadline rows + `?expiring=` filtering are server-side for the
+  // urgent / soon / stuck modes (the API understands those tokens). The
+  // Task #452 modes (`tomorrow`, `today-tomorrow`) are narrowed
+  // client-side via `filterByExpiringParam` so the visible list, the
+  // chip count, the tab badges, and the empty-state copy all reflect
+  // the same set of rows.
+  const needsClientFilter =
+    expiringFilter === "tomorrow" || expiringFilter === "today-tomorrow";
+  const actionableGroups = needsClientFilter
+    ? filterByExpiringParam(actionableAll, expiringFilter)
+    : actionableAll;
+  const portalQueuedSorted = needsClientFilter
+    ? filterByExpiringParam(portalQueuedAll, expiringFilter)
+    : portalQueuedAll;
+  const onHoldSorted = needsClientFilter
+    ? filterByExpiringParam(onHoldAll, expiringFilter)
+    : onHoldAll;
 
   // Client-side search overlay — narrows the already-filtered lane
   // sets (urgency / engagement / past-deadline filters stay upstream).
@@ -670,9 +971,10 @@ export default function Queue() {
   );
 
   // Lane urgent / stuck / soon counts. When an `?expiring=` filter is
-  // active the lane is already server-narrowed, so `data.total` IS the
-  // filter-matching count. With no filter, urgent/stuck splits derive
-  // from the array (within the existing `limit: 500` ceiling).
+  // active and the API understands it, the lane is server-narrowed so
+  // `data.total` IS the filter-matching count. With no filter (or with
+  // a Task #452 client-only mode), urgent/stuck splits derive from the
+  // array (within the existing `limit: 500` ceiling).
   const actionableUrgent = expiringFilter === "urgent"
     ? actionableTotal
     : actionableAll.filter(g => g.isUrgent).length;
@@ -695,15 +997,49 @@ export default function Queue() {
     ? portalQueuedTotal
     : portalQueuedAll.filter(g => g.submittedStuck).length;
 
-  // Per-lane "soon" counts — only consulted when the soon filter is
-  // active (see `formatTabBadge`).
-  const actionableSoonCount = expiringFilter === "soon" ? actionableTotal : 0;
-  const portalQueuedSoonCount = expiringFilter === "soon" ? portalQueuedTotal : 0;
-  const onHoldSoonCount = expiringFilter === "soon" ? onHoldTotal : 0;
+  // Per-lane filter-matching counts that drive the tab badges. For
+  // server-narrowed modes (soon) this is just the lane total; for the
+  // Task #452 client-side modes (tomorrow, today-tomorrow) we count
+  // the post-filter array.
+  const actionableMatchingCount =
+    expiringFilter === "soon"
+      ? actionableTotal
+      : needsClientFilter
+        ? actionableGroups.length
+        : 0;
+  const portalQueuedMatchingCount =
+    expiringFilter === "soon"
+      ? portalQueuedTotal
+      : needsClientFilter
+        ? portalQueuedSorted.length
+        : 0;
+  const onHoldMatchingCount =
+    expiringFilter === "soon"
+      ? onHoldTotal
+      : needsClientFilter
+        ? onHoldSorted.length
+        : 0;
 
   // Sum of authoritative server totals so the visible-set chip never
   // undercounts when a lane has more matches than the 500-row payload.
-  const visibleFilteredCount = actionableTotal + portalQueuedTotal + onHoldTotal;
+  // For the client-side modes we sum the filtered arrays instead.
+  const visibleFilteredCount = needsClientFilter
+    ? actionableMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
+    : actionableTotal + portalQueuedTotal + onHoldTotal;
+
+  // Today / Tomorrow split for the multi-chip filter UI under
+  // today-tomorrow / tomorrow / urgent. We split the post-filter
+  // arrays so the chip counts always match the rows the operator sees.
+  const filterTodayCount =
+    expiringFilter === "urgent"
+      ? actionableTotal + portalQueuedTotal + onHoldTotal
+      : countUrgentRows(actionableGroups, portalQueuedSorted, onHoldSorted);
+  const filterTomorrowCount =
+    expiringFilter === "tomorrow"
+      ? actionableMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
+      : [actionableGroups, portalQueuedSorted, onHoldSorted]
+          .flat()
+          .filter(g => !g.isUrgent && g.effectiveDaysLeft === 1).length;
 
   const allGroups = [
     ...actionableAll,
@@ -792,6 +1128,11 @@ export default function Queue() {
   const renderDeadlineHint = (group: InvoiceGroupResponse) => {
     const labelInfo = formatDeadlineLabel(group);
     if (!labelInfo) return null;
+    // Task #452 — red is reserved for today / overdue ("must file
+    // before EOD"). Tomorrow gets the strong amber pill so it reads as
+    // the most urgent of the yellows. The 2–3-day "soon" band keeps an
+    // amber palette but at reduced opacity so it visibly steps down
+    // from "tomorrow"; week / later stay in the muted band.
     const tierStyles: Record<DeadlineTier, React.CSSProperties> = {
       today: {
         background: "hsl(var(--destructive))",
@@ -803,16 +1144,21 @@ export default function Queue() {
         color: "white",
         borderColor: "hsl(var(--destructive))",
       },
-      soon: {
+      tomorrow: {
         background: "hsl(var(--cc-amber-bg))",
         color: "hsl(var(--cc-amber-fg))",
         borderColor: "hsl(var(--cc-amber-border))",
       },
-      week: {
+      soon: {
         background: "hsl(var(--cc-amber-bg))",
         color: "hsl(var(--cc-amber-fg))",
         borderColor: "hsl(var(--cc-amber-border))",
-        opacity: 0.85,
+        opacity: 0.7,
+      },
+      week: {
+        background: "hsl(var(--muted))",
+        color: "hsl(var(--muted-foreground))",
+        borderColor: "transparent",
       },
       later: {
         background: "hsl(var(--muted))",
@@ -849,13 +1195,18 @@ export default function Queue() {
     ) : null;
     // Urgent rows get the strong red row treatment: tinted background,
     // red left border, larger TODAY badge, currency in red. Non-urgent
-    // rows that match an active "soon" filter get a softer amber tint
+    // rows that match an active deadline filter get a softer amber tint
     // so the filter context reads on the row itself, not just the chip.
-    const isSoonRow =
-      !group.isUrgent &&
-      group.effectiveDaysLeft != null &&
-      group.effectiveDaysLeft >= 1 &&
-      group.effectiveDaysLeft <= 3;
+    // Task #452 — under `tomorrow` / `today-tomorrow` we tint the day-1
+    // rows in amber; under `soon` we keep the legacy 1..3 day tint.
+    const days = group.effectiveDaysLeft;
+    const isTomorrowRow = !group.isUrgent && days === 1;
+    const isSoonBandRow =
+      !group.isUrgent && days != null && days >= 1 && days <= 3;
+    const tintAsTomorrow =
+      isTomorrowRow &&
+      (expiringFilter === "tomorrow" || expiringFilter === "today-tomorrow");
+    const tintAsSoon = expiringFilter === "soon" && isSoonBandRow;
     let rowStyle: React.CSSProperties = {};
     if (group.isUrgent) {
       rowStyle = {
@@ -864,12 +1215,15 @@ export default function Queue() {
         borderLeftWidth: 4,
         borderLeftColor: "hsl(var(--destructive))",
       };
-    } else if (expiringFilter === "soon" && isSoonRow) {
+    } else if (tintAsTomorrow || tintAsSoon) {
       rowStyle = {
         background: "hsl(var(--cc-amber-bg))",
         borderColor: "hsl(var(--cc-amber-border))",
         borderLeftWidth: 4,
         borderLeftColor: "hsl(var(--cc-amber-fg))",
+        // The 2–3-day band tints softer than the day-1 band so the
+        // hierarchy of yellows reads correctly when both are visible.
+        ...(tintAsSoon && !isTomorrowRow ? { opacity: 0.9 } : {}),
       };
     }
     return (
@@ -945,6 +1299,7 @@ export default function Queue() {
         urgentCount={urgentCount}
         stuckCount={stuckCount}
         soonCount={visibleFilteredCount}
+        tomorrowCount={filterTomorrowCount}
         filter={expiringFilter}
         onSelectUrgentGroup={selectWorkflow}
       />
@@ -954,8 +1309,10 @@ export default function Queue() {
           {expiringFilter && (
             <ExpiringFilterChip
               filter={expiringFilter}
+              todayCount={filterTodayCount}
+              tomorrowCount={filterTomorrowCount}
               count={visibleFilteredCount}
-              onClear={clearExpiringFilter}
+              onSetFilter={setExpiringFilter}
             />
           )}
         </div>
@@ -1035,7 +1392,7 @@ export default function Queue() {
                 <TabBadgeSplit
                   total={actionableTotal}
                   urgent={actionableUrgent}
-                  soon={actionableSoonCount}
+                  matching={actionableMatchingCount}
                   filterMode={expiringFilter}
                   testid="tab-badge-actionable"
                 />
@@ -1046,7 +1403,7 @@ export default function Queue() {
                   <TabBadgeSplit
                     total={portalQueuedTotal}
                     urgent={portalQueuedUrgent}
-                    soon={portalQueuedSoonCount}
+                    matching={portalQueuedMatchingCount}
                     filterMode={expiringFilter}
                     testid="tab-badge-portal-queued"
                   />
@@ -1058,7 +1415,7 @@ export default function Queue() {
                   <TabBadgeSplit
                     total={onHoldTotal}
                     urgent={onHoldUrgent}
-                    soon={onHoldSoonCount}
+                    matching={onHoldMatchingCount}
                     filterMode={expiringFilter}
                     testid="tab-badge-on-hold"
                   />
@@ -1070,8 +1427,9 @@ export default function Queue() {
               <p className="text-xs text-muted-foreground" data-testid="tab-purpose-actionable">
                 <span className="font-medium text-foreground">New + Needs Evidence + Generating Email.</span> Pre-submit groups you can act on right now. Sorted earliest service date first.{" "}
                 <span className="font-semibold" style={{ color: "hsl(var(--destructive))" }}>Today</span> = must file before EOD,{" "}
-                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>≤2d</span> = within two days,{" "}
-                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.85 }}>≤7d</span> = within a week, neutral = anything past a week. Every row shows its tier.
+                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))" }}>Tomorrow</span> = day-1,{" "}
+                <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.7 }}>≤3d</span> = 2–3 days out,{" "}
+                <span className="font-semibold text-muted-foreground">≤7d</span> = within a week, neutral = anything past a week. Every row shows its tier.
               </p>
               {actionableGroups.length === 0 ? (
                 <Card>
