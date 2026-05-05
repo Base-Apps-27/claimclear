@@ -3655,7 +3655,7 @@ export interface WorkerActivityResponse {
   recentRuns: WorkerRunSummary[];
   pendingDueCount: number;
   /** Pending submissions that have missed an expected scheduled
-sweep (8/11/14/18 ET) plus the grace window. Always 0 when
+sweep (8/11/14/18/22 ET) plus the grace window. Always 0 when
 the most recent expected sweep hasn't actually run — that
 condition is reported by the cron tile, not the worker tile.
  */

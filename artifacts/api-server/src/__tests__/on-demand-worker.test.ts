@@ -362,7 +362,7 @@ test("isSubmissionDue: non-pending statuses are never claimed", () => {
 });
 
 // Cycle-aware overdue rule. The "cutoff" passed to `isSubmissionOverdue`
-// is now the last expected sweep time (8/11/14/18 ET) plus its grace
+// is now the last expected sweep time (8/11/14/18/22 ET) plus its grace
 // window — not "now − 15 min". Plus the sweep must have actually run.
 const LAST_DUE_SWEEP = new Date(NOW.getTime() - 30 * 60 * 1000);
 

@@ -638,9 +638,11 @@ cron.schedule(STUCK_SUBMISSION_RESET.cron, async () => {
   });
 }, { timezone: STUCK_SUBMISSION_RESET.tz });
 
-// Scheduled portal batch sweeper. Runs four times each business day at
-// 8am, 11am, 2pm, and 6pm America/New_York, Monday through Friday; if any
-// pending submissions are due (next_retry_at <= now or NULL), triggers a
+// Scheduled portal batch sweeper. Runs five times each business day at
+// 8am, 11am, 2pm, 6pm, and 10pm America/New_York, Monday through Friday.
+// The 10pm fire is an after-hours sweep that catches anything queued late
+// in the evening so it still goes out before the next morning's deadline
+// cutoff. If any pending submissions are due (next_retry_at <= now or NULL), triggers a
 // worker run that drains the queue. Admins can also fire a batch on demand
 // from the Portal Submissions page via "Process Pending" / "Process
 // Selected" — that path uses the same triggerWorkerRun gate, so concurrent

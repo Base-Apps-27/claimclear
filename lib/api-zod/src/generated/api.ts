@@ -22665,7 +22665,7 @@ export const GetSystemHealthWorkerActivityResponse = zod.object({
   overdueCount: zod
     .number()
     .describe(
-      "Pending submissions that have missed an expected scheduled\nsweep (8\/11\/14\/18 ET) plus the grace window. Always 0 when\nthe most recent expected sweep hasn't actually run — that\ncondition is reported by the cron tile, not the worker tile.\n",
+      "Pending submissions that have missed an expected scheduled\nsweep (8\/11\/14\/18\/22 ET) plus the grace window. Always 0 when\nthe most recent expected sweep hasn't actually run — that\ncondition is reported by the cron tile, not the worker tile.\n",
     ),
   overdueGraceMinutes: zod
     .number()

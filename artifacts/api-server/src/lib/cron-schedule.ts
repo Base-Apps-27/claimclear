@@ -18,14 +18,14 @@ export interface CronJobSchedule {
   // tolerance. The default (DEFAULT_MISSED_TICK_THRESHOLD) treats a
   // single skipped fire as a transient blip — fine for jobs that fire
   // every few minutes. Sweeps that fire only a handful of times per day
-  // (like portal_batch_sweeper at 8/11/14/18 ET) cannot afford that
+  // (like portal_batch_sweeper at 8/11/14/18/22 ET) cannot afford that
   // tolerance: a single missed fire IS the alert.
   missedTickThreshold?: number;
 }
 
 export const PORTAL_BATCH_SWEEPER: CronJobSchedule = {
   name: "portal_batch_sweeper",
-  cron: "0 8,11,14,18 * * 1-5",
+  cron: "0 8,11,14,18,22 * * 1-5",
   tz: "America/New_York",
   // Lower than the global default of 2 because the worker-overdue rule
   // only flags rows when this sweep actually ran (per cron_runs); if we
