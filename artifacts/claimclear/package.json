@@ -9,7 +9,7 @@
     "build": "node ./scripts/check-tour-version.mjs && vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "TSX_TSCONFIG_PATH=./tsconfig.test.json node --import tsx --test --test-force-exit src/lib/*.test.ts src/lib/*.test.tsx src/components/*.test.ts src/components/*.test.tsx src/components/decision-tree/*.test.ts src/components/decision-tree/*.test.tsx src/components/decision-tree/terminals/*.test.ts src/components/decision-tree/terminals/*.test.tsx src/pages/*.test.ts src/pages/*.test.tsx",
+    "test": "TSX_TSCONFIG_PATH=./tsconfig.test.json node --experimental-test-module-mocks --import tsx --test --test-force-exit src/lib/*.test.ts src/lib/*.test.tsx src/components/*.test.ts src/components/*.test.tsx src/components/decision-tree/*.test.ts src/components/decision-tree/*.test.tsx src/components/decision-tree/terminals/*.test.ts src/components/decision-tree/terminals/*.test.tsx src/pages/*.test.ts src/pages/*.test.tsx",
     "test:e2e": "playwright test --config=playwright.config.ts"
   },
   "devDependencies": {

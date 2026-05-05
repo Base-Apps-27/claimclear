@@ -1471,7 +1471,10 @@ function ConfirmStep({
 //      entirely and use the existing nav (Open Queue, Import another)
 //      in the right rail — the bridge is purely additive.
 // ────────────────────────────────────────────────────────────────────────────
-function PostUploadBridge({ batchId }: { batchId: string }) {
+// Exported for the regression test in `post-upload-bridge.test.tsx`. The
+// rest of the page consumes it as a local function — there is no other
+// caller and no plan for one (it is intrinsically tied to the import flow).
+export function PostUploadBridge({ batchId }: { batchId: string }) {
   const queryClient = useQueryClient();
   // No need for an `{ enabled }` guard here: the parent (`ConfirmStep`'s
   // complete branch) only mounts <PostUploadBridge /> when `result.batchId`
@@ -1537,7 +1540,40 @@ function PostUploadBridge({ batchId }: { batchId: string }) {
     );
   }
 
-  const allGroups = (groupsQuery.data ?? []) as InvoiceGroupResponse[];
+  // If either query failed, render an inline retry affordance instead of
+  // bubbling the error up to the global error boundary. The misleading
+  // "all clean" empty-state below would otherwise lie to the operator —
+  // they'd think nothing needed triage when in reality the list never
+  // loaded. errorTypesQuery failures fold in here too: without the
+  // picker options the bridge can't function, so it's the same outcome.
+  if (groupsQuery.isError || errorTypesQuery.isError) {
+    return (
+      <Section title="Quick triage" icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}>
+        <p className="text-sm text-muted-foreground mb-2">
+          Couldn't load the triage list — please retry.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            if (groupsQuery.isError) groupsQuery.refetch();
+            if (errorTypesQuery.isError) errorTypesQuery.refetch();
+          }}
+          data-testid="bridge-retry"
+        >
+          Retry
+        </Button>
+      </Section>
+    );
+  }
+
+  // The list endpoint returns `{ groups, total, today, ... }` — never a
+  // bare array. Earlier code cast `groupsQuery.data` to InvoiceGroupResponse[]
+  // and called `.filter()` on it, which crashed the page on every successful
+  // upload (TypeError: filter is not a function). Match the same `?.groups
+  // ?? []` shape every other consumer uses (queue.tsx, invoice-groups.tsx,
+  // dashboard.tsx, claim-new.tsx, responses-awaiting-review.tsx).
+  const allGroups: InvoiceGroupResponse[] = groupsQuery.data?.groups ?? [];
   const visibleGroups = allGroups.filter(g => !actioned.has(g.id));
   const errorTypes = (errorTypesQuery.data ?? []) as ErrorTypeResponse[];
 
@@ -1584,7 +1620,15 @@ function PostUploadBridge({ batchId }: { batchId: string }) {
                 <div className="font-mono font-medium truncate">{g.invoiceNumber || `Group #${g.id}`}</div>
                 <div className="text-xs text-muted-foreground">
                   {g.rideCount} ride{g.rideCount === 1 ? "" : "s"}
-                  {g.totalAmount && ` · $${parseFloat(g.totalAmount).toFixed(2)}`}
+                  {(() => {
+                    // Guard parseFloat: scrubMoneyFieldsArray nulls totalAmount
+                    // for users who can't see amounts, but for everyone else
+                    // it's a string that could in principle be non-numeric.
+                    // Skip the segment rather than rendering "$NaN".
+                    if (!g.totalAmount) return null;
+                    const n = parseFloat(g.totalAmount);
+                    return Number.isFinite(n) ? ` · $${n.toFixed(2)}` : null;
+                  })()}
                   {g.clientNumber && ` · ${g.clientNumber}`}
                 </div>
                 {rowError && (
