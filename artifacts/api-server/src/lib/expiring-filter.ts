@@ -30,6 +30,18 @@ function maxDaysFor(mode: ExpiringMode): number {
   return SOON_DAYS;
 }
 
+// `urgent` is strict-today (deadline EXACTLY today, after the weekend →
+// Friday shift) — past-due rows are NOT urgent. This matches the
+// `isUrgentDeadline` predicate in lib/dates.ts and the dashboard's
+// `urgentCount` scalar so the "Must file today" filter on the claims
+// and invoice-groups lists can never read more rows than the
+// dashboard hero counts. `stuck` and `soon` keep their inclusive
+// upper bound; only `urgent` collapses to a single day. See the
+// must-file-today-parity contract test for the locked alignment.
+function exactlyTodayFor(mode: ExpiringMode): boolean {
+  return mode === "urgent";
+}
+
 // SQL fragment that yields the effective deadline (date type) for a given
 // service-date expression: serviceDate + 30 days, then if the result lands on
 // Saturday or Sunday, shifted back to the prior Friday so it reflects the day
@@ -82,10 +94,14 @@ export function buildClaimExpiringCondition(mode: ExpiringMode): SQL {
   const conds: SQL[] = [
     sql`${dateExpr} IS NOT NULL` as SQL,
     claimStatusCondition(mode),
-    sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL,
   ];
-  if (min !== null) {
-    conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+  if (exactlyTodayFor(mode)) {
+    conds.push(sql`(${deadline} - CURRENT_DATE) = ${max}` as SQL);
+  } else {
+    conds.push(sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL);
+    if (min !== null) {
+      conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+    }
   }
   return and(...conds) as SQL;
 }
@@ -106,10 +122,14 @@ export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   const conds: SQL[] = [
     groupStatusCondition(mode),
     isNotNull(invoiceGroupsTable.serviceDate) as SQL,
-    sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL,
   ];
-  if (min !== null) {
-    conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+  if (exactlyTodayFor(mode)) {
+    conds.push(sql`(${deadline} - CURRENT_DATE) = ${max}` as SQL);
+  } else {
+    conds.push(sql`(${deadline} - CURRENT_DATE) <= ${max}` as SQL);
+    if (min !== null) {
+      conds.push(sql`(${deadline} - CURRENT_DATE) >= ${min}` as SQL);
+    }
   }
   return and(...conds) as SQL;
 }

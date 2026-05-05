@@ -273,7 +273,15 @@ test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent gr
   // The dashboard response carries `expiringGroups[]`; the invoice-
   // groups list returns `groups[]` (or `data[]` — guard for both). The
   // snapshot returns the raw ID array directly.
-  const summaryGroups: Array<{ id: number }> = summaryResp.json.expiringGroups ?? [];
+  // `expiringGroups[]` spans the full "soon-or-sooner" band the
+  // dashboard renders (urgent + past-due + soon, capped at SOON_DAYS),
+  // while the parity contract is specifically about the URGENT set.
+  // Filter by the per-row `isUrgent` flag so the comparison only
+  // covers strict-today rows — past-due actionable rows that the
+  // dashboard surfaces under separate visual treatment must not be
+  // miscounted as urgent here.
+  const summaryGroups: Array<{ id: number; isUrgent?: boolean }> = (summaryResp.json.expiringGroups ?? [])
+    .filter((g: { isUrgent?: boolean }) => g.isUrgent === true);
   const listBody = listResp.json as { groups?: Array<{ id: number }>; data?: Array<{ id: number }> };
   const listGroups: Array<{ id: number }> = listBody.groups ?? listBody.data ?? [];
 

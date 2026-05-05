@@ -32,6 +32,7 @@ import { inArray } from "drizzle-orm";
 
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
+import { isUrgentDeadline } from "../lib/dates";
 import {
   db,
   pool,
@@ -122,6 +123,20 @@ function ymdDaysAgo(days: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+// Strict-today urgency: pick a service date whose 30-day deadline (after
+// the weekend → Friday shift) lands exactly on today. Returns null on
+// Sat/Sun because the shift always pulls weekend deadlines back to
+// Friday — no service date can produce a "today" deadline on those
+// days. Mirrors the helper in must-file-today-parity.test.ts.
+function ymdServiceDateUrgentToday(): string | null {
+  const now = new Date();
+  for (let n = 28; n <= 34; n++) {
+    const candidate = ymdDaysAgo(n);
+    if (isUrgentDeadline(candidate, now)) return candidate;
+  }
+  return null;
+}
+
 interface SeedGroupOpts {
   status: "New" | "Needs Evidence" | "Portal Queued";
   serviceDate: string;
@@ -198,20 +213,35 @@ test("invoice-groups: total matches visible rows after past-deadline filter move
     assert.ok(ids.includes(ok2), `default list missing on-deadline Needs Evidence (id=${ok2})`);
   }
 
-  // (b1) `?expiring=urgent` bypasses the past-deadline guard. Past-
-  // deadline rows in the actionable status set MUST appear; on-deadline
-  // rows (deadline still in the future) MUST NOT appear; the Portal
-  // Queued row is filtered out by the urgent status set.
+  // (b1) `?expiring=urgent` is strict-today (deadline EXACTLY today,
+  // after the weekend → Friday shift). Past-due actionable rows are
+  // NOT urgent — they belong to the explicit `?includeExpired=true`
+  // opt-in tier — so the SQL filter must exclude them just like the
+  // dashboard's `urgentCount` scalar does. This locks the alignment
+  // with `isUrgentDeadline` (lib/dates.ts) so the "Must file today"
+  // filter chip can never out-count the dashboard hero. Strict-today
+  // urgency cannot fire on Sat/Sun (the office-closure shift always
+  // pulls weekend deadlines back to Friday), so we add the today-
+  // urgent fixture only on weekdays and assert its membership only
+  // when seeded.
+  const urgentTodaySD = ymdServiceDateUrgentToday();
+  const urgentToday = urgentTodaySD == null
+    ? null
+    : await seedGroup({ status: "New", serviceDate: urgentTodaySD, label: "urgent-today" });
   {
     const { status, json } = await getJson(`/api/invoice-groups?search=${TAG}&expiring=urgent&limit=500`);
     assert.equal(status, 200, `urgent list HTTP ${status}: ${JSON.stringify(json).slice(0, 300)}`);
     const ids = (json.groups as Array<{ id: number }>).map(g => g.id);
     assert.equal(json.total, ids.length, `urgent: total=${json.total} != groups.length=${ids.length}`);
-    assert.ok(ids.includes(pastNew1), `?expiring=urgent missing past-deadline New (id=${pastNew1})`);
-    assert.ok(ids.includes(pastNew2), `?expiring=urgent missing past-deadline New (id=${pastNew2})`);
+    // Past-due rows must NOT appear — strict-today semantics.
+    assert.ok(!ids.includes(pastNew1), `?expiring=urgent unexpectedly includes past-deadline New (id=${pastNew1}) — strict-today filter must exclude past-due`);
+    assert.ok(!ids.includes(pastNew2), `?expiring=urgent unexpectedly includes past-deadline New (id=${pastNew2}) — strict-today filter must exclude past-due`);
     assert.ok(!ids.includes(pastStuck), `?expiring=urgent unexpectedly includes Portal Queued (id=${pastStuck}) — wrong status set`);
     assert.ok(!ids.includes(ok1), `?expiring=urgent unexpectedly includes future-deadline (id=${ok1})`);
     assert.ok(!ids.includes(ok2), `?expiring=urgent unexpectedly includes future-deadline (id=${ok2})`);
+    if (urgentToday != null) {
+      assert.ok(ids.includes(urgentToday), `?expiring=urgent missing strict-today fixture (id=${urgentToday})`);
+    }
   }
 
   // (b2) `?expiring=stuck` bypasses the past-deadline guard for the
@@ -234,7 +264,9 @@ test("invoice-groups: total matches visible rows after past-deadline filter move
     assert.equal(status, 200, `includeExpired list HTTP ${status}: ${JSON.stringify(json).slice(0, 300)}`);
     const ids = (json.groups as Array<{ id: number }>).map(g => g.id);
     assert.equal(json.total, ids.length, `includeExpired: total=${json.total} != groups.length=${ids.length}`);
-    for (const id of [ok1, ok2, pastNew1, pastNew2, pastStuck]) {
+    const expected = [ok1, ok2, pastNew1, pastNew2, pastStuck];
+    if (urgentToday != null) expected.push(urgentToday);
+    for (const id of expected) {
       assert.ok(ids.includes(id), `?includeExpired=true missing seeded id=${id}`);
     }
   }
@@ -265,20 +297,34 @@ test("claims: total matches visible rows after past-deadline filter move", async
     }
   }
 
-  // (b1) urgent — actionable status set includes New and Needs Evidence
-  // AND Portal Queued / Processed (CLAIM_EXPIRING_ACTIONABLE_STATUSES is
-  // the union, unlike the group-level set). So all four past-deadline
-  // claims qualify under `?expiring=urgent`.
+  // (b1) urgent — strict-today (deadline EXACTLY today, after the
+  // weekend → Friday shift). Past-due actionable rows are NOT urgent —
+  // they belong to the explicit `?includeExpired=true` opt-in tier —
+  // so the SQL filter must exclude them just like the dashboard's
+  // `urgentCount` scalar does. Locks the alignment with
+  // `isUrgentDeadline` (lib/dates.ts) so the "Must file today"
+  // filter chip on the claims list can never out-count the dashboard
+  // hero. Strict-today urgency cannot fire on Sat/Sun (the office-
+  // closure shift always pulls weekend deadlines back to Friday), so
+  // the today fixture is added only on weekdays and asserted only
+  // when seeded.
+  const urgentTodaySD = ymdServiceDateUrgentToday();
+  const urgentToday = urgentTodaySD == null
+    ? null
+    : await seedClaim({ status: "New", date: urgentTodaySD, label: "urgent-today" });
   {
     const { status, json } = await getJson(`/api/claims?search=${TAG}&expiring=urgent&limit=500`);
     assert.equal(status, 200, `urgent list HTTP ${status}: ${JSON.stringify(json).slice(0, 300)}`);
     const ids = (json.claims as Array<{ id: number }>).map(c => c.id);
     assert.equal(json.total, ids.length, `claims urgent: total=${json.total} != claims.length=${ids.length}`);
     for (const id of [pastNew1, pastNew2, pastStuckQueued, pastStuckProcessed]) {
-      assert.ok(ids.includes(id), `?expiring=urgent missing past-deadline id=${id}`);
+      assert.ok(!ids.includes(id), `?expiring=urgent unexpectedly includes past-deadline id=${id} — strict-today filter must exclude past-due`);
     }
     for (const id of [ok1, ok2]) {
       assert.ok(!ids.includes(id), `?expiring=urgent unexpectedly includes future-deadline id=${id}`);
+    }
+    if (urgentToday != null) {
+      assert.ok(ids.includes(urgentToday), `?expiring=urgent missing strict-today fixture (id=${urgentToday})`);
     }
   }
 
@@ -304,7 +350,9 @@ test("claims: total matches visible rows after past-deadline filter move", async
     assert.equal(status, 200, `includeExpired list HTTP ${status}: ${JSON.stringify(json).slice(0, 300)}`);
     const ids = (json.claims as Array<{ id: number }>).map(c => c.id);
     assert.equal(json.total, ids.length, `claims includeExpired: total=${json.total} != claims.length=${ids.length}`);
-    for (const id of [ok1, ok2, pastNew1, pastNew2, pastStuckQueued, pastStuckProcessed]) {
+    const expected = [ok1, ok2, pastNew1, pastNew2, pastStuckQueued, pastStuckProcessed];
+    if (urgentToday != null) expected.push(urgentToday);
+    for (const id of expected) {
       assert.ok(ids.includes(id), `?includeExpired=true missing seeded id=${id}`);
     }
   }
