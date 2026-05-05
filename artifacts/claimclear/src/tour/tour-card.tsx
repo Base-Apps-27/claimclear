@@ -16,7 +16,7 @@
 // the card content and let Joyride place us.
 
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, Globe, Mail, FileText, ArrowUpRight } from "lucide-react";
 import type { TooltipRenderProps } from "react-joyride";
 import type { ProcessStepValue, TourStepDef } from "./tour-config";
@@ -301,11 +301,9 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
   return (
     <motion.div
       {...tooltipProps}
-      key={`modal-${def.id}`}
-      initial={{ opacity: 0, scale: 0.965, y: 6 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.985, y: -4 }}
-      transition={{ duration: 0.26, ease: EASE_OUT }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18, ease: EASE_OUT }}
       className={`relative rounded-2xl bg-white overflow-hidden flex flex-col ${isSubmitStep ? "w-[640px]" : "w-[480px]"} max-w-[calc(100vw-2rem)]`}
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.32), 0 8px 24px -12px rgba(27,42,74,0.20), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -353,11 +351,9 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
   return (
     <motion.div
       {...tooltipProps}
-      key={`coach-${def.id}`}
-      initial={{ opacity: 0, scale: 0.985, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.99 }}
-      transition={{ duration: 0.28, ease: EASE_OUT }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18, ease: EASE_OUT }}
       className="w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white overflow-hidden flex flex-col"
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.36), 0 8px 24px -12px rgba(27,42,74,0.22), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -399,27 +395,28 @@ export function TourCard(props: TooltipRenderProps) {
     );
   }
   const buttons = { backProps: props.backProps, primaryProps: props.primaryProps, skipProps: props.skipProps };
-  return (
-    <AnimatePresence mode="wait">
-      {def.kind === "modal" ? (
-        <ModalCard
-          key={`m-${def.id}`}
-          def={def}
-          totalSteps={props.size}
-          index={props.index}
-          buttons={buttons}
-          tooltipProps={props.tooltipProps}
-        />
-      ) : (
-        <CoachCard
-          key={`c-${def.id}`}
-          def={def}
-          totalSteps={props.size}
-          index={props.index}
-          buttons={buttons}
-          tooltipProps={props.tooltipProps}
-        />
-      )}
-    </AnimatePresence>
-  );
+  // No AnimatePresence wrapper: Joyride re-mounts the tooltipComponent
+  // for every step transition, so an exit animation never gets a
+  // chance to play. A subtle opacity fade on the inner card is enough,
+  // and avoids the "card flying around" feel between centered modals
+  // that share the same on-screen position.
+  try {
+    return def.kind === "modal" ? (
+      <ModalCard def={def} totalSteps={props.size} index={props.index} buttons={buttons} tooltipProps={props.tooltipProps} />
+    ) : (
+      <CoachCard def={def} totalSteps={props.size} index={props.index} buttons={buttons} tooltipProps={props.tooltipProps} />
+    );
+  } catch (err) {
+    // Defensive: a thrown error inside the tooltip would otherwise
+    // bubble up through Joyride and blank the host page (the symptom
+    // the operator saw on step 14). Render a tiny chip so the user
+    // can still skip past the broken step.
+    if (import.meta.env.DEV) console.error("[TourCard] render error", err);
+    return (
+      <div {...props.tooltipProps} className="rounded-md bg-white p-3 text-xs text-slate-700 shadow">
+        Tour step couldn't render.
+        <button {...props.skipProps} className="ml-2 underline">Skip tour</button>
+      </div>
+    );
+  }
 }

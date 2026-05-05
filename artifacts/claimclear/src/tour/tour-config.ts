@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v7";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v8";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -40,6 +40,15 @@ export type TourStepDef = {
   // use `body` + placement `center`; for coaches use a real selector.
   target: string;
   placement: "auto" | "center" | "top" | "bottom" | "left" | "right";
+  // When true, Joyride will NOT scroll the page to bring this step's
+  // anchor into view. Used for:
+  //   • All centered modals (target=body) — there's nothing to scroll
+  //     to and triggering a scroll on a freshly navigated page can
+  //     race with React's mount and blank the screen.
+  //   • Step 13 (engagement-strip) — sits right next to step 12's
+  //     actionable tab anchor, so the prior step already scrolled it
+  //     into the viewport. Re-scrolling jerks the page for no reason.
+  disableScrolling?: boolean;
 };
 
 // Map page → default route for navigation before showing each step.
@@ -195,6 +204,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   {
     id: 13, kind: "coach", page: "queue", processStep: "all",
     target: '[data-tour="queue-engagement-strip"]', placement: "bottom",
+    disableScrolling: true,
     title: "⚠️ Two tabs are hidden right now",
     body:
       "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
