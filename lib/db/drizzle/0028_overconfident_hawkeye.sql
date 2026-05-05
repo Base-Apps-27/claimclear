@@ -1,0 +1,1 @@
+ALTER TABLE "portal_responses" ADD COLUMN "is_tour_sample" boolean DEFAULT false NOT NULL;

@@ -43,6 +43,12 @@ export const portalResponsesTable = pgTable("portal_responses", {
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  // TRUE for the singleton "tour sample" portal_response seeded by
+  // migration 0030. Hidden from every normal list/aggregate query and
+  // read-only at the API layer. Backs tour step 14's anchored 3-card
+  // walk (Thread / AI Read / Decide). See artifacts/api-server/src/lib/
+  // tour-sample.ts and routes/tour.ts.
+  isTourSample: boolean("is_tour_sample").notNull().default(false),
 }, (table) => [
   index("portal_responses_claim_id_idx").on(table.claimId),
   index("portal_responses_submission_id_idx").on(table.submissionId),

@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v15";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v16";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -55,7 +55,7 @@ export type TourStepDef = {
   // sample isn't available (migration not yet run, fetch failed) the
   // controller falls back to a centered modal so the rest of the
   // tour still works. See admin-tour.tsx.
-  dynamicRoute?: "tour-sample-group" | "tour-sample-claim";
+  dynamicRoute?: "tour-sample-group" | "tour-sample-claim" | "tour-sample-response";
 };
 
 // Map page → default route for navigation before showing each step.
@@ -217,34 +217,58 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: Responses",
   },
 
-  // ═══════ Responses (1 modal) ═══════
+  // ═══════ Responses (3 anchored coaches on the global tour sample) ═══════
   //
-  // History (May 5, 2026): this section used to be 1 modal + 3 anchored
-  // coach cards. Those crashed because of a navigation ping-pong
-  // between the responses page (auto-selecting the first row and pushing
-  // /responses-awaiting-review/<id>) and the tour controller (forcing
-  // the URL back to bare /responses-awaiting-review on every render).
-  // The fix lives in admin-tour.tsx: route comparisons now match by
-  // page key, so a page-internal navigation (e.g. appending an /id) is
-  // treated as "still on the responses page" instead of triggering a
-  // forced URL rewrite. With the loop broken we can navigate to the
-  // real page and show a centered modal over it. We deliberately keep
-  // it as ONE overview modal (not the original 3-card walkthrough) —
-  // anchored coach cards on a 3-column layout that immediately shifts
-  // selection are fragile, and the modal+page-context combo gives the
-  // operator the mental model without depending on specific selectors.
+  // History (May 5, 2026 → v16): this section was originally 1 modal +
+  // 3 anchored coach cards, then collapsed to ONE centered modal because
+  // the anchored cards crashed when the page had no row to anchor to
+  // (the auto-select-first-row effect plus a tour route rewrite war).
+  // Migration 0030 seeds a global read-only portal_response linked to
+  // the tour-sample invoice group + claim, so the page now ALWAYS has
+  // a row to anchor to. The responses page also has a fallback fetch
+  // for tour-sample groups (they're hidden from the awaiting-review
+  // list, so `groups.find(...)` would otherwise return null).
+  //
+  // The anchored steps use the existing data-tour selectors that the
+  // page has carried since Task #236:
+  //   • [data-tour="responses-thread"]  — left column (master list)
+  //   • [data-tour="responses-airead"]  — middle column (thread + AI)
+  //   • [data-tour="responses-verdict"] — right rail (Decide)
+  //
+  // If the tour-sample seed isn't available (migrations not run), the
+  // controller falls back to leaving the user on the bare list page;
+  // Joyride's TARGET_NOT_FOUND handler then skips these steps.
   {
-    id: 14, kind: "modal", page: "responses", processStep: 5,
-    target: "body", placement: "center",
-    title: "Responses Awaiting Review — Step 5 lives here",
+    id: 14, kind: "coach", page: "responses", processStep: 5,
+    dynamicRoute: "tour-sample-response",
+    target: '[data-tour="responses-thread"]', placement: "right",
+    title: "Responses — Step 5, column 1: pick a response",
     body:
-      "When MAS replies to a dispute, it lands on the Responses page for a decision. Three columns work together: a Thread on the left (every reply, bold = unread), an AI Read in the middle (MAS's actual words on top, the AI's summary below — use it as a second pair of eyes, not the decider), and a Decide rail on the right (Re-bill, Hand to supervisor, or Mark lost). Pick one before you move on. Nothing sits without a decision.",
+      "This is a sample response — read-only — so you can poke around safely. The left column is every payor reply waiting on a verdict. Oldest first by default. Click one and the middle and right columns load it.",
+    nextLabel: "Next: read what MAS said",
+  },
+  {
+    id: 15, kind: "coach", page: "responses", processStep: 5,
+    dynamicRoute: "tour-sample-response",
+    target: '[data-tour="responses-airead"]', placement: "left",
+    title: "Column 2: read MAS, then the AI",
+    body:
+      "MAS's actual words sit on top. The AI summary below is a second pair of eyes — not the decider. Read MAS first, scan the AI summary, then move to the right.",
+    nextLabel: "Next: pick the verdict",
+  },
+  {
+    id: 16, kind: "coach", page: "responses", processStep: 5,
+    dynamicRoute: "tour-sample-response",
+    target: '[data-tour="responses-verdict"]', placement: "left",
+    title: "Column 3: decide right then",
+    body:
+      "Three lanes: re-bill the ride if you can, hand it to a supervisor, or close it as denied. Pick one before you move on. Nothing sits without a decision. Re-billed rides are money we got back.",
     nextLabel: "Next: Attestation",
   },
 
   // ═══════ Attestation ═══════
   {
-    id: 15, kind: "modal", page: "attestation", processStep: 5,
+    id: 17, kind: "modal", page: "attestation", processStep: 5,
     target: "body", placement: "center",
     title: "Attestation Queue — closing the loop",
     body:
@@ -254,7 +278,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Invoice Groups (1 modal + 1 coach) ═══════
   {
-    id: 16, kind: "modal", page: "invoice-groups", processStep: "transition",
+    id: 18, kind: "modal", page: "invoice-groups", processStep: "transition",
     target: "body", placement: "center",
     title: "Invoice Groups — every group, in one list",
     body:
@@ -262,7 +286,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     nextLabel: "Next: the filter trap",
   },
   {
-    id: 17, kind: "coach", page: "invoice-groups", processStep: "all",
+    id: 19, kind: "coach", page: "invoice-groups", processStep: "all",
     target: '[data-tour="invoice-groups-filters"]', placement: "bottom",
     title: "⚠️ Two filters are hiding rows by default",
     body:
@@ -279,7 +303,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   // If the sample is unavailable, the controller falls back to a
   // centered modal so the tour still completes.
   {
-    id: 18, kind: "coach", page: "group-detail", processStep: "all",
+    id: 20, kind: "coach", page: "group-detail", processStep: "all",
     dynamicRoute: "tour-sample-group",
     target: '[data-tour="group-gauntlet"]', placement: "left",
     title: "Group detail — the Gauntlet shows the path to done",
@@ -290,7 +314,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Claims (1 modal + 1 coach on detail) ═══════
   {
-    id: 19, kind: "modal", page: "claims", processStep: "transition",
+    id: 21, kind: "modal", page: "claims", processStep: "transition",
     target: "body", placement: "center",
     title: "Claims — same idea as Groups, one ride at a time",
     body:
@@ -301,7 +325,7 @@ export const TOUR_STEPS: TourStepDef[] = [
   // tour-sample claim (seeded by migration 0029, resolved via
   // `GET /tour/sample`). Read-only, mutations blocked at the API.
   {
-    id: 20, kind: "coach", page: "claim-detail", processStep: "all",
+    id: 22, kind: "coach", page: "claim-detail", processStep: "all",
     dynamicRoute: "tour-sample-claim",
     target: '[data-tour="claim-sop-player"]', placement: "top",
     title: "Claim detail — the SOP Player tells you what to do",
@@ -312,7 +336,7 @@ export const TOUR_STEPS: TourStepDef[] = [
 
   // ═══════ Replay anchor ═══════
   {
-    id: 21, kind: "coach", page: "dashboard", processStep: "closing",
+    id: 23, kind: "coach", page: "dashboard", processStep: "closing",
     target: '[data-tour="sidebar-take-tour"]', placement: "right",
     title: "Replay anytime",
     body:

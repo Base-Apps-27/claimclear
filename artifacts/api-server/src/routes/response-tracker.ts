@@ -12,6 +12,7 @@ import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { blockMutationOnTourSampleResponse } from "../lib/tour-sample";
 import { logger } from "../lib/logger";
 import { isBounceMessage, recordBounce } from "../lib/bounce-detection";
 import {
@@ -41,7 +42,11 @@ router.get("/responses", asyncHandler(async (req, res): Promise<void> => {
 
   let query = db.select().from(portalResponsesTable).orderBy(desc(portalResponsesTable.receivedAt)).limit(limitVal).offset(offsetVal).$dynamic();
 
-  const conditions = [];
+  // Always hide the global tour-sample portal_response from list
+  // queries — it exists only as an anchor for tour step 14 and must
+  // never appear in the operator's normal review queue. See migration
+  // 0030_tour_sample_response.sql.
+  const conditions: any[] = [eq(portalResponsesTable.isTourSample, false)];
   if (claimId) conditions.push(eq(portalResponsesTable.claimId, parseInt(String(claimId), 10)));
   const { invoiceGroupId } = req.query;
   if (invoiceGroupId) conditions.push(eq(portalResponsesTable.invoiceGroupId, parseInt(String(invoiceGroupId), 10)));
@@ -49,9 +54,7 @@ router.get("/responses", asyncHandler(async (req, res): Promise<void> => {
   if (processed === "true") conditions.push(eq(portalResponsesTable.processed, true));
   if (processed === "false") conditions.push(eq(portalResponsesTable.processed, false));
 
-  if (conditions.length > 0) {
-    query = query.where(and(...conditions));
-  }
+  query = query.where(and(...conditions));
 
   const responses = await query;
   res.json({ responses });
@@ -77,6 +80,7 @@ const isClassifiedDecision = (v: unknown): v is ClassifiedDecision =>
 router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleResponse(id, res)) return;
 
   const { responseType, claimId, invoiceGroupId } = req.body;
 
@@ -174,6 +178,7 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 router.patch("/responses/:id/link", asyncHandler(async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleResponse(id, res)) return;
 
   const { claimId, invoiceGroupId } = req.body;
   if (!claimId && !invoiceGroupId) {
@@ -377,7 +382,13 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
 }));
 
 router.get("/responses/stats", asyncHandler(async (_req, res): Promise<void> => {
-  const allResponses = await db.select().from(portalResponsesTable).orderBy(desc(portalResponsesTable.receivedAt));
+  // Hide the tour-sample row from aggregate counts so the badge / stats
+  // surface reflects only real operator work. See migration 0030.
+  const allResponses = await db
+    .select()
+    .from(portalResponsesTable)
+    .where(eq(portalResponsesTable.isTourSample, false))
+    .orderBy(desc(portalResponsesTable.receivedAt));
 
   const total = allResponses.length;
   const unprocessed = allResponses.filter(r => !r.processed).length;
@@ -411,6 +422,7 @@ router.get("/responses/stats", asyncHandler(async (_req, res): Promise<void> => 
 router.post("/responses/:id/reassign", asyncHandler(async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleResponse(id, res)) return;
 
   const { targetClaimId, targetGroupId, unmatch } = req.body ?? {};
   const wantsUnmatch = unmatch === true;

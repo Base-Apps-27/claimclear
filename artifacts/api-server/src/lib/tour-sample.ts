@@ -1,13 +1,14 @@
 import { eq } from "drizzle-orm";
-import { db, invoiceGroupsTable, claimsTable } from "@workspace/db";
+import { db, invoiceGroupsTable, claimsTable, portalResponsesTable } from "@workspace/db";
 import type { Response } from "express";
 
-// Helpers backing the global "tour sample" invoice group + claim that
-// the in-app guided tour navigates to (steps 18 & 20). The pair is
-// hidden from every normal list/aggregate query and treated as
-// read-only at the API layer — these helpers are how every mutation
-// handler enforces that contract. See migration 0029_tour_sample.sql
-// for the singleton seed.
+// Helpers backing the global "tour sample" invoice group + claim +
+// portal_response that the in-app guided tour navigates to (steps 14,
+// 18 & 20). The trio is hidden from every normal list/aggregate query
+// and treated as read-only at the API layer — these helpers are how
+// every mutation handler enforces that contract. See migrations
+// 0029_tour_sample.sql and 0030_tour_sample_response.sql for the
+// singleton seeds.
 
 const TOUR_SAMPLE_FORBIDDEN = "This row is the in-app tour sample and is read-only.";
 
@@ -25,6 +26,15 @@ export async function isTourSampleClaim(claimId: number): Promise<boolean> {
     .select({ flag: claimsTable.isTourSample })
     .from(claimsTable)
     .where(eq(claimsTable.id, claimId))
+    .limit(1);
+  return !!row?.flag;
+}
+
+export async function isTourSampleResponse(responseId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ flag: portalResponsesTable.isTourSample })
+    .from(portalResponsesTable)
+    .where(eq(portalResponsesTable.id, responseId))
     .limit(1);
   return !!row?.flag;
 }
@@ -48,10 +58,22 @@ export async function blockMutationOnTourSampleClaim(claimId: number, res: Respo
   return false;
 }
 
-// Fetch the {groupId, claimId} pair for the tour controller. Returns
-// `null` ids if the seed has not run yet (development DB without
-// migration 0029 applied).
-export async function getTourSampleIds(): Promise<{ groupId: number | null; claimId: number | null }> {
+export async function blockMutationOnTourSampleResponse(responseId: number, res: Response): Promise<boolean> {
+  if (await isTourSampleResponse(responseId)) {
+    res.status(403).json({ error: TOUR_SAMPLE_FORBIDDEN, code: "tour_sample_readonly" });
+    return true;
+  }
+  return false;
+}
+
+// Fetch the {groupId, claimId, responseId} trio for the tour controller.
+// Returns `null` ids if the seeds have not run yet (development DB
+// without migrations 0029/0030 applied).
+export async function getTourSampleIds(): Promise<{
+  groupId: number | null;
+  claimId: number | null;
+  responseId: number | null;
+}> {
   const [groupRow] = await db
     .select({ id: invoiceGroupsTable.id })
     .from(invoiceGroupsTable)
@@ -62,8 +84,14 @@ export async function getTourSampleIds(): Promise<{ groupId: number | null; clai
     .from(claimsTable)
     .where(eq(claimsTable.isTourSample, true))
     .limit(1);
+  const [responseRow] = await db
+    .select({ id: portalResponsesTable.id })
+    .from(portalResponsesTable)
+    .where(eq(portalResponsesTable.isTourSample, true))
+    .limit(1);
   return {
     groupId: groupRow?.id ?? null,
     claimId: claimRow?.id ?? null,
+    responseId: responseRow?.id ?? null,
   };
 }

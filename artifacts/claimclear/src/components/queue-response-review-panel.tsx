@@ -308,8 +308,20 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
     return first;
   })();
 
+  // Read-only banner for the global tour-sample group (migration 0029).
+  // Every mutation hitting this group bounces with HTTP 403 at the API
+  // layer, so we surface that up front instead of letting the operator
+  // click a verdict button and watch it fail. The detail payload
+  // includes `isTourSample` whenever the group is the seeded one.
+  const isTourSample = (detail as unknown as { isTourSample?: boolean })?.isTourSample === true;
+
   return (
     <Card data-testid={`queue-response-review-panel-${group.invoiceNumber}`}>
+      {isTourSample && (
+        <div className="rounded-t-md border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900" data-testid="tour-sample-banner">
+          <strong>Sample for the tour</strong> — read-only. Verdict actions are disabled here so you can poke around without changing real data.
+        </div>
+      )}
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1 min-w-0">

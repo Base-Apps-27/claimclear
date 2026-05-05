@@ -83,12 +83,17 @@ export function useAdminTour() {
 // appears in the DOM.
 const TARGET_WAIT_MS = 8000;
 
-// Pair of ids resolved from `GET /tour/sample` — the global read-only
-// invoice group + claim that anchored steps 18 & 20 navigate to. Both
-// can be `null` if the tour-sample seed migration hasn't been applied
-// yet; the controller falls back to leaving the user on the list page
-// (Joyride's TARGET_NOT_FOUND handler then skips the orphaned step).
-type TourSampleIds = { groupId: number | null; claimId: number | null };
+// Trio of ids resolved from `GET /tour/sample` — the global read-only
+// invoice group + claim + portal_response that anchored steps 14, 20 &
+// 22 navigate to. Any may be `null` if the tour-sample seed migrations
+// haven't been applied yet; the controller falls back to leaving the
+// user on the list page (Joyride's TARGET_NOT_FOUND handler then skips
+// the orphaned step).
+type TourSampleIds = {
+  groupId: number | null;
+  claimId: number | null;
+  responseId: number | null;
+};
 
 function effectiveRoute(def: TourStepDef, sampleIds: TourSampleIds): string | null {
   if (def.dynamicRoute === "tour-sample-group" && sampleIds.groupId != null) {
@@ -96,6 +101,14 @@ function effectiveRoute(def: TourStepDef, sampleIds: TourSampleIds): string | nu
   }
   if (def.dynamicRoute === "tour-sample-claim" && sampleIds.claimId != null) {
     return `/claims/${sampleIds.claimId}`;
+  }
+  // The Responses Awaiting Review page selects by INVOICE GROUP id in
+  // the URL path (the response is fetched as part of the group detail
+  // payload). The tour-sample portal_response is linked to the tour-
+  // sample group, so we route to the group id; the page's fallback
+  // fetch surfaces the hidden group on its 3-column layout.
+  if (def.dynamicRoute === "tour-sample-response" && sampleIds.groupId != null) {
+    return `/responses-awaiting-review/${sampleIds.groupId}`;
   }
   return def.route ?? routeForPage(def.page);
 }
@@ -167,7 +180,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
   // dynamic detail-page routes for steps 18 & 20. Defaults to nulls so
   // the rest of the tour still works in environments where the
   // migration hasn't run yet.
-  const [sampleIds, setSampleIds] = useState<TourSampleIds>({ groupId: null, claimId: null });
+  const [sampleIds, setSampleIds] = useState<TourSampleIds>({ groupId: null, claimId: null, responseId: null });
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -178,6 +191,7 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         setSampleIds({
           groupId: typeof data.groupId === "number" ? data.groupId : null,
           claimId: typeof data.claimId === "number" ? data.claimId : null,
+          responseId: typeof data.responseId === "number" ? data.responseId : null,
         });
       })
       .catch(() => { /* tour falls back to modal-on-list for missing ids */ });

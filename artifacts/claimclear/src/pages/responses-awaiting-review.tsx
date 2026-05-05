@@ -278,9 +278,25 @@ export default function ResponsesAwaitingReview() {
     }
   };
 
-  const selectedGroup = selectedId
+  // The awaiting-review list hides the global tour-sample invoice group
+  // (migration 0029) by virtue of the API list filter. But tour step 14
+  // navigates to `/responses-awaiting-review/<tourSampleGroupId>` so we
+  // also fetch the group directly when its id appears in the URL but
+  // isn't in the list. The fallback fires only when needed (selectedId
+  // set + not in list), so it costs nothing in normal operation.
+  const inListGroup = selectedId
     ? groups.find((g) => g.id === selectedId) ?? null
     : null;
+  const needsFallbackFetch = selectedId !== null && inListGroup === null;
+  const { data: fallbackGroupDetail } = useGetInvoiceGroup(
+    selectedId ?? 0,
+    { query: { enabled: needsFallbackFetch, queryKey: getGetInvoiceGroupQueryKey(selectedId ?? 0) } },
+  );
+  const selectedGroup: InvoiceGroupResponse | null =
+    inListGroup
+    ?? (needsFallbackFetch && fallbackGroupDetail
+      ? (fallbackGroupDetail as unknown as InvoiceGroupResponse)
+      : null);
 
   const selectGroup = (id: number) => {
     navigate(`/responses-awaiting-review/${id}`);
@@ -298,16 +314,22 @@ export default function ResponsesAwaitingReview() {
   // moved to another bucket), advance focus to the next row so review feels
   // like a queue. When the list is empty, drop the selection so the empty
   // state can render.
+  //
+  // EXCEPTION: when the fallback fetch resolved a real group for the
+  // current selectedId (the tour-sample group, which is hidden from
+  // the awaiting-review list by design), keep the selection so the
+  // tour's anchored step 14 has a DetailPane to point at.
   useEffect(() => {
     if (selectedId === null) return;
     const stillVisible = groups.some((g) => g.id === selectedId);
     if (stillVisible) return;
+    if (needsFallbackFetch && fallbackGroupDetail) return;
     if (groups.length === 0) {
       navigate(`/responses-awaiting-review`, { replace: true });
     } else {
       navigate(`/responses-awaiting-review/${groups[0].id}`, { replace: true });
     }
-  }, [selectedId, groups, navigate]);
+  }, [selectedId, groups, navigate, needsFallbackFetch, fallbackGroupDetail]);
 
   // Task #343: under the new draft-saving picker, picking a verdict in
   // Step 3 does NOT move the group out of `response-pending`, so the
