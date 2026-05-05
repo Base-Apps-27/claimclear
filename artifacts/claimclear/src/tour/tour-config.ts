@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v9";
+export const CURRENT_TOUR_VERSION = "2026-05-05.v10";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5

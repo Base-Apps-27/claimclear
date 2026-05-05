@@ -178,8 +178,26 @@ export function AdminTourProvider({ children }: { children: React.ReactNode }) {
         }
         const nextDef = TOUR_STEPS[next];
         const nextRoute = effectiveRoute(nextDef);
-        if (nextRoute && nextRoute !== location) {
-          setLocation(nextRoute);
+        const isCrossRoute = !!nextRoute && nextRoute !== location;
+        if (isCrossRoute) {
+          // Cross-route transition (e.g. step 13 /queue → step 14
+          // /responses-awaiting-review). If we just call setLocation +
+          // setStepIndex synchronously, Joyride's overlay/spotlight
+          // remains mounted while the new page mounts underneath, and
+          // the mid-transition DOM race blanked the host page on the
+          // first /responses landing. Fix: tear Joyride down BEFORE
+          // navigating, then re-arm on the next paint after the new
+          // route's DOM has had a chance to mount.
+          setRun(false);
+          setStepIndex(next);
+          setLocation(nextRoute!);
+          // Two RAFs ≈ "after the next paint", which is reliably after
+          // the new page's first commit + layout. Avoids depending on
+          // any specific page's data-fetch timing.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => setRun(true));
+          });
+          return;
         }
         setStepIndex(next);
       }

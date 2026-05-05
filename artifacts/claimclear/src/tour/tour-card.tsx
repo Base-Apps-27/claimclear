@@ -18,6 +18,14 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, Globe, Mail, FileText, ArrowUpRight } from "lucide-react";
+// NOTE: framer-motion is still imported because the inner phase-pipeline
+// pills animate their fill color when the active step changes. The OUTER
+// card wrappers (ModalCard / CoachCard) deliberately use plain divs —
+// any opacity/scale fade on the wrapper visibly re-runs every time
+// Joyride re-mounts the tooltipComponent (which it does once per step),
+// so back-to-back centered modals would appear to "transition" even
+// though their position is identical. Keeping the wrapper static makes
+// step-to-step changes read as a content swap, which is what we want.
 import type { TooltipRenderProps } from "react-joyride";
 import type { ProcessStepValue, TourStepDef } from "./tour-config";
 
@@ -299,11 +307,8 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
   const isClosing = def.processStep === "closing";
 
   return (
-    <motion.div
+    <div
       {...tooltipProps}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.18, ease: EASE_OUT }}
       className={`relative rounded-2xl bg-white overflow-hidden flex flex-col ${isSubmitStep ? "w-[640px]" : "w-[480px]"} max-w-[calc(100vw-2rem)]`}
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.32), 0 8px 24px -12px rgba(27,42,74,0.20), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -347,7 +352,7 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
         )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -359,11 +364,8 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
   tooltipProps: TooltipRenderProps["tooltipProps"];
 }) {
   return (
-    <motion.div
+    <div
       {...tooltipProps}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.18, ease: EASE_OUT }}
       className="w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white overflow-hidden flex flex-col"
       style={{ boxShadow: "0 20px 56px -16px rgba(27,42,74,0.36), 0 8px 24px -12px rgba(27,42,74,0.22), 0 0 0 1px rgba(27,42,74,0.06)" }}
     >
@@ -382,7 +384,7 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
         )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
-    </motion.div>
+    </div>
   );
 }
 
