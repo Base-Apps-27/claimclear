@@ -6,6 +6,10 @@ import { Dashboard } from "./full-tour/pages/Dashboard";
 import { Queue } from "./full-tour/pages/Queue";
 import { Responses } from "./full-tour/pages/Responses";
 import { Attestation } from "./full-tour/pages/Attestation";
+import { InvoiceGroups } from "./full-tour/pages/InvoiceGroups";
+import { GroupDetail } from "./full-tour/pages/GroupDetail";
+import { Claims } from "./full-tour/pages/Claims";
+import { ClaimDetail } from "./full-tour/pages/ClaimDetail";
 
 export function FullTour() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -15,10 +19,14 @@ export function FullTour() {
 
   const renderPage = () => {
     switch (currentStep.page) {
-      case "queue":       return <Queue />;
-      case "responses":   return <Responses />;
-      case "attestation": return <Attestation />;
-      default:            return <Dashboard />;
+      case "queue":           return <Queue />;
+      case "responses":       return <Responses />;
+      case "attestation":     return <Attestation />;
+      case "invoice-groups":  return <InvoiceGroups />;
+      case "group-detail":    return <GroupDetail />;
+      case "claims":          return <Claims />;
+      case "claim-detail":    return <ClaimDetail />;
+      default:                return <Dashboard />;
     }
   };
 
@@ -27,7 +35,6 @@ export function FullTour() {
       <MockApp activePage={currentStep.page}>{renderPage()}</MockApp>
       <TourCard step={currentStep} />
 
-      {/* Tiny step indicator so canvas viewers know which step they're seeing */}
       <div
         className="fixed bottom-2 right-2 z-50 px-2 py-1 rounded-md text-[10px] font-mono font-semibold pointer-events-none"
         style={{ backgroundColor: "rgba(15,23,42,0.7)", color: "white", letterSpacing: "0.05em" }}

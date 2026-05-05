@@ -3,7 +3,10 @@ export type ProcessStepValue = 1 | 2 | 3 | 4 | 5 | "all" | "transition" | "closi
 export type StepDef = {
   id: number;
   kind: "modal" | "coach";
-  page: "dashboard" | "queue" | "responses" | "attestation" | null;
+  page:
+    | "dashboard" | "queue" | "responses" | "attestation"
+    | "invoice-groups" | "group-detail" | "claims" | "claim-detail"
+    | null;
   anchor?: { selector: string; placement: "right" | "bottom" | "top" | "left" };
   processStep: ProcessStepValue;
   title: string;
@@ -146,16 +149,58 @@ export const STEPS: StepDef[] = [
     nextLabel: "Next: Attestation",
   },
 
-  // ═══════ Attestation + Replay ═══════
+  // ═══════ Attestation ═══════
   {
     id: 18, kind: "modal", page: "attestation", processStep: 5,
     title: "Attestation Queue — closing the loop",
     body:
       "Invoice groups with approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count of groups owed off-system. Once a group clears, every ride in it is recovered revenue.",
-    nextLabel: "Next",
+    nextLabel: "Next: Browse",
+  },
+
+  // ═══════ Browse section — Invoice Groups + Claims (with the filter trap) ═══════
+  {
+    id: 19, kind: "modal", page: "invoice-groups", processStep: "transition",
+    title: "Invoice Groups — every group, every state, in one list",
+    body:
+      "When the dashboard's hero columns aren't enough — when you need to find a specific group, audit a status, or do bulk work — this is the catalog. Every invoice group ever uploaded lives here, regardless of which step it's on. The filter bar at the top makes this page usable. It also makes it easy to get lost. Let's look at it next, because there's one thing every new operator gets caught by.",
+    nextLabel: "Next: the filter trap",
   },
   {
-    id: 19, kind: "coach", page: "dashboard", processStep: "closing",
+    id: 20, kind: "coach", page: "invoice-groups", processStep: "all",
+    anchor: { selector: '[data-tour="invoice-groups-filters"]', placement: "bottom" },
+    title: "⚠️ Two filters hide rows by default — read this carefully",
+    body:
+      "By default this page hides anything you can't act on right now. 'Engagement: Needs engagement' is set, which hides resolved and awaiting-response groups. 'Show past-deadline' is OFF, which hides expired groups (47 hidden right now, see the badge). If you hunt for a group and it doesn't appear — these are why. Flip 'Engagement' to All, or check 'Show past-deadline', and the missing rows come back. The exact same two filters apply on the Claims page — same trap.",
+    nextLabel: "Next: opening a group",
+  },
+  {
+    id: 21, kind: "coach", page: "group-detail", processStep: "all",
+    anchor: { selector: '[data-tour="group-gauntlet"]', placement: "left" },
+    title: "Group detail — the Submission Gauntlet is the path to done",
+    body:
+      "When you open a group, this is your workspace. The legs on the left are every ride in the group; the Submission Gauntlet on the right is a 4-step checklist that takes the group from 'needs evidence' to 'submitted to MAS'. Follow it top to bottom — when the last step lights up, the group is in flight. The 'What's next' card under the gauntlet gives you AI-driven suggestions if you're stuck on what to do.",
+    nextLabel: "Next: Claims",
+  },
+  {
+    id: 22, kind: "modal", page: "claims", processStep: "transition",
+    title: "Claims — same idea as Groups, but one ride at a time",
+    body:
+      "Sometimes you're not looking for a group, you're looking for a specific ride — by car number, client, or date. That's this page. The sub-status pills at the top (Investigating, Ready, Blocked, Submitted) jump you straight to a workflow state. ⚠️ The same two default filters apply here as on Invoice Groups: 'Needs engagement' is on, 'Show past-deadline' is off (128 hidden right now). If a leg seems missing, those filters are why.",
+    nextLabel: "Next: a single claim",
+  },
+  {
+    id: 23, kind: "coach", page: "claim-detail", processStep: "all",
+    anchor: { selector: '[data-tour="claim-sop-player"]', placement: "left" },
+    title: "Claim detail — the SOP Player is the source of truth",
+    body:
+      "Open any claim and this is what you get. The SOP Player walks you through a decision tree custom-built for this claim's error type — answer each question in order, and at the end you have a fully-justified ask, evidence attached and ready to roll up into the group's submission. Whatever the SOP Player says, that IS the SOP. No off-script work, no improvising.",
+    nextLabel: "Next: Replay",
+  },
+
+  // ═══════ Replay ═══════
+  {
+    id: 24, kind: "coach", page: "dashboard", processStep: "closing",
     anchor: { selector: '[data-tour="sidebar-take-tour"]', placement: "right" },
     title: "Replay anytime",
     body:
