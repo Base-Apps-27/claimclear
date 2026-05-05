@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setOnSessionExpired } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
@@ -55,9 +55,25 @@ function DenyClerk({ component: Component }: { component: ComponentType }) {
   return <Component />;
 }
 
+// Reset scroll to the top of the document on every route change.
+// Without this, navigating from a deeply-scrolled list page (Queue,
+// Invoice Groups, Claims) into a different page leaves the new page
+// scrolled to whatever offset the previous page had — which especially
+// hurts the platform tour, where the operator lands on a page already
+// scrolled past the anchor the tour wants to spotlight. Mount-once,
+// no UI; runs after each successful navigation.
+function ScrollToTopOnRouteChange() {
+  const [location] = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location]);
+  return null;
+}
+
 function Router() {
   return (
     <AdminTourProvider>
+    <ScrollToTopOnRouteChange />
     <AppLayout>
       <Switch>
         <Route path="/" component={() => <Redirect to="/dashboard" />} />

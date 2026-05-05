@@ -307,7 +307,13 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
   tooltipProps: TooltipRenderProps["tooltipProps"];
 }) {
   const isSubmitStep = def.id === 5;
-  const isClosing = def.processStep === "closing";
+  // Phase chrome (the "STEP n · NAME" pill + the 5-dot pipeline) is only
+  // meaningful while we're explicitly teaching the playbook in steps 1–7.
+  // Once we're past the orientation and walking the UI (step 8 onward),
+  // re-mapping every page back to "STEP 4 · SUBMIT" reads as visual
+  // noise — the operator already knows the playbook by then. So we hide
+  // the badge entirely on UI-walkthrough modals.
+  const showPhaseChrome = def.id <= 7;
 
   return (
     <motion.div
@@ -328,7 +334,7 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
       {isSubmitStep ? (
         <div className="grid grid-cols-[1fr_220px] gap-5 px-5 pt-4 pb-3">
           <div className="flex flex-col gap-2.5">
-            <PhaseBadge ps={def.processStep} />
+            {showPhaseChrome && <PhaseBadge ps={def.processStep} />}
             <h2 className="text-[20px] font-semibold leading-[1.18]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{def.title}</h2>
             <p className="text-[12.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>{def.body}</p>
             <div className="flex items-start gap-2 rounded-lg px-2.5 py-1.5 mt-1" style={{ backgroundColor: T.EMERALD_BG, border: `1px solid ${T.EMERALD_BD}` }}>
@@ -342,7 +348,7 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
         </div>
       ) : (
         <div className="px-5 pt-4 pb-3 flex flex-col gap-2.5">
-          <PhaseBadge ps={def.processStep} />
+          {showPhaseChrome && <PhaseBadge ps={def.processStep} />}
           <h2 className="text-[19px] font-semibold leading-[1.2]" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{def.title}</h2>
           <p className="text-[12.5px] leading-[1.6]" style={{ color: T.SLATE_MUTED }}>{def.body}</p>
         </div>
@@ -350,14 +356,13 @@ function ModalCard({ def, totalSteps, index, buttons, tooltipProps }: {
 
       <div className="px-5 pb-4 pt-1 flex flex-col gap-2.5">
         {/*
-          Only the actual playbook walkthrough modals (steps 2–6, one per
-          process step) get the full Upload→Understand→Gather→Submit→Respond
-          pipeline. The welcome (1), the post-playbook recap (7), and every
-          page-intro modal after that (dashboard, queue, responses, etc.)
-          would just be repeating what the operator already saw — the phase
-          pill at the top is enough context for those.
+          Full pipeline only on the actual playbook walkthrough modals
+          (steps 2–6, one per process step). Welcome (1), recap (7), and
+          every page-intro modal after that intentionally drop it — the
+          UI-walkthrough portion of the tour shouldn't keep replaying the
+          orientation visuals.
         */}
-        {!isClosing && def.id >= 2 && def.id <= 6 && (
+        {def.id >= 2 && def.id <= 6 && (
           <PhasePipelineFull current={def.processStep} />
         )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
@@ -387,15 +392,15 @@ function CoachCard({ def, totalSteps, index, buttons, tooltipProps }: {
       <HeaderBand stepLabel={`Step ${def.id} of ${totalSteps}`} />
 
       <div className="px-4 pt-3 pb-2.5 flex flex-col gap-2">
-        <PhaseBadge ps={def.processStep} />
+        {/* Coach cards never show the phase chrome. They only run during
+            the UI walkthrough (steps 9+); by that point the operator has
+            been through the playbook and re-stamping every page with
+            "STEP 3 · GATHER" reads as noise rather than context. */}
         <h2 className="text-[15px] font-semibold leading-tight" style={{ color: T.SLATE_TEXT, letterSpacing: "-0.01em" }}>{def.title}</h2>
         <p className="text-[11.5px] leading-[1.55]" style={{ color: T.SLATE_MUTED }}>{def.body}</p>
       </div>
 
       <div className="px-4 pb-3 pt-0.5 flex flex-col gap-2">
-        {def.processStep !== "closing" && def.processStep !== "all" && def.processStep !== "transition" && (
-          <PhasePipelineCompact current={def.processStep} />
-        )}
         <FooterActions nextLabel={def.nextLabel} index={index} buttons={buttons} />
       </div>
     </motion.div>

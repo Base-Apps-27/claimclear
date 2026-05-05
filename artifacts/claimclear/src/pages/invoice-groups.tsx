@@ -645,11 +645,14 @@ export default function InvoiceGroupsList() {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-8 space-y-4 min-w-0">
-          {/* The data-tour anchor is on the header strip itself (not the
-              parent column) so the tour tooltip lands right under the
-              filter row instead of below the entire 1000-row table. */}
-          <div data-tour="invoice-groups-filters">
+          {/* `dataTour` is forwarded onto the inner search/filter strip
+              `<div>` only — see ListTableHeaderStrip — so the tour
+              tooltip lands directly under the filter row instead of
+              below the entire 1000-row table. We deliberately do NOT
+              wrap the strip in another div with the same data-tour, or
+              the anchor expands back out to include the table. */}
           <ListTableHeaderStrip
+            dataTour="invoice-groups-filters"
             searchValue={search}
             onSearchChange={v => set({ q: v || null, page: null }, false)}
             searchPlaceholder="Search by Invoice #, Client, Error..."
@@ -934,7 +937,6 @@ export default function InvoiceGroupsList() {
             </CardContent>
           </Card>
           </ListTableHeaderStrip>
-          </div>
 
           <CrossPageNudge
             text={<>To work one at a time with full evidence, open</>}

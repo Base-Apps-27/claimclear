@@ -40,6 +40,11 @@ export type ListTableHeaderStripProps = {
   initialCategoryId?: string;
 
   extras?: ReactNode;
+  // Optional `data-tour` value applied to the inner search/filter strip
+  // element only — NOT the wrapping container. This lets the platform
+  // tour anchor a tooltip directly under the strip without spotlighting
+  // the entire table that lives in `children`.
+  dataTour?: string;
   // Children are wrapped in DimWhileOpen so the table behind the popover
   // dims while the operator is filtering. Optional because pages that have
   // no advanced filter rail (and therefore no popover) don't need to dim
@@ -62,6 +67,7 @@ export function ListTableHeaderStrip({
   onClearAllFilters,
   initialCategoryId,
   extras,
+  dataTour,
   children,
 }: ListTableHeaderStripProps) {
   const noun = matchingCount === 1 ? matchingNoun.one : matchingNoun.other;
@@ -76,6 +82,7 @@ export function ListTableHeaderStrip({
       <div
         className="flex flex-wrap items-center gap-3 bg-card border rounded-md p-2.5"
         data-testid="list-table-header-strip"
+        data-tour={dataTour}
       >
         <div className="relative w-72 flex-shrink-0">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
