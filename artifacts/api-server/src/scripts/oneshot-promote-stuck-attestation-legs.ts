@@ -37,6 +37,16 @@ import { emitStateEvent } from "../lib/state-events";
 const APPROVED_OUTCOMES = ["Approved", "Partially Approved"] as const;
 const BACKFILL_ID = "attestation_gate_removed_2026_05_05";
 
+// 2026-05-05 audit decision (option B): only promote legs whose parent
+// invoice group is in the actionable "Needs Review" state AND still
+// flagged reattest_required=true. This intentionally excludes:
+//   * claim 82 (group 2, status=Awaiting Response) — group is mid-cycle,
+//     not yet ready for re-attestation work.
+//   * claim 157 (group 66, status=Expired) — group has aged out and
+//     should not be revived into the queue.
+// These two are tracked separately and will not be auto-promoted.
+const ELIGIBLE_GROUP_STATUSES = ["Needs Review"] as const;
+
 async function main() {
   const apply = process.argv.includes("--apply");
 
@@ -64,6 +74,12 @@ async function main() {
       eq(claimsTable.attestationState, "not_required"),
       isNull(claimsTable.attestedAt),
       isNull(claimsTable.attestationQueuedAt),
+      // Option B filter: only legs under a "Needs Review" group whose
+      // reattest_required flag is still true. Excludes claims 82
+      // (Awaiting Response) and 157 (Expired). See ELIGIBLE_GROUP_STATUSES
+      // comment above.
+      inArray(invoiceGroupsTable.status, [...ELIGIBLE_GROUP_STATUSES]),
+      eq(invoiceGroupsTable.reattestRequired, true),
     ));
 
   console.log(
