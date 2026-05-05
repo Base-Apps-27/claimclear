@@ -32,7 +32,9 @@ import type {
   AuditLogResponse,
   ClaimEvidenceResponse,
   EmailThreadMessage,
+  EvidenceFileRef,
 } from "@workspace/api-client-react";
+import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -229,6 +231,33 @@ function fileNameFromUrl(url: string): string {
   } catch {
     return url.split("?")[0].split("/").filter(Boolean).pop() || url;
   }
+}
+
+// Format a byte count as a short, human-readable chip (e.g. `47 KB`, `2.3 MB`).
+// Mirrors the formatter in `portal-submission-drawer.tsx` and the reply
+// composer so all three surfaces describe attachment sizes the same way.
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Build a `url → size (bytes)` map from one or more `EvidenceFileRef[]`
+// JSONB lists. The Evidence card iterates `claim_evidence` rows (which
+// only carry `imageUrl`), so we look up sizes captured on the parallel
+// `evidenceFiles` JSONB columns. Later sources win on conflicting URLs;
+// pass the most specific (leg-level) source last.
+function buildSizeMap(...sources: Array<EvidenceFileRef[] | null | undefined>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const src of sources) {
+    if (!src) continue;
+    for (const f of src) {
+      if (f && typeof f.url === "string" && typeof f.size === "number") {
+        out.set(f.url, f.size);
+      }
+    }
+  }
+  return out;
 }
 
 function groupStatusTone(status: string | undefined): Tone {
@@ -442,6 +471,16 @@ export function ClaimDetailV2({
     if (Array.isArray(e)) return e.slice();
     return Array.isArray(e.evidence) ? e.evidence.slice() : [];
   }, [evidence]);
+
+  // Per-leg `claim_evidence` rows only carry `imageUrl`; size info lives on
+  // the parallel `evidenceFiles` JSONB columns. Merge group + leg sources
+  // so the Evidence card can chip a `47 KB` / `2.3 MB` next to each row and
+  // flag any single attachment over the 25 MB email cap before staff ever
+  // open the reply composer (which already enforces the same cap).
+  const evidenceSizeByUrl = useMemo<Map<string, number>>(
+    () => buildSizeMap(parentGroup?.evidenceFiles, claim?.evidenceFiles),
+    [parentGroup?.evidenceFiles, claim?.evidenceFiles],
+  );
 
   const threadMessages: EmailThreadMessage[] = useMemo(() => {
     const msgs = (emailThread as { messages?: EmailThreadMessage[] } | undefined)?.messages;
@@ -1316,36 +1355,67 @@ export function ClaimDetailV2({
                   No evidence attached to this leg yet.
                 </div>
               ) : (
-                evidenceList.map((ev, i, arr) => (
-                  <div
-                    key={ev.id}
-                    className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-[var(--cc-muted)] transition-colors"
-                    style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                    data-testid={`leg-evidence-${ev.id}`}
-                  >
-                    <Paperclip className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
-                    <span className="font-medium flex-1 truncate" title={ev.imageUrl ?? ev.evidenceTypeName}>
-                      {ev.imageUrl ? fileNameFromUrl(ev.imageUrl) : ev.evidenceTypeName}
-                    </span>
-                    <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      {ev.evidenceTypeName}
-                    </span>
-                    <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      {ev.collectedBy ?? "—"} · {relativeTime(ev.collectedAt)}
-                    </span>
-                    {ev.imageUrl ? (
-                      <a
-                        href={ev.imageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs hover:underline"
-                        style={{ color: "var(--cc-blue-fg)" }}
-                      >
-                        Open
-                      </a>
-                    ) : null}
-                  </div>
-                ))
+                evidenceList.map((ev, i, arr) => {
+                  const sizeBytes = ev.imageUrl ? evidenceSizeByUrl.get(ev.imageUrl) ?? null : null;
+                  const oversize = typeof sizeBytes === "number" && sizeBytes > EMAIL_MESSAGE_MAX_BYTES;
+                  return (
+                    <div
+                      key={ev.id}
+                      className="px-4 py-2.5 flex items-center gap-3 text-sm hover:bg-[var(--cc-muted)] transition-colors"
+                      style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                      data-testid={`leg-evidence-${ev.id}`}
+                    >
+                      <Paperclip className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
+                      <span className="font-medium flex-1 truncate" title={ev.imageUrl ?? ev.evidenceTypeName}>
+                        {ev.imageUrl ? fileNameFromUrl(ev.imageUrl) : ev.evidenceTypeName}
+                      </span>
+                      {ev.imageUrl ? (
+                        typeof sizeBytes === "number" ? (
+                          <span
+                            className={cn("text-xs tabular-nums", oversize && "font-semibold")}
+                            style={{
+                              color: oversize ? "var(--cc-destructive)" : "var(--cc-muted-fg)",
+                            }}
+                            title={
+                              oversize
+                                ? "Over the 25 MB email cap — this file can't be attached to a reply."
+                                : undefined
+                            }
+                            data-testid={`leg-evidence-size-${ev.id}`}
+                          >
+                            {formatBytes(sizeBytes)}
+                            {oversize ? " · over 25 MB" : ""}
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs italic"
+                            style={{ color: "var(--cc-muted-fg)" }}
+                            data-testid={`leg-evidence-size-${ev.id}`}
+                          >
+                            size unknown
+                          </span>
+                        )
+                      ) : null}
+                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                        {ev.evidenceTypeName}
+                      </span>
+                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                        {ev.collectedBy ?? "—"} · {relativeTime(ev.collectedAt)}
+                      </span>
+                      {ev.imageUrl ? (
+                        <a
+                          href={ev.imageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs hover:underline"
+                          style={{ color: "var(--cc-blue-fg)" }}
+                        >
+                          Open
+                        </a>
+                      ) : null}
+                    </div>
+                  );
+                })
               )}
             </CcCard>
 
