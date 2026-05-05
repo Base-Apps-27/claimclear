@@ -133,7 +133,7 @@ export const TOUR_STEPS: TourStepDef[] = [
     route: "/attestation-queue",
     placement: "top",
     title: "Attestation Queue — closing the loop",
-    body: "Approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count owed off-system. Once these clear, the ride is recovered revenue.",
+    body: "Invoice groups with approved verdicts that still need to be re-attested in the payor portal. The amber badge in the sidebar is the count of groups owed off-system. Once a group clears, every ride in it is recovered revenue.",
     disableBeacon: true,
   },
   {

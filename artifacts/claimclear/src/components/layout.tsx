@@ -157,10 +157,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
     : [];
   // Task #430: badge counts distinct invoice groups (the new row unit
-  // on the Open tab), not raw legs. One pill, amber, label drops the
-  // word "groups" so it stays readable at small widths.
+  // on the Open tab), not raw legs. Tooltip stays short — the surface
+  // itself is labelled "Attestation Queue", so the pluralised noun is
+  // enough context.
   const attestBadges: NavBadge[] = distinctAttestGroups > 0
-    ? [{ count: distinctAttestGroups, tone: "amber" as const, label: "Invoice groups to re-attest" }]
+    ? [{
+        count: distinctAttestGroups,
+        tone: "amber" as const,
+        label: distinctAttestGroups === 1 ? "group to re-attest" : "groups to re-attest",
+      }]
     : [];
 
   // Insights is shown to every approved user; clerks see it with money
