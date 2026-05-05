@@ -134,8 +134,19 @@ export default function Insights() {
   const { data: repeat, isLoading: repeatLoading } = useGetDashboardRepeatOffenders({ days, limit: 5 });
 
   const claims = allClaimsData?.claims || [];
+  // Server-side count of all claims matching the window filter. The
+  // `claims` array above is capped at 500 by the /claims endpoint, so
+  // `claims.length` understates the real workload as soon as the
+  // window exceeds 500 rows. `totalClaims` is sourced from the server's
+  // aggregate count and is exact regardless of the page-size cap.
+  const totalClaims = allClaimsData?.total ?? claims.length;
+  // Truthy when the window contains more rows than we sampled. Used to
+  // mark sample-derived breakdowns ($-by-error-type, status/outcome/
+  // payor counts, topline $ sums) so the operator knows those numbers
+  // approximate the leading 500 claims rather than the full window.
+  const sampleTruncated = (allClaimsData?.total ?? 0) > claims.length;
 
-  const { statusBreakdown, outcomeBreakdown, errorTypeAggregate, payorBreakdown, totalClaims, rangeAmounts } = useMemo(() => {
+  const { statusBreakdown, outcomeBreakdown, errorTypeAggregate, payorBreakdown, rangeAmounts } = useMemo(() => {
     const status: Record<string, number> = {};
     const outcome: Record<string, number> = {};
     type ErrAgg = { count: number; recovered: number; denied: number };
@@ -187,7 +198,6 @@ export default function Insights() {
       outcomeBreakdown: outcome,
       errorTypeAggregate: errorType,
       payorBreakdown: payor,
-      totalClaims: claims.length,
       rangeAmounts: { claimed: claimedSum, approved: approvedSum, denied: deniedSum },
     };
   }, [claims]);
@@ -702,7 +712,11 @@ export default function Insights() {
                   );
                 })
             )}
-            <div className="text-[10px] text-muted-foreground pt-1">{totalClaims} total claims sampled</div>
+            <div className="text-[10px] text-muted-foreground pt-1">
+              {sampleTruncated
+                ? `${claims.length} of ${totalClaims} claims sampled`
+                : `${totalClaims} total claims`}
+            </div>
           </div>
         </div>
 
