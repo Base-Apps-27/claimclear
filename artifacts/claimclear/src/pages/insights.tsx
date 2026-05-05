@@ -152,18 +152,26 @@ export default function Insights() {
       const agg = errorType[et] || (errorType[et] = { count: 0, recovered: 0, denied: 0 });
       agg.count += 1;
       const amt = parseFloat(c.claimAmount || "0");
+      // "Recovered" = approved dollars on rides that reached their true
+      // end (outcome is a positive verdict AND re-attestation has
+      // settled). Mirrors the dashboard "Reclaimed" KPI so the two
+      // surfaces never disagree. A pending/queued re-attest can still
+      // flip the verdict back, so its approved dollars don't count yet.
       const isApproved = c.outcome === "Approved" || c.outcome === "Partially Approved";
       const isDenied = c.outcome === "Denied";
+      const attestSettled = c.attestationState === "completed" || c.attestationState === "not_required";
+      const recoveredAmt = parseFloat(c.approvedAmount || "0");
+      const isRecovered = isApproved && attestSettled && Number.isFinite(recoveredAmt);
       if (Number.isFinite(amt)) {
         claimedSum += amt;
-        if (isApproved) {
-          agg.recovered += amt;
-          approvedSum += amt;
-        }
         if (isDenied) {
           agg.denied += amt;
           deniedSum += amt;
         }
+      }
+      if (isRecovered) {
+        agg.recovered += recoveredAmt;
+        approvedSum += recoveredAmt;
       }
       const payorKey = c.payorEmail || "Unassigned";
       const p = payor[payorKey] || (payor[payorKey] = { count: 0, denied: 0, recovered: 0, atRisk: 0 });
@@ -172,7 +180,7 @@ export default function Insights() {
         p.denied += 1;
         if (Number.isFinite(amt)) p.atRisk += amt;
       }
-      if (isApproved && Number.isFinite(amt)) p.recovered += amt;
+      if (isRecovered) p.recovered += recoveredAmt;
     }
     return {
       statusBreakdown: status,

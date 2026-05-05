@@ -279,11 +279,19 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   //                     — re-attestation can still flip the outcome.
   //                     Operator-friendly: "denied portion only counts
   //                     as lost once the re-attest part is finished."
-  //   Reclaimed       = raw Σ approvedAmount, no multiplier — per spec
-  //                     the driver prepay only counts against the
-  //                     company when we DON'T get paid, so an approved
-  //                     row's prepay is implicitly washed out by the
-  //                     payor remit and shouldn't inflate exposure.
+  //   Reclaimed       = Σ approvedAmount over rows that have reached
+  //                     their TRUE END: outcome is a positive verdict
+  //                     (Approved / Partially Approved) AND no leg is
+  //                     still in pending/queued attestation. Until
+  //                     re-attest settles the verdict can still flip,
+  //                     so those dollars stay in At-risk. Denials
+  //                     contribute $0 (by construction — their
+  //                     approvedAmount is null/0 on the denied
+  //                     portion). No multiplier — per spec the driver
+  //                     prepay only counts against the company when we
+  //                     DON'T get paid, so an attested-approved row's
+  //                     prepay is implicitly washed out by the payor
+  //                     remit and shouldn't inflate exposure.
   //
   // Withdrawn and Non-Issue outcomes are intentionally excluded from
   // every bucket — they're self-cancellations / triage no-ops, not
@@ -367,11 +375,21 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
         WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 1
         ELSE 0
       END), 0)`,
-      // Reclaimed = raw Σ approvedAmount across the portfolio. No
-      // multiplier (prepay washes through on approved rows) and no
-      // attest-deadline carve-out (we don't auto-expire pending
-      // attest — see the long comment above).
-      reclaimedApproved: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+      // Reclaimed = Σ approvedAmount on rows that have reached their
+      // "true end" — outcome is a positive verdict (Approved /
+      // Partially Approved) AND no leg is still in pending/queued
+      // attestation. A row whose re-attest is still in flight could
+      // still flip back to Denied, so its approved dollars are not
+      // yet money-in-the-bank and stay in atRisk above. Denials
+      // contribute $0 by construction (their approvedAmount is 0 or
+      // null on the denied portion). No multiplier — once a claim is
+      // approved AND attested, the payor remit washes the prepay
+      // through.
+      reclaimedApproved: sql<string>`COALESCE(SUM(CASE
+        WHEN ${invoiceGroupsTable.outcome} IN ('Approved','Partially Approved') AND NOT ${hasPendingAttestExpr}
+          THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0)
+        ELSE 0
+      END), 0)`,
     })
     .from(invoiceGroupsTable)
     .where(HIDE_TOUR_SAMPLE_GROUP);

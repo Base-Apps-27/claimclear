@@ -599,11 +599,11 @@ export default function Dashboard() {
             sub={
               <span className="inline-flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
-                raw approved · prepay washes through
+                attested · prepay washes through
               </span>
             }
             tone="good"
-            tooltip="Total dollars approved by the payor. Shown raw — the 70% driver prepay is reimbursed via the payor remit on approved rows, so it's not added back as exposure here. Only counts against the company on rows we don't get paid for (which roll into Already lost)."
+            tooltip="Approved dollars on rides that have reached their true end — outcome is Approved or Partially Approved AND no leg is still in pending/queued re-attestation. Until re-attestation settles, the dollars stay in At risk because the verdict can still flip. Denials contribute $0. Shown raw — the 70% driver prepay is reimbursed via the payor remit on attested rows, so it's not added back as exposure here."
             testid="kpi-reclaimed"
           />
         </HideForClerk>
