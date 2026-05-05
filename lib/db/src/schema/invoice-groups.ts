@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, index, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, index, uniqueIndex, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimStatusEnum, claimOutcomeEnum } from "./claims";
@@ -131,7 +131,10 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
-  index("invoice_groups_invoice_number_idx").on(table.invoiceNumber),
+  // Task #457: DB-enforced uniqueness on invoice_number. Replaces the
+  // prior non-unique `invoice_groups_invoice_number_idx`. The index
+  // name matches migration 0031.
+  uniqueIndex("invoice_groups_invoice_number_unique").on(table.invoiceNumber),
   index("invoice_groups_status_idx").on(table.status),
   index("invoice_groups_outcome_idx").on(table.outcome),
   index("invoice_groups_created_at_idx").on(table.createdAt),

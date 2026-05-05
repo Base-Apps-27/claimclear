@@ -2071,6 +2071,11 @@ function parseAndValidateRename(
  * `parseAndValidateRename` returned `kind === "ok"`.
  */
 class InvoiceNumberConflictError extends Error {
+  // `conflictingGroupId` is best-effort: 0 when the conflict was
+  // detected via a Postgres 23505 inside an aborted transaction
+  // (Task #457) where we cannot safely re-query for the winning
+  // row's id. Callers should treat it as informational and key on
+  // the `code:invoice_number_conflict` response field instead.
   constructor(public readonly conflictingGroupId: number, public readonly invoiceNumber: string) {
     super(`Invoice number ${invoiceNumber} is already in use by group ${conflictingGroupId}`);
     this.name = "InvoiceNumberConflictError";
@@ -2085,9 +2090,11 @@ async function applyGroupInvoiceRename(
 ): Promise<void> {
   // Uniqueness probe inside the same tx so any concurrent rename racing
   // us either commits before we read (we see it and 409) or commits
-  // after we write (their unique-by-app check sees ours and 409s). The
-  // DB index is non-unique today, so this app-level guard is the only
-  // one in place — keeping it inside the tx is what makes it safe.
+  // after we write (the DB unique index — Task #457, migration 0031 —
+  // raises 23505 which we re-shape into the same conflict error
+  // below). The app-level probe is kept because it lets us return the
+  // *conflicting group's id* in the 409 body, which the unique-
+  // violation error doesn't carry.
   const collision = await tx
     .select({ id: invoiceGroupsTable.id })
     .from(invoiceGroupsTable)
@@ -2100,10 +2107,30 @@ async function applyGroupInvoiceRename(
     throw new InvoiceNumberConflictError(collision[0].id, rename.to);
   }
 
-  await tx
-    .update(invoiceGroupsTable)
-    .set({ invoiceNumber: rename.to })
-    .where(eq(invoiceGroupsTable.id, groupId));
+  try {
+    await tx
+      .update(invoiceGroupsTable)
+      .set({ invoiceNumber: rename.to })
+      .where(eq(invoiceGroupsTable.id, groupId));
+  } catch (err: unknown) {
+    // Concurrent committer beat us between the probe above and this
+    // UPDATE. The DB unique index (Task #457, migration 0031) raises
+    // Postgres 23505 (unique_violation); re-shape into the same 409
+    // contract. We CANNOT re-query inside this tx — Postgres aborts
+    // the transaction on the first failed statement, so any further
+    // query would itself fail with 25P02 (in_failed_sql_transaction).
+    // Throw with conflictingGroupId=0; the outer catch rolls back
+    // the tx and turns this into the same `code:invoice_number_conflict`
+    // 409 response. The id-of-other-group field is best-effort
+    // metadata only (the message + code are what the UI keys on),
+    // and the probe path above still populates it for the
+    // overwhelmingly common non-racing case.
+    const code = (err as { code?: string } | null)?.code;
+    if (code === "23505") {
+      throw new InvoiceNumberConflictError(0, rename.to);
+    }
+    throw err;
+  }
 
   await tx.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
