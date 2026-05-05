@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, Globe, Mail, FileText, ArrowUpRight } from "lucide-react";
 import { T, PHASES, phaseColor, ProcessStep } from "./tokens";
-import type { StepDef } from "./steps";
+import { STEPS, type StepDef } from "./steps";
+
+const TOTAL_STEPS = STEPS.length;
 
 const VIEWPORT_MARGIN = 16;
 
@@ -244,7 +246,7 @@ function ModalCard({ step }: { step: StepDef }) {
         }}
       >
         <AccentStripe />
-        <HeaderBand stepLabel={`Step ${step.id} of 14`} />
+        <HeaderBand stepLabel={`Step ${step.id} of ${TOTAL_STEPS}`} />
 
         {isSubmitStep ? (
           // Two-column layout for the routing-rich Submit step
@@ -451,7 +453,7 @@ function CoachCard({ step }: { step: StepDef }) {
         )}
 
         <AccentStripe />
-        <HeaderBand stepLabel={`Step ${step.id} of 14`} />
+        <HeaderBand stepLabel={`Step ${step.id} of ${TOTAL_STEPS}`} />
 
         <div className="px-4 pt-3 pb-2.5 flex flex-col gap-2">
           <PhaseBadge ps={step.processStep} />

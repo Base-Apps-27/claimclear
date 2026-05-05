@@ -2,10 +2,10 @@ import React from "react";
 import { T } from "../tokens";
 
 const LANES = [
-  { title: "Triage",       phase: T.AMBER_FG,   bg: T.AMBER_BG,   bd: T.AMBER_BD,   count: 9 },
-  { title: "Investigate",  phase: T.SKY_FG,     bg: T.SKY_BG,     bd: T.SKY_BD,     count: 14 },
-  { title: "Gather proof", phase: T.EMERALD_FG, bg: T.EMERALD_BG, bd: T.EMERALD_BD, count: 11 },
-  { title: "Submit",       phase: T.CORAL,      bg: T.CORAL_BG,   bd: T.CORAL_BD,   count: 6 },
+  { key: "triage",      title: "Triage",       phase: T.AMBER_FG,   bg: T.AMBER_BG,   bd: T.AMBER_BD,   count: 9 },
+  { key: "investigate", title: "Investigate",  phase: T.SKY_FG,     bg: T.SKY_BG,     bd: T.SKY_BD,     count: 14 },
+  { key: "gather",      title: "Gather proof", phase: T.EMERALD_FG, bg: T.EMERALD_BG, bd: T.EMERALD_BD, count: 11 },
+  { key: "submit",      title: "Submit",       phase: T.CORAL,      bg: T.CORAL_BG,   bd: T.CORAL_BD,   count: 6 },
 ];
 
 export function Queue() {
@@ -32,7 +32,12 @@ export function Queue() {
 
       <div className="grid grid-cols-4 gap-2 flex-1 min-h-0">
         {LANES.map((lane) => (
-          <div key={lane.title} className="bg-white border rounded-lg flex flex-col min-h-0" style={{ borderColor: T.HAIRLINE }}>
+          <div
+            key={lane.key}
+            data-tour={`queue-lane-${lane.key}`}
+            className="bg-white border rounded-lg flex flex-col min-h-0"
+            style={{ borderColor: T.HAIRLINE }}
+          >
             <div className="flex items-center justify-between px-2.5 py-2 border-b" style={{ borderColor: T.HAIRLINE, backgroundColor: lane.bg }}>
               <span className="text-[10.5px] uppercase tracking-wider font-bold" style={{ color: lane.phase }}>{lane.title}</span>
               <span className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded bg-white" style={{ color: lane.phase, border: `1px solid ${lane.bd}` }}>

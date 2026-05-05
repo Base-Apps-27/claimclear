@@ -10,7 +10,7 @@ import { Attestation } from "./full-tour/pages/Attestation";
 export function FullTour() {
   const urlParams = new URLSearchParams(window.location.search);
   const stepParam = parseInt(urlParams.get("step") || "1", 10);
-  const stepId = Math.max(1, Math.min(14, isNaN(stepParam) ? 1 : stepParam));
+  const stepId = Math.max(1, Math.min(STEPS.length, isNaN(stepParam) ? 1 : stepParam));
   const currentStep = STEPS.find((s) => s.id === stepId) || STEPS[0];
 
   const renderPage = () => {

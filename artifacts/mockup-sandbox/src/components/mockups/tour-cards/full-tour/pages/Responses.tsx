@@ -18,7 +18,7 @@ export function Responses() {
 
       <div className="grid grid-cols-[200px_1fr_220px] gap-2 flex-1 min-h-0">
         {/* Left list */}
-        <div className="bg-white border rounded-lg overflow-hidden flex flex-col" style={{ borderColor: T.HAIRLINE }}>
+        <div data-tour="responses-thread" className="bg-white border rounded-lg overflow-hidden flex flex-col" style={{ borderColor: T.HAIRLINE }}>
           <div className="px-2.5 py-1.5 border-b text-[10px] uppercase tracking-wider font-semibold" style={{ borderColor: T.HAIRLINE, color: T.SLATE_MUTED, backgroundColor: T.SLATE_50 }}>
             Thread
           </div>
@@ -39,7 +39,7 @@ export function Responses() {
         </div>
 
         {/* Middle: AI read */}
-        <div className="bg-white border rounded-lg flex flex-col overflow-hidden" style={{ borderColor: T.HAIRLINE }}>
+        <div data-tour="responses-airead" className="bg-white border rounded-lg flex flex-col overflow-hidden" style={{ borderColor: T.HAIRLINE }}>
           <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: T.HAIRLINE }}>
             <div>
               <div className="text-[12px] font-semibold" style={{ color: T.SLATE_TEXT }}>Group #G-4291 · MAS response</div>
@@ -69,7 +69,7 @@ export function Responses() {
         </div>
 
         {/* Right: verdict */}
-        <div className="bg-white border rounded-lg p-3 flex flex-col gap-2" style={{ borderColor: T.HAIRLINE }}>
+        <div data-tour="responses-verdict" className="bg-white border rounded-lg p-3 flex flex-col gap-2" style={{ borderColor: T.HAIRLINE }}>
           <div className="text-[10px] uppercase font-semibold tracking-wider mb-1" style={{ color: T.SLATE_MUTED }}>Decide now</div>
           <button className="flex items-center justify-center gap-1.5 h-9 rounded-md text-[12px] font-semibold text-white" style={{ backgroundColor: T.EMERALD_FG }}>
             <CheckCircle2 className="w-3.5 h-3.5" /> Re-attest
