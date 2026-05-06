@@ -64,17 +64,6 @@ export default function AdminUserActivity() {
   const [to, setTo] = useState("");
   const [page, setPage] = useState(0);
 
-  if (user?.role !== "admin") {
-    return (
-      <Card>
-        <CardHeader><CardTitle>Admin only</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">You need admin access to view this page.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const params = useMemo(() => {
     const p: Record<string, string | number> = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
     if (userEmail.trim()) p.userEmail = userEmail.trim();
@@ -99,6 +88,17 @@ export default function AdminUserActivity() {
     if (to) exportParams.to = new Date(to).toISOString();
     return getAdminExportAuditLogsCsvUrl(exportParams);
   }, [userEmail, category, from, to]);
+
+  if (user?.role !== "admin") {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Admin only</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">You need admin access to view this page.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   function resetPage() {
     setPage(0);
