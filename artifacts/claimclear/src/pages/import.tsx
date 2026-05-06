@@ -617,6 +617,19 @@ export default function Import() {
   const handleCloseReview = () => setReviewGroup(null);
 
   const totalAmount = rows.reduce((s, r) => s + (r.claimAmount || 0), 0);
+  const invoiceCount = useMemo<number>(() => {
+    const seen = new Set<string>();
+    let blanks = 0;
+    for (const r of rows) {
+      const key = (r.refNumber ?? "").trim().toLowerCase();
+      if (key === "") {
+        blanks += 1;
+      } else {
+        seen.add(key);
+      }
+    }
+    return seen.size + blanks;
+  }, [rows]);
   const isProcessing = stage === "reading" || stage === "parsing";
 
   const matchedCount = classifyGroups.filter(g => g.matched).length;
@@ -652,7 +665,7 @@ export default function Import() {
       return {
         text: (
           <>
-            <strong>{rows.length} claims found</strong> in <span className="font-mono">{fileName}</span>.{" "}
+            <strong>{invoiceCount} invoice{invoiceCount === 1 ? "" : "s"} · {rows.length} leg{rows.length === 1 ? "" : "s"} found</strong> in <span className="font-mono">{fileName}</span>.{" "}
             {warnings.length > 0
               ? `${warnings.length} parsing warning${warnings.length === 1 ? "" : "s"} — review below.`
               : "All rows look clean."}
@@ -665,7 +678,7 @@ export default function Import() {
       return {
         text: (
           <>
-            <strong>{rows.length} claims</strong>, <strong>{classifyGroups.length} error groups</strong>.
+            <strong>{invoiceCount} invoice{invoiceCount === 1 ? "" : "s"} · {rows.length} leg{rows.length === 1 ? "" : "s"}</strong>, <strong>{classifyGroups.length} error groups</strong>.
             Coding rules matched <strong>{matchedCount}</strong> automatically.{" "}
             {unmatchedCount > 0
               ? <><strong>{unmatchedCount}</strong> need your decision.</>
@@ -681,7 +694,7 @@ export default function Import() {
       return {
         text: (
           <>
-            <strong>Ready to import.</strong> {rows.length} claim{rows.length === 1 ? "" : "s"}
+            <strong>Ready to import.</strong> {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"} · {rows.length} leg{rows.length === 1 ? "" : "s"}
             {groupCount > 0 ? <>, {assigned} of {groupCount} groups classified</> : null}.
             Review the summary on the left, then start the import.
           </>
@@ -691,7 +704,7 @@ export default function Import() {
     }
     if (stepKey === "confirm" && stage === "importing") {
       return {
-        text: <>Importing {rows.length} claims into ClaimClear…</>,
+        text: <>Importing {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"} · {rows.length} leg{rows.length === 1 ? "" : "s"} into ClaimClear…</>,
         meta: undefined,
       };
     }
@@ -708,7 +721,7 @@ export default function Import() {
       };
     }
     return null;
-  }, [stepKey, stage, errorMessage, rows.length, fileName, warnings.length, totalAmount, classifyGroups, matchedCount, unmatchedCount, result, duplicateAction]);
+  }, [stepKey, stage, errorMessage, rows.length, invoiceCount, fileName, warnings.length, totalAmount, classifyGroups, matchedCount, unmatchedCount, result, duplicateAction]);
 
   return (
     <div className="space-y-4 max-w-7xl" data-testid="page-import">
