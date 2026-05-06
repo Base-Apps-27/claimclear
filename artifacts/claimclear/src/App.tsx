@@ -13,6 +13,7 @@ import Dashboard from "@/pages/dashboard";
 import ClaimsList from "@/pages/claims";
 import ClaimDetail from "@/pages/claim-detail";
 import ClaimNew from "@/pages/claim-new";
+import InvoiceNew from "@/pages/invoice-new";
 import Queue from "@/pages/queue";
 import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
@@ -88,6 +89,7 @@ function Router() {
         <Route path="/claims" component={ClaimsList} />
         <Route path="/withdrawals" component={Withdrawals} />
         <Route path="/claims/new" component={ClaimNew} />
+        <Route path="/invoices/new" component={() => <DenyClerk component={InvoiceNew} />} />
         <Route path="/claims/:id" component={ClaimDetail} />
         <Route path="/import" component={() => <DenyClerk component={Import} />} />
         <Route path="/error-types" component={() => <DenyClerk component={ErrorTypes} />} />

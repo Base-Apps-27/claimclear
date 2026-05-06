@@ -142,7 +142,11 @@ export default function ClaimNew() {
         <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
         <div className="flex-1 text-sm">
           Most claims should come from the <strong>job-status report import</strong>. Use this form
-          only for one-offs the import missed.
+          only for one-offs the import missed — or jump to{" "}
+          <Link href="/invoices/new" className="underline font-medium" data-testid="link-new-invoice">
+            New invoice
+          </Link>{" "}
+          if you need to start from a brand-new invoice number.
         </div>
         <Button
           asChild

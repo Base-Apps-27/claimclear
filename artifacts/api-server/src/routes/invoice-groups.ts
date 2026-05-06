@@ -29,6 +29,7 @@ import {
 } from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, serverTodayKey } from "../lib/dates";
+import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
 import { denyClerk } from "../middlewares/denyClerk";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -583,6 +584,238 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   }
 
   res.json(responseBody);
+}));
+
+// Manual invoice-group creation. Mirrors the importer's per-group
+// construction (group + N child legs in one transaction, then
+// `recomputeGroupServiceDate` to refresh the denormalized
+// earliest-service-date cache). Gated behind `denyClerk` to match the
+// other write paths admins/users have but clerks do not. On invoice-
+// number collisions the endpoint returns 409 with a summary of the
+// existing group so the UI can prompt the operator to attach instead;
+// re-submitting with `attachToExistingId` skips the create step and
+// inserts the legs into the named group. The unique index on
+// `invoice_groups.invoice_number` (migration 0031) is the durable
+// guard — the upfront SELECT is just so the API can return a friendly
+// 409 payload before the insert blows up.
+router.post("/invoice-groups", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const body = req.body as {
+    invoiceNumber?: unknown;
+    clientNumber?: unknown;
+    payorEmail?: unknown;
+    legs?: unknown;
+    attachToExistingId?: unknown;
+  };
+
+  const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber.trim() : "";
+  if (!invoiceNumber) {
+    res.status(400).json({ error: "invoiceNumber is required" });
+    return;
+  }
+
+  if (!Array.isArray(body.legs) || body.legs.length === 0) {
+    res.status(400).json({ error: "At least one leg is required" });
+    return;
+  }
+
+  type LegInput = {
+    confNumber: string;
+    date: string | null;
+    refNumber: string | null;
+    clientNumber: string | null;
+    carNumber: string | null;
+    errorDetails: string | null;
+    claimAmount: string | null;
+  };
+
+  const legs: LegInput[] = [];
+  for (let i = 0; i < body.legs.length; i++) {
+    const raw = body.legs[i] as Record<string, unknown> | null;
+    if (!raw || typeof raw !== "object") {
+      res.status(400).json({ error: `Leg #${i + 1} is malformed` });
+      return;
+    }
+    const conf = typeof raw.confNumber === "string" ? raw.confNumber.trim() : "";
+    if (!conf) {
+      res.status(400).json({ error: `Leg #${i + 1}: confNumber is required` });
+      return;
+    }
+    const dateRaw = typeof raw.date === "string" ? raw.date.trim() : "";
+    // Tight ISO contract — same as the importer's normalized shape.
+    if (dateRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+      res.status(400).json({ error: `Leg #${i + 1}: date must be ISO YYYY-MM-DD` });
+      return;
+    }
+    const amtRaw = raw.claimAmount;
+    let claimAmount: string | null = null;
+    if (amtRaw != null && amtRaw !== "") {
+      const n = typeof amtRaw === "number" ? amtRaw : parseFloat(String(amtRaw));
+      if (!Number.isFinite(n)) {
+        res.status(400).json({ error: `Leg #${i + 1}: claimAmount must be numeric` });
+        return;
+      }
+      claimAmount = String(n);
+    }
+    legs.push({
+      confNumber: conf,
+      date: dateRaw || null,
+      refNumber: typeof raw.refNumber === "string" && raw.refNumber.trim() ? raw.refNumber.trim() : null,
+      clientNumber: typeof raw.clientNumber === "string" && raw.clientNumber.trim() ? raw.clientNumber.trim() : null,
+      carNumber: typeof raw.carNumber === "string" && raw.carNumber.trim() ? raw.carNumber.trim() : null,
+      errorDetails: typeof raw.errorDetails === "string" && raw.errorDetails.trim() ? raw.errorDetails.trim() : null,
+      claimAmount,
+    });
+  }
+
+  const groupClientNumber = typeof body.clientNumber === "string" && body.clientNumber.trim()
+    ? body.clientNumber.trim()
+    : (legs.find(l => l.clientNumber)?.clientNumber ?? null);
+  const payorEmail = typeof body.payorEmail === "string" && body.payorEmail.trim()
+    ? body.payorEmail.trim()
+    : null;
+
+  const totalAmount = legs.reduce((sum, l) => sum + (l.claimAmount ? parseFloat(l.claimAmount) || 0 : 0), 0);
+
+  // Reject duplicate confirmation numbers (DB has no unique index on
+  // claims.conf_number, but creating two legs with the same conf in
+  // a single submission is always a typo).
+  const confSeen = new Set<string>();
+  for (const l of legs) {
+    if (confSeen.has(l.confNumber)) {
+      res.status(400).json({ error: `Duplicate confirmation number in submission: ${l.confNumber}` });
+      return;
+    }
+    confSeen.add(l.confNumber);
+  }
+
+  const attachToExistingId = typeof body.attachToExistingId === "number" ? body.attachToExistingId : null;
+  const actor = actorFromReq(req);
+
+  const result = await db.transaction(async (tx) => {
+    let group: typeof invoiceGroupsTable.$inferSelect | null = null;
+    let attachedToExisting = false;
+
+    if (attachToExistingId != null) {
+      const [existing] = await tx.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, attachToExistingId));
+      if (!existing) {
+        return { kind: "error" as const, status: 400, body: { error: "attachToExistingId does not match any invoice group" } };
+      }
+      if (existing.invoiceNumber !== invoiceNumber) {
+        return { kind: "error" as const, status: 400, body: { error: "attachToExistingId belongs to a different invoiceNumber" } };
+      }
+      group = existing;
+      attachedToExisting = true;
+    } else {
+      const [collision] = await tx.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.invoiceNumber, invoiceNumber));
+      if (collision) {
+        return {
+          kind: "conflict" as const,
+          existingGroup: {
+            id: collision.id,
+            invoiceNumber: collision.invoiceNumber,
+            rideCount: collision.rideCount,
+            totalAmount: collision.totalAmount,
+            status: collision.status,
+          },
+        };
+      }
+      const [created] = await tx.insert(invoiceGroupsTable).values({
+        invoiceNumber,
+        clientNumber: groupClientNumber,
+        // Group-level errorDetails is left null on manual create — the
+        // operator picks an error type during triage on the detail
+        // page, which is also where group-level errorDetails gets set.
+        // Status starts at "Needs Review" so the row lands on the
+        // operator's classification queue immediately, exactly like an
+        // imported row that lacks an error type.
+        status: "Needs Review",
+        outcome: "Pending",
+        rideCount: legs.length,
+        totalAmount: String(totalAmount),
+        payorEmail,
+      }).returning();
+      group = created;
+    }
+
+    if (!group) {
+      return { kind: "error" as const, status: 500, body: { error: "Failed to resolve invoice group" } };
+    }
+
+    const insertedLegs = await tx.insert(claimsTable).values(legs.map(l => ({
+      invoiceGroupId: group!.id,
+      confNumber: l.confNumber,
+      date: l.date,
+      refNumber: l.refNumber,
+      clientNumber: l.clientNumber ?? groupClientNumber ?? null,
+      carNumber: l.carNumber,
+      errorDetails: l.errorDetails,
+      claimAmount: l.claimAmount,
+      payorEmail,
+      status: "New" as const,
+      outcome: "Pending" as const,
+      invoiceNumbers: invoiceNumber,
+      // No errorType yet — operator assigns during triage on the
+      // detail page. Match the importer's `includedInDispute = false`
+      // when there's no error type set.
+      includedInDispute: false,
+    }))).returning({ id: claimsTable.id });
+
+    // Refresh group totals + ride count when attaching to an existing
+    // group so the denormalized columns stay accurate.
+    if (attachedToExisting) {
+      const [{ count: c }] = await tx.select({ count: count() }).from(claimsTable).where(eq(claimsTable.invoiceGroupId, group.id));
+      const allLegs = await tx.select({ amt: claimsTable.claimAmount }).from(claimsTable).where(eq(claimsTable.invoiceGroupId, group.id));
+      const newTotal = allLegs.reduce((s, r) => s + (r.amt ? parseFloat(r.amt) || 0 : 0), 0);
+      await tx.update(invoiceGroupsTable).set({
+        rideCount: c,
+        totalAmount: String(newTotal),
+      }).where(eq(invoiceGroupsTable.id, group.id));
+    }
+
+    await tx.insert(auditLogsTable).values({
+      invoiceGroupId: group.id,
+      action: attachedToExisting ? "invoice_group_legs_added" : "invoice_group_created",
+      details: attachedToExisting
+        ? `Attached ${insertedLegs.length} leg${insertedLegs.length === 1 ? "" : "s"} to invoice ${invoiceNumber} via manual entry`
+        : `Invoice ${invoiceNumber} created manually with ${insertedLegs.length} leg${insertedLegs.length === 1 ? "" : "s"}`,
+      metadata: { source: "manual", legIds: insertedLegs.map(l => l.id) },
+      userEmail: actor.userEmail,
+      userName: actor.userName,
+    });
+
+    return {
+      kind: "ok" as const,
+      groupId: group.id,
+      createdLegIds: insertedLegs.map(l => l.id),
+      attachedToExisting,
+    };
+  });
+
+  if (result.kind === "error") {
+    res.status(result.status).json(result.body);
+    return;
+  }
+  if (result.kind === "conflict") {
+    res.status(409).json({
+      error: `Invoice ${invoiceNumber} already exists`,
+      existingGroup: result.existingGroup,
+    });
+    return;
+  }
+
+  // Refresh denormalized service-date cache outside the tx (helper
+  // opens its own connection).
+  await recomputeGroupServiceDate(result.groupId);
+
+  const [refreshed] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, result.groupId));
+
+  emitGroupEvent(result.groupId, result.attachedToExisting ? "invoice_group_legs_added" : "invoice_group_created", req);
+
+  res.status(201).json({
+    group: scrubMoneyFields(refreshed, req.user),
+    createdLegIds: result.createdLegIds,
+    attachedToExisting: result.attachedToExisting,
+  });
 }));
 
 router.get("/invoice-groups/export-csv", denyClerk, asyncHandler(async (req, res): Promise<void> => {

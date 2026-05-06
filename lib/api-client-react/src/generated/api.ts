@@ -70,6 +70,8 @@ import type {
   CreateAnthropicConversationBody,
   CreateClaimBody,
   CreateErrorTypeBody,
+  CreateInvoiceGroupBody,
+  CreateInvoiceGroupResponse,
   CreateNoteBody,
   CreatePortalSubmissionBody,
   CronRunsResponse,
@@ -115,6 +117,7 @@ import type {
   ImportClaimsBody,
   ImportSummary,
   IncludeLegBody,
+  InvoiceGroupConflictResponse,
   InvoiceGroupDetailResponse,
   InvoiceGroupResponse,
   InvoiceGroupsListResponse,
@@ -702,6 +705,108 @@ export function useListInvoiceGroups<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Manual creation path used when an invoice didn't come through the
+bulk job-status import (one-off entries the operator types in).
+Creates the parent `invoice_groups` row and the child `claims`
+legs in a single transaction, mirroring the import flow's group +
+leg construction.
+
+If `attachToExistingId` is omitted and the supplied
+`invoiceNumber` already corresponds to an existing group, the
+endpoint returns `409 Conflict` with an `existingGroup` summary
+instead of creating a duplicate. Re-submit the same request with
+`attachToExistingId` set to the returned group's id to add the
+legs to the existing group.
+
+Clerks are denied (same role gate as bulk import / setup pages).
+
+ * @summary Manually create an invoice group with one or more legs
+ */
+export const getCreateInvoiceGroupUrl = () => {
+  return `/api/invoice-groups`;
+};
+
+export const createInvoiceGroup = async (
+  createInvoiceGroupBody: CreateInvoiceGroupBody,
+  options?: RequestInit,
+): Promise<CreateInvoiceGroupResponse> => {
+  return customFetch<CreateInvoiceGroupResponse>(getCreateInvoiceGroupUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createInvoiceGroupBody),
+  });
+};
+
+export const getCreateInvoiceGroupMutationOptions = <
+  TError = ErrorType<void | InvoiceGroupConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvoiceGroup>>,
+    TError,
+    { data: BodyType<CreateInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createInvoiceGroup>>,
+  TError,
+  { data: BodyType<CreateInvoiceGroupBody> },
+  TContext
+> => {
+  const mutationKey = ["createInvoiceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createInvoiceGroup>>,
+    { data: BodyType<CreateInvoiceGroupBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createInvoiceGroup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateInvoiceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createInvoiceGroup>>
+>;
+export type CreateInvoiceGroupMutationBody = BodyType<CreateInvoiceGroupBody>;
+export type CreateInvoiceGroupMutationError =
+  ErrorType<void | InvoiceGroupConflictResponse>;
+
+/**
+ * @summary Manually create an invoice group with one or more legs
+ */
+export const useCreateInvoiceGroup = <
+  TError = ErrorType<void | InvoiceGroupConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvoiceGroup>>,
+    TError,
+    { data: BodyType<CreateInvoiceGroupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createInvoiceGroup>>,
+  TError,
+  { data: BodyType<CreateInvoiceGroupBody> },
+  TContext
+> => {
+  return useMutation(getCreateInvoiceGroupMutationOptions(options));
+};
 
 /**
  * @summary Export invoice groups as CSV (all matching rows, respects same filters as list)

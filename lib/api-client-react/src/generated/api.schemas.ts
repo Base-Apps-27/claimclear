@@ -1206,6 +1206,90 @@ Same payload shape as `GET /invoice-groups/needs-classification`.
   needsClassificationInbox?: NeedsClassificationInboxResponse;
 }
 
+/**
+ * One leg (child claim) to attach to the new or existing invoice
+group. Mirrors the leg fields the importer writes — anything not
+supplied falls back to the same defaults as the import path.
+
+ */
+export interface CreateInvoiceGroupLeg {
+  /** Required. Trip confirmation number (the leg's primary identifier). */
+  confNumber: string;
+  /**
+   * ISO `YYYY-MM-DD` service date. Used to compute the 30-day filing deadline.
+   * @nullable
+   */
+  date?: string | null;
+  /** @nullable */
+  refNumber?: string | null;
+  /** @nullable */
+  clientNumber?: string | null;
+  /** @nullable */
+  carNumber?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  /**
+   * Decimal-as-string ($USD), same shape as `claims.claim_amount`.
+   * @nullable
+   */
+  claimAmount?: string | null;
+}
+
+export interface CreateInvoiceGroupBody {
+  /** Invoice number for the new group. Must be unique across
+invoice_groups (DB-enforced) — collisions return 409 unless
+`attachToExistingId` is set.
+ */
+  invoiceNumber: string;
+  /**
+   * Optional group-level member/client number. If omitted, derived from the first leg that supplies one.
+   * @nullable
+   */
+  clientNumber?: string | null;
+  /** @nullable */
+  payorEmail?: string | null;
+  /** @minItems 1 */
+  legs: CreateInvoiceGroupLeg[];
+  /**
+   * When set, skip the new-group create path entirely and attach
+the supplied legs to this existing invoice group instead.
+Must reference a real group id; the server validates the
+id's `invoiceNumber` matches the body's `invoiceNumber` to
+guard against stale UI prompts.
+
+   * @nullable
+   */
+  attachToExistingId?: number | null;
+}
+
+export interface CreateInvoiceGroupResponse {
+  group: InvoiceGroupResponse;
+  /** Ids of the leg rows inserted by this request (excludes any pre-existing legs on an attach-to-existing call). */
+  createdLegIds: number[];
+  /** True when the request attached legs to an existing group instead of creating a new one. */
+  attachedToExisting: boolean;
+}
+
+export type InvoiceGroupConflictResponseExistingGroup = {
+  id: number;
+  invoiceNumber: string;
+  rideCount: number;
+  /** @nullable */
+  totalAmount?: string | null;
+  status: string;
+};
+
+/**
+ * Returned with HTTP 409 when `POST /invoice-groups` is called for
+an `invoiceNumber` that already exists and the caller did not
+opt into attaching via `attachToExistingId`.
+
+ */
+export interface InvoiceGroupConflictResponse {
+  error: string;
+  existingGroup: InvoiceGroupConflictResponseExistingGroup;
+}
+
 export type UpdateInvoiceGroupBodyEvidenceChecklist = {
   [key: string]: boolean;
 };

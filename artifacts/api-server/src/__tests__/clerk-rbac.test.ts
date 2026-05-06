@@ -133,6 +133,7 @@ const GATED_ENDPOINTS: Array<{
   { method: "GET",    path: "/api/claims/export-csv",                  label: "GET /claims/export-csv" },
   { method: "POST",   path: "/api/claims/bulk-assign-error-type",      label: "POST /claims/bulk-assign-error-type",    body: { ids: [], errorTypeId: 1 } },
   { method: "GET",    path: "/api/invoice-groups/export-csv",          label: "GET /invoice-groups/export-csv" },
+  { method: "POST",   path: "/api/invoice-groups",                     label: "POST /invoice-groups",                   body: { invoiceNumber: "RBAC-TEST", legs: [{ confNumber: "RBAC-CONF" }] } },
   { method: "POST",   path: "/api/invoice-groups/bulk-assign-error-type", label: "POST /invoice-groups/bulk-assign-error-type", body: { ids: [], errorTypeId: 1 } },
 
   // Admin (gated by requireAdmin which also rejects clerk)

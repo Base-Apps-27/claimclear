@@ -576,6 +576,77 @@ export const ListInvoiceGroupsResponse = zod.object({
 });
 
 /**
+ * Manual creation path used when an invoice didn't come through the
+bulk job-status import (one-off entries the operator types in).
+Creates the parent `invoice_groups` row and the child `claims`
+legs in a single transaction, mirroring the import flow's group +
+leg construction.
+
+If `attachToExistingId` is omitted and the supplied
+`invoiceNumber` already corresponds to an existing group, the
+endpoint returns `409 Conflict` with an `existingGroup` summary
+instead of creating a duplicate. Re-submit the same request with
+`attachToExistingId` set to the returned group's id to add the
+legs to the existing group.
+
+Clerks are denied (same role gate as bulk import / setup pages).
+
+ * @summary Manually create an invoice group with one or more legs
+ */
+
+export const CreateInvoiceGroupBody = zod.object({
+  invoiceNumber: zod
+    .string()
+    .describe(
+      "Invoice number for the new group. Must be unique across\ninvoice_groups (DB-enforced) — collisions return 409 unless\n`attachToExistingId` is set.\n",
+    ),
+  clientNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional group-level member\/client number. If omitted, derived from the first leg that supplies one.",
+    ),
+  payorEmail: zod.string().nullish(),
+  legs: zod
+    .array(
+      zod
+        .object({
+          confNumber: zod
+            .string()
+            .describe(
+              "Required. Trip confirmation number (the leg's primary identifier).",
+            ),
+          date: zod
+            .string()
+            .nullish()
+            .describe(
+              "ISO `YYYY-MM-DD` service date. Used to compute the 30-day filing deadline.",
+            ),
+          refNumber: zod.string().nullish(),
+          clientNumber: zod.string().nullish(),
+          carNumber: zod.string().nullish(),
+          errorDetails: zod.string().nullish(),
+          claimAmount: zod
+            .string()
+            .nullish()
+            .describe(
+              "Decimal-as-string ($USD), same shape as `claims.claim_amount`.",
+            ),
+        })
+        .describe(
+          "One leg (child claim) to attach to the new or existing invoice\ngroup. Mirrors the leg fields the importer writes — anything not\nsupplied falls back to the same defaults as the import path.\n",
+        ),
+    )
+    .min(1),
+  attachToExistingId: zod
+    .number()
+    .nullish()
+    .describe(
+      "When set, skip the new-group create path entirely and attach\nthe supplied legs to this existing invoice group instead.\nMust reference a real group id; the server validates the\nid's `invoiceNumber` matches the body's `invoiceNumber` to\nguard against stale UI prompts.\n",
+    ),
+});
+
+/**
  * @summary Export invoice groups as CSV (all matching rows, respects same filters as list)
  */
 export const ExportInvoiceGroupsCsvQueryParams = zod.object({

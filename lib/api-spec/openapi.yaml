@@ -309,6 +309,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupsListResponse"
 
+    post:
+      operationId: createInvoiceGroup
+      tags: [invoice-groups]
+      summary: Manually create an invoice group with one or more legs
+      description: |
+        Manual creation path used when an invoice didn't come through the
+        bulk job-status import (one-off entries the operator types in).
+        Creates the parent `invoice_groups` row and the child `claims`
+        legs in a single transaction, mirroring the import flow's group +
+        leg construction.
+
+        If `attachToExistingId` is omitted and the supplied
+        `invoiceNumber` already corresponds to an existing group, the
+        endpoint returns `409 Conflict` with an `existingGroup` summary
+        instead of creating a duplicate. Re-submit the same request with
+        `attachToExistingId` set to the returned group's id to add the
+        legs to the existing group.
+
+        Clerks are denied (same role gate as bulk import / setup pages).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceGroupBody"
+      responses:
+        "201":
+          description: Invoice group + legs created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateInvoiceGroupResponse"
+        "400":
+          description: Validation error (missing invoiceNumber, no legs, missing confNumber on a leg, etc.)
+        "403":
+          description: Caller is a clerk; manual creation is gated to admin and user roles.
+        "409":
+          description: |
+            An invoice group with the supplied `invoiceNumber` already
+            exists and `attachToExistingId` was not provided. Body
+            includes the existing group summary so the UI can prompt the
+            operator to attach to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGroupConflictResponse"
+
   /invoice-groups/export-csv:
     get:
       operationId: exportInvoiceGroupsCsv
@@ -5503,6 +5550,113 @@ components:
         - groups
         - total
         - today
+
+    CreateInvoiceGroupLeg:
+      type: object
+      description: |
+        One leg (child claim) to attach to the new or existing invoice
+        group. Mirrors the leg fields the importer writes — anything not
+        supplied falls back to the same defaults as the import path.
+      properties:
+        confNumber:
+          type: string
+          description: Required. Trip confirmation number (the leg's primary identifier).
+        date:
+          type: ["string", "null"]
+          description: ISO `YYYY-MM-DD` service date. Used to compute the 30-day filing deadline.
+        refNumber:
+          type: ["string", "null"]
+        clientNumber:
+          type: ["string", "null"]
+        carNumber:
+          type: ["string", "null"]
+        errorDetails:
+          type: ["string", "null"]
+        claimAmount:
+          type: ["string", "null"]
+          description: Decimal-as-string ($USD), same shape as `claims.claim_amount`.
+      required:
+        - confNumber
+
+    CreateInvoiceGroupBody:
+      type: object
+      properties:
+        invoiceNumber:
+          type: string
+          description: |
+            Invoice number for the new group. Must be unique across
+            invoice_groups (DB-enforced) — collisions return 409 unless
+            `attachToExistingId` is set.
+        clientNumber:
+          type: ["string", "null"]
+          description: Optional group-level member/client number. If omitted, derived from the first leg that supplies one.
+        payorEmail:
+          type: ["string", "null"]
+        legs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CreateInvoiceGroupLeg"
+        attachToExistingId:
+          type: ["integer", "null"]
+          description: |
+            When set, skip the new-group create path entirely and attach
+            the supplied legs to this existing invoice group instead.
+            Must reference a real group id; the server validates the
+            id's `invoiceNumber` matches the body's `invoiceNumber` to
+            guard against stale UI prompts.
+      required:
+        - invoiceNumber
+        - legs
+
+    CreateInvoiceGroupResponse:
+      type: object
+      properties:
+        group:
+          $ref: "#/components/schemas/InvoiceGroupResponse"
+        createdLegIds:
+          type: array
+          items:
+            type: integer
+          description: Ids of the leg rows inserted by this request (excludes any pre-existing legs on an attach-to-existing call).
+        attachedToExisting:
+          type: boolean
+          description: True when the request attached legs to an existing group instead of creating a new one.
+      required:
+        - group
+        - createdLegIds
+        - attachedToExisting
+
+    InvoiceGroupConflictResponse:
+      type: object
+      description: |
+        Returned with HTTP 409 when `POST /invoice-groups` is called for
+        an `invoiceNumber` that already exists and the caller did not
+        opt into attaching via `attachToExistingId`.
+      properties:
+        error:
+          type: string
+        existingGroup:
+          type: object
+          properties:
+            id:
+              type: integer
+            invoiceNumber:
+              type: string
+            rideCount:
+              type: integer
+            totalAmount:
+              type: ["string", "null"]
+            status:
+              type: string
+          required:
+            - id
+            - invoiceNumber
+            - rideCount
+            - status
+      required:
+        - error
+        - existingGroup
 
     UpdateInvoiceGroupBody:
       type: object

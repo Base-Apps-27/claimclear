@@ -613,6 +613,16 @@ export default function InvoiceGroupsList() {
         title="Invoice Groups"
         sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "group" : "groups"} · the unit you actually file in the MAS portal`}
         accent="purple"
+        actions={
+          !clerk ? (
+            <Button asChild size="sm" variant="outline" data-testid="button-new-invoice">
+              <Link href="/invoices/new">
+                <FileText className="h-3.5 w-3.5 mr-1.5" />
+                New invoice
+              </Link>
+            </Button>
+          ) : undefined
+        }
       />
 
       {bulkAssignSuccess && (
