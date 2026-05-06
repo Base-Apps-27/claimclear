@@ -29,11 +29,15 @@ import {
   Clock,
   FileText,
   AlertTriangle,
+  Filter,
   Inbox,
   Loader2,
+  PauseCircle,
   Sparkles,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import {
   parseExpiringParam,
   filterByExpiringParam,
@@ -684,6 +688,69 @@ function TabBadgeSplit({
         </Badge>
       )}
     </span>
+  );
+}
+
+/**
+ * Per-tab empty state for the Queue lanes. Wraps the shared
+ * `EmptyState` component so the Queue feels consistent with the rest
+ * of the app (claims/groups list pages). Copy is tab-specific:
+ *  - actionable   → celebratory ("you're all caught up")
+ *  - portal-queued → neutral ("nothing staged for the bots")
+ *  - on-hold      → neutral ("nothing parked right now")
+ * When an `?expiring=` filter is active we instead render a neutral
+ * "no rows match this filter" state with a Clear-filter action,
+ * reusing the centralised `emptyStateCopy` text so the operator
+ * understands which slice they're looking at.
+ */
+function QueueTabEmptyState({
+  lane,
+  filter,
+}: {
+  lane: "actionable" | "portal-queued" | "on-hold";
+  filter: ExpiringFilter;
+}) {
+  const { set } = useUrlParams();
+  const testid = `queue-empty-${lane}`;
+
+  if (filter !== null) {
+    return (
+      <div data-testid={testid} data-empty-variant="filtered">
+        <EmptyState
+          icon={Filter}
+          title="No groups match this filter"
+          description={emptyStateCopy(lane, filter)}
+          primaryAction={{
+            label: "Clear filter",
+            variant: "outline",
+            onClick: () => set({ expiring: null }, false),
+          }}
+        />
+      </div>
+    );
+  }
+
+  let icon: LucideIcon;
+  let title: string;
+  let description: string;
+  if (lane === "actionable") {
+    icon = CheckCircle2;
+    title = "You're all caught up";
+    description = "Nothing in Action Required needs your attention right now. Enjoy the calm.";
+  } else if (lane === "portal-queued") {
+    icon = Inbox;
+    title = "Nothing staged for the bots";
+    description = "Drafts ready for portal submission will appear here when they're queued.";
+  } else {
+    icon = PauseCircle;
+    title = "Nothing parked on hold";
+    description = "Groups you manually pause or that get blocked will show up here.";
+  }
+
+  return (
+    <div data-testid={testid} data-empty-variant="default">
+      <EmptyState icon={icon} title={title} description={description} />
+    </div>
   );
 }
 
@@ -1469,8 +1536,8 @@ export default function Queue() {
               </p>
               {actionableGroups.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
-                    <div>{emptyStateCopy("actionable", expiringFilter)}</div>
+                  <CardContent className="py-6">
+                    <QueueTabEmptyState lane="actionable" filter={expiringFilter} />
                   </CardContent>
                 </Card>
               ) : (
@@ -1507,8 +1574,8 @@ export default function Queue() {
               </p>
               {portalQueuedSorted.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
-                    <div>{emptyStateCopy("portal-queued", expiringFilter)}</div>
+                  <CardContent className="py-6">
+                    <QueueTabEmptyState lane="portal-queued" filter={expiringFilter} />
                   </CardContent>
                 </Card>
               ) : (
@@ -1545,8 +1612,8 @@ export default function Queue() {
               </p>
               {onHoldSorted.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground space-y-3">
-                    <div>{emptyStateCopy("on-hold", expiringFilter)}</div>
+                  <CardContent className="py-6">
+                    <QueueTabEmptyState lane="on-hold" filter={expiringFilter} />
                   </CardContent>
                 </Card>
               ) : (

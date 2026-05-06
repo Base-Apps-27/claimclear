@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/tooltip";
 import { StatusBadge } from "@/components/status-badge";
 import { RefNumber } from "@/components/ref-number";
+import { EmptyState } from "@/components/empty-state";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
   pickLatestReviewableResponse,
@@ -469,12 +470,12 @@ function Workspace({
   if (groups.length === 0) {
     return (
       <Card data-testid="empty-state">
-        <CardContent className="py-12 text-center space-y-2">
-          <CheckCircle className="h-8 w-8 mx-auto text-emerald-500" />
-          <p className="font-medium">All caught up.</p>
-          <p className="text-sm text-muted-foreground">
-            No payor responses are waiting on a human verdict.
-          </p>
+        <CardContent className="py-6">
+          <EmptyState
+            icon={CheckCircle}
+            title="All caught up — no payor responses awaiting a verdict"
+            description="When a payor reply needs a human decision, it'll show up here so you can act on it."
+          />
         </CardContent>
       </Card>
     );
