@@ -8,6 +8,7 @@ import {
   type TreeOption,
   type OutcomeType,
   type EvidenceReq,
+  type OrphanedChild,
   OUTCOME_LABELS,
   OUTCOME_COLORS,
   OUTCOME_AUTHOR_OPTIONS,
@@ -16,8 +17,16 @@ import {
   createEmptyTree,
   getMaxDepth,
   countPaths,
+  findParent,
+  removeSubtree,
+  getOrphanedChildren,
+  findReceivableSlots,
+  deleteNodeWithReparent,
   TEMPLATES,
 } from "./types";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,11 +92,116 @@ interface TreeEditorProps {
   onTest?: (tree: DecisionTree) => void;
 }
 
+export interface ReparentRequest {
+  nodeId: string;
+  question: string;
+  orphans: OrphanedChild[];
+  parent: TreeNode | null;
+  receivableSlots: number[];
+  blockReason: "no_parent" | "no_available_slot" | null;
+}
+
 export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [reparentReq, setReparentReq] = useState<ReparentRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const treeIdRef = useRef<string | null>(null);
+
+  // Restore the editor's "selection" after an undo by scrolling the
+  // previously-deleted node back into view (the editor doesn't track a
+  // selected-node concept, so this is the closest equivalent).
+  const focusNodeAfterUndo = useCallback((nodeId: string) => {
+    requestAnimationFrame(() => {
+      const el = scrollRef.current?.querySelector(`[data-node-id="${nodeId}"]`);
+      if (el && "scrollIntoView" in el) {
+        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      }
+    });
+  }, []);
+
+  const showUndoToast = useCallback(
+    (prevTree: DecisionTree, deletedNodeId: string, reparentedCount: number) => {
+      const description = reparentedCount > 0
+        ? `Re-attached ${reparentedCount} ${reparentedCount === 1 ? "branch" : "branches"} to the parent question.`
+        : "The empty question was removed from the tree.";
+      const t = toast({
+        title: "Question deleted",
+        description,
+        duration: 15000,
+        action: (
+          <ToastAction
+            altText="Undo delete"
+            data-testid="sop-delete-undo-btn"
+            onClick={() => {
+              onChange(prevTree);
+              focusNodeAfterUndo(deletedNodeId);
+              t.dismiss();
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    },
+    [onChange, focusNodeAfterUndo],
+  );
+
+  const requestDelete = useCallback(
+    (nodeId: string) => {
+      if (!tree) return;
+      if (nodeId === tree.rootId) {
+        toast({
+          title: "Can't delete the root question",
+          description:
+            'The root question is the entry point of the tree. Use the "Clear" button above to remove the entire tree.',
+          variant: "destructive",
+        });
+        return;
+      }
+      const orphans = getOrphanedChildren(tree, nodeId);
+      if (orphans.length === 0) {
+        // Leaf delete — apply immediately and offer undo.
+        const result = deleteNodeWithReparent(tree, nodeId);
+        if (!result.ok) return;
+        const prev = tree;
+        onChange(result.tree);
+        showUndoToast(prev, nodeId, 0);
+        return;
+      }
+      // Has orphans — open the re-parent dialog.
+      const parentInfo = findParent(tree, nodeId);
+      const parent = parentInfo?.parentNode ?? null;
+      const slots = parent ? findReceivableSlots(parent, nodeId) : [];
+      const node = tree.nodes.find(n => n.id === nodeId);
+      const blockReason: ReparentRequest["blockReason"] = !parent
+        ? "no_parent"
+        : slots.length < orphans.length
+          ? "no_available_slot"
+          : null;
+      setReparentReq({
+        nodeId,
+        question: node?.question || "(empty question)",
+        orphans,
+        parent,
+        receivableSlots: slots,
+        blockReason,
+      });
+    },
+    [tree, onChange, showUndoToast],
+  );
+
+  const confirmReparent = useCallback(() => {
+    if (!tree || !reparentReq || reparentReq.blockReason) return;
+    const result = deleteNodeWithReparent(tree, reparentReq.nodeId);
+    if (!result.ok) return;
+    const prev = tree;
+    const reparentedCount = reparentReq.orphans.length;
+    const deletedId = reparentReq.nodeId;
+    setReparentReq(null);
+    onChange(result.tree);
+    showUndoToast(prev, deletedId, reparentedCount);
+  }, [tree, reparentReq, onChange, showUndoToast]);
 
   const centerTree = useCallback((instant?: boolean) => {
     const container = scrollRef.current;
@@ -192,7 +306,7 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
             className="inline-flex min-w-full justify-center py-6 px-8 pb-16"
             style={{ transform: `scale(${zoom})`, transformOrigin: "top center", minWidth: "max-content" }}
           >
-            <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} isRoot />
+            <FlowNode tree={tree} nodeId={tree.rootId} onChange={onChange} onRequestDelete={requestDelete} isRoot />
           </div>
         </div>
 
@@ -208,7 +322,120 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
           </Button>
         </div>
       </div>
+
+      <ReparentDialog
+        request={reparentReq}
+        onCancel={() => setReparentReq(null)}
+        onConfirm={confirmReparent}
+      />
     </div>
+  );
+}
+
+// Exported for editor.test.tsx — tests render `ReparentDialogBody`
+// directly with a constructed `request` to assert the dialog content
+// + Confirm gating without going through Radix Portal (the project's
+// test pattern uses renderToStaticMarkup, which doesn't materialize
+// portaled content).
+export function ReparentDialogBody({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: ReparentRequest;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const blocked = request.blockReason !== null;
+  return (
+    <div data-testid="sop-reparent-dialog">
+      <div className="flex flex-col space-y-1.5 text-center sm:text-left">
+        <h2 className="text-lg font-semibold leading-none tracking-tight">Re-parent children before deleting?</h2>
+        <p className="text-sm text-muted-foreground">
+          {`"${request.question}" has ${request.orphans.length} ${request.orphans.length === 1 ? "branch" : "branches"} underneath it.`}
+          {" "}The rest of the tree below stays intact — we'll just attach those branches to the parent question.
+        </p>
+      </div>
+
+      <div className="space-y-3 py-2">
+        <div className="rounded-md border bg-slate-50 p-3 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Branches that will move</p>
+          <ul className="space-y-1.5" data-testid="sop-reparent-orphan-list">
+            {request.orphans.map((o) => (
+              <li key={o.childId} className="flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-700 truncate">
+                    <span className="text-slate-400">{o.optionLabel} →</span> {o.childQuestion || "(empty question)"}
+                  </p>
+                </div>
+                <Badge variant="outline" className="shrink-0 text-[10px]">
+                  {o.descendantCount} {o.descendantCount === 1 ? "node" : "nodes"}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {blocked && request.blockReason === "no_parent" && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900" data-testid="sop-reparent-blocked-no-parent">
+            This question has no parent in the tree, so its children have nowhere to attach. To remove it, first add an alternate path or use Clear to remove the whole tree.
+          </div>
+        )}
+
+        {blocked && request.blockReason === "no_available_slot" && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900" data-testid="sop-reparent-blocked-no-slot">
+            The parent question doesn't have enough open option slots to receive {request.orphans.length} {request.orphans.length === 1 ? "branch" : "branches"} ({request.receivableSlots.length} available). Add more options to the parent first, or remove one of the branches before deleting.
+          </div>
+        )}
+
+        {!blocked && request.parent && (
+          <div className="rounded-md border bg-white p-3 space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">New parent</p>
+            <p className="text-xs font-medium text-slate-700 truncate">{request.parent.question || "(empty question)"}</p>
+            <p className="text-[11px] text-slate-500">
+              Filling option {request.receivableSlots.slice(0, request.orphans.length).map(i => `"${request.parent!.options[i]?.label ?? `#${i + 1}`}"`).join(", ")}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+        <Button variant="outline" onClick={onCancel} data-testid="sop-reparent-cancel-btn">
+          Cancel
+        </Button>
+        <Button
+          onClick={onConfirm}
+          disabled={blocked}
+          data-testid="sop-reparent-confirm-btn"
+        >
+          Attach to parent &amp; delete
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Editor-facing wrapper: gates the body behind a Radix Dialog and
+// wires open-state to the presence of a `request`. Tests render
+// `ReparentDialogBody` directly to avoid the Radix Portal (which
+// renderToStaticMarkup doesn't materialize).
+function ReparentDialog({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: ReparentRequest | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={request !== null} onOpenChange={(next) => { if (!next) onCancel(); }}>
+      <DialogContent className="max-w-lg">
+        {request && (
+          <ReparentDialogBody request={request} onCancel={onCancel} onConfirm={onConfirm} />
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -216,11 +443,13 @@ function FlowNode({
   tree,
   nodeId,
   onChange,
+  onRequestDelete,
   isRoot,
 }: {
   tree: DecisionTree;
   nodeId: string;
   onChange: (tree: DecisionTree) => void;
+  onRequestDelete: (nodeId: string) => void;
   isRoot?: boolean;
 }) {
   const node = tree.nodes.find(n => n.id === nodeId);
@@ -292,20 +521,7 @@ function FlowNode({
   };
 
   const deleteNode = () => {
-    if (isRoot) {
-      onChange({ ...tree, nodes: [], rootId: "" });
-      return;
-    }
-    const parentInfo = findParent(tree, nodeId);
-    if (!parentInfo) return;
-    const { parentNode, optionIndex } = parentInfo;
-    let newNodes = removeSubtree(tree.nodes, nodeId);
-    newNodes = newNodes.map(n =>
-      n.id === parentNode.id
-        ? { ...n, options: n.options.map((o, i) => i === optionIndex ? { ...o, childId: undefined } : o) }
-        : n
-    );
-    onChange({ ...tree, nodes: newNodes });
+    onRequestDelete(nodeId);
   };
 
   const addEvidenceReq = () => {
@@ -331,7 +547,7 @@ function FlowNode({
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative z-10 w-[340px]">
+      <div className="relative z-10 w-[340px]" data-node-id={nodeId}>
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow bg-white">
           <CardContent className="p-0">
             <div className="bg-slate-50 border-b border-slate-100 p-2.5 rounded-t-xl flex justify-between items-center">
@@ -346,7 +562,14 @@ function FlowNode({
                   updateEvidenceReq={updateEvidenceReq}
                   removeEvidenceReq={removeEvidenceReq}
                 />
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={deleteNode}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50"
+                  onClick={deleteNode}
+                  data-testid={`sop-delete-node-btn-${nodeId}`}
+                  title={isRoot ? "Cannot delete root question" : "Delete this question"}
+                >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -443,7 +666,7 @@ function FlowNode({
                 <div className="w-px h-4 bg-slate-300" />
 
                 {opt.childId ? (
-                  <FlowNode tree={tree} nodeId={opt.childId} onChange={onChange} />
+                  <FlowNode tree={tree} nodeId={opt.childId} onChange={onChange} onRequestDelete={onRequestDelete} />
                 ) : opt.outcomeType ? (
                   <OutcomeTerminal outcomeType={opt.outcomeType} outcomeLabel={opt.outcomeLabel} />
                 ) : (
@@ -891,29 +1114,6 @@ export function InstructionImageUploader({
       />
     </div>
   );
-}
-
-function findParent(tree: DecisionTree, nodeId: string): { parentNode: TreeNode; optionIndex: number } | null {
-  for (const n of tree.nodes) {
-    for (let i = 0; i < n.options.length; i++) {
-      if (n.options[i].childId === nodeId) {
-        return { parentNode: n, optionIndex: i };
-      }
-    }
-  }
-  return null;
-}
-
-function removeSubtree(nodes: TreeNode[], rootId: string): TreeNode[] {
-  const node = nodes.find(n => n.id === rootId);
-  if (!node) return nodes;
-  let result = nodes.filter(n => n.id !== rootId);
-  for (const opt of node.options) {
-    if (opt.childId) {
-      result = removeSubtree(result, opt.childId);
-    }
-  }
-  return result;
 }
 
 export function TreePreview({ tree }: { tree: DecisionTree }) {

@@ -238,6 +238,206 @@ export function countPaths(tree: DecisionTree, nodeId?: string): number {
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// Tree mutation helpers (Task #459 — delete-with-re-parent + undo).
+//
+// These are intentionally pure: the editor lifts the snapshot and toast
+// state up to the top-level component and only delegates the actual
+// tree rewrite to these helpers so the same edges are unit-testable
+// without mounting the editor in jsdom (the project's test pattern,
+// see per-leg-context-editor.test.tsx).
+// ---------------------------------------------------------------------------
+
+export function findParent(
+  tree: DecisionTree,
+  nodeId: string,
+): { parentNode: TreeNode; optionIndex: number } | null {
+  for (const n of tree.nodes) {
+    for (let i = 0; i < n.options.length; i++) {
+      if (n.options[i].childId === nodeId) {
+        return { parentNode: n, optionIndex: i };
+      }
+    }
+  }
+  return null;
+}
+
+export function removeSubtree(nodes: TreeNode[], rootId: string): TreeNode[] {
+  const seen = new Set<string>();
+  const stack: string[] = [rootId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const node = nodes.find(n => n.id === id);
+    if (!node) continue;
+    for (const opt of node.options) {
+      if (opt.childId && !seen.has(opt.childId)) stack.push(opt.childId);
+    }
+  }
+  return nodes.filter(n => !seen.has(n.id));
+}
+
+// Counts the node itself + every reachable descendant. Defensive against
+// cycles (visits each node at most once).
+export function countDescendants(tree: DecisionTree, nodeId: string): number {
+  const seen = new Set<string>();
+  const stack: string[] = [nodeId];
+  let count = 0;
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const node = tree.nodes.find(n => n.id === id);
+    if (!node) continue;
+    count += 1;
+    for (const opt of node.options) {
+      if (opt.childId && !seen.has(opt.childId)) stack.push(opt.childId);
+    }
+  }
+  return count;
+}
+
+export interface OrphanedChild {
+  optionIndex: number;
+  optionLabel: string;
+  childId: string;
+  childQuestion: string;
+  descendantCount: number;
+}
+
+// Children that would be orphaned if `nodeId` were deleted. Order matches
+// the option order on the deleted node. Defensive: skips self-references
+// (an option whose childId points back at the deleted node — that link is
+// going away with the node, not orphaned) and skips any option whose
+// childId no longer resolves to a real node. Also de-duplicates by
+// childId so a node with two options pointing at the same child only
+// surfaces that child once (we have one home for it on the new parent).
+export function getOrphanedChildren(
+  tree: DecisionTree,
+  nodeId: string,
+): OrphanedChild[] {
+  const node = tree.nodes.find(n => n.id === nodeId);
+  if (!node) return [];
+  const out: OrphanedChild[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < node.options.length; i++) {
+    const opt = node.options[i];
+    if (!opt.childId) continue;
+    if (opt.childId === nodeId) continue;          // self-reference
+    if (seen.has(opt.childId)) continue;            // multi-reference dedupe
+    const child = tree.nodes.find(n => n.id === opt.childId);
+    if (!child) continue;                           // dangling reference
+    seen.add(opt.childId);
+    out.push({
+      optionIndex: i,
+      optionLabel: opt.label,
+      childId: opt.childId,
+      childQuestion: child.question,
+      descendantCount: countDescendants(tree, opt.childId),
+    });
+  }
+  return out;
+}
+
+// Slots on `parent` that can receive an orphaned child after the delete.
+// A slot is receivable when it is currently empty (no childId, no
+// outcomeType) OR it is the slot that currently points at the
+// to-be-deleted node (since that link is about to be detached).
+export function findReceivableSlots(
+  parent: TreeNode,
+  deletedNodeId: string,
+): number[] {
+  const out: number[] = [];
+  // Place the about-to-detach slot first so the orphan that previously
+  // sat there visually stays in roughly the same position after the
+  // re-parent.
+  for (let i = 0; i < parent.options.length; i++) {
+    if (parent.options[i].childId === deletedNodeId) out.push(i);
+  }
+  for (let i = 0; i < parent.options.length; i++) {
+    const opt = parent.options[i];
+    if (opt.childId === deletedNodeId) continue;
+    if (!opt.childId && !opt.outcomeType) out.push(i);
+  }
+  return out;
+}
+
+export type DeleteNodeResult =
+  | { ok: true; tree: DecisionTree }
+  | {
+      ok: false;
+      reason: "root" | "not_found" | "no_parent" | "no_available_slot";
+    };
+
+// Single entry point for both the leaf-delete and the
+// delete-with-re-parent flows. Callers decide whether to prompt the
+// user (orphan count > 0) before invoking; this function applies the
+// mutation atomically and returns a NEW DecisionTree (the snapshot for
+// undo is whatever the caller passed in).
+export function deleteNodeWithReparent(
+  tree: DecisionTree,
+  nodeId: string,
+): DeleteNodeResult {
+  if (nodeId === tree.rootId) return { ok: false, reason: "root" };
+  const node = tree.nodes.find(n => n.id === nodeId);
+  if (!node) return { ok: false, reason: "not_found" };
+
+  const parentInfo = findParent(tree, nodeId);
+  if (!parentInfo) return { ok: false, reason: "no_parent" };
+  const { parentNode } = parentInfo;
+
+  const orphans = getOrphanedChildren(tree, nodeId);
+  const slots = findReceivableSlots(parentNode, nodeId);
+  if (orphans.length > slots.length) {
+    return { ok: false, reason: "no_available_slot" };
+  }
+
+  // 1) Rewrite the parent's options: detach EVERY link to the deleted
+  //    node (multi-reference defense — a malformed tree could have
+  //    more than one option on the parent pointing at the deleted
+  //    node), then assign each orphan to its slot. Orphans keep their
+  //    existing sub-tree wiring; only the parent's option pointers
+  //    change.
+  const newParentOptions = parentNode.options.map(opt =>
+    opt.childId === nodeId ? { ...opt, childId: undefined } : opt,
+  );
+  for (let k = 0; k < orphans.length; k++) {
+    const slotIdx = slots[k];
+    const orphan = orphans[k];
+    newParentOptions[slotIdx] = {
+      ...newParentOptions[slotIdx],
+      childId: orphan.childId,
+      outcomeType: undefined,
+      outcomeLabel: undefined,
+    };
+  }
+
+  // 2) Drop the deleted node from the array (do NOT cascade — the
+  //    orphans are now wired to the new parent and need to survive).
+  // 3) Defensive cleanup on every other surviving node: null out any
+  //    option whose childId still points at the deleted node. The
+  //    editor's invariants normally guarantee single-parent wiring,
+  //    but a tree imported from elsewhere (or one with self-references)
+  //    can carry extra refs we must not leave dangling.
+  const newNodes = tree.nodes
+    .filter(n => n.id !== nodeId)
+    .map(n => {
+      if (n.id === parentNode.id) return { ...n, options: newParentOptions };
+      let changed = false;
+      const opts = n.options.map(o => {
+        if (o.childId === nodeId) {
+          changed = true;
+          return { ...o, childId: undefined };
+        }
+        return o;
+      });
+      return changed ? { ...n, options: opts } : n;
+    });
+
+  return { ok: true, tree: { ...tree, nodes: newNodes } };
+}
+
 export function getMaxDepth(tree: DecisionTree, nodeId?: string, depth = 0): number {
   const node = tree.nodes.find(n => n.id === (nodeId || tree.rootId));
   if (!node) return depth;
