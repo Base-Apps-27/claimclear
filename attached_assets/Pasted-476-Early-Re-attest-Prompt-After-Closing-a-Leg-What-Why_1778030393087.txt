@@ -1,0 +1,45 @@
+476 - Early Re-attest Prompt After Closing a Leg
+
+What & Why
+
+Today, when an operator marks a single leg as Non-contestable, Withdrawn / Cannot dispute, or Sibling duplicate on an invoice, nothing happens at the group level until every remaining actionable leg also has a verdict — only then does the What's Next? card unlock and offer Re-attest. That forces unnecessary clicks when the operator already knows the rest of the invoice is viable.
+
+This change surfaces the Re-attest choice immediately after a leg is closed, if and only if the same group still has at least one viable (approved / continue-dispute) sibling leg. The operator gets an inline prompt with two actions: Re-attest now or Queue for re-attestation, mirroring the existing What's Next? options. If no viable siblings remain, the prompt is not shown and the existing flow is preserved.
+
+Done looks like
+
+After clicking Non-contestable or Withdraw / Cannot dispute on a leg row (or hitting a cannot_dispute / non_issue SOP terminal, or marking a sibling duplicate), the operator sees an inline prompt on the invoice detail page when at least one other leg on the same group is viable.
+The prompt offers two buttons: Re-attest now and Queue for re-attestation.
+Re-attest now opens the existing ReattestModal pre-loaded with the viable legs.
+Queue for re-attestation calls the existing bulk-queue endpoint and the legs land in /attestation-queue; the group is stamped awaiting_payor_again_at.
+The prompt does not appear when there are no viable sibling legs (current behavior — the operator continues dispositioning).
+The What's Next? card continues to work as it does today for the all-legs-have-verdicts path; the new prompt is an additional shortcut, not a replacement.
+A leg whose verdict is still pending (no draft yet, not closed) does not count as viable — only legs whose latest draft/verdict is in the approved bucket count.
+Dismissing the prompt (e.g. close button) leaves the operator on the invoice detail page with no state change; they can still finish dispositioning legs and use the What's Next? card.
+Out of scope
+
+Changing the What's Next? card gating logic for the all-verdicts-recorded path.
+New backend endpoints — reuse useBulkQueueGroupReattest, usePromoteVerdictDrafts, and the existing ReattestModal contract.
+Any change to the MAS Eligible auto-queue path or the closure cascade (syncChildRides).
+Surfacing the prompt outside the invoice/group detail page (e.g. on the Queue list rows or dashboard).
+Adding the shortcut to invoice-header bulk actions — the trigger is always a per-leg close action.
+Steps
+
+Define a "viable siblings" selector. Reuse the existing legVerdictBucket / deriveVerdictMix logic in whats-next-derivation.ts to expose a small helper that, given the current group's legs, returns the set of legs in the approved bucket excluding the leg that was just closed. Treat pending/no-draft legs as not viable for this prompt.
+Show the inline prompt after a closing action. Hook into the success callbacks of the per-leg closing actions (useConcludeLeg for non-contestable/non-issue quick actions, the SOP-advance terminal for cannot_dispute / non_issue outcomes, and useMarkLegDuplicate for sibling-duplicate). When the helper from step 1 returns one or more viable siblings, render a contextual prompt on the invoice detail page (inline banner above the leg list is the natural spot). When zero viable siblings, do nothing.
+Wire the two actions. Re-attest now opens the existing ReattestModal with the viable legs as approvedLegs, the just-closed leg(s) included in deniedLegs, and the existing draft-promotion path so the modal behaves identically to the What's Next? launch. Queue for re-attestation calls useBulkQueueGroupReattest directly with the group id and a sensible default note, then shows a success toast linking to /attestation-queue.
+Promote drafts on either action. Before either action commits, promote any pending operator drafts on viable legs (same usePromoteVerdictDrafts step the What's Next? card uses) so the group state stays consistent with the existing flow.
+Don't double-prompt. If the prompt is already visible (e.g. the operator closed a second leg while the first prompt is still up), refresh its viable-leg list rather than stacking a new one. Auto-dismiss when no viable siblings remain (e.g. operator then closes the last viable leg).
+Preserve the existing What's Next? path. When the operator ignores the prompt and finishes dispositioning all legs, the What's Next? card unlocks as it does today and offers the same Re-attest / Close-out choices — no regression.
+Relevant files
+
+artifacts/claimclear/src/components/leg-conclusion-row.tsx:197-401
+artifacts/claimclear/src/components/decision-tree/sop-advance-player.tsx:577-604
+artifacts/claimclear/src/components/decision-tree/terminals/closed-terminal.tsx
+artifacts/claimclear/src/components/decision-tree/terminals/sibling-prompt.tsx
+artifacts/claimclear/src/components/whats-next/reattest-modal.tsx:277-321
+artifacts/claimclear/src/components/whats-next/whats-next-card.tsx:80-85,233-235,483
+artifacts/claimclear/src/components/invoice-group-detail-v2.tsx
+artifacts/claimclear/src/lib/whats-next-derivation.ts:60-134
+artifacts/api-server/src/lib/group-transitions.ts:143-220,304-342,418
+artifacts/api-server/src/lib/attestation.ts:120-143
