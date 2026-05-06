@@ -43,7 +43,7 @@ const BACKFILL_ID = "sop_outcome_non_issue_backfill_2026_05_06";
 const ACTOR_EMAIL = "system@claimclear";
 const ACTOR_NAME = "System (sop_outcome non-issue backfill 2026-05-06)";
 
-interface CandidateRow {
+interface CandidateRow extends Record<string, unknown> {
   claim_id: number;
   invoice_group_id: number | null;
   conf_number: string | null;

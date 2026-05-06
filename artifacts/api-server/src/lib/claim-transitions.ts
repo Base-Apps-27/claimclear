@@ -549,9 +549,28 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
   const { claimId, reason, note, source, actor, leg, ex, backfillId } = params;
   const executor = ex ?? db;
 
+  // When the exclusion reason is "non_issue", also stamp
+  // `sop_outcome = 'non_issue'` on the same row update. The invoice-level
+  // outlook (Task #476, `deriveInvoiceDisputeOutlook`) treats a leg as a
+  // re-attest survivor only when `sopOutcome === 'non_issue'`; without
+  // this co-write, audit-reason and sop_outcome diverge and the outlook
+  // gate misses the leg, falling through to the amber "Mark as closed"
+  // CTA. The 2026-05-06 backfill healed 680 historical rows produced by
+  // callers that bypassed sop_outcome (the 2026-05-01 retro and the
+  // 2026-05-04 stranded-unclassified cleanup); this guard prevents the
+  // class of bug from re-emerging through any future caller of the
+  // helper. Conservative: only write sop_outcome when it's currently
+  // null, so we never clobber an SOP-walk verdict that already landed
+  // before exclusion.
+  const setNonIssueSopOutcome = reason === "non_issue" && leg.sopOutcome == null;
+  const updateSet: { includedInDispute: false; sopOutcome?: "non_issue" } = {
+    includedInDispute: false,
+  };
+  if (setNonIssueSopOutcome) updateSet.sopOutcome = "non_issue";
+
   const [updated] = await executor
     .update(claimsTable)
-    .set({ includedInDispute: false })
+    .set(updateSet)
     .where(and(eq(claimsTable.id, claimId), eq(claimsTable.includedInDispute, true)))
     .returning();
 
@@ -567,6 +586,7 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
     source,
     previousSubStatus: "needs_classification",
   };
+  if (setNonIssueSopOutcome) metadata.sopOutcomeCoWritten = "non_issue";
   if (backfillId !== undefined) metadata.backfillId = backfillId;
 
   await executor.insert(auditLogsTable).values({
