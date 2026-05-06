@@ -224,6 +224,33 @@
   }
 }
 
+/* ---------------------------------------------------------------- */
+/* Group-cleared moment (Task #491).                                */
+/* When the last open claim in a group resolves and the group       */
+/* transitions to closed, the group's primary detail card gets a    */
+/* one-shot soft fade — green border tint + faint inner glow that  */
+/* cross-fades back to the neutral card chrome over ~700ms. Pairs  */
+/* with the existing pill-level cc-pill-just-transitioned beat (an */
+/* AnimatedCheck draws inside the status pill) so the operator     */
+/* perceives the *card* as completing rather than the pill alone.  */
+/* No confetti — the day-complete dual-burst is reserved for       */
+/* end-of-day, and per-group close-outs are deliberately quieter.  */
+/* ---------------------------------------------------------------- */
+@keyframes cc-card-cleared-glow {
+  0%   { box-shadow: inset 0 0 0 1px hsl(142 71% 45% / 0.55), inset 0 0 36px 0 hsl(142 71% 45% / 0.18); }
+  100% { box-shadow: inset 0 0 0 1px hsl(142 71% 45% / 0),    inset 0 0 36px 0 hsl(142 71% 45% / 0); }
+}
+
+.cc-card-just-cleared {
+  animation: cc-card-cleared-glow 700ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-card-just-cleared {
+    animation: none;
+  }
+}
+
 /* Co-viewer presence transitions (Task #318).
    - presence-fade-in: 200ms gentle fade for newly-joined avatars; runs even
      under prefers-reduced-motion (the task explicitly preserves the fade).

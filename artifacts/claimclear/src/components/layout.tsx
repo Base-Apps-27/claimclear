@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
 import { useSystemEvents } from "@/hooks/use-system-events";
+import { useSessionMilestonesLifecycle } from "@/hooks/use-session-milestones";
 import {
   Sidebar,
   SidebarContent,
@@ -101,6 +102,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // fully concluded. Disabled on the auth screen so we don't leak an SSE
   // connection past sign-out.
   useSystemEvents({ enabled: isAuthenticated && user?.status === "approved" });
+  // Task #491 — clear "claims processed this session" counters on
+  // sign-out so milestone badges don't carry over between operators
+  // sharing the same browser.
+  useSessionMilestonesLifecycle({
+    enabled: isAuthenticated && user?.status === "approved",
+  });
 
   // Nav badge for the Attestation Queue. Task #430 changed the surface
   // from per-leg rows to per-invoice-group rows, so the badge now

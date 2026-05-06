@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { consumeLocalActionMark } from "@/hooks/use-local-action-mark";
-import { isPreSubmit as isPreSubmitFn, isInFlight } from "@/lib/lifecycle-phase";
+import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed } from "@/lib/lifecycle-phase";
 import {
   useGetInvoiceGroup,
   getGetInvoiceGroupQueryKey,
@@ -357,6 +357,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const { lastGroupUpdateBy } = useInvoiceGroupEvents(groupId);
   const prevGroupStatusRef = useRef<string | null | undefined>(undefined);
   const [justShipped, setJustShipped] = useState(false);
+  // Task #491 — distinct one-shot for the "group cleared" moment so the
+  // primary detail card itself can fade (cc-card-just-cleared) while
+  // the status pill plays its existing checkmark-draw beat. Kept as a
+  // separate flag from `justShipped` so the two beats can have their
+  // own durations and so a future tweak to one doesn't accidentally
+  // re-style the other.
+  const [justCleared, setJustCleared] = useState(false);
 
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
@@ -440,7 +447,17 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     if (prev === newStatus) return;
     // Only celebrate the bucket transition out of pre-submit into
     // in-flight (the dispute is actually out the door).
-    if (!(isPreSubmitFn(prev) && isInFlight(newStatus))) return;
+    // Task #491 — broaden the trigger so the same checkmark-draw + soft
+    // glow on the status pill also celebrates the *other* milestone
+    // moment a group can hit: every open claim resolved and the group
+    // is now closed (Resolved / Denied / Withdrawn). The visual is
+    // deliberately the same as the "shipped" flourish (no confetti)
+    // because the day-complete burst is reserved for the end-of-day
+    // celebration; per-group close-outs are a quieter "card completes"
+    // moment, not a confetti event.
+    const wasShipped = isPreSubmitFn(prev) && isInFlight(newStatus);
+    const wasCleared = !isClosed(prev) && isClosed(newStatus);
+    if (!wasShipped && !wasCleared) return;
     // Task #495 — if the operator's own mutation success handler left
     // a local mark for this group, animate unconditionally. Otherwise
     // fall back to the SSE author tag (which arrives asynchronously
@@ -450,8 +467,18 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       if (lastBy && user?.email && lastBy !== user.email) return;
     }
     setJustShipped(true);
+    if (wasCleared) {
+      // Task #491 — fire the card-level fade in addition to the pill
+      // flourish so the operator perceives the *card* as completing.
+      // Duration matches the CSS animation (700ms) plus a small buffer.
+      setJustCleared(true);
+    }
     const t = setTimeout(() => setJustShipped(false), 500);
-    return () => clearTimeout(t);
+    const tc = setTimeout(() => setJustCleared(false), 800);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(tc);
+    };
   }, [group?.status, user?.email, lastGroupUpdateBy]);
 
   /* Aggregate-context state removed in Task #265 — per-leg context lives
@@ -742,7 +769,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
             stale node so a future refactor sees the intentional removal. */}
 
         {/* Accent header */}
-        <div className="cc-card p-4">
+        <div
+          className={`cc-card p-4${justCleared ? " cc-card-just-cleared" : ""}`}
+          data-just-cleared={justCleared ? "true" : undefined}
+        >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3 min-w-0">
               <div className="w-1 h-12 rounded" style={{ background: "var(--cc-purple-fg)" }} />

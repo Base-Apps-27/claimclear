@@ -34,6 +34,7 @@ import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
+import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
 import { useAuth } from "@workspace/replit-auth-web";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
 
@@ -188,9 +189,14 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         if (lastBy && user?.email && lastBy !== user.email) return;
       }
       setJustProcessed(true);
+      // Task #491 — bump the session milestone counter from the same
+      // gated trigger so processing a leg from the queue counts toward
+      // the 10/25/50 celebration. Dedupe is per-claim inside
+      // `notifyClaimProcessedThisSession`.
+      notifyClaimProcessedThisSession(claim.id);
       const t = setTimeout(() => setJustProcessed(false), 500);
       return () => clearTimeout(t);
-    }, [variant, user?.email, lastClaimUpdateBy]);
+    }, [variant, user?.email, lastClaimUpdateBy, claim.id]);
 
     const concludeLegMutation = useConcludeLeg();
 

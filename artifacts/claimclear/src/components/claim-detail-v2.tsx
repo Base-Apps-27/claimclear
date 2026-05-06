@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
+import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
 import {
   useGetClaim,
   getGetClaimQueryKey,
@@ -355,9 +356,14 @@ export function ClaimDetailV2({
       if (lastBy && user?.email && lastBy !== user.email) return;
     }
     setJustProcessed(true);
+    // Task #491 — same trigger that fires the per-pill flourish also
+    // bumps the session milestone counter. Dedupe is per-claim inside
+    // `notifyClaimProcessedThisSession`, so visiting the same leg in
+    // a second view (queue row, group page) won't double-count.
+    notifyClaimProcessedThisSession(claimId);
     const t = setTimeout(() => setJustProcessed(false), 500);
     return () => clearTimeout(t);
-  }, [claim?.status, user?.email, lastClaimUpdateBy]);
+  }, [claim?.status, user?.email, lastClaimUpdateBy, claimId]);
 
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();

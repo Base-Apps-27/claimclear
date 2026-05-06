@@ -118,9 +118,19 @@ export function useSystemEvents(opts: { enabled: boolean }): void {
           if (celebratedTimestamps.current.has(data.timestamp)) return;
           celebratedTimestamps.current.add(data.timestamp);
           fireConfettiBurst();
+          // Task #491 — warmer copy on a Friday afternoon (local time).
+          // "Reasonable hour" here is 14:00 (2pm) onward so an 11am
+          // Friday wrap still reads as a normal day-complete; the
+          // weekend nod kicks in once the afternoon is underway.
+          const now = new Date();
+          const isFridayAfternoon = now.getDay() === 5 && now.getHours() >= 14;
           toast({
-            title: "Day complete",
-            description: `Great work — all invoices for ${data.dateLabel} are processed.`,
+            title: isFridayAfternoon
+              ? "Day complete — have a good weekend"
+              : "Day complete",
+            description: isFridayAfternoon
+              ? `All invoices for ${data.dateLabel} are processed. Enjoy the weekend.`
+              : `Great work — all invoices for ${data.dateLabel} are processed.`,
             duration: 6000,
           });
         }
