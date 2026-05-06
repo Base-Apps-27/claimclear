@@ -8,7 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
 import { useSystemEvents } from "@/hooks/use-system-events";
-import { useSessionMilestonesLifecycle } from "@/hooks/use-session-milestones";
+import { useSessionMilestonesLifecycle, useSessionProcessedCount } from "@/hooks/use-session-milestones";
 import {
   Sidebar,
   SidebarContent,
@@ -487,6 +487,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="mr-4" />
             <HeaderSearch />
             <div className="ml-auto flex items-center gap-3">
+              <SessionPaceBadge />
               {tourAvailable && <HelpPopover />}
               <BatchStatusPill />
             </div>
@@ -500,5 +501,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <SessionCountdown />
       </div>
     </SidebarProvider>
+  );
+}
+
+// Top-bar pace badge (Task #500). Sibling to the milestone celebrations
+// from Task #491 — same source of truth (`useSessionProcessedCount`),
+// just always-visible between the 10/25/50 confetti beats so operators
+// can feel their pace at a glance. Hidden when count is 0 to keep the
+// empty-state header uncluttered.
+function SessionPaceBadge() {
+  const count = useSessionProcessedCount();
+  if (count <= 0) return null;
+  return (
+    <WrapTooltip
+      content={`${count} ${count === 1 ? "claim" : "claims"} processed in this session — resets when you sign out.`}
+      side="bottom"
+    >
+      <span
+        data-testid="session-pace-badge"
+        aria-label={`${count} processed today`}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 h-7 text-xs font-medium text-muted-foreground"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+        <span className="tabular-nums text-foreground">{count}</span>
+        <span className="hidden sm:inline">processed today</span>
+      </span>
+    </WrapTooltip>
   );
 }

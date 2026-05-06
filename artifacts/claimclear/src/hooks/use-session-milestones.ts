@@ -24,7 +24,7 @@
 // "small win" vs "the day is done". Do not raise the particle count or
 // add a second origin without a deliberate UX review.
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import confetti from "canvas-confetti";
 import { toast } from "@/hooks/use-toast";
 
@@ -32,6 +32,34 @@ const MILESTONES = [10, 25, 50] as const;
 
 const seenClaims = new Set<number>();
 const firedMilestones = new Set<number>();
+
+// Lightweight pub/sub so UI surfaces (e.g. the top-bar pace badge) can
+// subscribe to the live session count without coupling to the Set
+// internals. Snapshot is the integer count; listeners fire on every
+// change including resets to 0.
+const listeners = new Set<() => void>();
+function emit(): void {
+  for (const l of listeners) l();
+}
+function subscribe(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+function getSnapshot(): number {
+  return seenClaims.size;
+}
+
+/**
+ * Subscribes a React component to the live "claims processed this
+ * session" count. Returns 0 when no claims have been processed yet —
+ * callers should hide their UI in that case to keep the empty state
+ * uncluttered.
+ */
+export function useSessionProcessedCount(): number {
+  return useSyncExternalStore(subscribe, getSnapshot, () => 0);
+}
 
 function fireMiniBurst(): void {
   if (typeof window === "undefined") return;
@@ -63,6 +91,7 @@ export function notifyClaimProcessedThisSession(claimId: number): number | null 
   if (seenClaims.has(claimId)) return null;
   seenClaims.add(claimId);
   const count = seenClaims.size;
+  emit();
   for (const milestone of MILESTONES) {
     if (count === milestone && !firedMilestones.has(milestone)) {
       firedMilestones.add(milestone);
@@ -91,6 +120,7 @@ export function notifyClaimProcessedThisSession(claimId: number): number | null 
 export function __resetSessionMilestonesForTests(): void {
   seenClaims.clear();
   firedMilestones.clear();
+  emit();
 }
 
 /**
@@ -105,6 +135,7 @@ export function useSessionMilestonesLifecycle(opts: { enabled: boolean }): void 
     return () => {
       seenClaims.clear();
       firedMilestones.clear();
+      emit();
     };
   }, [enabled]);
 }
