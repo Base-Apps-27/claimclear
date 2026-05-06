@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRowSettle } from "@/hooks/use-row-settle";
 import { useServerDayRolloverInvalidator, latestTodayKey } from "@/lib/server-day-rollover";
 import { Link } from "wouter";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
@@ -1057,6 +1058,28 @@ export default function Queue() {
     [onHoldSorted, searchOnHold],
   );
 
+  // Task #490 — soften row removal across the three lanes. Each lane
+  // tracks its own settling ghosts so a completion in Action Required
+  // doesn't ripple into Portal Queued / On Hold. The hook keys off
+  // `selectedWorkflowId` (the URL `?group=` param) — when the
+  // previously-selected row leaves a lane the row holds its slot for
+  // ~360ms while the success-tint settle plays, then unmounts.
+  const actionableSettle = useRowSettle(
+    actionableVisible,
+    (g) => g.id,
+    selectedWorkflowId,
+  );
+  const portalQueuedSettle = useRowSettle(
+    portalQueuedVisible,
+    (g) => g.id,
+    selectedWorkflowId,
+  );
+  const onHoldSettle = useRowSettle(
+    onHoldVisible,
+    (g) => g.id,
+    selectedWorkflowId,
+  );
+
   // Lane urgent / stuck / soon counts. When an `?expiring=` filter is
   // active and the API understands it, the lane is server-narrowed so
   // `data.total` IS the filter-matching count. With no filter (or with
@@ -1289,6 +1312,8 @@ export default function Queue() {
       onSelect: (id: number) => void;
       selectedId: number | null;
       showDeadline?: boolean;
+      isSettling?: boolean;
+      isJustSelected?: boolean;
     },
   ) => {
     const isSelected = opts.selectedId === group.id;
@@ -1336,12 +1361,14 @@ export default function Queue() {
         type="button"
         data-testid={`queue-row-${group.invoiceNumber}`}
         data-urgent={group.isUrgent ? "true" : undefined}
+        data-settling={opts.isSettling ? "true" : undefined}
         aria-pressed={isSelected}
+        disabled={opts.isSettling}
         onClick={() => opts.onSelect(group.id)}
         style={rowStyle}
         className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
           isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
-        }`}
+        } ${opts.isSettling ? "cc-row-settling" : ""} ${opts.isJustSelected ? "cc-row-just-selected" : ""}`}
       >
         {/*
           Two-row layout that gracefully wraps on narrow widths (Task #290).
@@ -1618,7 +1645,7 @@ export default function Queue() {
                     </Card>
                   ) : (
                     <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
-                      {actionableVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                      {actionableSettle.slots.map((s) => renderGroupRow(s.item, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true, isSettling: s.isSettling, isJustSelected: actionableSettle.isJustSelected(s.item.id) }))}
                     </div>
                   )}
                 </>
@@ -1656,7 +1683,7 @@ export default function Queue() {
                     </Card>
                   ) : (
                     <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-portal-queued">
-                      {portalQueuedVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                      {portalQueuedSettle.slots.map((s) => renderGroupRow(s.item, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true, isSettling: s.isSettling, isJustSelected: portalQueuedSettle.isJustSelected(s.item.id) }))}
                     </div>
                   )}
                 </>
@@ -1694,7 +1721,7 @@ export default function Queue() {
                     </Card>
                   ) : (
                     <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-on-hold">
-                      {onHoldVisible.map((g) => renderGroupRow(g, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true }))}
+                      {onHoldSettle.slots.map((s) => renderGroupRow(s.item, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true, isSettling: s.isSettling, isJustSelected: onHoldSettle.isJustSelected(s.item.id) }))}
                     </div>
                   )}
                 </>

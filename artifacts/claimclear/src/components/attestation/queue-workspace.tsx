@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useListAttestationPending,
 } from "@workspace/api-client-react";
+import { useRowSettle } from "@/hooks/use-row-settle";
 import type {
   ClaimResponse,
   AttestationPendingExtras,
@@ -114,6 +115,16 @@ export function QueueWorkspace() {
     set({ group: key }, false);
   };
 
+  // Task #490 — soften bucket removal. When the operator clears the
+  // selected bucket (re-attest / queue / closure) the row holds its
+  // slot for ~360ms while the success-tint settle plays, then unmounts
+  // and the auto-advanced bucket gets a brief highlight ring.
+  const settle = useRowSettle(
+    groups,
+    (g) => g.key,
+    effectiveSelectedKey,
+  );
+
   return (
     <SkeletonSwap
       loading={isLoading}
@@ -139,7 +150,8 @@ export function QueueWorkspace() {
     <MasterDetailShell
       sidebar={
         <QueueSidebar title="Queue" count={groups.length} listTestId="queue-list">
-          {groups.map((bucket) => {
+          {settle.slots.map((slot) => {
+            const bucket = slot.item;
             const headLeg = bucket.rows[0].claim;
             const invoice = pickInvoiceNumber(headLeg);
             const payor = headLeg.clientNumber ?? "—";
@@ -160,6 +172,8 @@ export function QueueWorkspace() {
                 isSelected={bucket.key === effectiveSelectedKey}
                 onSelect={() => onSelect(bucket.key)}
                 enteredAt={bucket.earliestEnteredAt}
+                isSettling={slot.isSettling}
+                isJustSelected={settle.isJustSelected(bucket.key)}
                 middleLine={
                   <>
                     <span className="truncate">Payor {payor}</span>

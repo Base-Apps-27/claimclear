@@ -19,6 +19,12 @@ export interface QueueRowProps {
   bottomLine?: ReactNode;
   /** Timestamp used for the relative-age default bottom line. */
   enteredAt?: string | null;
+  /** Task #490 — soften row removal. The row plays a brief settle
+   *  animation (success tint + slide/fade) before unmount. */
+  isSettling?: boolean;
+  /** Task #490 — brief highlight ring on the row that just became
+   *  selected as a result of an auto-advance. */
+  isJustSelected?: boolean;
 }
 
 export function QueueRow({
@@ -33,14 +39,23 @@ export function QueueRow({
   middleLine,
   bottomLine,
   enteredAt = null,
+  isSettling = false,
+  isJustSelected = false,
 }: QueueRowProps) {
   const age = bottomLine === undefined ? relativeAge(enteredAt) : null;
   const accent = TONE_STYLE[selectedTone].fg;
   return (
-    <li>
+    <li
+      className={cn(
+        isSettling && "cc-row-settling",
+        isJustSelected && "cc-row-just-selected",
+      )}
+      data-settling={isSettling ? "true" : undefined}
+    >
       <button
         type="button"
         onClick={onSelect}
+        disabled={isSettling}
         data-testid={rowTestId}
         className={cn(
           "w-full text-left px-4 py-3 transition-colors hover-elevate border-l-2",

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRowSettle } from "@/hooks/use-row-settle";
 import { Link, useLocation, useParams } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
@@ -488,28 +489,11 @@ function Workspace({
         step-1 pill stays glued to the list card. Sticky moved off the
         Card itself onto the wrapper so the pill scrolls with it.
       */}
-      <div className="lg:sticky lg:top-4 space-y-2" data-tour="responses-thread">
-        <StepPill
-          number={1}
-          label="Pick a response"
-          testId="step-pill-1"
-          help="Choose the payor reply you want to work on. The list is sorted oldest-first by default so the longest-waiting responses bubble to the top."
-        />
-        <Card>
-          <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
-            <ul className="divide-y" data-testid="awaiting-review-list">
-              {groups.map((group) => (
-                <ListRow
-                  key={group.id}
-                  group={group}
-                  isSelected={selectedGroup?.id === group.id}
-                  onSelect={() => onSelect(group.id)}
-                />
-              ))}
-            </ul>
-          </ScrollArea>
-        </Card>
-      </div>
+      <ListColumn
+        groups={groups}
+        selectedGroup={selectedGroup}
+        onSelect={onSelect}
+      />
 
       {selectedGroup && (
         <DetailPane
@@ -525,13 +509,58 @@ function Workspace({
   );
 }
 
+interface ListColumnProps {
+  groups: InvoiceGroupResponse[];
+  selectedGroup: InvoiceGroupResponse | null;
+  onSelect: (id: number) => void;
+}
+
+function ListColumn({ groups, selectedGroup, onSelect }: ListColumnProps) {
+  // Task #490 — soften row removal. When the operator records a verdict
+  // the previously-selected row holds its slot for ~360ms while the
+  // success-tint settle plays, then unmounts; the auto-advanced row
+  // gets a brief highlight ring so the change reads as the system
+  // moving the operator forward rather than a silent jump.
+  const settle = useRowSettle(groups, (g) => g.id, selectedGroup?.id ?? null);
+  return (
+    <div className="lg:sticky lg:top-4 space-y-2" data-tour="responses-thread">
+      <StepPill
+        number={1}
+        label="Pick a response"
+        testId="step-pill-1"
+        help="Choose the payor reply you want to work on. The list is sorted oldest-first by default so the longest-waiting responses bubble to the top."
+      />
+      <Card>
+        <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
+          <ul className="divide-y" data-testid="awaiting-review-list">
+            {settle.slots.map((slot) => (
+              <ListRow
+                key={slot.item.id}
+                group={slot.item}
+                isSelected={selectedGroup?.id === slot.item.id}
+                onSelect={() => onSelect(slot.item.id)}
+                isSettling={slot.isSettling}
+                isJustSelected={settle.isJustSelected(slot.item.id)}
+              />
+            ))}
+          </ul>
+        </ScrollArea>
+      </Card>
+    </div>
+  );
+}
+
 interface ListRowProps {
   group: InvoiceGroupResponse;
   isSelected: boolean;
   onSelect: () => void;
+  /** Task #490 — settle animation while the row is being removed. */
+  isSettling?: boolean;
+  /** Task #490 — brief highlight ring after auto-advance. */
+  isJustSelected?: boolean;
 }
 
-function ListRow({ group, isSelected, onSelect }: ListRowProps) {
+function ListRow({ group, isSelected, onSelect, isSettling = false, isJustSelected = false }: ListRowProps) {
   // Lightweight per-row enrichment: pull the group's latest reviewable
   // response so the row can show the response-type pill + AI summary one-
   // liner. Same data the Queue card surfaces — kept in sync deliberately.
@@ -547,10 +576,14 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
   const totalCount = group.rideCount;
 
   return (
-    <li>
+    <li
+      className={`${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""}`}
+      data-settling={isSettling ? "true" : undefined}
+    >
       <button
         type="button"
         onClick={onSelect}
+        disabled={isSettling}
         aria-pressed={isSelected}
         data-testid={`awaiting-review-row-${group.id}`}
         className={`w-full text-left px-4 py-3 transition-colors ${
