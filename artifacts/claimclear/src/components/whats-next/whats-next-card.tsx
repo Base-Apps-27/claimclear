@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { ReattestModal } from "./reattest-modal";
 import { useMarkAwaitingPayorAgain } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import {
   Tooltip,
   TooltipContent,
@@ -212,9 +212,9 @@ export function WhatsNextCard({
     try {
       await markWaiting.mutateAsync({ id: group.id, data: {} });
       invalidate();
-      toast({
-        title: "Awaiting payor",
-        description: "We'll bring this back when the payor responds.",
+      successToast({
+        title: "__VERB__",
+        description: "Awaiting payor — we'll bring this back when the payor responds.",
       });
       onAfterAction(`#${group.invoiceNumber} marked awaiting payor again.`);
     } catch (err: unknown) {

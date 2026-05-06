@@ -297,8 +297,9 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
           // fires for the operator who pressed Submit even when SSE author
           // tags are missing or replay-suppressed.
           markLocalAction(`group:${groupId}`);
-          toast({
-            title: isDirectEmail ? "Email sent" : "Submitted to portal",
+          successToast({
+            title: "__VERB__",
+            description: isDirectEmail ? "Email sent" : "Submitted to portal",
           });
           invalidateGroup();
         },

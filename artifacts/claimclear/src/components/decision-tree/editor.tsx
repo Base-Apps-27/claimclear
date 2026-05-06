@@ -27,7 +27,7 @@ import {
   TEMPLATES,
 } from "./types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { toast } from "@/hooks/use-toast";
+import { toast, successToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -127,8 +127,8 @@ export function TreeEditor({ tree, onChange, onTest }: TreeEditorProps) {
       const description = reparentedCount > 0
         ? `Re-attached ${reparentedCount} ${reparentedCount === 1 ? "branch" : "branches"} to the parent question.`
         : "The empty question was removed from the tree.";
-      const t = toast({
-        title: "Question deleted",
+      const t = successToast({
+        title: "__VERB__",
         description,
         duration: 15000,
         action: (

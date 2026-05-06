@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles, CalendarOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
@@ -63,11 +63,11 @@ export default function SystemHealth() {
   const expiredSweep = useRunExpiredSweep({
     mutation: {
       onSuccess: (result) => {
-        toast({
-          title: result.expired === 0 ? "No groups to expire" : `Expired ${result.expired} group${result.expired === 1 ? "" : "s"}`,
-          description: result.expired > 0
-            ? `Sample IDs: ${result.sampleGroupIds.join(", ")}${result.skipped > 0 ? ` · ${result.skipped} skipped` : ""}`
-            : "Everything past-deadline has already been retired.",
+        successToast({
+          title: "__VERB__",
+          description: result.expired === 0
+            ? "No groups to expire — everything past-deadline has already been retired."
+            : `Expired ${result.expired} group${result.expired === 1 ? "" : "s"} · Sample IDs: ${result.sampleGroupIds.join(", ")}${result.skipped > 0 ? ` · ${result.skipped} skipped` : ""}`,
         });
         queryClient.invalidateQueries({ queryKey: getGetSystemHealthCronRunsQueryKey() });
       },

@@ -19,7 +19,7 @@ import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submi
 import { ReattestModal } from "@/components/whats-next/reattest-modal";
 import { useClosureLauncher } from "@/components/closure/closure-launcher";
 import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
-import { useToast } from "@/hooks/use-toast";
+import { successToast } from "@/hooks/use-toast";
 
 // Task #476 — single shared gating component that decides, per
 // invoice, whether to mount the dispute-submission gauntlet, the
@@ -114,7 +114,6 @@ function ReattestOnlyCta({
   const queryClient = useQueryClient();
   const promoteDrafts = usePromoteVerdictDrafts();
   const { user } = useAuth();
-  const { toast } = useToast();
 
   const survivorCount = survivors.length;
   const droppedCount = dropped.length;
@@ -188,7 +187,7 @@ function ReattestOnlyCta({
         }}
         onAfterAction={(msg) => {
           invalidate();
-          toast({ title: "Re-attest", description: msg });
+          successToast({ title: "__VERB__", description: msg });
         }}
       />
     </div>

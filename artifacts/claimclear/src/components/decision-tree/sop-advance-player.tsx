@@ -35,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/hooks/use-toast";
+import { toast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import {
   ChevronRight,
@@ -570,10 +570,12 @@ export function SopAdvancePlayer(props: Props) {
           : skipped.length <= 5
             ? `Skipped: ${truncatedRefs.join(", ")}`
             : `Skipped: ${truncatedRefs.join(", ")} +${skipped.length - 5} more`;
-        toast({
-          title: `Applied to ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"}` +
-            (skipped.length > 0 ? ` (skipped ${skipped.length})` : ""),
-          description: skippedDescription,
+        successToast({
+          title: "__VERB__",
+          description:
+            `Applied to ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"}` +
+            (skipped.length > 0 ? ` (skipped ${skipped.length})` : "") +
+            (skippedDescription ? ` — ${skippedDescription}` : ""),
         });
         // The succeeded array is full ClaimResponse[] — find our leg by
         // id to drive the parent page reaction (terminal vs mid-walk).

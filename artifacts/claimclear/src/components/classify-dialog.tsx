@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { QueueNeedsReviewPanel } from "@/components/queue-needs-review-panel";
-import { useToast } from "@/hooks/use-toast";
+import { successToast } from "@/hooks/use-toast";
 
 // Task #412: Shared "open the classification picker" dialog. Wraps the
 // existing QueueNeedsReviewPanel inside a Dialog and is reachable from
@@ -117,7 +117,6 @@ export function ClassifyDialog({
   highlightLegId,
   onCompleted,
 }: Props) {
-  const { toast } = useToast();
   // Lazy-fetch the group so the dialog only spends bandwidth when
   // it's actually open. The query key matches the panel's own
   // useGetInvoiceGroup call so React Query dedupes.
@@ -137,7 +136,7 @@ export function ClassifyDialog({
     if (onCompleted) {
       onCompleted(message);
     } else {
-      toast({ title: message });
+      successToast({ title: "__VERB__", description: message });
     }
     // Always close the dialog after a successful completion. The
     // parent surface invalidates queries via the panel's invalidateAll

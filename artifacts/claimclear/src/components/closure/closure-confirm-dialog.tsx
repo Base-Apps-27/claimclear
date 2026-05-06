@@ -23,7 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { successToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Loader2, Mail, Bot, Sparkles } from "lucide-react";
 import { CLOSURE_REASON_BANNER } from "./closure-options";
@@ -130,7 +130,6 @@ export function ClosureConfirmDialog({
   onSuccess,
 }: ClosureConfirmDialogProps) {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const banner = CLOSURE_REASON_BANNER.denied_by_payor;
 
   const [note, setNote] = useState("");
@@ -214,8 +213,9 @@ export function ClosureConfirmDialog({
         queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
       }
 
-      toast({
-        title: "Marked as Denied by Payor — added to Withdrawals Review",
+      successToast({
+        title: "__VERB__",
+        description: "Marked as Denied by Payor — added to Withdrawals Review",
       });
       onOpenChange(false);
       onSuccess?.();

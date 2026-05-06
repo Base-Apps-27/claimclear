@@ -589,7 +589,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       { data: { hoursBack: 24 } },
       {
         onSuccess: () => {
-          toast({ title: "Inbox synced", description: "Pulled new payor replies into the thread." });
+          successToast({ title: "__VERB__", description: "Inbox synced — pulled new payor replies into the thread." });
           qc.invalidateQueries({ queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId) });
           qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
         },
@@ -1229,9 +1229,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         cc: input.cc.length > 0 ? input.cc : undefined,
                       },
                     });
-                    toast({
-                      title: "Reply sent",
-                      description: `Sent to ${input.to.join(", ")}`,
+                    successToast({
+                      title: "__VERB__",
+                      description: `Reply sent to ${input.to.join(", ")}`,
                     });
                     await qc.invalidateQueries({
                       queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
@@ -1604,9 +1604,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                               invalidateGroup();
                               setOfflineModalOpen(false);
                               resetOfflineForm();
-                              toast({
-                                title: "Recorded as re-attested (offline)",
-                                description: "Activity timeline now shows the override entry.",
+                              successToast({
+                                title: "__VERB__",
+                                description: "Recorded as re-attested (offline) — activity timeline now shows the override entry.",
                                 duration: 3500,
                               });
                             },

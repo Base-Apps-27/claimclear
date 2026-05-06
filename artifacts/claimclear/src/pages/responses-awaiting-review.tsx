@@ -61,7 +61,7 @@ import {
   mapToGroupConversations,
   htmlBodyToPlainText,
 } from "@/components/communication/group-thread-adapter";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import {
@@ -346,8 +346,8 @@ export default function ResponsesAwaitingReview() {
   // invalidates the per-group + per-claim detail queries so the lit-up
   // pill state stays consistent.
   const onAfterVerdict = (message: string) => {
-    toast({
-      title: "Selection saved",
+    successToast({
+      title: "__VERB__",
       description: message,
       duration: 2500,
     });
@@ -786,9 +786,9 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
                     cc: input.cc.length > 0 ? input.cc : undefined,
                   },
                 });
-                toast({
-                  title: "Reply sent",
-                  description: `Sent to ${input.to.join(", ")}`,
+                successToast({
+                  title: "__VERB__",
+                  description: `Reply sent to ${input.to.join(", ")}`,
                 });
                 // Repaint the thread immediately with the persisted
                 // outbound row + refresh other surfaces (group detail,

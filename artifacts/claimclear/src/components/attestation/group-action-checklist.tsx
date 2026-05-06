@@ -9,7 +9,7 @@ import {
   getGetAttestationCountsQueryKey,
   getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { MasActionChecklist } from "@/components/mas-action-checklist";
 
 export function GroupActionChecklist({
@@ -50,8 +50,8 @@ export function GroupActionChecklist({
         onCompleteLegMasAction={async (claimId, body) => {
           await completeLegMas.mutateAsync({ id: claimId, data: body });
           await invalidateAfterMutation();
-          toast({
-            title: "MAS cancellation recorded",
+          successToast({
+            title: "__VERB__",
             description: `Marked claim ${claimId} cancelled in MAS.`,
           });
         }}
@@ -86,8 +86,8 @@ export function GroupActionChecklist({
           }
           await invalidateAfterMutation();
           const total = eligible.length;
-          toast({
-            title: "Re-attestation confirmed",
+          successToast({
+            title: "__VERB__",
             description: `Confirmed re-attestation for invoice ${invoiceLabel} — ${total} leg${total === 1 ? "" : "s"} graduated.`,
           });
         }}

@@ -31,7 +31,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { ClassifyDialog } from "@/components/classify-dialog";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
 import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
 import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
@@ -217,8 +217,9 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
             // animates this row's pill on the operator's own action even
             // when the SSE replay hasn't arrived (or carries no author).
             markLocalAction(`claim:${claim.id}`);
-            toast({
-              title:
+            successToast({
+              title: "__VERB__",
+              description:
                 reason === "non_issue"
                   ? "Leg marked Non-issue"
                   : "Leg marked Non-contestable",

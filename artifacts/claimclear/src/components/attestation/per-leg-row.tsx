@@ -13,7 +13,7 @@ import type {
   AttestationPendingExtras,
   InvoiceGroupDetailResponse,
 } from "@workspace/api-client-react";
-import { useToast } from "@/hooks/use-toast";
+import { successToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/cohesion";
@@ -39,7 +39,6 @@ export function PerLegRow({
   detail: InvoiceGroupDetailResponse | null;
 }) {
   const qc = useQueryClient();
-  const { toast } = useToast();
   const attest = useAttestClaim();
   const confirm = useConfirmQueuedAttestation();
   const { claim, state } = row;
@@ -79,8 +78,8 @@ export function PerLegRow({
       await confirm.mutateAsync({ id: claim.id, data: {} });
     }
     await invalidate();
-    toast({
-      title: "Leg confirmed",
+    successToast({
+      title: "__VERB__",
       description: `Confirmed re-attestation for ${claim.confNumber}.`,
     });
   };

@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, X, Upload, Loader2 } from "lucide-react";
 import {
@@ -508,7 +508,7 @@ export function ClosureIntakeDialog({
             return assertNeverClosureReason(reason);
         }
       })();
-      toast({ title: successTitle });
+      successToast({ title: "__VERB__", description: successTitle });
       onOpenChange(false);
       onSuccess?.();
     } catch (err: any) {

@@ -539,7 +539,7 @@ export function ClaimDetailV2({
       {
         onSuccess: () => {
           markLocalAction(`claim:${claimId}`);
-          toast({ title: "Leg reclassified — pick an error type to start over" });
+          successToast({ title: "__VERB__", description: "Leg reclassified — pick an error type to start over" });
           setReclassifyOpen(false);
           invalidateLeg();
         },
@@ -1884,7 +1884,7 @@ export function ClaimDetailV2({
           groupId={claim.invoiceGroupId ?? 0}
           highlightLegId={claim.id}
           onCompleted={(message) => {
-            toast({ title: message });
+            successToast({ title: "__VERB__", description: message });
             qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
             if (claim.invoiceGroupId) {
               qc.invalidateQueries({
