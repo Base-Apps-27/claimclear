@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import type { PortalSubmissionResponse } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -486,9 +487,15 @@ export default function PortalSubmissions() {
             </Card>
           )}
 
-          {isLoading ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">Loading…</CardContent></Card>
-          ) : filtered.length === 0 ? (
+          <SkeletonSwap
+            loading={isLoading}
+            skeleton={
+              <div className="space-y-3" data-testid="portal-submissions-skeleton">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-32 w-full" />)}
+              </div>
+            }
+          >
+          {filtered.length === 0 ? (
             <Card>
               <CardContent className="p-0">
                 {statusFilter !== "all" || search ? (
@@ -531,6 +538,7 @@ export default function PortalSubmissions() {
                 />
               ))
           )}
+          </SkeletonSwap>
         </div>
 
         {/* Right rail — clerks see no batch / queue / selection rail. */}

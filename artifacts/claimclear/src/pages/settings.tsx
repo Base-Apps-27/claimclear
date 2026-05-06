@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download } from "lucide-react";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 
@@ -35,11 +36,18 @@ function NotificationTogglesRow({ userId }: { userId: string }) {
     await refetch();
   };
 
-  if (isLoading || !data) {
-    return <span className="text-xs text-muted-foreground">Loading prefs…</span>;
-  }
-
   return (
+    <SkeletonSwap
+      loading={isLoading || !data}
+      className="inline-flex"
+      skeleton={
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-28" />
+        </div>
+      }
+    >
+      {data ? (
     <div className="flex items-center gap-3 text-xs">
       <WrapTooltip content="When off, this user will not receive the daily brief email.">
         <label className="flex items-center gap-1.5 cursor-pointer">
@@ -62,6 +70,8 @@ function NotificationTogglesRow({ userId }: { userId: string }) {
         </label>
       </WrapTooltip>
     </div>
+      ) : null}
+    </SkeletonSwap>
   );
 }
 
@@ -270,9 +280,14 @@ export default function Settings() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loadingUsers ? (
-              <p className="text-sm text-muted-foreground">Loading users...</p>
-            ) : (
+            <SkeletonSwap
+              loading={loadingUsers}
+              skeleton={
+                <div className="space-y-2" data-testid="settings-users-skeleton">
+                  {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              }
+            >
               <>
                 {pendingUsers.length > 0 && (
                   <div className="space-y-3">
@@ -446,7 +461,7 @@ export default function Settings() {
                   <p className="text-sm text-muted-foreground">No users found.</p>
                 )}
               </>
-            )}
+            </SkeletonSwap>
           </CardContent>
         </Card>
       )}

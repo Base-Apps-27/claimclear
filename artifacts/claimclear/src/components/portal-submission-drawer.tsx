@@ -12,6 +12,7 @@ import {
 import type { PortalSubmissionResponse, BotActivityLogResponse, EvidenceFileRef } from "@workspace/api-client-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -330,11 +331,20 @@ export function PortalSubmissionDrawer({
           )}
         </div>
 
-        {!submission || subLoading ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
-          </div>
-        ) : (
+        <SkeletonSwap
+          loading={!submission || subLoading}
+          className="flex-1 flex flex-col min-h-0"
+          skeleton={
+            <div className="flex-1 p-6 space-y-3" data-testid="portal-submission-drawer-skeleton">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-6 w-1/2" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          }
+        >
+        {submission && !subLoading && (
           <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="flex-1 flex flex-col min-h-0">
             <TabsList className="rounded-none border-b bg-muted/30 h-auto p-0 w-full justify-stretch">
               {(["payload", "sandbox", "activity"] as const).map((t) => {
@@ -698,6 +708,7 @@ export function PortalSubmissionDrawer({
             </div>
           </Tabs>
         )}
+        </SkeletonSwap>
       </SheetContent>
     </Sheet>
   );

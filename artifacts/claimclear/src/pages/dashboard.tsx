@@ -884,11 +884,15 @@ export default function Dashboard() {
           ) : null}
         </div>
         <div data-testid="recent-activity-list">
-          {!activity ? (
-            <div className="p-4 space-y-2">
-              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-6 w-full" />)}
-            </div>
-          ) : activity.events.length === 0 ? (
+          <SkeletonSwap
+            loading={!activity}
+            skeleton={
+              <div className="p-4 space-y-2">
+                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
+            }
+          >
+          {!activity || activity.events.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
               No recent activity yet. Classify a claim or import a job-status report to get started.
             </div>
@@ -936,6 +940,7 @@ export default function Dashboard() {
               );
             })
           )}
+          </SkeletonSwap>
         </div>
       </div>
 

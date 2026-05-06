@@ -21,6 +21,7 @@ import {
   type UrgentTodayTransitions,
 } from "@workspace/api-client-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { ChevronRight, Activity } from "lucide-react";
 import { deriveUrgentTodayWhy } from "@/lib/urgent-today-why";
 import { RefNumber } from "@/components/ref-number";
@@ -232,11 +233,20 @@ export function UrgentTodayActivityPanelBody({
     },
   });
 
-  if (!data) {
-    return <div className="text-sm text-muted-foreground p-4">Loading…</div>;
-  }
-
   return (
+    <SkeletonSwap
+      loading={!data}
+      skeleton={
+        <div className="space-y-3 p-1" data-testid="urgent-today-panel-skeleton">
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      }
+    >
+      {data ? (
     <>
       <div className="text-xs text-muted-foreground -mt-2" data-testid="urgent-today-panel-date">
         {data.today}
@@ -381,5 +391,7 @@ export function UrgentTodayActivityPanelBody({
         </section>
       )}
     </>
+      ) : null}
+    </SkeletonSwap>
   );
 }

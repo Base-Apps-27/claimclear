@@ -30,6 +30,7 @@ import {
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
 import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 
@@ -477,9 +478,17 @@ export default function ErrorTypes() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading...</div>
-      ) : (errorTypes || []).length === 0 ? (
+      <SkeletonSwap
+        loading={isLoading}
+        skeleton={
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="error-types-skeleton">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
+          </div>
+        }
+      >
+      {(errorTypes || []).length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState
@@ -537,6 +546,7 @@ export default function ErrorTypes() {
           ))}
         </div>
       )}
+      </SkeletonSwap>
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setEditingId(null); setShowCreate(false); } }}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">

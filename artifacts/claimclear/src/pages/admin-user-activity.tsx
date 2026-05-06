@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -182,6 +183,14 @@ export default function AdminUserActivity() {
 
       <Card>
         <CardContent className="p-0">
+          <SkeletonSwap
+            loading={isLoading}
+            skeleton={
+              <div className="p-4 space-y-2" data-testid="admin-user-activity-skeleton">
+                {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            }
+          >
           <Table>
             <TableHeader>
               <TableRow>
@@ -194,10 +203,7 @@ export default function AdminUserActivity() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Loading…</TableCell></TableRow>
-              )}
-              {!isLoading && items.length === 0 && (
+              {items.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">No activity matches your filters.</TableCell></TableRow>
               )}
               {items.map((item) => (
@@ -227,6 +233,7 @@ export default function AdminUserActivity() {
               ))}
             </TableBody>
           </Table>
+          </SkeletonSwap>
         </CardContent>
       </Card>
 

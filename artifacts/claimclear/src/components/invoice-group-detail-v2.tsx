@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -707,21 +708,29 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
-  if (isLoading || !group || !detail) {
-    return (
-      <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }}>
-        <div className="flex items-center justify-center h-64 gap-2" style={{ color: "var(--cc-muted-fg)" }}>
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading invoice group…
-        </div>
-      </div>
-    );
-  }
-
-  const isAlreadyClosed = group.status === "Resolved" || group.status === "Denied";
+  const isReady = !isLoading && !!group && !!detail;
+  const isAlreadyClosed = group?.status === "Resolved" || group?.status === "Denied";
 
   return (
     <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }} data-testid="invoice-group-detail-v2">
-      <div className="max-w-[1180px] mx-auto space-y-4">
+      <SkeletonSwap
+        loading={!isReady}
+        className="max-w-[1180px] mx-auto"
+        skeleton={
+          <div className="space-y-4" data-testid="invoice-group-detail-v2-skeleton">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-24 w-full" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+            <Skeleton className="h-64 w-full" />
+          </div>
+        }
+      >
+      {group && detail ? (
+      <div className="space-y-4">
         {/* Read-only banner shown when this is the global "tour sample"
             row (seeded by migration 0029). The pair exists only so the
             in-app guided tour can anchor steps 18 & 20 on a real detail
@@ -1956,6 +1965,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           </div>
         </div>
       </div>
+      ) : null}
+      </SkeletonSwap>
 
       {holdOpen && (
         <div

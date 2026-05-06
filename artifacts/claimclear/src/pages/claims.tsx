@@ -21,6 +21,7 @@ import { useRowBreath } from "@/hooks/use-breath";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import {
   ListTableHeaderStrip,
   FacetSearchableCheckboxList,
@@ -639,6 +640,16 @@ export default function ClaimsList() {
             />
 
             <CardContent className="p-0">
+              <SkeletonSwap
+                loading={isLoading}
+                skeleton={
+                  <div className="p-4 space-y-2" data-testid="claims-table-skeleton">
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                }
+              >
               <div className="overflow-auto max-h-[calc(100vh-22rem)]">
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
@@ -720,11 +731,7 @@ export default function ClaimsList() {
                     </tr>
                   </thead>
                   <tbody>
-                    {isLoading ? (
-                      <tr>
-                        <td colSpan={colCount} className="px-4 py-8 text-center text-muted-foreground">Loading claims...</td>
-                      </tr>
-                    ) : isError ? (
+                    {isError ? (
                       <tr>
                         <td colSpan={colCount} className="px-4 py-8 text-center">
                           <div className="flex flex-col items-center gap-2 text-destructive">
@@ -838,6 +845,7 @@ export default function ClaimsList() {
                   </tbody>
                 </table>
               </div>
+              </SkeletonSwap>
               <PaginationFooter
                 total={total}
                 page={page}

@@ -41,6 +41,7 @@ import {
 } from "@/components/cohesion";
 import { TONE_STYLE, type Tone } from "@/components/cohesion/tone";
 import { EmptyState } from "@/components/empty-state";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy";
 import { WithdrawalReviewDrawer } from "@/components/withdrawal-review-drawer";
@@ -502,6 +503,16 @@ export default function WithdrawalsPage() {
           )}
 
           <CardContent className="p-0">
+            <SkeletonSwap
+              loading={isLoading}
+              skeleton={
+                <div className="p-4 space-y-2" data-testid="withdrawals-table-skeleton">
+                  {[1, 2, 3, 4, 5, 6].map(i => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              }
+            >
             <div className="overflow-auto max-h-[calc(100vh-22rem)]">
               <table className="w-full text-sm text-left" data-testid="withdrawals-table">
                 <thead className="text-xs text-muted-foreground bg-muted/50 uppercase border-b sticky top-0 z-10">
@@ -536,9 +547,7 @@ export default function WithdrawalsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {isLoading ? (
-                    <tr><td colSpan={colCount} className="px-4 py-8 text-center text-muted-foreground">Loading withdrawals…</td></tr>
-                  ) : isError ? (
+                  {isError ? (
                     <tr><td colSpan={colCount} className="px-4 py-8 text-center text-destructive">Failed to load withdrawals.</td></tr>
                   ) : rows.length === 0 ? (
                     <tr>
@@ -630,6 +639,7 @@ export default function WithdrawalsPage() {
                 </tbody>
               </table>
             </div>
+            </SkeletonSwap>
             <PaginationFooter
               total={total}
               page={page}
