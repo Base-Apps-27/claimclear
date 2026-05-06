@@ -479,8 +479,8 @@ export default function Dashboard() {
             <EmptyState
               icon={Inbox}
               title="Welcome to ClaimClear"
-              description="No claims yet. Import a MAS report to populate the pipeline, or create your first claim manually."
-              primaryAction={{ label: "Import claims", href: "/import" }}
+              description="No invoices yet. Import a MAS report to populate the pipeline, or create your first invoice manually."
+              primaryAction={{ label: "Import invoices", href: "/import" }}
               secondaryAction={{ label: "Connect a portal", href: "/settings" }}
             />
           </CardContent>
@@ -560,7 +560,7 @@ export default function Dashboard() {
             value={formatCurrency(amounts.atRiskExposure ?? amounts.totalExposure)}
             sub={
               <>
-                {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} claim + ~70% driver prepay
+                {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} invoice amount + ~70% driver prepay
                 {typeof amounts.atRiskGroups === "number" && (
                   <> · {amounts.atRiskGroups} group{amounts.atRiskGroups === 1 ? "" : "s"}</>
                 )}
