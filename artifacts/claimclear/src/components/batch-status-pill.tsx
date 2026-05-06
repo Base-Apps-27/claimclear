@@ -265,7 +265,7 @@ function PillButton({ state, collapsed = false }: PillProps) {
             </span>
           )}
           {state.empty && !collapsed && (
-            <span className="font-medium text-sm leading-none">No claims</span>
+            <span className="font-medium text-sm leading-none">No invoices</span>
           )}
           {state.degraded && (
             <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse mr-1" />
@@ -349,16 +349,16 @@ function PopoverContents({ status, onNavigate }: PopoverContentsProps) {
           {status.isRunning ? (
             <p>
               <span className="font-semibold text-foreground tabular-nums">{status.runningCount}</span>{" "}
-              claim{status.runningCount === 1 ? "" : "s"} in flight,{" "}
+              invoice{status.runningCount === 1 ? "" : "s"} in flight,{" "}
               <span className="font-semibold text-foreground tabular-nums">{status.queuedCount}</span>{" "}
               still queued.
             </p>
           ) : status.queuedCount === 0 ? (
-            <p>No claims queued for the next batch.</p>
+            <p>No invoices queued for the next batch.</p>
           ) : (
             <p>
               <span className="font-semibold text-foreground tabular-nums">{status.queuedCount}</span>{" "}
-              claim{status.queuedCount === 1 ? "" : "s"} ready to send in the next batch.
+              invoice{status.queuedCount === 1 ? "" : "s"} ready to send in the next batch.
             </p>
           )}
           {status.nextBatchAt && !status.isRunning && (
