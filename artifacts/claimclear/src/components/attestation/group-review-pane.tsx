@@ -10,7 +10,7 @@ import type {
   InvoiceGroupDetailResponse,
 } from "@workspace/api-client-react";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Section, StatusPill, TONE_STYLE } from "@/components/cohesion";
 import { formatDateTime } from "@/lib/format";
@@ -185,9 +185,7 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
             data-testid="reattest-instructions"
           >
             <SectionLabel>Action checklist</SectionLabel>
-            {detail ? (
-              <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
-            ) : groupId == null ? (
+            {groupId == null ? (
               <div
                 className="rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground flex items-start gap-2"
                 data-testid="group-orphan-leg-note"
@@ -198,27 +196,36 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
                   individually below.
                 </span>
               </div>
-            ) : detailQuery.isLoading ? (
-              <div className="space-y-2" data-testid="group-detail-loading">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
             ) : (
-              <div
-                className="rounded-md border px-3 py-2.5 text-sm flex items-start gap-2"
-                style={{
-                  borderColor: TONE_STYLE.amber.border,
-                  background: TONE_STYLE.amber.bg,
-                  color: TONE_STYLE.amber.fg,
-                }}
-                data-testid="group-detail-error"
+              <SkeletonSwap
+                loading={detailQuery.isLoading && !detail}
+                skeleton={
+                  <div className="space-y-2" data-testid="group-detail-loading">
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                }
               >
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>
-                  Couldn't load the invoice group's MAS checklist. Open the
-                  group page for the full controls.
-                </span>
-              </div>
+                {detail ? (
+                  <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
+                ) : (
+                  <div
+                    className="rounded-md border px-3 py-2.5 text-sm flex items-start gap-2"
+                    style={{
+                      borderColor: TONE_STYLE.amber.border,
+                      background: TONE_STYLE.amber.bg,
+                      color: TONE_STYLE.amber.fg,
+                    }}
+                    data-testid="group-detail-error"
+                  >
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <span>
+                      Couldn't load the invoice group's MAS checklist. Open the
+                      group page for the full controls.
+                    </span>
+                  </div>
+                )}
+              </SkeletonSwap>
             )}
           </section>
 

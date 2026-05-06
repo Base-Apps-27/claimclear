@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -366,12 +366,16 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
         <Separator />
 
         <div className="rounded-md border bg-muted/30 p-3 space-y-2" data-testid="response-context-block">
-          {detailLoading && !latestResponse ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          ) : latestResponse ? (
+          <SkeletonSwap
+            loading={detailLoading && !latestResponse}
+            skeleton={
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            }
+          >
+          {latestResponse ? (
             <>
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 text-sm">
@@ -417,6 +421,7 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
               No reviewable response found on this group. Open the full details to investigate.
             </p>
           )}
+          </SkeletonSwap>
         </div>
 
         <div className="space-y-3" data-testid="verdict-lanes">
@@ -518,36 +523,36 @@ export function ResponseReviewRowMeta({ groupId }: { groupId: number }) {
   const { data: detail, isLoading } = useGetInvoiceGroup(groupId);
   const latestResponse = pickLatestReviewableResponse(detail?.responses);
 
-  if (isLoading && !detail) {
-    return (
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-4 w-40" />
-      </div>
-    );
-  }
-
-  if (!latestResponse) {
-    return (
-      <span className="text-xs text-muted-foreground italic shrink-0">
-        Response details unavailable
-      </span>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-2 min-w-0 flex-1">
-      <span
-        className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${getResponseTypePillClass(latestResponse.responseType)}`}
-        title="AI / keyword classification — a hint, not the verdict"
-      >
-        {getResponseTypeLabel(latestResponse.responseType)}
-      </span>
-      {latestResponse.aiSummary ? (
-        <span className="text-xs text-muted-foreground truncate min-w-0" title={latestResponse.aiSummary}>
-          {latestResponse.aiSummary}
+    <SkeletonSwap
+      loading={isLoading && !detail}
+      className="flex items-center gap-2 min-w-0 flex-1"
+      skeleton={
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+      }
+    >
+      {!latestResponse ? (
+        <span className="text-xs text-muted-foreground italic shrink-0">
+          Response details unavailable
         </span>
-      ) : null}
-    </div>
+      ) : (
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span
+            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${getResponseTypePillClass(latestResponse.responseType)}`}
+            title="AI / keyword classification — a hint, not the verdict"
+          >
+            {getResponseTypeLabel(latestResponse.responseType)}
+          </span>
+          {latestResponse.aiSummary ? (
+            <span className="text-xs text-muted-foreground truncate min-w-0" title={latestResponse.aiSummary}>
+              {latestResponse.aiSummary}
+            </span>
+          ) : null}
+        </div>
+      )}
+    </SkeletonSwap>
   );
 }

@@ -19,7 +19,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles, CalendarOff } from "lucide-react";
@@ -211,9 +211,8 @@ export default function SystemHealth() {
           <CardDescription>Last 7 days of cron run history</CardDescription>
         </CardHeader>
         <CardContent>
-          {cronLoading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : cronData?.jobs?.length ? (
+          <SkeletonSwap loading={cronLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+          {cronData?.jobs?.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs text-muted-foreground uppercase border-b">
@@ -250,6 +249,7 @@ export default function SystemHealth() {
           ) : (
             <p className="text-sm text-muted-foreground">No scheduled jobs have run yet.</p>
           )}
+          </SkeletonSwap>
         </CardContent>
       </Card>
 
@@ -264,9 +264,8 @@ export default function SystemHealth() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {briefDetailLoading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : !briefDetail?.lastRun ? (
+          <SkeletonSwap loading={briefDetailLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+          {!briefDetail?.lastRun ? (
             <p className="text-sm text-muted-foreground">No daily brief has run yet.</p>
           ) : (
             <div className="space-y-3">
@@ -353,6 +352,7 @@ export default function SystemHealth() {
               ) : null}
             </div>
           )}
+          </SkeletonSwap>
         </CardContent>
       </Card>
 
@@ -364,9 +364,8 @@ export default function SystemHealth() {
           <CardDescription>External connector health probes</CardDescription>
         </CardHeader>
         <CardContent>
-          {connectorsLoading ? (
-            <Skeleton className="h-20 w-full" />
-          ) : connectorsData?.connectors?.length ? (
+          <SkeletonSwap loading={connectorsLoading} skeleton={<Skeleton className="h-20 w-full" />}>
+          {connectorsData?.connectors?.length ? (
             <div className="space-y-3">
               {connectorsData.connectors.map((c) => (
                 <div key={c.connectorName} className="flex items-center justify-between border rounded-md p-3">
@@ -396,6 +395,7 @@ export default function SystemHealth() {
           ) : (
             <p className="text-sm text-muted-foreground">No connector probes recorded yet.</p>
           )}
+          </SkeletonSwap>
         </CardContent>
       </Card>
 
@@ -409,9 +409,8 @@ export default function SystemHealth() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {workerLoading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : workerData ? (
+          <SkeletonSwap loading={workerLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+          {workerData ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="rounded-md border p-3">
@@ -551,6 +550,7 @@ export default function SystemHealth() {
           ) : (
             <p className="text-sm text-muted-foreground">Worker activity unavailable.</p>
           )}
+          </SkeletonSwap>
         </CardContent>
       </Card>
 
@@ -564,9 +564,8 @@ export default function SystemHealth() {
           <CardDescription>NDR / bounce messages we couldn't link to a claim or invoice group</CardDescription>
         </CardHeader>
         <CardContent>
-          {bouncesLoading ? (
-            <Skeleton className="h-20 w-full" />
-          ) : bouncesData?.bounces?.length ? (
+          <SkeletonSwap loading={bouncesLoading} skeleton={<Skeleton className="h-20 w-full" />}>
+          {bouncesData?.bounces?.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs text-muted-foreground uppercase border-b">
@@ -590,6 +589,7 @@ export default function SystemHealth() {
           ) : (
             <p className="text-sm text-muted-foreground">No unmatched bounces — nice.</p>
           )}
+          </SkeletonSwap>
         </CardContent>
       </Card>
     </div>
@@ -624,9 +624,8 @@ function ClassifierStatsCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : !data ? (
+        <SkeletonSwap loading={loading} skeleton={<Skeleton className="h-32 w-full" />}>
+        {!data ? (
           <p className="text-sm text-muted-foreground">
             Classifier stats unavailable.
           </p>
@@ -725,6 +724,7 @@ function ClassifierStatsCard({
             </div>
           </div>
         )}
+        </SkeletonSwap>
       </CardContent>
     </Card>
   );

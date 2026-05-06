@@ -334,9 +334,12 @@ export default function Insights() {
             </div>
           </div>
           <div className="flex-1 min-w-[280px] h-32" data-testid="recovery-trend-chart">
-            {tsLoading ? (
-              <div className="h-full flex items-center justify-center text-xs text-muted-foreground">Loading…</div>
-            ) : trendData.length === 0 || trendTotals.recovered === 0 ? (
+            <SkeletonSwap
+              loading={tsLoading}
+              className="h-full"
+              skeleton={<Skeleton className="h-full w-full" />}
+            >
+            {trendData.length === 0 || trendTotals.recovered === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                 No dollars recovered in this window
               </div>
@@ -360,6 +363,7 @@ export default function Insights() {
                 </AreaChart>
               </ResponsiveContainer>
             )}
+            </SkeletonSwap>
           </div>
         </div>
       </Section>
@@ -416,9 +420,11 @@ export default function Insights() {
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
               <span style={{ width: 56 }} />
             </div>
-            {repeatLoading ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">Loading…</div>
-            ) : drivers.length === 0 ? (
+            <SkeletonSwap
+              loading={repeatLoading}
+              skeleton={<Skeleton className="h-24 w-full" />}
+            >
+            {drivers.length === 0 ? (
               <div className="p-6 text-center text-xs text-muted-foreground">
                 No repeat offenders in this window.
               </div>
@@ -469,6 +475,7 @@ export default function Insights() {
                 </div>
               ))
             )}
+            </SkeletonSwap>
           </div>
 
           {/* Members by clientNumber */}
@@ -492,9 +499,11 @@ export default function Insights() {
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
               <span style={{ width: 56 }} />
             </div>
-            {repeatLoading ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">Loading…</div>
-            ) : members.length === 0 ? (
+            <SkeletonSwap
+              loading={repeatLoading}
+              skeleton={<Skeleton className="h-24 w-full" />}
+            >
+            {members.length === 0 ? (
               <div className="p-6 text-center text-xs text-muted-foreground">
                 No repeat-offender members in this window.
               </div>
@@ -544,6 +553,7 @@ export default function Insights() {
                 </div>
               ))
             )}
+            </SkeletonSwap>
           </div>
         </div>
 
@@ -593,9 +603,11 @@ export default function Insights() {
             <span style={{ minWidth: 50, textAlign: "right" }}>Won</span>
             <span className="flex-1">Win rate</span>
           </div>
-          {prodLoading ? (
-            <div className="p-6 text-center text-xs text-muted-foreground">Loading…</div>
-          ) : teamRows.length === 0 ? (
+          <SkeletonSwap
+            loading={prodLoading}
+            skeleton={<Skeleton className="h-24 w-full" />}
+          >
+          {teamRows.length === 0 ? (
             <div className="p-6 text-center text-xs text-muted-foreground">No tracked user activity in this window</div>
           ) : (
             teamRows.map(t => (
@@ -625,6 +637,7 @@ export default function Insights() {
               </div>
             ))
           )}
+          </SkeletonSwap>
         </Section>
       </div>
 
