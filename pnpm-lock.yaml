@@ -947,6 +947,19 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1
 
+  lib/invoice-state:
+    dependencies:
+      '@workspace/vocab':
+        specifier: workspace:*
+        version: link:../vocab
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
+
   lib/leg-state:
     devDependencies:
       '@types/node':
@@ -977,6 +990,15 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.14
+
+  lib/observability:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   lib/payor-denial-reasons: {}
 

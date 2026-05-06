@@ -60,6 +60,11 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript, des
 ## State model
 - **Plan of record:** `docs/architecture/state-hierarchy-v1.md` — invoice as the noun that moves through 7 phases; claims as work items with per-phase dispositions. Replaces the cancelled Task #512 lock-down plan.
 - **Predecessors:** `docs/architecture/invoice-terminal-state.md` (terminal-state contract), `docs/architecture/state-vocabularies-audit.md` (drift census), `docs/architecture/state-migration-plan.md` (cancelled — kept for the row census).
+- **Wave 0.5 catalogue:** `docs/architecture/state-wave-0.5-catalogue.md` — full writer/reader inventory + audit hooks A1-A7 + the §8 wave-by-wave delivery log.
+- **Wave A packages (shipped 2026-05-06, infrastructure-only, no behavior change):**
+  - `@workspace/observability` (`lib/observability/`) — `TransitionActor` discriminated union (user vs system), 32-tag `TRANSITION_SOURCES` enum, 80-name `AUDIT_ACTION_NAMES` enum, and the `SOURCE_TO_ACTION_TABLE` registry that Wave D will wire into every audit-log insert.
+  - `@workspace/vocab` additions — `INVOICE_PHASES` (7-tuple), `CLAIM_DISPOSITIONS` (22-tuple), full glossary entries, and `VALID_DISPOSITIONS_BY_PHASE` (the structural cross-row contract that backs the planned Postgres `validate_disposition_against_phase()` trigger).
+  - `@workspace/invoice-state` (`lib/invoice-state/`) — pure derivation helpers `derivePhaseFromLegacy` / `deriveDispositionFromLegacy` implementing the §6 mapping. Used by Wave B's migration backfill and Wave C's read swap.
 
 ## External Dependencies
 - **PostgreSQL:** Primary relational database.

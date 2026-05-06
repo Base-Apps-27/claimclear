@@ -16,6 +16,8 @@ export * from "./submission-stage";
 export * from "./audit-action";
 export * from "./verbs";
 export * from "./verdict-outcome";
+export * from "./invoice-phase";
+export * from "./claim-disposition";
 export * from "./forbidden-literals";
 
 import type { GlossaryEntry, VocabDomain } from "./domains";
@@ -29,6 +31,8 @@ import { SUBMISSION_STAGE } from "./submission-stage";
 import { AUDIT_ACTIONS } from "./audit-action";
 import { VERB } from "./verbs";
 import { VERDICT_OUTCOME } from "./verdict-outcome";
+import { INVOICE_PHASE } from "./invoice-phase";
+import { CLAIM_DISPOSITION } from "./claim-disposition";
 
 // Flat catalogue of every glossary entry — used by docs generation and
 // completeness tests. Keys are scoped by domain to avoid enum-value
@@ -45,6 +49,8 @@ export const GLOSSARY: Array<GlossaryEntry & { key: string }> = [
   ...Object.entries(AUDIT_ACTIONS).map(([k, v]) => ({ ...v, key: `audit_action:${k}` })),
   ...Object.entries(VERB).map(([k, v]) => ({ ...v, key: `verb:${k}` })),
   ...Object.entries(VERDICT_OUTCOME).map(([k, v]) => ({ ...v, key: `verdict_outcome:${k}` })),
+  ...Object.entries(INVOICE_PHASE).map(([k, v]) => ({ ...v, key: `invoice_phase:${k}` })),
+  ...Object.entries(CLAIM_DISPOSITION).map(([k, v]) => ({ ...v, key: `claim_disposition:${k}` })),
 ];
 
 export function entriesForDomain(domain: VocabDomain): GlossaryEntry[] {

@@ -26,6 +26,12 @@
     },
     {
       "path": "./lib/vocab"
+    },
+    {
+      "path": "./lib/observability"
+    },
+    {
+      "path": "./lib/invoice-state"
     }
   ]
 }

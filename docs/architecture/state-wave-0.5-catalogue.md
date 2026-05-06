@@ -211,3 +211,53 @@ All 5 questions resolved before Wave A starts. Each becomes a binding spec line 
 ## §7. Doc handoff
 
 Wave A planning starts from this catalogue. Each wave PR description references the relevant §1-§3 rows it touches and the §5 audit it must pass. The 5 open questions in §6 must be resolved in the Wave A spec PR (no code change in that PR — spec only).
+
+---
+
+## §8. Wave A delivery log
+
+### A-PR1 — `lib/observability` registry (shipped 2026-05-06)
+
+New workspace package `@workspace/observability` (`lib/observability/`). Pure infrastructure — no behavior change, no schema change, no call-site rewires. Exports:
+
+- `TransitionActor = {kind:'user', email, name} | {kind:'system', scope}` (resolves §6 Q3 + P4); plus `toLegacyActor` / `fromLegacyActor` for the legacy `{userEmail, userName}` shape used by the existing `auditLogsTable` insert sites.
+- `TRANSITION_SOURCES` — 32-value frozen tuple of every `ctx.source` tag (manual_exclude, auto_blank_sibling, conclude_leg, sop_terminal, re_include, leg_classified, verdict_recorded, attest_*, mas_cancel_complete, expired_sweep_cron, etc.). Plus `isTransitionSource` guard.
+- `AUDIT_ACTION_NAMES` — 80-value frozen tuple of every audit action string emitted by the api-server today (enumerated by ripgrep over `action: "..."` literals, cross-checked against `lib/vocab/src/audit-action.ts`). Plus `isAuditActionName` guard.
+- `SOURCE_TO_ACTION_TABLE` + `actionForSource(source)` + `resolveAuditAction({source, fromState, toState})` — the registry that resolves §6 Q3. Wave D rewires every `auditLogsTable` insert to call `resolveAuditAction(ctx)` instead of hard-coding the action string.
+
+Wired into root `tsconfig.json` references. 11 tests pass; `tsc -b` succeeds; `dist/` populated. Package has no runtime deps (only `@types/node` + `tsx` for tests).
+
+**Out of scope for this PR (deferred to A-PR2/PR3):** the `InvoicePhase` and `ClaimDisposition` enums, the `DISPOSITION_TO_AFFECTED_TRANSITIONS` table, and the read-side derivation helpers. Those land in `lib/vocab` (PR2) and a new `lib/invoice-state` (PR3) so the dependency graph stays one-way (`observability` is leaf; `vocab` depends on nothing; `invoice-state` will depend on both).
+
+**Next:** A-PR2 — extend `lib/vocab` with `claim-disposition.ts`, `invoice-phase.ts`, restructure `lib/leg-state` exports around the new disposition vocabulary while keeping `deriveLegSubStatus` working in parallel (legacy + new coexist until Wave C flips readers).
+
+### A-PR2 — `lib/vocab` disposition + phase enums (shipped 2026-05-06)
+
+Pure additive vocab change. No DB / no behavior. Adds:
+
+- `lib/vocab/src/invoice-phase.ts` — `INVOICE_PHASES` 7-tuple, `InvoicePhase` type, `INVOICE_PHASE` glossary, helpers `invoicePhaseLabel`, `isInvoicePhase`, `comparePhase`, `isPhaseAtLeast` (sequence comparator backs the phase-monotonicity guards Wave B will add to `transitionInvoice`).
+- `lib/vocab/src/claim-disposition.ts` — `CLAIM_DISPOSITIONS` 22-tuple, `ClaimDisposition` type, full glossary, plus the contract tables: `VALID_DISPOSITIONS_BY_PHASE` (per-phase valid set per spec §5.1), `TERMINAL_TRIAGE_DISPOSITIONS`, `CONFIRMED_VERDICT_DISPOSITIONS`, `REATTEST_REQUIRING_DISPOSITIONS`. Helper `isDispositionValidForPhase(d, phase)` enforces the cross-row constraint at the type/runtime layer (the SQL trigger from spec §5.2 will use the same predicate).
+- Extended `VocabDomain` union with `"invoice_phase"` + `"claim_disposition"`. Re-exports added to `lib/vocab/src/index.ts`. Both new domains land in `GLOSSARY`.
+
+11 new tests in `lib/vocab/src/__tests__/invoice-state-vocab.test.ts` (full vocab suite: 41 pass). `tsc -b lib/observability lib/vocab lib/leg-state` builds clean. No downstream `VocabDomain` consumer outside `lib/vocab` itself, so the union extension is non-breaking.
+
+**Decision recorded:** the existing `lib/vocab/claim-status.ts`, `outcome.ts`, and `leg-sub-status.ts` are kept verbatim through Waves A-D. They become dead code in Wave E (when the underlying columns drop). Operator-facing render code keeps using them until Wave C flips it to the new disposition labels.
+
+**Next:** A-PR3 — read-side derivation library `lib/invoice-state` (new package). Exports: `deriveDispositionFromLegacy(claim)`, `derivePhaseFromLegacy(group)`, plus the parent-of-claim resolver. Pure functions only — no DB writes. Used by Wave C to render the new vocabulary off legacy columns before the dual-write window opens. Depends on `@workspace/vocab` (for the enums) and nothing else — keeps the dependency graph one-way.
+
+### A-PR3 — `lib/invoice-state` derivation helpers (shipped 2026-05-06)
+
+New workspace package `@workspace/invoice-state` implementing the §6 mapping rules from `state-hierarchy-v1.md` as pure read-only functions. No DB writes anywhere; no behavior change to the running app.
+
+- `legacy-shapes.ts` — narrow input types (`LegacyInvoiceGroupShape`, `LegacyClaimShape`) so the derivers don't import the full Drizzle row types. Anything in the api-server can pass `as LegacyInvoiceGroupShape` / `as LegacyClaimShape` without a runtime adapter.
+- `derive-phase.ts` — `derivePhaseFromLegacy(group): { phase, closureReason, prePhaseHint }`. Implements §6.1 deterministically: `reattestCompletedAt` set wins (closed/reattested), then `(Resolved, Non-Issue)` → closed/non_issue, `Expired` → closed/expired, `Denied` → closed/denied_by_payor, `(Resolved, Withdrawn)` carries `closureReason` forward (defaults to `cannot_dispute`), `On Hold` → triage, `MAS Eligible + reattestRequired` → awaiting_reattestation, `Awaiting Response` → submitted, `Ready to Review` → response_received, `Generating Email`/`Portal Queued`/`Processed` → ready_to_submit. `prePhaseHint` is reserved for the post-merge backfill (§6.1 last row computes it from audit_logs in Wave B).
+- `derive-disposition.ts` — `deriveDispositionFromLegacy(claim, parentPhase): ClaimDisposition`. Implements §6.2 first-match-wins: `duplicate_of_claim_id` always wins; the two-path collapse for non_issue/cannot_dispute is implemented (sopOutcome = non_issue ∪ dropReason = non_issue → `disposed_nonissue`); `includedInDispute=false` with no other signal → `disposed_nonissue` (auto-blank-sibling case from `excludeLegCore`); errorTypeId set with no SOP outcome → `classifying`; falls through to `unclassified`. Phase-aware: `response_received` adds the verdict-or-`awaiting_review` branch, `awaiting_reattestation` resolves the attestation_state queue (`pending`/`queued`/`completed`/`not_required` → `attest_*`), `closed` resolves `final_*` from `closure_reason` then falls back to outcome.
+
+39 tests in `__tests__/derivation.test.ts` covering: every triage `sopOutcome` value, both writer paths for non_issue/cannot_dispute, the 7 phase-mapping rules from §6.1, every Approved + attestation_state combination, and every `closed` closure-reason path. All pass; `tsc -b lib/observability lib/vocab lib/invoice-state` builds clean. Wired into root `tsconfig.json` references; depends on `@workspace/vocab` (workspace:* dep) and nothing else.
+
+**Wave A complete.** The three new packages (`@workspace/observability`, the disposition+phase additions to `@workspace/vocab`, `@workspace/invoice-state`) form the read+write vocabulary that Waves B-D wire into the running code:
+
+- **Wave B** writes the SQL migration that adds `invoice_groups.phase` + `claims.disposition` columns + the `invoice_phase` / `claim_disposition` Postgres enums + the deferrable `validate_disposition_against_phase()` trigger from spec §5.2 + a one-shot backfill that calls `derivePhaseFromLegacy` / `deriveDispositionFromLegacy` from migration JS to populate every existing row. The §B census audit (0 NULLs across 2,405 claims, 8 dispositions) is the precondition; this PR also re-runs the audit post-backfill to confirm 0 invalid (disposition, phase) pairs.
+- **Wave C** swaps every reader (UI label code, dashboard aggregates, queue filters, `lifecycle-phase.ts`, `macro-phase.ts`, `derive-leg-sub-status.ts`) to read from the new columns via the `lib/vocab` glossaries. Legacy columns stay populated by Wave D's dual-writer.
+- **Wave D** introduces `transitionInvoice` + `setClaimDisposition` + `maybeAdvanceInvoice` in `lib/invoice-state/src/transitions.ts`, rewires every existing writer (the 11 claim writers W1-W11 and 6 invoice writers G1-G6 catalogued in §1-§2 above) through the two new entry points, threads the `@workspace/observability` registry into every audit emit, and adds the `no-direct-status-write` lint rule (P8) once `lib/eslint-plugin-claimclear` is scaffolded.
+- **Wave E** drops `claims.{status,outcome,sop_outcome,attestation_state,drop_reason,dropped_at,ready_at,included_in_dispute}` and `invoice_groups.{status,outcome}` plus the `claim_status` and `claim_outcome` Postgres enums per spec §5.3. The dead vocab files (`claim-status.ts`, `outcome.ts`, `leg-sub-status.ts` excluded for now since per-leg surfaces still render leg-sub-status) get pruned in the same PR.

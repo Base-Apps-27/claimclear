@@ -11,7 +11,9 @@ export type VocabDomain =
   | "submission_stage"
   | "audit_action"
   | "verb"
-  | "verdict_outcome";
+  | "verdict_outcome"
+  | "invoice_phase"
+  | "claim_disposition";
 
 export interface GlossaryEntry {
   /** Underlying enum value (DB / OpenAPI). MUST NOT be displayed directly. */
