@@ -422,6 +422,26 @@ export function ClaimDetailV2({
 
   const groupIsPreSubmit = parentGroup?.macroPhase === "pre-submit";
 
+  // Task #470 — Pivot B1. Count OTHER legs in the same invoice group
+  // that the bulk SOP advance endpoint would consider "matching":
+  // parked at the same node, no terminal yet, included in dispute, not
+  // a sibling-duplicate. The actual eligibility (appliesPerInvoice on
+  // the node, no per-leg child step) is enforced server-side; this
+  // count just gates whether the "Apply to all matching legs" toggle is
+  // even shown — a 0 here always hides it.
+  const bulkSiblingCount = useMemo(() => {
+    if (!claim || claim.invoiceGroupId == null) return 0;
+    if (!claim.sopNodeId || claim.sopOutcome != null) return 0;
+    if (!parentGroup?.rides) return 0;
+    return parentGroup.rides.filter((r) =>
+      r.id !== claim.id &&
+      r.sopNodeId === claim.sopNodeId &&
+      r.sopOutcome == null &&
+      r.includedInDispute === true &&
+      r.duplicateOfClaimId == null,
+    ).length;
+  }, [claim, parentGroup?.rides]);
+
   const siblingPromptCandidate = useMemo(() => {
     if (!claim) return null;
     return siblingPromptEligibilityFor({
@@ -1324,6 +1344,7 @@ export function ClaimDetailV2({
                       ? { useDirectEmail: errorType.useDirectEmail ?? null }
                       : null
                   }
+                  bulkSiblingCount={bulkSiblingCount}
                   siblingPrompt={
                     siblingPromptCandidate
                       ? {

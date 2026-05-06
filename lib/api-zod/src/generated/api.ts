@@ -5708,6 +5708,428 @@ export const PromoteVerdictDraftsResponse = zod
   );
 
 /**
+ * Pivot B1 — Group-level SOP advance. Applies one decision-tree
+answer to every leg in the invoice group that is parked at the
+same SOP node, in one transaction. The node MUST be authored
+with `appliesPerInvoice = true` on the leg's error-type tree.
+
+A leg is "matching" iff:
+  - `included_in_dispute = true`
+  - `sop_outcome IS NULL` (no terminal stamped yet)
+  - `sop_node_id = body.nodeId`
+  - `duplicate_of_claim_id IS NULL`
+
+Non-matching legs are not failed — they're returned in `skipped`
+with a stable reason code so the operator UI can summarize the
+outcome without re-fetching.
+
+Side effects (per-leg MAS derivation, denormalized cache refresh,
+group derived-fields refresh, SSE broadcast) run after the
+transaction commits, mirroring the per-leg
+`POST /claims/{id}/sop-advance` endpoint.
+
+Returns 409 with `error: "no_eligible_legs"` when zero legs
+qualify (group has no children, or every leg ended up in
+`skipped`). Returns 403 for clerks (mutation-class endpoint).
+
+ * @summary Bulk-advance one SOP step across every matching leg in the group (Task
+ */
+export const GroupSopAdvanceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GroupSopAdvanceBody = zod
+  .object({
+    nodeId: zod
+      .string()
+      .describe("Decision-tree node id (matches `claims.sop_node_id`)."),
+    answer: zod.string().describe("One of the node's option labels."),
+    terminalSopOutcome: zod
+      .enum([
+        "portal_dispute",
+        "dispute",
+        "hold",
+        "cannot_dispute",
+        "non_issue",
+      ])
+      .optional()
+      .describe(
+        "Optional. When the chosen option is terminal, force this\noutcome on every eligible leg uniformly. Ignored on\nmid-walk steps. Partial terminal-step success across the\ngroup is not allowed — every eligible leg gets the same\noutcome or the call rolls back.\n",
+      ),
+  })
+  .describe(
+    'Body for `POST \/invoice-groups\/{id}\/sop-advance`. Same shape as\nthe per-leg endpoint: identifies the SOP node, the chosen\nanswer, and (optionally) a uniform `terminalSopOutcome` to stamp\nacross every eligible leg when the option is itself terminal.\nThe node must be authored with `appliesPerInvoice = true` on\nevery candidate leg\'s error-type decision tree — otherwise the\nendpoint hard-fails with `409 { code: \"node_not_bulk_eligible\" }`.\n',
+  );
+
+export const GroupSopAdvanceResponse = zod
+  .object({
+    succeeded: zod
+      .array(
+        zod.object({
+          id: zod.number(),
+          invoiceGroupId: zod.number().nullish(),
+          confNumber: zod.string(),
+          date: zod.string().nullish(),
+          refNumber: zod.string().nullish(),
+          clientNumber: zod.string().nullish(),
+          carNumber: zod.string().nullish(),
+          errorDetails: zod.string().nullish(),
+          errorTypeId: zod.string().nullish(),
+          errorTypeName: zod.string().nullish(),
+          claimAmount: zod.string().nullish(),
+          status: zod.enum([
+            "New",
+            "Needs Review",
+            "Needs Evidence",
+            "Processed",
+            "Portal Queued",
+            "Generating Email",
+            "Ready to Review",
+            "Awaiting Response",
+            "On Hold",
+            "Resolved",
+            "Denied",
+          ]),
+          outcome: zod.enum([
+            "Pending",
+            "Approved",
+            "Denied",
+            "Partially Approved",
+            "Non-Issue",
+            "Withdrawn",
+          ]),
+          closureReason: zod
+            .union([
+              zod.literal("denied_by_payor"),
+              zod.literal("cannot_dispute"),
+              zod.literal("non_issue"),
+              zod.literal(null),
+            ])
+            .nullish(),
+          closureCategory: zod.string().nullish(),
+          closureCategoryOther: zod.string().nullish(),
+          closureRootCause: zod.string().nullish(),
+          closureRootCauseOther: zod.string().nullish(),
+          closureNarrative: zod.string().nullish(),
+          closureAccountabilityTags: zod.array(zod.string()).nullish(),
+          closureAccountabilityOther: zod.string().nullish(),
+          closureDrivers: zod
+            .array(
+              zod
+                .object({
+                  name: zod.string(),
+                  id: zod.string().nullish(),
+                })
+                .describe(
+                  "A person referenced from a structured closure (driver\/dispatcher).",
+                ),
+            )
+            .nullish(),
+          closureDispatchers: zod
+            .array(
+              zod
+                .object({
+                  name: zod.string(),
+                  id: zod.string().nullish(),
+                })
+                .describe(
+                  "A person referenced from a structured closure (driver\/dispatcher).",
+                ),
+            )
+            .nullish(),
+          closureCommunicatedTo: zod.string().nullish(),
+          closureReviewState: zod
+            .union([
+              zod.literal("pending"),
+              zod.literal("acknowledged"),
+              zod.literal("needs_revisit"),
+              zod.literal("resolved"),
+              zod.literal(null),
+            ])
+            .nullish(),
+          closureAddressedAt: zod.string().nullish(),
+          closureAddressedBy: zod.string().nullish(),
+          closureAddressedByEmail: zod.string().nullish(),
+          closureReviewNotes: zod.string().nullish(),
+          triageNotes: zod.string().nullish(),
+          triagedAt: zod.string().nullish(),
+          approvedAmount: zod.string().nullish(),
+          invoiceNumbers: zod.string().nullish(),
+          payorEmail: zod.string().nullish(),
+          disputeEmailSent: zod.boolean(),
+          disputeEmailSentAt: zod.string().nullish(),
+          importBatch: zod.string().nullish(),
+          evidenceFiles: zod
+            .array(
+              zod
+                .object({
+                  url: zod
+                    .string()
+                    .describe(
+                      "Object-storage URL for the attachment. The bot worker only forwards URLs that start with `\/objects\/` (anything else is dropped to prevent uncontrolled outbound requests).",
+                    ),
+                  name: zod
+                    .string()
+                    .nullish()
+                    .describe(
+                      "Original filename. Optional; the drawer falls back to deriving a name from the URL when not present.",
+                    ),
+                  size: zod
+                    .number()
+                    .nullish()
+                    .describe(
+                      "File size in bytes. Optional; rendered as `47 KB` \/ `2.3 MB` chips next to attachments in the submission drawer.",
+                    ),
+                })
+                .describe(
+                  "Single attachment row stored on a claim's, invoice group's, or\nportal submission's `evidenceFiles` JSONB column. The row points\nat an object-storage URL plus optional rendering metadata. The\nbot worker (via `collectGroupEvidenceUrls` in\n`routes\/portal-submissions.ts`) and the submission preview\ndrawer (`portal-submission-drawer.tsx`) both read this shape.\n",
+                ),
+            )
+            .nullish()
+            .describe(
+              "Per-leg attachment list. JSONB array of file references stored alongside the canonical `claim_evidence` rows; the bot worker reads both sources via `collectGroupEvidenceUrls`. Null on legacy rows with no attachments.",
+            ),
+          evidenceNotes: zod.string().nullish(),
+          evidenceChecklist: zod
+            .record(zod.string(), zod.boolean())
+            .nullish()
+            .describe(
+              "Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read\/write it without `as unknown` casts. Null = no checklist captured.",
+            ),
+          generatedEmailSubject: zod.string().nullish(),
+          generatedEmailBody: zod.string().nullish(),
+          generatedEmailAt: zod.string().nullish(),
+          holdReason: zod.string().nullish(),
+          holdPendingFrom: zod.string().nullish(),
+          holdPlacedAt: zod.string().nullish(),
+          attestationState: zod
+            .enum(["not_required", "pending", "queued", "completed"])
+            .describe(
+              "Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.",
+            ),
+          attestedAt: zod.string().nullish(),
+          attestedBy: zod.string().nullish(),
+          attestationNote: zod.string().nullish(),
+          attestationQueuedAt: zod.string().nullish(),
+          attestationQueuedBy: zod.string().nullish(),
+          includedInDispute: zod
+            .boolean()
+            .describe(
+              "False when the leg is intentionally excluded from any dispute submission for its parent invoice group (a clean leg riding alongside disputed siblings).",
+            ),
+          duplicateOfClaimId: zod
+            .number()
+            .nullish()
+            .describe(
+              "When set, this leg is a Sibling Duplicate that rides along with a primary leg in the same invoice group whose error type is trip-overriding (e.g. eligibility lapse). The leg derives sub-status `duplicate` and contributes no independent SOP\/verdict to the dispute.",
+            ),
+          sopNodeId: zod
+            .string()
+            .nullish()
+            .describe(
+              "ID of the current decision-tree node the leg is parked on. Null until the operator opens the SOP walk.",
+            ),
+          sopOutcome: zod
+            .union([
+              zod.literal("portal_dispute"),
+              zod.literal("dispute"),
+              zod.literal("hold"),
+              zod.literal("cannot_dispute"),
+              zod.literal("non_issue"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.",
+            ),
+          dropReason: zod
+            .union([
+              zod.literal("cannot_dispute"),
+              zod.literal("non_issue"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.",
+            ),
+          readyAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "Stamp of when the leg flipped to `ready` sub-status (sopOutcome=`portal_dispute|dispute`).",
+            ),
+          droppedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe("Stamp of when the leg flipped to `dropped` sub-status."),
+          perLegContext: zod
+            .string()
+            .nullish()
+            .describe(
+              "Operator-authored narrative specific to this leg, used by the dispute write-up assembly.",
+            ),
+          sopAnswers: zod
+            .array(
+              zod.object({
+                nodeId: zod
+                  .string()
+                  .describe(
+                    "ID of the decision-tree node the operator answered.",
+                  ),
+                answer: zod
+                  .string()
+                  .describe("Operator's recorded answer, verbatim."),
+                ts: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    "ISO timestamp of when the answer was recorded. Optional on legacy rows.",
+                  ),
+              }),
+            )
+            .optional()
+            .describe(
+              "Append-only audit trail of the operator's SOP walk on this leg. Each row records a decision-tree node and the answer the operator gave; rerunning the walk appends new rows rather than mutating prior ones. Persisted as a jsonb column with default `[]`, so the field is always present (never null). The leg-detail page renders these via `buildSopTranscript` to show the read-only SOP walk transcript.",
+            ),
+          masActionRequired: zod
+            .union([
+              zod.literal("cancel"),
+              zod.literal("none"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.",
+            ),
+          masActionCompletedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "Operator-confirmed completion stamp for the MAS action.",
+            ),
+          masActionCompletedBy: zod.string().nullish(),
+          masActionNote: zod.string().nullish(),
+          latestVerdict: zod
+            .union([
+              zod.object({
+                id: zod.number(),
+                claimId: zod.number(),
+                source: zod.string(),
+                outcome: zod.string(),
+                note: zod.string().nullish(),
+                confidence: zod.string().nullish(),
+                reasoning: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+                createdBy: zod.string().nullish(),
+                inspectionTimeMs: zod.number().nullish(),
+              }),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Latest row from `claim_verdict` regardless of source. Only populated by the invoice-group detail endpoint so the picker can render with one fetch.",
+            ),
+          latestAiSuggestion: zod
+            .union([
+              zod.object({
+                id: zod.number(),
+                claimId: zod.number(),
+                source: zod.string(),
+                outcome: zod.string(),
+                note: zod.string().nullish(),
+                confidence: zod.string().nullish(),
+                reasoning: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+                createdBy: zod.string().nullish(),
+                inspectionTimeMs: zod.number().nullish(),
+              }),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Latest `ai_suggested` row from `claim_verdict`. Only populated by the invoice-group detail endpoint.",
+            ),
+          latestDraft: zod
+            .union([
+              zod.object({
+                id: zod.number(),
+                claimId: zod.number(),
+                source: zod.string(),
+                outcome: zod.string(),
+                note: zod.string().nullish(),
+                confidence: zod.string().nullish(),
+                reasoning: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+                createdBy: zod.string().nullish(),
+                inspectionTimeMs: zod.number().nullish(),
+              }),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Latest `operator_draft` row from `claim_verdict` (Task #343). The draft selection that lights up Step 3 of the Responses Awaiting Review picker before Step 4 is committed. Only populated by the invoice-group detail endpoint.",
+            ),
+          createdAt: zod.string().optional(),
+          updatedAt: zod.string().optional(),
+          effectiveDaysLeft: zod
+            .number()
+            .nullish()
+            .describe(
+              "Calendar days until the effective filing deadline (weekend deadlines shift back to Friday). Null when no service date. Only populated by list endpoints.",
+            ),
+          isUrgent: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when the effective filing deadline is today or earlier — must be filed today, cannot wait until tomorrow. Only populated by list endpoints.",
+            ),
+          submittedStuck: zod
+            .boolean()
+            .optional()
+            .describe(
+              'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+            ),
+        }),
+      )
+      .describe(
+        "Full updated `ClaimResponse` rows for every leg that advanced.",
+      ),
+    skipped: zod.array(
+      zod.object({
+        id: zod.number().describe("claims.id of the skipped leg."),
+        ref: zod
+          .string()
+          .describe(
+            "Human-friendly leg reference (`confNumber` or `CLM-{id}` fallback).",
+          ),
+        reason: zod
+          .enum([
+            "wrong_node",
+            "already_terminal",
+            "excluded_from_dispute",
+            "sibling_duplicate",
+          ])
+          .describe(
+            'Stable reason code explaining why a leg was not advanced by the\nbulk endpoint. `node_not_bulk_eligible` is NOT a per-leg skip\nreason — when the node fails the bulk-eligibility pre-check the\nendpoint hard-fails with `409 { code: \"node_not_bulk_eligible\" }`\ninstead of degrading to a per-leg skip.\n',
+          ),
+      }),
+    ),
+    code: zod
+      .enum(["no_eligible_legs", "node_not_bulk_eligible"])
+      .optional()
+      .describe("Present only on a 409 response."),
+    reason: zod
+      .string()
+      .optional()
+      .describe(
+        "Human-readable detail for the 409 `node_not_bulk_eligible` response.",
+      ),
+  })
+  .describe(
+    "Result payload for `POST \/invoice-groups\/{id}\/sop-advance`. On\nthe 409 `no_eligible_legs` path `succeeded` is an empty array\nand `code` is set; the same shape lets the client render the\nskipped breakdown without branching on status.\n",
+  );
+
+/**
  * @summary List evidence collected for an invoice group
  */
 export const ListInvoiceGroupEvidenceParams = zod.object({

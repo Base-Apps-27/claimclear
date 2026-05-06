@@ -874,6 +874,67 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /invoice-groups/{id}/sop-advance:
+    post:
+      operationId: groupSopAdvance
+      tags: [invoice-groups]
+      summary: Bulk-advance one SOP step across every matching leg in the group (Task #470).
+      description: |
+        Pivot B1 — Group-level SOP advance. Applies one decision-tree
+        answer to every leg in the invoice group that is parked at the
+        same SOP node, in one transaction. The node MUST be authored
+        with `appliesPerInvoice = true` on the leg's error-type tree.
+
+        A leg is "matching" iff:
+          - `included_in_dispute = true`
+          - `sop_outcome IS NULL` (no terminal stamped yet)
+          - `sop_node_id = body.nodeId`
+          - `duplicate_of_claim_id IS NULL`
+
+        Non-matching legs are not failed — they're returned in `skipped`
+        with a stable reason code so the operator UI can summarize the
+        outcome without re-fetching.
+
+        Side effects (per-leg MAS derivation, denormalized cache refresh,
+        group derived-fields refresh, SSE broadcast) run after the
+        transaction commits, mirroring the per-leg
+        `POST /claims/{id}/sop-advance` endpoint.
+
+        Returns 409 with `error: "no_eligible_legs"` when zero legs
+        qualify (group has no children, or every leg ended up in
+        `skipped`). Returns 403 for clerks (mutation-class endpoint).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkSopAdvanceBody"
+      responses:
+        "200":
+          description: Bulk advance applied. `succeeded` lists the legs that advanced; `skipped` lists the rest with a reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkSopAdvanceResponse"
+        "400":
+          description: Body validation failed (missing nodeId/answer or invalid id).
+        "403":
+          description: Caller is a clerk and cannot run bulk SOP actions.
+        "404":
+          description: Invoice group not found.
+        "409":
+          description: No eligible legs to advance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkSopAdvanceResponse"
+
   /invoice-groups/{id}/evidence:
     get:
       operationId: listInvoiceGroupEvidence
@@ -6154,6 +6215,87 @@ components:
         clearedCount:
           type: integer
           description: Number of `operator_draft` rows hard-deleted in this call.
+
+    BulkSopAdvanceBody:
+      type: object
+      required: [nodeId, answer]
+      description: |
+        Body for `POST /invoice-groups/{id}/sop-advance`. Same shape as
+        the per-leg endpoint: identifies the SOP node, the chosen
+        answer, and (optionally) a uniform `terminalSopOutcome` to stamp
+        across every eligible leg when the option is itself terminal.
+        The node must be authored with `appliesPerInvoice = true` on
+        every candidate leg's error-type decision tree — otherwise the
+        endpoint hard-fails with `409 { code: "node_not_bulk_eligible" }`.
+      properties:
+        nodeId:
+          type: string
+          description: Decision-tree node id (matches `claims.sop_node_id`).
+        answer:
+          type: string
+          description: One of the node's option labels.
+        terminalSopOutcome:
+          type: string
+          enum: [portal_dispute, dispute, hold, cannot_dispute, non_issue]
+          description: |
+            Optional. When the chosen option is terminal, force this
+            outcome on every eligible leg uniformly. Ignored on
+            mid-walk steps. Partial terminal-step success across the
+            group is not allowed — every eligible leg gets the same
+            outcome or the call rolls back.
+
+    BulkSopAdvanceSkippedReason:
+      type: string
+      enum:
+        - wrong_node
+        - already_terminal
+        - excluded_from_dispute
+        - sibling_duplicate
+      description: |
+        Stable reason code explaining why a leg was not advanced by the
+        bulk endpoint. `node_not_bulk_eligible` is NOT a per-leg skip
+        reason — when the node fails the bulk-eligibility pre-check the
+        endpoint hard-fails with `409 { code: "node_not_bulk_eligible" }`
+        instead of degrading to a per-leg skip.
+
+    BulkSopAdvanceSkippedLeg:
+      type: object
+      required: [id, ref, reason]
+      properties:
+        id:
+          type: integer
+          description: claims.id of the skipped leg.
+        ref:
+          type: string
+          description: Human-friendly leg reference (`confNumber` or `CLM-{id}` fallback).
+        reason:
+          $ref: "#/components/schemas/BulkSopAdvanceSkippedReason"
+
+    BulkSopAdvanceResponse:
+      type: object
+      required: [succeeded, skipped]
+      description: |
+        Result payload for `POST /invoice-groups/{id}/sop-advance`. On
+        the 409 `no_eligible_legs` path `succeeded` is an empty array
+        and `code` is set; the same shape lets the client render the
+        skipped breakdown without branching on status.
+      properties:
+        succeeded:
+          type: array
+          description: Full updated `ClaimResponse` rows for every leg that advanced.
+          items:
+            $ref: "#/components/schemas/ClaimResponse"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkSopAdvanceSkippedLeg"
+        code:
+          type: string
+          enum: [no_eligible_legs, node_not_bulk_eligible]
+          description: Present only on a 409 response.
+        reason:
+          type: string
+          description: Human-readable detail for the 409 `node_not_bulk_eligible` response.
 
     PromoteVerdictDraftsResponse:
       type: object

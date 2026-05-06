@@ -26,6 +26,22 @@ export interface TreeNode {
   instructionLinkLabel?: string;
   options: TreeOption[];
   evidenceRequirements?: EvidenceReq[];
+  // Task #470 — Pivot B1. When true, this node is a pure operator
+  // decision: every leg in the same invoice will land at the same
+  // next node when the operator answers it. Mutually exclusive with
+  // any per-leg evidence/context requirement on this node OR its
+  // immediate descendants — see validateAppliesPerInvoice() below.
+  // The bulk endpoint POST /invoice-groups/:id/sop-advance refuses
+  // to act on any node where this flag is not literally true.
+  appliesPerInvoice?: boolean;
+  // Task #470 — paired flag declaring "this step needs per-leg
+  // context" (e.g. a free-form note, a per-leg attestation). Distinct
+  // from evidenceRequirements (which are uploads / structured items)
+  // so authors can mark a node "needs the operator to type something
+  // unique per leg" without having to add a fake evidence row. The
+  // validator below treats this exactly like evidence: if it's true,
+  // appliesPerInvoice on the same node MUST be false.
+  requiresPerLegContext?: boolean;
 }
 
 export interface TreeOption {
@@ -236,6 +252,64 @@ export function countPaths(tree: DecisionTree, nodeId?: string): number {
     }
   }
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// Task #470 — Group-level SOP advance authoring guard.
+//
+// `appliesPerInvoice` is a "this answer is the same for every leg" flag
+// authored on a TreeNode. Marking a node bulk-eligible only makes sense
+// when nothing on that step requires per-leg input; otherwise the bulk
+// endpoint would silently skip the per-leg work the operator was meant
+// to do. The guard rejects bulk authoring when:
+//
+//   1. The node itself carries `evidenceRequirements` (operator must
+//      upload something for this leg).
+//   2. The node itself sets `requiresPerLegContext` (operator must type
+//      something unique for this leg).
+//   3. ANY immediate child reachable through this node's options has
+//      `evidenceRequirements` or `requiresPerLegContext` set. We only
+//      look one level down — the bulk endpoint advances by exactly one
+//      step, so the "next step the operator lands on" is what matters.
+//
+// Returns one entry per offending node. The caller (the editor + the
+// error-types save handler) surfaces these as inline errors and refuses
+// the save until they're cleared.
+// ---------------------------------------------------------------------------
+
+export interface AppliesPerInvoiceViolation {
+  nodeId: string;
+  reason:
+    | "node_has_evidence"
+    | "node_requires_per_leg_context"
+    | "child_has_evidence"
+    | "child_requires_per_leg_context";
+  offendingNodeId: string;
+}
+
+export function validateAppliesPerInvoice(tree: DecisionTree): AppliesPerInvoiceViolation[] {
+  const violations: AppliesPerInvoiceViolation[] = [];
+  for (const node of tree.nodes) {
+    if (node.appliesPerInvoice !== true) continue;
+    if ((node.evidenceRequirements?.length ?? 0) > 0) {
+      violations.push({ nodeId: node.id, reason: "node_has_evidence", offendingNodeId: node.id });
+    }
+    if (node.requiresPerLegContext === true) {
+      violations.push({ nodeId: node.id, reason: "node_requires_per_leg_context", offendingNodeId: node.id });
+    }
+    for (const opt of node.options) {
+      if (!opt.childId) continue;
+      const child = tree.nodes.find((n) => n.id === opt.childId);
+      if (!child) continue;
+      if ((child.evidenceRequirements?.length ?? 0) > 0) {
+        violations.push({ nodeId: node.id, reason: "child_has_evidence", offendingNodeId: child.id });
+      }
+      if (child.requiresPerLegContext === true) {
+        violations.push({ nodeId: node.id, reason: "child_requires_per_leg_context", offendingNodeId: child.id });
+      }
+    }
+  }
+  return violations;
 }
 
 // ---------------------------------------------------------------------------

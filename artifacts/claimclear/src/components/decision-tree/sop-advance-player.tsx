@@ -68,8 +68,13 @@ import { PerLegContextEditor } from "./per-leg-context-editor";
 import {
   useListClaimEvidence,
   getListClaimEvidenceQueryKey,
+  useGroupSopAdvance,
 } from "@workspace/api-client-react";
-import type { ClaimEvidenceResponse } from "@workspace/api-client-react";
+import type {
+  ClaimEvidenceResponse,
+  ClaimResponse,
+  BulkSopAdvanceResponse,
+} from "@workspace/api-client-react";
 import {
   ALLOWED_EVIDENCE_TYPES,
   MAX_EVIDENCE_SIZE,
@@ -110,6 +115,13 @@ interface BaseProps {
   errorType?: ErrorTypeChannelInput | null;
   /** Live mode only. Sibling-detection prompt above the first question. */
   siblingPrompt?: Omit<SiblingDuplicatePromptProps, "legId" | "invoiceGroupId"> | null;
+  /** Task #470 — Pivot B1. Number of OTHER legs in the same invoice
+   *  group that are parked at this same SOP node, included in dispute,
+   *  not terminal, and not sibling-duplicates. The "Apply to all
+   *  matching legs" checkbox is rendered iff
+   *  `currentNode.appliesPerInvoice === true` AND this is `> 0` AND the
+   *  current leg has an invoiceGroupId. Live mode only. */
+  bulkSiblingCount?: number;
 }
 
 interface LiveProps extends BaseProps {
@@ -202,7 +214,7 @@ function synthesizePreviewLeg(state: {
 }
 
 export function SopAdvancePlayer(props: Props) {
-  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt } = props;
+  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt, bulkSiblingCount = 0 } = props;
   const isPreview = props.mode === "preview";
   const qc = useQueryClient();
   const disabled = !!disabledReason;
@@ -453,6 +465,16 @@ export function SopAdvancePlayer(props: Props) {
     });
   }
 
+  // Task #470 — Pivot B1. Local toggle for the per-step "Apply to all
+  // matching legs" checkbox. Reset to false whenever the leg or the
+  // current node changes — a one-shot opt-in, never sticky.
+  const [bulkApply, setBulkApply] = useState(false);
+  const currentNodeIdForReset = !isPreview ? leg.sopNodeId ?? null : null;
+  const legIdForReset = !isPreview ? leg.id : 0;
+  React.useEffect(() => {
+    setBulkApply(false);
+  }, [legIdForReset, currentNodeIdForReset]);
+
   const advanceMutation = useMutation({
     mutationFn: async ({ nodeId, answer }: { nodeId: string; answer: string }) => {
       // Persist evidence FIRST so the leg page's existing evidence card
@@ -498,6 +520,99 @@ export function SopAdvancePlayer(props: Props) {
     },
     onSettled: () => setPendingAnswer(null),
   });
+
+  // Task #470 — Pivot B1. Bulk advance for matching legs in the parent
+  // group. Uses the generated useGroupSopAdvance hook so the body /
+  // response shape stays in lock-step with openapi.yaml. The toast
+  // surfaces a truncated-at-5 list of skipped refs so the operator can
+  // pivot without leaving the page.
+  const bulkAdvanceMutation = useGroupSopAdvance<Error>({
+    mutation: {
+      onSuccess: async (result: BulkSopAdvanceResponse) => {
+        if (currentNode) clearPendingForNode(currentNode.id);
+        qc.invalidateQueries({ queryKey: ["claim", leg.id] });
+        qc.invalidateQueries({ queryKey: ["claims"] });
+        qc.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(leg.id) });
+        if (leg.invoiceGroupId != null) {
+          qc.invalidateQueries({ queryKey: ["invoice-group", leg.invoiceGroupId] });
+          qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+        }
+        const succeeded = result.succeeded ?? [];
+        // Invalidate every affected sibling leg's detail+evidence keys so
+        // open detail views in other tabs/panels reflect the new state
+        // without a manual refresh.
+        for (const c of succeeded as ClaimResponse[]) {
+          if (c.id === leg.id) continue;
+          qc.invalidateQueries({ queryKey: ["claim", c.id] });
+          qc.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(c.id) });
+        }
+        const skipped = result.skipped ?? [];
+        const truncatedRefs = skipped.slice(0, 5).map((s) => s.ref);
+        const skippedDescription = skipped.length === 0
+          ? undefined
+          : skipped.length <= 5
+            ? `Skipped: ${truncatedRefs.join(", ")}`
+            : `Skipped: ${truncatedRefs.join(", ")} +${skipped.length - 5} more`;
+        toast({
+          title: `Applied to ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"}` +
+            (skipped.length > 0 ? ` (skipped ${skipped.length})` : ""),
+          description: skippedDescription,
+        });
+        // The succeeded array is full ClaimResponse[] — find our leg by
+        // id to drive the parent page reaction (terminal vs mid-walk).
+        const mine = (succeeded as ClaimResponse[]).find((c) => c.id === leg.id);
+        if (mine) {
+          onAdvanced?.({
+            isTerminal: mine.sopOutcome != null,
+            sopOutcome: mine.sopOutcome ?? null,
+          });
+        }
+        setBulkApply(false);
+        setPendingAnswer(null);
+      },
+      onError: (err: Error) => {
+        // The generated mutation surfaces the server's `code` /
+        // `reason` body via err.message when orval-fetch is configured
+        // for it. Fall back to the raw message otherwise.
+        const raw = err.message ?? "";
+        let title = "Could not bulk-advance the SOP";
+        let description = raw;
+        if (raw.includes("node_not_bulk_eligible")) {
+          title = "Bulk advance not available for this step";
+          description = "This SOP step needs a per-leg answer or per-leg evidence. Uncheck \"Apply to all matching legs\" to continue.";
+        } else if (raw.includes("no_eligible_legs")) {
+          title = "No matching legs to advance";
+          description = "Use a per-leg advance instead.";
+        }
+        toast({ title, description, variant: "destructive" });
+        setPendingAnswer(null);
+      },
+    },
+  });
+
+  // Wrapper that mirrors the previous .mutate({nodeId,answer}) shape so
+  // existing call-sites don't have to change. Persists current-node
+  // evidence first so the bulk advance doesn't out-race the upload.
+  const triggerBulkAdvance = useCallback(
+    async ({ nodeId, answer }: { nodeId: string; answer: string }) => {
+      if (isPreview) return;
+      const groupId = leg.invoiceGroupId;
+      if (groupId == null) {
+        toast({
+          title: "Could not bulk-advance the SOP",
+          description: "Leg has no invoice group.",
+          variant: "destructive",
+        });
+        setPendingAnswer(null);
+        return;
+      }
+      if (currentNode) {
+        await persistEvidenceForCurrentNode(currentNode);
+      }
+      bulkAdvanceMutation.mutate({ id: groupId, data: { nodeId, answer } });
+    },
+    [bulkAdvanceMutation, currentNode, isPreview, leg.invoiceGroupId, persistEvidenceForCurrentNode, toast],
+  );
 
   // Required-evidence gate for the current node. The operator cannot
   // advance until every required req has real content (image or notes).
@@ -577,7 +692,7 @@ export function SopAdvancePlayer(props: Props) {
   const handleChoice = useCallback(
     (answer: string) => {
       if (!currentNode || disabled) return;
-      if (!isPreview && advanceMutation.isPending) return;
+      if (!isPreview && (advanceMutation.isPending || bulkAdvanceMutation.isPending)) return;
       if (!evidenceReady) {
         toast({
           title: "Required evidence missing",
@@ -598,9 +713,35 @@ export function SopAdvancePlayer(props: Props) {
         return;
       }
       setPendingAnswer(answer);
+      // Task #470 — Pivot B1. If the operator opted into "Apply to all
+      // matching legs" AND the current node is bulk-eligible AND there
+      // are sibling legs, route through the group endpoint. Otherwise
+      // fall through to the per-leg path unchanged.
+      if (
+        bulkApply &&
+        currentNode.appliesPerInvoice === true &&
+        bulkSiblingCount > 0 &&
+        leg.invoiceGroupId != null
+      ) {
+        void triggerBulkAdvance({ nodeId: currentNode.id, answer });
+        return;
+      }
       advanceMutation.mutate({ nodeId: currentNode.id, answer });
     },
-    [currentNode, disabled, isPreview, advanceMutation, evidenceReady, anyUploading, handlePreviewAdvance],
+    [
+      currentNode,
+      disabled,
+      isPreview,
+      advanceMutation,
+      bulkAdvanceMutation,
+      triggerBulkAdvance,
+      evidenceReady,
+      anyUploading,
+      handlePreviewAdvance,
+      bulkApply,
+      bulkSiblingCount,
+      leg,
+    ],
   );
 
   // ---- Preview mode: simple inline outcome card --------------------
@@ -855,14 +996,20 @@ export function SopAdvancePlayer(props: Props) {
 
           <div className="space-y-1.5">
             {currentNode.options?.map((opt, i) => {
-              const isPending = !isPreview && advanceMutation.isPending && pendingAnswer === opt.label;
+              const isPending = !isPreview &&
+                (advanceMutation.isPending || bulkAdvanceMutation.isPending) &&
+                pendingAnswer === opt.label;
               const blockedByEvidence = !evidenceReady || anyUploading;
               return (
                 <Button
                   key={`${currentNode.id}-${i}`}
                   variant="outline"
                   className="w-full justify-between text-left h-auto py-2.5"
-                  disabled={disabled || (!isPreview && advanceMutation.isPending) || blockedByEvidence}
+                  disabled={
+                    disabled ||
+                    (!isPreview && (advanceMutation.isPending || bulkAdvanceMutation.isPending)) ||
+                    blockedByEvidence
+                  }
                   onClick={() => handleChoice(opt.label)}
                   data-testid={`sop-option-${i}`}
                 >
@@ -875,6 +1022,38 @@ export function SopAdvancePlayer(props: Props) {
                 </Button>
               );
             })}
+            {/* Task #470 — Pivot B1. The opt-in is rendered ONLY when the
+                node is authored bulk-eligible, the leg has a parent group,
+                and there are matching sibling legs to advance. Reset to
+                false on every leg/node change. */}
+            {!isPreview &&
+              currentNode.appliesPerInvoice === true &&
+              bulkSiblingCount > 0 &&
+              leg.invoiceGroupId != null && (
+                <label
+                  className="flex items-start gap-2 mt-2 p-2 rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 cursor-pointer"
+                  data-testid="sop-bulk-apply-toggle"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={bulkApply}
+                    onChange={(e) => setBulkApply(e.target.checked)}
+                    disabled={
+                      disabled ||
+                      advanceMutation.isPending ||
+                      bulkAdvanceMutation.isPending
+                    }
+                  />
+                  <span className="text-xs text-blue-900 dark:text-blue-200 leading-snug">
+                    <span className="font-medium">Apply to all matching legs</span>
+                    {" — "}
+                    {bulkSiblingCount} other leg{bulkSiblingCount === 1 ? "" : "s"} in this
+                    invoice {bulkSiblingCount === 1 ? "is" : "are"} parked at this same step.
+                    Choosing an answer below will apply it to every matching leg in one go.
+                  </span>
+                </label>
+              )}
           </div>
 
           {disabled && disabledReason && (

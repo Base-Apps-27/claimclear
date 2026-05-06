@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
@@ -31,6 +31,7 @@ import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/ex
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
 import { denyClerk } from "../middlewares/denyClerk";
+import { requireAuth } from "../middlewares/requireAuth";
 import {
   generatePortalDraftForGroup,
   GroupNotFoundError,
@@ -2748,6 +2749,382 @@ router.post("/invoice-groups/:id/promote-verdict-drafts", asyncHandler(async (re
   emitGroupEvent(id, "verdict_drafts_promoted", req);
 
   res.json({ promotedCount: promotedClaimIds.length, promotedClaimIds });
+}));
+
+// Task #470 — Pivot B1 — Group-level SOP advance for matching legs.
+//
+// POST /invoice-groups/:id/sop-advance
+//
+// Body: { nodeId: string, answer: string,
+//         terminalSopOutcome?: "portal_dispute"|"dispute"|"hold"|
+//                              "cannot_dispute"|"non_issue" }
+//
+// Bulk-applies one SOP step to every "matching" leg in the group.
+//
+// PRE-CHECK (defence-in-depth, three-layer opt-in):
+//   1. Author flagged the node `appliesPerInvoice = true`.
+//   2. Operator opted in via the UI.
+//   3. THIS server-side check verifies the flag at runtime AND that the
+//      chosen option's child step doesn't itself open evidence /
+//      per-leg context. If either fails, the call HARD-FAILS with
+//      `409 { code: "node_not_bulk_eligible" }`. We never silently
+//      downgrade to a per-leg path.
+//
+// MATCHING legs (advanced inside one db.transaction):
+//   - includedInDispute = true
+//   - sopOutcome IS NULL
+//   - sopNodeId = req.body.nodeId
+//   - duplicateOfClaimId IS NULL (sibling-duplicates follow their
+//     primary; reported in `skipped` with reason "sibling_duplicate")
+//
+// SKIPPED reasons (per-leg):
+//   - wrong_node               leg's sopNodeId no longer matches
+//   - already_terminal         sopOutcome already stamped
+//   - excluded_from_dispute    includedInDispute=false
+//   - sibling_duplicate        leg follows another leg as a duplicate
+//
+// All DB writes — leg updates, per-leg `leg_sop_advanced` audits,
+// per-leg `leg.sop_advanced` state events, and the umbrella
+// `group_sop_advanced_bulk` audit — run inside the SAME txn. If any
+// per-leg write fails the entire call rolls back and 500s. Cache
+// refresh + MAS derivations + SSE broadcasts are post-commit (they're
+// not transactional state we'd want to roll back).
+type BulkSkipReason =
+  | "wrong_node"
+  | "already_terminal"
+  | "excluded_from_dispute"
+  | "sibling_duplicate";
+
+type SopBulkTreeOption = {
+  label: string;
+  childId?: string;
+  outcomeType?: string;
+};
+type SopBulkTreeNode = {
+  id: string;
+  question: string;
+  options: SopBulkTreeOption[];
+  appliesPerInvoice?: boolean;
+  requiresPerLegContext?: boolean;
+  evidenceRequirements?: Array<unknown>;
+};
+type SopBulkTree = {
+  rootId: string;
+  nodes: SopBulkTreeNode[];
+};
+
+const SOP_BULK_DROP_REASONS = new Set(["cannot_dispute", "non_issue"]);
+const SOP_BULK_READY_REASONS = new Set(["portal_dispute", "dispute"]);
+const SOP_BULK_TERMINAL_OUTCOMES = new Set([
+  "portal_dispute", "dispute", "hold", "cannot_dispute", "non_issue",
+]);
+
+function mapBulkOutcome(o: string | undefined | null): string | null {
+  switch (o) {
+    case "portal_dispute": return "portal_dispute";
+    case "dispute": return "dispute";
+    case "hold": return "hold";
+    case "internal": return "cannot_dispute";
+    case "cannot_dispute": return "cannot_dispute";
+    case "non_issue": return "non_issue";
+    default: return null;
+  }
+}
+
+function legRef(leg: typeof claimsTable.$inferSelect): string {
+  return leg.confNumber || `CLM-${leg.id}`;
+}
+
+// Test seam — set `failUmbrellaAuditOnce = true` from a test to force
+// the next umbrella-audit insert in the bulk endpoint to throw, then
+// the flag auto-resets. Production code never sets this.
+export const BULK_SOP_TEST_HOOKS = { failUmbrellaAuditOnce: false };
+
+router.post("/invoice-groups/:id/sop-advance", requireAuth, denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const nodeId = (req.body?.nodeId ?? "") as string;
+  const answer = (req.body?.answer ?? "") as string;
+  const terminalSopOutcomeRaw = req.body?.terminalSopOutcome;
+  if (!nodeId || !answer) {
+    res.status(400).json({ error: "nodeId and answer are required" });
+    return;
+  }
+  let terminalSopOutcome: string | null = null;
+  if (terminalSopOutcomeRaw !== undefined && terminalSopOutcomeRaw !== null) {
+    if (typeof terminalSopOutcomeRaw !== "string" || !SOP_BULK_TERMINAL_OUTCOMES.has(terminalSopOutcomeRaw)) {
+      res.status(400).json({ error: "terminalSopOutcome must be one of portal_dispute|dispute|hold|cannot_dispute|non_issue" });
+      return;
+    }
+    terminalSopOutcome = terminalSopOutcomeRaw;
+  }
+
+  // Pull every leg in the group in one shot. We classify locally so
+  // each non-matching leg can be reported back with a stable skip reason
+  // alongside its confNumber ref.
+  const legs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
+
+  // Cache decision-tree lookups across the whole route so a 200-leg
+  // group with five distinct trees only loads each one once.
+  const treeCache = new Map<string, SopBulkTree | null>();
+  async function loadTreeFor(errorTypeId: string): Promise<SopBulkTree | null> {
+    if (treeCache.has(errorTypeId)) return treeCache.get(errorTypeId)!;
+    const [row] = await db
+      .select({ decisionTree: errorTypesTable.decisionTree })
+      .from(errorTypesTable)
+      .where(eq(errorTypesTable.id, Number(errorTypeId)));
+    const tree = (row?.decisionTree as unknown as SopBulkTree | null) ?? null;
+    treeCache.set(errorTypeId, tree);
+    return tree;
+  }
+
+  // ---- Pre-check (independent of candidate count). --------------------
+  // The defence-in-depth contract says: if the requested node is NOT
+  // bulk-eligible (missing appliesPerInvoice, or chosen branch's child
+  // step opens evidence/per-leg context) the endpoint MUST hard-fail
+  // 409 `node_not_bulk_eligible`. We evaluate this against every
+  // distinct tree referenced by any leg in the group BEFORE we even
+  // look at candidate legs, so an empty candidate set never masks an
+  // ineligible node from the operator.
+  const distinctErrorTypeIds = Array.from(new Set(
+    legs.map((l) => l.errorTypeId).filter((v): v is string => !!v),
+  ));
+  let nodeFoundInAnyTree = false;
+  for (const etId of distinctErrorTypeIds) {
+    const tree = await loadTreeFor(etId);
+    if (!tree) continue;
+    const node = tree.nodes?.find((n) => n.id === nodeId);
+    if (!node) continue;
+    nodeFoundInAnyTree = true;
+    if (node.appliesPerInvoice !== true) {
+      res.status(409).json({
+        code: "node_not_bulk_eligible",
+        reason: "This SOP step needs a per-leg answer or per-leg evidence.",
+      });
+      return;
+    }
+    const option = node.options?.find((o) => o.label === answer);
+    if (!option) {
+      res.status(400).json({
+        error: `Answer "${answer}" is not a valid option for node "${nodeId}".`,
+      });
+      return;
+    }
+    if (option.childId) {
+      const child = tree.nodes.find((n) => n.id === option.childId);
+      const childHasPerLegWork = !!child &&
+        ((Array.isArray(child.evidenceRequirements) && child.evidenceRequirements.length > 0) ||
+          child.requiresPerLegContext === true);
+      if (childHasPerLegWork) {
+        res.status(409).json({
+          code: "node_not_bulk_eligible",
+          reason: "The next step in this branch requires per-leg evidence or context.",
+        });
+        return;
+      }
+    }
+  }
+  if (!nodeFoundInAnyTree) {
+    // No tree in the group references this node — there is nothing to
+    // bulk-advance. Surface as `node_not_bulk_eligible` rather than a
+    // generic 400 so the UI can render a consistent "not available"
+    // message and the operator can fall back to the per-leg path.
+    res.status(409).json({
+      code: "node_not_bulk_eligible",
+      reason: "No legs in this group are using a decision tree that contains this step.",
+    });
+    return;
+  }
+
+  // ---- Candidate matching (root-null aware). ---------------------------
+  // A leg matches when it's at the same node as the request OR it has
+  // never advanced (sopNodeId IS NULL) AND the requested node is the
+  // root of that leg's tree — operators kicking off the SOP for an
+  // entire group at the root step shouldn't be blocked by the leg
+  // never having had its sopNodeId stamped.
+  type CandidateLeg = typeof claimsTable.$inferSelect;
+  async function legMatchesNode(leg: CandidateLeg): Promise<boolean> {
+    if (leg.errorTypeId == null) return false;
+    if (leg.sopNodeId === nodeId) return true;
+    if (leg.sopNodeId == null) {
+      const tree = await loadTreeFor(leg.errorTypeId);
+      return tree?.rootId === nodeId;
+    }
+    return false;
+  }
+
+  type Eligible = { leg: CandidateLeg; tree: SopBulkTree; node: SopBulkTreeNode; option: SopBulkTreeOption };
+  const eligible: Eligible[] = [];
+  const skipped: Array<{ id: number; ref: string; reason: BulkSkipReason }> = [];
+
+  for (const leg of legs) {
+    if (leg.duplicateOfClaimId != null) {
+      skipped.push({ id: leg.id, ref: legRef(leg), reason: "sibling_duplicate" }); continue;
+    }
+    if (!leg.includedInDispute) {
+      skipped.push({ id: leg.id, ref: legRef(leg), reason: "excluded_from_dispute" }); continue;
+    }
+    if (leg.sopOutcome != null) {
+      skipped.push({ id: leg.id, ref: legRef(leg), reason: "already_terminal" }); continue;
+    }
+    if (!(await legMatchesNode(leg))) {
+      // Includes sopNodeId mismatch and legs without an errorTypeId.
+      skipped.push({ id: leg.id, ref: legRef(leg), reason: "wrong_node" }); continue;
+    }
+    // Per-leg tree/option resolution. If two error-types in the group
+    // share the same nodeId + answer label but their options point at
+    // different childIds / outcomeTypes, each leg follows its OWN
+    // tree's transition — never a "canonical" tree's. The pre-check
+    // above already guaranteed the node + answer exist and are
+    // bulk-eligible for every distinct tree.
+    const legTree = await loadTreeFor(leg.errorTypeId!);
+    const legNode = legTree?.nodes?.find((n) => n.id === nodeId);
+    const legOption = legNode?.options?.find((o) => o.label === answer);
+    if (!legTree || !legNode || !legOption) {
+      // Should be unreachable given the pre-check, but be defensive:
+      // skip rather than throw inside the txn.
+      skipped.push({ id: leg.id, ref: legRef(leg), reason: "wrong_node" });
+      continue;
+    }
+    eligible.push({ leg, tree: legTree, node: legNode, option: legOption });
+  }
+
+  if (eligible.length === 0) {
+    res.status(409).json({ code: "no_eligible_legs", succeeded: [], skipped });
+    return;
+  }
+
+  // Single transaction: leg updates + per-leg audits + per-leg state
+  // events + umbrella audit. Any throw rolls the whole thing back.
+  type SopAnswerRow = { nodeId: string; answer: string; ts: string };
+  const succeededIds: number[] = [];
+  const updatedRows: Array<typeof claimsTable.$inferSelect> = [];
+  const succeededRefs = eligible.map((e) => ({ id: e.leg.id, ref: legRef(e.leg) }));
+  const succeededSummary: Array<{ claimId: number; isTerminal: boolean; sopOutcome: string | null }> = [];
+
+  await db.transaction(async (tx) => {
+    for (const { leg, option } of eligible) {
+      const existingAnswers: SopAnswerRow[] = Array.isArray(leg.sopAnswers)
+        ? (leg.sopAnswers as SopAnswerRow[])
+        : [];
+      const nextAnswers: SopAnswerRow[] = [
+        ...existingAnswers,
+        { nodeId, answer, ts: new Date().toISOString() },
+      ];
+      const updateData: Partial<typeof claimsTable.$inferInsert> = { sopAnswers: nextAnswers };
+      let isTerminal = false;
+      let nextSopOutcome: string | null = null;
+
+      if (option.childId) {
+        updateData.sopNodeId = option.childId;
+      } else {
+        isTerminal = true;
+        // terminalSopOutcome from the body wins when supplied AND the
+        // option is itself terminal — lets the operator force a
+        // specific outcome (e.g. "Hold" instead of "Dispute") across
+        // every eligible leg uniformly. Otherwise use the option's
+        // authored outcomeType.
+        nextSopOutcome = terminalSopOutcome ?? mapBulkOutcome(option.outcomeType);
+        if (!nextSopOutcome) {
+          throw new Error(`Terminal node has unknown outcomeType: ${option.outcomeType}`);
+        }
+        updateData.sopNodeId = nodeId;
+        updateData.sopOutcome = nextSopOutcome;
+        if (SOP_BULK_DROP_REASONS.has(nextSopOutcome)) {
+          updateData.dropReason = nextSopOutcome;
+          updateData.droppedAt = new Date();
+        } else if (SOP_BULK_READY_REASONS.has(nextSopOutcome)) {
+          updateData.readyAt = new Date();
+        }
+      }
+
+      const [updated] = await tx.update(claimsTable)
+        .set(updateData)
+        .where(eq(claimsTable.id, leg.id))
+        .returning();
+      updatedRows.push(updated);
+      await tx.insert(auditLogsTable).values({
+        claimId: leg.id,
+        action: "leg_sop_advanced",
+        details: isTerminal
+          ? `SOP terminal reached: ${nextSopOutcome} (bulk via group #${id})`
+          : `SOP step: ${nodeId} → ${answer} (bulk via group #${id})`,
+        metadata: {
+          nodeId, answer, isTerminal, sopOutcome: nextSopOutcome,
+          bulk: true, invoiceGroupId: id,
+          source: "group_sop_advance",
+        },
+        userEmail: req.user?.email ?? null,
+        userName: req.user?.displayName ?? null,
+      });
+      // State event also persisted in-txn so failure rolls it back
+      // alongside the leg row + audit.
+      await tx.insert(stateEventsTable).values({
+        eventKey: isTerminal ? "leg.sop_terminal" : "leg.sop_advanced",
+        claimId: leg.id,
+        invoiceGroupId: id,
+        actorUserId: req.user?.email ?? null,
+        metadata: { nodeId, answer, sopOutcome: nextSopOutcome, bulk: true, source: "group_sop_advance" },
+      });
+      succeededIds.push(leg.id);
+      succeededSummary.push({ claimId: leg.id, isTerminal, sopOutcome: nextSopOutcome });
+    }
+
+    if (BULK_SOP_TEST_HOOKS.failUmbrellaAuditOnce) {
+      // Test seam: forces the umbrella audit insert to throw exactly
+      // once so the tx rollback path can be exercised in isolation.
+      // Production never sets this flag.
+      BULK_SOP_TEST_HOOKS.failUmbrellaAuditOnce = false;
+      throw new Error("test-injected: umbrella audit insert failed");
+    }
+    await tx.insert(auditLogsTable).values({
+      invoiceGroupId: id,
+      action: "group_sop_advanced_bulk",
+      details: `Bulk SOP advance: ${nodeId} → ${answer} on ${eligible.length} leg${eligible.length === 1 ? "" : "s"}` +
+        (skipped.length > 0 ? ` (skipped ${skipped.length})` : ""),
+      metadata: {
+        nodeId,
+        answer,
+        terminalSopOutcome,
+        succeeded: succeededIds.length,
+        succeededRefs,
+        skipped,
+        bulk: true,
+        source: "group_sop_advance",
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+  });
+
+  // Post-commit side effects (cache refresh, MAS derivations, SSE).
+  // Not transactional state — matches per-leg /sop-advance pattern.
+  for (const s of succeededSummary) {
+    if (s.isTerminal) {
+      await applyMasDerivationsForLeg(s.claimId, null);
+    }
+    await refreshClaimDenormalizedCache(s.claimId);
+    broadcastClaimEvent({
+      type: s.isTerminal ? "sop_terminal" : "sop_advanced",
+      claimId: s.claimId,
+      userName: req.user?.displayName ?? null,
+      userEmail: req.user?.email ?? null,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  await refreshGroupDerivedFields(id);
+  emitGroupEvent(id, "sop_advanced_bulk", req);
+
+  // Re-fetch the persisted rows so derived fields reflect post-cache
+  // values consumed by the queue + leg page.
+  const finalRows = await db.select().from(claimsTable)
+    .where(inArray(claimsTable.id, succeededIds));
+  res.json({ succeeded: finalRows, skipped });
 }));
 
 // Helper: same shape as createGroupAuditLog but writes against a leg

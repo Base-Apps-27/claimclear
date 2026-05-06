@@ -1827,6 +1827,103 @@ export interface ClearLegVerdictDraftResponse {
 }
 
 /**
+ * Optional. When the chosen option is terminal, force this
+outcome on every eligible leg uniformly. Ignored on
+mid-walk steps. Partial terminal-step success across the
+group is not allowed — every eligible leg gets the same
+outcome or the call rolls back.
+
+ */
+export type BulkSopAdvanceBodyTerminalSopOutcome =
+  (typeof BulkSopAdvanceBodyTerminalSopOutcome)[keyof typeof BulkSopAdvanceBodyTerminalSopOutcome];
+
+export const BulkSopAdvanceBodyTerminalSopOutcome = {
+  portal_dispute: "portal_dispute",
+  dispute: "dispute",
+  hold: "hold",
+  cannot_dispute: "cannot_dispute",
+  non_issue: "non_issue",
+} as const;
+
+/**
+ * Body for `POST /invoice-groups/{id}/sop-advance`. Same shape as
+the per-leg endpoint: identifies the SOP node, the chosen
+answer, and (optionally) a uniform `terminalSopOutcome` to stamp
+across every eligible leg when the option is itself terminal.
+The node must be authored with `appliesPerInvoice = true` on
+every candidate leg's error-type decision tree — otherwise the
+endpoint hard-fails with `409 { code: "node_not_bulk_eligible" }`.
+
+ */
+export interface BulkSopAdvanceBody {
+  /** Decision-tree node id (matches `claims.sop_node_id`). */
+  nodeId: string;
+  /** One of the node's option labels. */
+  answer: string;
+  /** Optional. When the chosen option is terminal, force this
+outcome on every eligible leg uniformly. Ignored on
+mid-walk steps. Partial terminal-step success across the
+group is not allowed — every eligible leg gets the same
+outcome or the call rolls back.
+ */
+  terminalSopOutcome?: BulkSopAdvanceBodyTerminalSopOutcome;
+}
+
+/**
+ * Stable reason code explaining why a leg was not advanced by the
+bulk endpoint. `node_not_bulk_eligible` is NOT a per-leg skip
+reason — when the node fails the bulk-eligibility pre-check the
+endpoint hard-fails with `409 { code: "node_not_bulk_eligible" }`
+instead of degrading to a per-leg skip.
+
+ */
+export type BulkSopAdvanceSkippedReason =
+  (typeof BulkSopAdvanceSkippedReason)[keyof typeof BulkSopAdvanceSkippedReason];
+
+export const BulkSopAdvanceSkippedReason = {
+  wrong_node: "wrong_node",
+  already_terminal: "already_terminal",
+  excluded_from_dispute: "excluded_from_dispute",
+  sibling_duplicate: "sibling_duplicate",
+} as const;
+
+export interface BulkSopAdvanceSkippedLeg {
+  /** claims.id of the skipped leg. */
+  id: number;
+  /** Human-friendly leg reference (`confNumber` or `CLM-{id}` fallback). */
+  ref: string;
+  reason: BulkSopAdvanceSkippedReason;
+}
+
+/**
+ * Present only on a 409 response.
+ */
+export type BulkSopAdvanceResponseCode =
+  (typeof BulkSopAdvanceResponseCode)[keyof typeof BulkSopAdvanceResponseCode];
+
+export const BulkSopAdvanceResponseCode = {
+  no_eligible_legs: "no_eligible_legs",
+  node_not_bulk_eligible: "node_not_bulk_eligible",
+} as const;
+
+/**
+ * Result payload for `POST /invoice-groups/{id}/sop-advance`. On
+the 409 `no_eligible_legs` path `succeeded` is an empty array
+and `code` is set; the same shape lets the client render the
+skipped breakdown without branching on status.
+
+ */
+export interface BulkSopAdvanceResponse {
+  /** Full updated `ClaimResponse` rows for every leg that advanced. */
+  succeeded: ClaimResponse[];
+  skipped: BulkSopAdvanceSkippedLeg[];
+  /** Present only on a 409 response. */
+  code?: BulkSopAdvanceResponseCode;
+  /** Human-readable detail for the 409 `node_not_bulk_eligible` response. */
+  reason?: string;
+}
+
+/**
  * Result payload for `POST /invoice-groups/{id}/promote-verdict-drafts`.
 Reports how many leg drafts were promoted in the same transaction
 plus the leg ids that were touched (handy for cache invalidation

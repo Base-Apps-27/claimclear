@@ -29,6 +29,8 @@ import {
   type DecisionTree, type LegacyTreeNode,
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
+import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
+import { toast } from "@/hooks/use-toast";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 
 
@@ -413,6 +415,25 @@ export default function ErrorTypes() {
   };
 
   const handleSave = async () => {
+    // Task #470 — author-time guard. Refuse to persist a tree whose
+    // `appliesPerInvoice` annotations conflict with same-step or
+    // immediate-next-step evidence / per-leg-context. The popover
+    // already surfaces the same violations inline, but operators may
+    // collapse it before clicking Save — re-checking here keeps the
+    // database from ever holding a tree the bulk endpoint will refuse.
+    if (form.decisionTree) {
+      const violations = validateAppliesPerInvoice(form.decisionTree);
+      if (violations.length > 0) {
+        toast({
+          title: "Can't save — invalid \"same answer for every leg\" step",
+          description:
+            "One or more steps marked \"same answer for every leg\" still collect evidence or require per-leg context. Open the affected step's settings to clear the issue, then save again.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     const payload = {
       name: form.name,
       category: form.category,

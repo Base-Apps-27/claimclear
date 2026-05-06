@@ -49,6 +49,8 @@ import type {
   BulkAssignResult,
   BulkQueueGroupReattestBody,
   BulkQueueGroupReattestResponse,
+  BulkSopAdvanceBody,
+  BulkSopAdvanceResponse,
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -2221,6 +2223,118 @@ export const usePromoteVerdictDrafts = <
   TContext
 > => {
   return useMutation(getPromoteVerdictDraftsMutationOptions(options));
+};
+
+/**
+ * Pivot B1 — Group-level SOP advance. Applies one decision-tree
+answer to every leg in the invoice group that is parked at the
+same SOP node, in one transaction. The node MUST be authored
+with `appliesPerInvoice = true` on the leg's error-type tree.
+
+A leg is "matching" iff:
+  - `included_in_dispute = true`
+  - `sop_outcome IS NULL` (no terminal stamped yet)
+  - `sop_node_id = body.nodeId`
+  - `duplicate_of_claim_id IS NULL`
+
+Non-matching legs are not failed — they're returned in `skipped`
+with a stable reason code so the operator UI can summarize the
+outcome without re-fetching.
+
+Side effects (per-leg MAS derivation, denormalized cache refresh,
+group derived-fields refresh, SSE broadcast) run after the
+transaction commits, mirroring the per-leg
+`POST /claims/{id}/sop-advance` endpoint.
+
+Returns 409 with `error: "no_eligible_legs"` when zero legs
+qualify (group has no children, or every leg ended up in
+`skipped`). Returns 403 for clerks (mutation-class endpoint).
+
+ * @summary Bulk-advance one SOP step across every matching leg in the group (Task
+ */
+export const getGroupSopAdvanceUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/sop-advance`;
+};
+
+export const groupSopAdvance = async (
+  id: number,
+  bulkSopAdvanceBody: BulkSopAdvanceBody,
+  options?: RequestInit,
+): Promise<BulkSopAdvanceResponse> => {
+  return customFetch<BulkSopAdvanceResponse>(getGroupSopAdvanceUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkSopAdvanceBody),
+  });
+};
+
+export const getGroupSopAdvanceMutationOptions = <
+  TError = ErrorType<void | BulkSopAdvanceResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupSopAdvance>>,
+    TError,
+    { id: number; data: BodyType<BulkSopAdvanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof groupSopAdvance>>,
+  TError,
+  { id: number; data: BodyType<BulkSopAdvanceBody> },
+  TContext
+> => {
+  const mutationKey = ["groupSopAdvance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof groupSopAdvance>>,
+    { id: number; data: BodyType<BulkSopAdvanceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return groupSopAdvance(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GroupSopAdvanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof groupSopAdvance>>
+>;
+export type GroupSopAdvanceMutationBody = BodyType<BulkSopAdvanceBody>;
+export type GroupSopAdvanceMutationError =
+  ErrorType<void | BulkSopAdvanceResponse>;
+
+/**
+ * @summary Bulk-advance one SOP step across every matching leg in the group (Task
+ */
+export const useGroupSopAdvance = <
+  TError = ErrorType<void | BulkSopAdvanceResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof groupSopAdvance>>,
+    TError,
+    { id: number; data: BodyType<BulkSopAdvanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof groupSopAdvance>>,
+  TError,
+  { id: number; data: BodyType<BulkSopAdvanceBody> },
+  TContext
+> => {
+  return useMutation(getGroupSopAdvanceMutationOptions(options));
 };
 
 /**

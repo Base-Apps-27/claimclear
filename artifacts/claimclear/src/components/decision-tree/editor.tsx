@@ -9,6 +9,7 @@ import {
   type OutcomeType,
   type EvidenceReq,
   type OrphanedChild,
+  type AppliesPerInvoiceViolation,
   OUTCOME_LABELS,
   OUTCOME_COLORS,
   OUTCOME_AUTHOR_OPTIONS,
@@ -22,6 +23,7 @@ import {
   getOrphanedChildren,
   findReceivableSlots,
   deleteNodeWithReparent,
+  validateAppliesPerInvoice,
   TEMPLATES,
 } from "./types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -557,6 +559,7 @@ function FlowNode({
               <div className="flex items-center gap-0.5">
                 <NodeSettingsPopover
                   node={node}
+                  tree={tree}
                   updateNode={updateNode}
                   addEvidenceReq={addEvidenceReq}
                   updateEvidenceReq={updateEvidenceReq}
@@ -880,18 +883,51 @@ function OutcomeTerminal({ outcomeType, outcomeLabel }: { outcomeType: OutcomeTy
 
 function NodeSettingsPopover({
   node,
+  tree,
   updateNode,
   addEvidenceReq,
   updateEvidenceReq,
   removeEvidenceReq,
 }: {
   node: TreeNode;
+  tree: DecisionTree;
   updateNode: (updates: Partial<TreeNode>) => void;
   addEvidenceReq: () => void;
   updateEvidenceReq: (idx: number, updates: Partial<EvidenceReq>) => void;
   removeEvidenceReq: (idx: number) => void;
 }) {
   const hasContent = !!(node.helpText || node.instructionText || node.instructionImageUrl || node.instructionImagePath || node.instructionLinkUrl || (node.evidenceRequirements && node.evidenceRequirements.length > 0));
+
+  // Task #470 — derive author-time violations for THIS node only. The
+  // shared `validateAppliesPerInvoice` walks the whole tree; we filter
+  // its output to the popover's node so the inline error matches what
+  // the operator sees on screen. The error-types save handler runs the
+  // same validator across the whole tree before persisting.
+  const violations: AppliesPerInvoiceViolation[] = validateAppliesPerInvoice(tree).filter(
+    (v) => v.nodeId === node.id,
+  );
+
+  // Task #470 (review follow-up) — independently compute whether this node
+  // has any disqualifying conflict regardless of the current toggle value,
+  // so the switch is *visibly disabled* before the operator tries to
+  // enable it. `validateAppliesPerInvoice` only returns rows when
+  // `appliesPerInvoice === true`, so we mirror its rules here against the
+  // raw node + immediate children.
+  const hasBulkConflict = (() => {
+    if ((node.evidenceRequirements?.length ?? 0) > 0) return true;
+    if (node.requiresPerLegContext === true) return true;
+    for (const opt of node.options) {
+      if (!opt.childId) continue;
+      const child = tree.nodes.find((n) => n.id === opt.childId);
+      if (!child) continue;
+      if ((child.evidenceRequirements?.length ?? 0) > 0) return true;
+      if (child.requiresPerLegContext === true) return true;
+    }
+    return false;
+  })();
+  // Allow turning the switch OFF when it's already on (so authors can
+  // recover from a tree imported with conflicts), but disable enabling.
+  const appliesPerInvoiceDisabled = hasBulkConflict && !node.appliesPerInvoice;
 
   return (
     <Popover>
@@ -965,6 +1001,67 @@ function NodeSettingsPopover({
               className="text-xs h-7"
             />
           </div>
+        </div>
+
+        <div className="p-3 border-b border-slate-100 space-y-2" data-testid="sop-bulk-eligibility-section">
+          <div className="flex items-center gap-1.5">
+            <Layers className="h-3.5 w-3.5 text-slate-400" />
+            <Label className="text-xs font-medium text-slate-600">Per-invoice behavior</Label>
+          </div>
+          <div className="flex items-start gap-2">
+            <Switch
+              checked={!!node.appliesPerInvoice}
+              onCheckedChange={(checked) => updateNode({ appliesPerInvoice: checked || undefined })}
+              disabled={appliesPerInvoiceDisabled}
+              className="scale-[0.7] mt-0.5"
+              data-testid="sop-applies-per-invoice-toggle"
+              aria-disabled={appliesPerInvoiceDisabled || undefined}
+              title={appliesPerInvoiceDisabled
+                ? "Disabled: this step or its immediate next step requires evidence or per-leg context."
+                : undefined}
+            />
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-medium text-slate-700">Same answer for every leg</p>
+              <p className="text-[10px] text-slate-500">
+                When checked, the operator can apply this answer to every matching leg in the
+                invoice in one click. Cannot be combined with evidence or per-leg context — on
+                this step or the immediate next step.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <Switch
+              checked={!!node.requiresPerLegContext}
+              onCheckedChange={(checked) => updateNode({ requiresPerLegContext: checked || undefined })}
+              className="scale-[0.7] mt-0.5"
+              data-testid="sop-requires-per-leg-context-toggle"
+            />
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-medium text-slate-700">Needs per-leg context</p>
+              <p className="text-[10px] text-slate-500">
+                Marks this step as requiring unique per-leg input (a note, attestation, etc.).
+                Blocks bulk advance from any parent step that points here.
+              </p>
+            </div>
+          </div>
+          {violations.length > 0 && (
+            <div
+              className="rounded-md border border-red-200 bg-red-50 p-2 text-[10px] text-red-700"
+              data-testid="sop-applies-per-invoice-error"
+            >
+              <p className="font-medium mb-0.5">"Same answer for every leg" can't be enabled here:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {violations.map((v, i) => (
+                  <li key={`${v.reason}-${i}`}>
+                    {v.reason === "node_has_evidence" && "This step collects evidence."}
+                    {v.reason === "node_requires_per_leg_context" && "This step requires per-leg context."}
+                    {v.reason === "child_has_evidence" && "The next step collects evidence."}
+                    {v.reason === "child_requires_per_leg_context" && "The next step requires per-leg context."}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="p-3 space-y-2">
