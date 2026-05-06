@@ -231,40 +231,68 @@ The cleanest one in the repo. Self-contained, exhaustiveness helper, OpenAPI par
 
 ---
 
-## F. Per-item action summary
+## F. Per-item action — single-pass, no compatibility shims
 
-| Vocabulary / column | v1 action (data-only, no schema change) | v2 action (after deprecation window) |
+> **Execution model (locked, 2026-05-06).** We control the entire stack. Every change below lands as **(a) drizzle migration in `lib/db/drizzle/`** + **(b) one-shot backfill in `scripts/src/migrations/YYYY-MM-*-backfill.ts`** wired into `scripts/package.json`, run **manually with `--apply` after explicit user approval** + **(c) code change** in the same PR. Three hard rules:
+>
+> 1. **No boot-time scripts**, ever. Task #74 burned us. The reconcile-on-startup branch in `index.ts` is gone and stays gone. Backfills run once via `pnpm --filter @workspace/scripts run backfill:<name>`, then the file is left in the repo as a historical record (mirrors the existing `2026-05-*` siblings) but the entry-point script is never invoked again.
+> 2. **No deprecation windows**: schema + data + code in one pass. We don't keep dead enum values "for compatibility" — once the backfill applies and the code references are gone, the value is dropped from the enum in the next migration in the same PR.
+> 3. **Schema drift CHECK** runs in CI (`schema-drift` workflow already exists). Every state-bearing text column gets either a DB CHECK or a promotion to pgEnum — no exceptions.
+
+| Vocabulary / column | Single-pass action | Migration / script / code split |
 |---|---|---|
-| `claim_status` enum | No change | Split into `claim_workflow_status` (12 values, no Resolved/Denied) and `invoice_workflow_status` (11 values, no Processed) |
-| `claim_outcome` enum | No change; new writes use `Withdrawn`+sub-reason | Drop `Denied` and `Non-Issue` from the enum |
-| `claims.closure_reason` text | Backfill 2 drift rows; add `'expired'` to canonical list; add CHECK | Promote to pgEnum |
-| `invoice_groups.closure_reason` text | Backfill from §6 of the lock-down contract; add CHECK | Same |
-| `claims.attestation_state` text | Deprecate in docs | Drop column |
-| `claims.hold_reason` text | Run existing normaliser; add CHECK | Same |
-| `invoice_groups.hold_reason` text | Same | Same |
-| `claims.sop_outcome` text | No change; CHECK already present | Consider folding `dispute` ↔ `portal_dispute` |
-| `claims.drop_reason` text | No change; column unused | Consider folding into `closure_reason` |
-| `claims.mas_action_required` text | No change; well-modelled | Promote to pgEnum |
-| `claims.closure_review_state` text | Add CHECK | Promote to pgEnum |
-| `invoice_groups.payor_denial_reason` text | No change; well-modelled | Promote to pgEnum |
-| `lib/vocab` redeclarations | Replace each array with a re-export of the source; add parity test | Same |
-| `lib/vocab/src/verdict-outcome.ts` | **Delete entirely** (drift bug #5) — dead code with a misleading name | — |
-| `lib/closure-options/CLOSURE_REASON_BANNER` | Add `expired` banner entry | Same |
-| `closure-validation.ts` matrix | Update for the lock-down contract; allow `expired`; map deprecated `Denied` outcome to `Withdrawn` server-side | — |
-| Server `macro-phase.ts` | Already fixed (Withdrawn removed from closed) | — |
-| Client `lifecycle-phase.ts` | Remove `"Withdrawn"` from closed; merge with server map into `lib/macro-phase` | — |
-| `getInvoiceTerminalState` | Create per lock-down contract §3 | Single helper for the whole codebase |
-| `SYSTEM_CONTROLLED_*_STATUSES` | Move to one shared module | — |
-| `bot_status`, `note_type`, `outbound_email_kind`, `portal_submission_status`, `response_source`, `response_type`, `claim_verdict.source`, `claim_verdict.outcome`, all the closure-detail trees | **No change** — orthogonal to terminal state, well-scoped, no drift | — |
+| `claim_status` enum | **Split.** Drop `Resolved`/`Denied` (terminal verdicts, not phases). Drop `Processed` from the group-side usage. | Drizzle: rename current enum → `claim_workflow_status` w/ 11 values; add `invoice_workflow_status` w/ 10 values (no `Processed`). Script: backfill 2 stuck `Denied/Pending` groups → `Resolved + Withdrawn + denied_by_payor`. Code: `claimsTable.status` → claim enum; `invoiceGroupsTable.status` → invoice enum. |
+| `claim_outcome` enum | **Shrink.** Drop `Denied` and `Non-Issue`. | Drizzle: new enum w/ 4 values (`Pending`, `Approved`, `Partially Approved`, `Withdrawn`). Script: backfill 5 `Denied/Denied` + 80 `Non-Issue` rows → `Withdrawn` + appropriate `closure_reason`. Code: lock-down contract §3/§6. |
+| `claims.closure_reason` (text) | **Promote to pgEnum.** Add `expired`. Backfill 2 drift rows. | Drizzle: create `closure_reason` enum w/ 4 values; alter column. Script: `accepted_loss → denied_by_payor`, `not_contestable → cannot_dispute`. Code: collapse 3-place re-declaration → single re-export. |
+| `invoice_groups.closure_reason` (text) | **Promote to pgEnum** (same enum as above). Backfill from contract §6 mapping table. | Same migration; script handles both tables in one transaction. |
+| `claims.attestation_state` (text) | **Drop column.** Per-group `reattestCompletedAt` is the live tracker; per-leg version was never the contract. 22 non-default rows are noise. | Drizzle: `DROP COLUMN`. Script: none (just verify counts). Code: remove all 4 references in `lib/db` and `api-server`. |
+| `claims.hold_reason` (text) | **Normalise + CHECK.** | Script: run existing `2026-05-per-leg-state-backfill.ts` on prod; collapse 6 free-text rows to `'other'` with the original text moved to a system note. Drizzle: add CHECK `hold_reason IS NULL OR hold_reason IN (...)`. Same for groups. |
+| `invoice_groups.hold_reason` (text) | Same as above. | Same migration. |
+| `claims.sop_outcome` (text) | **Fold `dispute` → `portal_dispute`.** 3 prod rows. | Script: 3-row `UPDATE`. Drizzle: tighten existing CHECK to drop `'dispute'`. Code: remove the `=== 'dispute'` branches in `outcomeRole`, `deriveLegSubStatus` (they currently treat both identically — the merge is cosmetic but removes a long-standing footgun). |
+| `claims.drop_reason` (text) | **Fold into `closure_reason`.** 0 prod rows; same vocabulary; column was a planning artifact. | Drizzle: `DROP COLUMN`. Script: none. Code: remove from schema + the 4 writers in `sop-advance-player.tsx`, `claim-detail-v2.tsx`, `terminals/hold-terminal.tsx`, `2026-05-per-leg-state-backfill.ts`. |
+| `claims.mas_action_required` (text) | **Promote to pgEnum.** | Drizzle: create `mas_action` enum (`cancel`, `none`); alter column; drop the existing CHECK (now redundant). |
+| `claims.closure_review_state` (text) | **Promote to pgEnum.** | Drizzle: create `closure_review_state` enum (`pending`, `addressed`); alter column. Same for groups. |
+| `invoice_groups.closure_review_state` (text) | Same. | Same migration. |
+| `invoice_groups.payor_denial_reason` (text) | **Promote to pgEnum.** | Drizzle: create `payor_denial_reason` enum w/ 7 codes; alter column. Code: `lib/payor-denial-reasons` re-exports the enum-derived type instead of declaring its own union (parity becomes structural). |
+| `lib/vocab` arrays (`CLAIM_STATUSES`, `OUTCOMES`, `CLOSURE_REASONS`, `LEG_SUB_STATUSES`, `HOLD_REASONS`, `SUBMISSION_STAGES`) | **Replace with re-exports** of the source enum's `.enumValues`. Label maps stay. | Code-only. Add a vitest case per file: `expect(LABEL_MAP keys).toEqual(SOURCE_ENUM.enumValues)`. Wire into `pnpm check:vocab-drift`. |
+| `lib/vocab/src/verdict-outcome.ts` | **Delete file.** Dead code with a misleading name (drift bug #5). | Code-only. Replace with a stub re-export of `lib/db/src/enums/leg-state.ts:VERDICT_OUTCOMES` (TitleCase, 3 values) plus a label map for those 3. |
+| `lib/closure-options/CLOSURE_REASON_BANNER` | **Add `expired` banner entry.** | Code-only. Closure intake dialog gains the new option automatically. |
+| `closure-validation.ts` matrix | **Rewrite** for the lock-down contract: `Withdrawn` accepts any of the 4 sub-reasons (`cannot_dispute`, `non_issue`, `denied_by_payor`, `expired`); the `Denied` and `Non-Issue` outcome cases are removed entirely. | Code-only. Server transitions reject the deprecated outcomes after the backfill clears them. |
+| Server `macro-phase.ts` + Client `lifecycle-phase.ts` | **Collapse into one shared package** `lib/macro-phase`. Single `STATUSES_BY_PHASE`, single `getMacroPhase`, single `LIFECYCLE_TABS`. Remove the unreachable `Withdrawn`-in-closed branch (already done server-side, still in client). | Code-only. New package with re-exports. Both `api-server` and `claimclear` consume it. Delete the parallel client copy. |
+| `getInvoiceTerminalState` | **Create** per contract §3. Re-export via `@workspace/leg-state` for the client. | Code-only. New file `lib/leg-state/src/invoice-terminal-state.ts` (moved out of `api-server` so client can import). |
+| `SYSTEM_CONTROLLED_*_STATUSES` | **One shared module.** | Move to `lib/leg-state/src/system-controlled.ts`; both transition files import from there. |
+| `bot_status`, `note_type`, `outbound_email_kind`, `portal_submission_status`, `response_source`, `response_type`, `claim_verdict.source`, `claim_verdict.outcome`, `closure-options` trees, `LEG_SUB_STATUSES`, `OUTCOME_ROLES`, `SOP_OUTCOMES` (post-fold), `LEG_DROP_REASONS`, `MAS_ACTION_REQUIRED` | **No change.** Orthogonal, well-scoped, no drift. | — |
 
 ---
 
-## G. What this audit changes about the migration plan
+## G. Migration ordering (single PR per group, ordered by dependency)
 
-The lock-down contract (§ `docs/architecture/invoice-terminal-state.md`) plus this audit, taken together, expand Task #512 in three directions the original plan didn't cover:
+The dependencies between the items above force a specific order. Each group below = one PR = one drizzle migration + one or zero scripts + the code changes in the same commit. The user runs the script with `--apply` after code review of the PR; nothing waits for a deprecation window.
 
-1. **Drift bugs are pre-requisites, not "nice to have"** — bugs #1, #5, #6 can be fixed independently of the terminal-state work, and they should be, because they're actively producing wrong renders / lying to TypeScript.
-2. **The `lib/vocab` cleanup must be source-of-truth-only** — replacing label maps is not enough; every array literal must become a re-export so parity is impossible to break.
-3. **Two parallel macro-phase frameworks must collapse into one** — server `macro-phase.ts` and client `lifecycle-phase.ts` should live in a new shared `lib/macro-phase` package consumed by both.
+**Group 1 — Pre-requisite drift fixes (independent, can ship first):**
+- `closure_reason` 2-row backfill + add `expired` to vocab + promote to pgEnum.
+- Delete `lib/vocab/src/verdict-outcome.ts`.
+- Remove `Withdrawn` from client `lifecycle-phase.ts:44`.
+- Promote `mas_action_required`, `closure_review_state`, `payor_denial_reason` to pgEnums.
 
-Task #512's step list is updated accordingly.
+**Group 2 — Shared infrastructure (no data changes):**
+- Create `lib/macro-phase` (collapse server + client copies).
+- Create `lib/leg-state/src/invoice-terminal-state.ts` with `getInvoiceTerminalState`.
+- Create `lib/leg-state/src/system-controlled.ts`.
+- `lib/vocab` re-export refactor + vitest parity tests.
+
+**Group 3 — Terminal-state contract enforcement (the original §F of the lock-down contract):**
+- Rewrite `closure-validation.ts` matrix.
+- Replace the four parallel terminality predicates with `getInvoiceTerminalState`.
+- Wire Re-attest CTA to the helper (closes #302).
+- One-shot terminal-state backfill (76 Expired + 80 Resolved/Non-Issue + 5 Denied groups) — depends on Group 1's `expired` value being live.
+
+**Group 4 — Schema cleanup (only after Groups 1–3 are merged + script ran):**
+- Shrink `claim_outcome` enum (drop `Denied`, `Non-Issue`).
+- Split `claim_status` into per-table enums (drop `Resolved`/`Denied` from both, drop `Processed` from group enum).
+- Drop `claims.attestation_state` column.
+- Drop `claims.drop_reason` column.
+- Fold `sop_outcome.dispute` → `portal_dispute`, tighten CHECK.
+- Normalise `hold_reason` free-text + add CHECK.
+
+**No phase 5 / no v2.** Once Group 4 lands, the audit's actions are complete. Future state vocabulary changes follow the same execution model: schema + script + code in one PR, no boot-time work, no deprecation windows.
