@@ -265,7 +265,73 @@ The cleanest one in the repo. Self-contained, exhaustiveness helper, OpenAPI par
 
 ---
 
-## G. Migration ordering (single PR per group, ordered by dependency)
+## H. Status lives in SIX layers, not one (added 2026-05-06)
+
+The original audit (§A–§G) treated every status column as a flat list. That framing missed an important truth: **status in this system is layered**. There are six distinct planes, each with its own vocabulary, lifecycle, and transition rules. The terminal-state contract only addresses Layer 1 (the user-visible group state). The other five layers are real and have their own drift problems.
+
+| Layer | What it answers | Tables / columns | State vocabulary |
+|---|---|---|---|
+| **1. Invoice (group) state** — user-facing | "Is this invoice done?" | `invoice_groups.status` + `.outcome` + `.closureReason` + `.reattestCompletedAt` | The terminal-state contract |
+| **2. Claim (leg) state** — operator workspace | "What does this individual ride need?" | `claims.status` + `.outcome` + `.closureReason` + `.sopOutcome` + `.holdReason` + `.dropReason` + `.masActionRequired` + `.attestationState` + `.includedInDispute` + `.duplicateOfClaimId` | Same `claim_status`/`claim_outcome` enums as groups (drift bug #8), plus the leg-only enums in `lib/leg-state` |
+| **3. Submission (attempt) state** — bot worker | "Did this filing attempt succeed?" | `portal_submissions.status` | `portal_submission_status` enum: `draft, pending, in_progress, submitted, failed, cancelled, dry_run` |
+| **4. Response/verdict state** — payor reply | "What did the payor say back?" | `portal_responses.responseType` + `.processed` + `.autoLinked` + `claim_verdict.outcome` + `.source` | `response_type` enum (6 vals); `claim_verdict.outcome` (TitleCase 3 vals) — see drift bug #5 |
+| **5. Infrastructure state** — workers + integrations | "Is the system itself healthy?" | `bot_instances.status` + `cron_runs.status` + `connector_health.status` + `portal_batch_runs.status` | `bot_status` enum + 3 free-text columns |
+| **6. Identity / access state** — users | "Who can do what?" | `users.role` + `users.status` + `messages.role` | All 3 are free-text, no enum, no CHECK |
+
+Plus two cross-cutting **observability** vocabularies that record transitions in any of the layers above:
+- `audit_logs.action` — the human-facing activity feed (60+ distinct values in prod, free-text, snake_case)
+- `state_events.event_key` — the structured machine-data twin of audit_logs (22 distinct values, free-text, **dotted notation** like `leg.sop_advanced`, `group.preview_generated`)
+- `bot_activity_log.action` — the bot worker's own activity log (5 distinct values, free-text)
+
+### What I missed in §A–§G
+
+Ten state-bearing things the original audit didn't catalogue:
+
+| # | Thing | Layer | Current shape | Drift / issue |
+|---|---|---|---|---|
+| M1 | `users.status` | 6 | varchar default `"pending"`, no CHECK; prod = 7 rows all `"approved"` | Vocabulary undocumented anywhere. Likely values: pending/approved/suspended/disabled. Currently a single-value column. |
+| M2 | `users.role` | 6 | varchar default `"user"`, no CHECK; vocab undocumented | Same shape. Almost certainly user/admin/operator. |
+| M3 | `messages.role` | 6 | text, no CHECK | Chat message role (assistant/user/system style). Vocabulary depends on whatever the AI SDK writes. |
+| M4 | `portal_batch_runs.status` | 5 | text, no CHECK | Bot batch run lifecycle. Vocabulary undocumented; prod shows `"completed"`. |
+| M5 | `cron_runs.status` | 5 | text default `"running"`, no CHECK | Cron job lifecycle. Vocabulary likely running/completed/failed. |
+| M6 | `connector_health.status` | 5 | text, no CHECK | Integration liveness. Vocabulary undocumented; consumed by the `connector_unhealthy` audit-log writer. |
+| M7 | `bot_activity_log.action` | observability | text, free-form | 5 distinct values in prod (batch_claimed, submission_complete, batch_failed, sandbox_run_complete, stuck_reset). Parallel to audit_logs.action. |
+| M8 | `audit_logs.action` | observability | text, free-form | **60+ distinct values in prod**. No enum, no exhaustiveness check, no naming convention enforced. The biggest free-text vocabulary in the system. Used by the activity feed and brief-personalization filter. |
+| M9 | `state_events.event_key` | observability | text, free-form | 22 distinct values. Schema comment explicitly says "structured machine-data twin of audit_logs." But the two vocabularies use **different naming conventions** — `audit_logs` writes `leg_sop_advanced`, `state_events` writes `leg.sop_advanced` for the same event. |
+| M10 | `error_types.category` + `evidence_types.category` | taxonomy | text, free-form | Acts like a state for routing/filtering but is really a content category. Used by triage UI. |
+
+### Two new drift bugs surfaced by the layered view
+
+| # | Severity | Bug | Where | Fix |
+|---|---|---|---|---|
+| 11 | **MEDIUM** | `audit_logs.action` and `state_events.event_key` are **parallel vocabularies for the same events** with **different naming conventions** (`leg_sop_advanced` vs `leg.sop_advanced`). The schema comment on `state_events` explicitly says it's the "structured machine-data twin of audit_logs," but the two vocabularies have no shared registry — every emit site writes both strings independently. Today the parity is maintained by hand-eyeball (and is already broken for several event keys: e.g. `leg_classified` exists in both, `inbox_heal_applied` only in audit_logs, `dashboard_urgent_snapshot` only in state_events). | `audit-logs.ts`, `state-events.ts`, every `emitStateEvent` + `db.insert(auditLogsTable)` call site | Create `lib/observability` package with a single `EventKey` registry: each event has a `humanAction` (snake_case for audit_logs) and `machineKey` (dotted for state_events). The `emitEvent(EventKey.LegSopAdvanced, ctx)` helper writes both rows from one call. Backfill is **not** required (these tables are append-only logs). |
+| 12 | **LOW** | Cross-layer status implications are not formalised. A `portal_submissions.status='failed'` should imply something about the parent `claims.status` (today: nothing automatic, operator must notice). A `connector_health.status='down'` should pause new submissions to that connector (today: free-text status with no consumer). The boolean `claims.includedInDispute=false` triggers a derived sub-status of `excluded` but the inverse layer (group-level "this group has excluded legs") is read-only with no rollup column. | `portal-submissions.ts`, `connector_health.ts`, `claims.ts` | Out of scope for the terminal-state work but should be a tracked follow-up. v3 work, not v1. |
+
+### Per-layer action
+
+| Layer | Action |
+|---|---|
+| **1. Invoice state** | The terminal-state contract + the audit's existing Groups 1–4. **No change** to this section. |
+| **2. Claim state** | Same vocabulary as Layer 1 (drift bug #8). Group 4b's split into per-table enums **already addresses this** — the new `claim_workflow_status` enum drops terminal verdicts; `claim_outcome` shrinks. After Group 4 lands, claims have their own enum that doesn't pollute group state. |
+| **3. Submission state** | **No change.** Already a clean pgEnum, single consumer (the bot worker), no drift. The only edit is documenting in the contract that `failed`/`cancelled` submissions don't mutate claim/group state — they're orthogonal infrastructure events. |
+| **4. Response/verdict state** | `claim_verdict.outcome` is covered by Group 1b (delete dead `lib/vocab/src/verdict-outcome.ts`). `portal_responses.responseType` is fine as-is. The `Partial` ↔ `Partially Approved` translator is Group 3c. **No new work added.** |
+| **5. Infrastructure state** | **NEW WAVE 1e (small).** Promote `cron_runs.status`, `connector_health.status`, `portal_batch_runs.status` to pgEnums. Existing values become the enum members. No backfill needed. These layers are infrastructure-only and don't interact with the terminal-state contract, but the same "no free-text state columns" rule should apply uniformly. |
+| **6. Identity state** | **NEW WAVE 1f (small).** Promote `users.status` and `users.role` to pgEnums. Existing prod data already conforms (single value for each). `messages.role` is determined by the AI SDK contract and stays text — out of scope. |
+| **Observability** | **NEW WAVE 2d.** Create `lib/observability` registry with the dual-write `emitEvent` helper (drift bug #11). Refactor existing call sites incrementally; the registry catches new violations at compile time. `bot_activity_log.action` joins the same registry. |
+
+### Updated wave summary
+
+The original 4-wave plan grows by 3 small additions. Total scope is still bounded — these are all small additive items, not new domains:
+
+- **Wave 1** gains 1e (infrastructure enum promotions) and 1f (identity enum promotions). Both are leaf changes, parallelisable with the existing 1a–1d.
+- **Wave 2** gains 2d (observability registry). Code-only, no data changes.
+- **Waves 3 and 4 are unchanged.**
+- **Layer 2** (claim state) **gets no new work** because Group 4b's existing enum split already handles it.
+- **Layer 3** (submission state) **gets no work** because it's already clean.
+
+---
+
+## I. Migration ordering (single PR per group, ordered by dependency)
 
 The dependencies between the items above force a specific order. Each group below = one PR = one drizzle migration + one or zero scripts + the code changes in the same commit. The user runs the script with `--apply` after code review of the PR; nothing waits for a deprecation window.
 
