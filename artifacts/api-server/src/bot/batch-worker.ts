@@ -100,6 +100,12 @@ async function ensureBrowsersInstalled(): Promise<void> {
   throw new Error("Playwright browser installation failed. The bot cannot run without a browser. Tried multiple installation methods.");
 }
 
+// Legacy per-leg shape. Retained during the transition (Task #484) so any
+// callers/tests that still reason about a single per-leg PortalSubmission
+// keep compiling. Producers now assemble GroupPortalSubmission and call
+// runBatchWorker once per invoice group; this old type is consumed only by
+// the in-file adapter helper below. A follow-up task removes it once the
+// producer + UI flip lands.
 export interface PortalSubmission {
   id: number;
   confNumber: string;
@@ -121,6 +127,107 @@ export interface PortalSubmission {
   disputeReason: string;
   evidenceNotes: string;
   attachmentUrls: string[];
+  /** Carried so adapter helpers can group per-leg rows by invoice group. */
+  invoiceGroupId?: number;
+}
+
+/** A single disputed leg within an invoice-group submission. */
+export interface GroupPortalSubmissionLeg {
+  id: number;
+  confNumber: string;
+  serviceDate: string;
+  refNumber: string;
+  carNumber: string;
+  claimAmount: string | null;
+  errorTypeName: string;
+  errorDetails: string;
+  issueType: string;
+  gpsBreadcrumbsAvailable: string;
+}
+
+/**
+ * One Playwright submission == one invoice group with N disputed legs. The
+ * worker navigates to the invoice once, attaches group evidence once, fills
+ * the dispute description once, then iterates `legs` to "tick" each one in
+ * the form before a single confirm/submit. Replaces the per-leg
+ * PortalSubmission as the worker's entrypoint shape (Task #484).
+ */
+export interface GroupPortalSubmission {
+  groupId: number;
+  invoiceNumber: string;
+  clientNumber: string;
+  requesterEmail: string;
+  transportationProviderName: string;
+  phoneNumber: string;
+  subject: string;
+  descriptionHtml: string;
+  disputeReason: string;
+  evidenceNotes: string;
+  attachmentUrls: string[];
+  legs: GroupPortalSubmissionLeg[];
+}
+
+export interface GroupPortalSubmissionResult {
+  ticketId?: string;
+  screenshotPath?: string;
+  /**
+   * One entry per leg in the same order they were passed in. `ticked: false`
+   * means the leg-level interaction failed for that one leg only — the
+   * worker does NOT throw the whole submission; the producer decides what to
+   * do with partial results so we never lose successful ticks.
+   */
+  perLeg: Array<{ legId: number; ticked: boolean; error?: string }>;
+}
+
+/**
+ * Adapter: group a flat list of per-leg `portal_submissions` rows into the
+ * GroupPortalSubmission shape the worker now consumes. Used by callers that
+ * still own per-leg rows during the Task #484 transition (the producer +
+ * Portal Submissions UI flip to true per-group rows is a separate
+ * follow-up). Group-level fields are taken from the first row in each
+ * group; legs preserve input order.
+ */
+export function legsFromPortalSubmissionRows(rows: PortalSubmission[]): GroupPortalSubmission[] {
+  const byGroup = new Map<number, PortalSubmission[]>();
+  for (const row of rows) {
+    const gid = row.invoiceGroupId ?? row.id;
+    const existing = byGroup.get(gid);
+    if (existing) {
+      existing.push(row);
+    } else {
+      byGroup.set(gid, [row]);
+    }
+  }
+  const out: GroupPortalSubmission[] = [];
+  for (const [groupId, groupRows] of byGroup) {
+    const head = groupRows[0];
+    out.push({
+      groupId,
+      invoiceNumber: head.invoiceNumber || "",
+      clientNumber: head.clientNumber || "",
+      requesterEmail: head.requesterEmail || "",
+      transportationProviderName: head.transportationProviderName || "",
+      phoneNumber: head.phoneNumber || "",
+      subject: head.subject || "",
+      descriptionHtml: head.descriptionHtml || "",
+      disputeReason: head.disputeReason || "",
+      evidenceNotes: head.evidenceNotes || "",
+      attachmentUrls: (head.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
+      legs: groupRows.map((r) => ({
+        id: r.id,
+        confNumber: r.confNumber || "",
+        serviceDate: r.serviceDate || "",
+        refNumber: r.refNumber || "",
+        carNumber: r.carNumber || "",
+        claimAmount: r.claimAmount,
+        errorTypeName: r.errorTypeName || "",
+        errorDetails: r.errorDetails || "",
+        issueType: r.issueType || "Other Issue or Question",
+        gpsBreadcrumbsAvailable: r.gpsBreadcrumbsAvailable || "",
+      })),
+    });
+  }
+  return out;
 }
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -216,17 +323,32 @@ function markdownToHtml(text: string): string {
     .join('\n');
 }
 
-function buildDescription(sub: PortalSubmission): string {
-  const raw = sub.descriptionHtml?.trim()
-    ? sub.descriptionHtml
-    : `Dispute for Confirmation Number: ${sub.confNumber || "N/A"}
-Service Date: ${sub.serviceDate || "N/A"}
-Reference Number: ${sub.refNumber || "N/A"}
+/**
+ * Build the dispute description body. Happy path: a draft `descriptionHtml`
+ * is present (the typical case for groups that went through the review UI)
+ * and is returned as-is. Fallback path (rare): synthesize a templated
+ * description that enumerates every leg in a table-style listing so a
+ * multi-leg invoice with no draft does not silently misrepresent itself as
+ * a single-leg dispute.
+ */
+function buildDescription(sub: GroupPortalSubmission): string {
+  if (sub.descriptionHtml?.trim()) {
+    return markdownToHtml(sub.descriptionHtml);
+  }
+
+  const header = `Dispute for Invoice: ${sub.invoiceNumber || "N/A"}
 Client Number: ${sub.clientNumber || "N/A"}
-Car Number: ${sub.carNumber || "N/A"}
-Claim Amount: $${sub.claimAmount || "0.00"}
-Error Type: ${sub.errorTypeName || "N/A"}
-Error Details: ${sub.errorDetails || "N/A"}
+Disputed Legs (${sub.legs.length}):`;
+
+  const legLines = sub.legs.length === 0
+    ? "  (no legs supplied)"
+    : sub.legs.map((leg, i) => {
+        const label = `Leg ${i + 1}`;
+        return `${label}: Conf #${leg.confNumber || "N/A"} | Service Date: ${leg.serviceDate || "N/A"} | Ref: ${leg.refNumber || "N/A"} | Car: ${leg.carNumber || "N/A"} | $${leg.claimAmount || "0.00"} | ${leg.errorTypeName || "N/A"} — ${leg.errorDetails || "N/A"}`;
+      }).join("\n");
+
+  const raw = `${header}
+${legLines}
 
 Dispute Reason: ${sub.disputeReason || "N/A"}
 
@@ -456,7 +578,26 @@ async function waitForTicketFormReload(page: any, submissionId: number): Promise
   }
 }
 
-export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Promise<{ ticketId?: string; screenshotPath?: string }> {
+// ---------------------------------------------------------------------------
+// Test seam: swap in a fake `chromium` so offline tests can drive
+// runBatchWorker without launching a real headless browser. Production code
+// never sets this; only the offline-mode tests in __tests__/ assign it via
+// __setChromiumForTests so they can verify "exactly one Playwright session
+// opened per call" and "every leg ticked in order" without binaries.
+// ---------------------------------------------------------------------------
+let __chromiumImpl: { launch: typeof chromium.launch } = chromium;
+export function __setChromiumForTests(impl: { launch: typeof chromium.launch } | null): void {
+  if (impl === null) {
+    __chromiumImpl = chromium;
+    browsersInstalled = false;
+  } else {
+    __chromiumImpl = impl;
+    // Skip the real install path — the stub doesn't need a chromium binary.
+    browsersInstalled = true;
+  }
+}
+
+export async function runBatchWorker(sub: GroupPortalSubmission, dryRun = false): Promise<GroupPortalSubmissionResult> {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
   }
@@ -466,9 +607,17 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   const MAS_USERNAME = process.env.MAS_PORTAL_USERNAME || "";
   const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 
-  logger.info({ submissionId: sub.id, dryRun }, "Batch worker: launching browser");
+  if (!sub.legs || sub.legs.length === 0) {
+    throw new Error(`runBatchWorker: group ${sub.groupId} has no legs to submit`);
+  }
+  // Group-shared values (issueType, GPS breadcrumbs) are looked up off the
+  // first leg — every leg in an invoice group shares the same error scheme
+  // so this is the canonical source for ticket-form routing.
+  const legHead = sub.legs[0];
 
-  const browser = await chromium.launch({
+  logger.info({ groupId: sub.groupId, legCount: sub.legs.length, dryRun }, "Batch worker: launching browser");
+
+  const browser = await __chromiumImpl.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
@@ -485,7 +634,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
   const downloadedFiles: string[] = [];
 
   try {
-    const ticketFormSlug = FRESHDESK_ISSUE_TYPE_MAP[sub.issueType] || FRESHDESK_ISSUE_TYPE_MAP["Other Issue or Question"];
+    const ticketFormSlug = FRESHDESK_ISSUE_TYPE_MAP[legHead.issueType] || FRESHDESK_ISSUE_TYPE_MAP["Other Issue or Question"];
     const ticketUrl = `${PORTAL_URL}/support/tickets/new?ticket_form=${ticketFormSlug}`;
 
     const needsLogin = !fs.existsSync(statePath);
@@ -494,8 +643,8 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
 
-      logger.info({ submissionId: sub.id }, "Batch worker: no saved session, logging in first");
-      await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.id);
+      logger.info({ submissionId: sub.groupId }, "Batch worker: no saved session, logging in first");
+      await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.groupId);
       await page.waitForTimeout(2000);
 
       const emailInput = await page.$('input[name="user[email]"], input[name="helpdesk_user[email]"], input[type="email"], #user_email');
@@ -509,7 +658,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
         if (submitBtn) {
           await submitBtn.click();
-          await waitForLoginRedirect(page, sub.id);
+          await waitForLoginRedirect(page, sub.groupId);
           await page.waitForTimeout(3000);
         }
 
@@ -518,20 +667,20 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
           throw new Error("Portal login failed — check credentials");
         }
 
-        logger.info({ submissionId: sub.id }, "Batch worker: login successful, saving session");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: login successful, saving session");
         await context.storageState({ path: statePath });
       } else {
         throw new Error("Portal login form not recognized — could not find email/password inputs");
       }
     }
 
-    logger.info({ submissionId: sub.id, ticketUrl }, "Batch worker: navigating to ticket form (authenticated)");
-    await gotoTicketForm(page, ticketUrl, sub.id);
+    logger.info({ submissionId: sub.groupId, ticketUrl }, "Batch worker: navigating to ticket form (authenticated)");
+    await gotoTicketForm(page, ticketUrl, sub.groupId);
     await page.waitForTimeout(2000);
 
     const loginLink = await page.$('a[href*="login"], a:has-text("Login"), a:has-text("Log in"), a:has-text("Sign in")');
     if (loginLink) {
-      logger.info({ submissionId: sub.id }, "Batch worker: session expired, re-logging in");
+      logger.info({ submissionId: sub.groupId }, "Batch worker: session expired, re-logging in");
       if (!MAS_USERNAME || !MAS_PASSWORD) {
         throw new Error("Portal login required — MAS_PORTAL_USERNAME and MAS_PORTAL_PASSWORD must be configured");
       }
@@ -543,8 +692,8 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         );
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        logger.warn({ submissionId: sub.id, err: errMsg }, "Re-login: password input did not attach in 30s after clicking login link; falling back to direct goto");
-        await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.id);
+        logger.warn({ submissionId: sub.groupId, err: errMsg }, "Re-login: password input did not attach in 30s after clicking login link; falling back to direct goto");
+        await gotoLoginPage(page, `${PORTAL_URL}/support/login`, sub.groupId);
       }
       await page.waitForTimeout(2000);
 
@@ -558,20 +707,20 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const submitBtn = await page.$('button[type="submit"], input[type="submit"], input[name="commit"]');
         if (submitBtn) {
           await submitBtn.click();
-          await waitForLoginRedirect(page, sub.id);
+          await waitForLoginRedirect(page, sub.groupId);
           await page.waitForTimeout(3000);
         }
         const stillOnLogin = await page.$('input[type="password"]:visible');
         if (stillOnLogin) {
           throw new Error("Portal login failed — check credentials");
         }
-        logger.info({ submissionId: sub.id }, "Batch worker: re-login successful");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: re-login successful");
         await context.storageState({ path: statePath });
       } else {
         throw new Error("Portal login form not recognized on re-login");
       }
 
-      await gotoTicketForm(page, ticketUrl, sub.id);
+      await gotoTicketForm(page, ticketUrl, sub.groupId);
       await page.waitForTimeout(2000);
     }
 
@@ -581,12 +730,12 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const sel = document.querySelector("#helpdesk_ticket_forms_dropdown") as HTMLSelectElement | null;
         return sel?.value || "";
       });
-      logger.info({ submissionId: sub.id, selectedValue, expected: ticketFormSlug }, "Batch worker: ticket form dropdown value");
+      logger.info({ submissionId: sub.groupId, selectedValue, expected: ticketFormSlug }, "Batch worker: ticket form dropdown value");
       if (selectedValue !== ticketFormSlug) {
-        await fillChoicesDropdown(page, "#helpdesk_ticket_forms_dropdown", ticketFormSlug, sub.id);
-        await waitForTicketFormReload(page, sub.id);
+        await fillChoicesDropdown(page, "#helpdesk_ticket_forms_dropdown", ticketFormSlug, sub.groupId);
+        await waitForTicketFormReload(page, sub.groupId);
         await page.waitForTimeout(2000);
-        logger.info({ submissionId: sub.id }, "Batch worker: ticket form changed, page reloaded");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: ticket form changed, page reloaded");
       }
     }
 
@@ -595,8 +744,9 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       throw new Error("Freshdesk ticket form (#new_helpdesk_ticket) not found — portal page may not have loaded correctly");
     }
     logger.info({
-      submissionId: sub.id,
-      issueType: sub.issueType,
+      groupId: sub.groupId,
+      issueType: legHead.issueType,
+      legCount: sub.legs.length,
       subject: sub.subject?.substring(0, 50),
       email: sub.requesterEmail,
       tpName: sub.transportationProviderName,
@@ -606,15 +756,15 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       attachmentCount: sub.attachmentUrls?.length || 0,
     }, "Batch worker: ticket form found, filling fields with submission data");
 
-    const isGpsIssue = sub.issueType === "GPS Control Deviation";
+    const isGpsIssue = legHead.issueType === "GPS Control Deviation";
 
     if (sub.subject) {
       const el = await page.$("#helpdesk_ticket_subject");
       if (el) {
         await el.fill(sub.subject);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled Subject");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled Subject");
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: Subject field not found");
+        logger.warn({ submissionId: sub.groupId }, "Batch worker: Subject field not found");
       }
     }
 
@@ -622,9 +772,9 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const el = await page.$("#helpdesk_ticket_email");
       if (el) {
         await el.fill(sub.requesterEmail);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled Email");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled Email");
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: Email field not found");
+        logger.warn({ submissionId: sub.groupId }, "Batch worker: Email field not found");
       }
     }
 
@@ -632,9 +782,9 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const el = await page.$("#helpdesk_ticket_custom_field_cf_tp_name_4128361");
       if (el) {
         await el.fill(sub.transportationProviderName);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled TP Name");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled TP Name");
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: TP Name field not found");
+        logger.warn({ submissionId: sub.groupId }, "Batch worker: TP Name field not found");
       }
     }
 
@@ -642,9 +792,9 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const el = await page.$("#helpdesk_ticket_custom_field_cf_phone_number_4128361");
       if (el) {
         await el.fill(sub.phoneNumber);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled Phone");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled Phone");
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: Phone field not found");
+        logger.warn({ submissionId: sub.groupId }, "Batch worker: Phone field not found");
       }
     }
 
@@ -652,24 +802,24 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const el = await page.$("#helpdesk_ticket_custom_field_cf_invoice_number_4128361");
       if (el) {
         await el.fill(sub.invoiceNumber);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled Invoice Number");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled Invoice Number");
       } else {
-        logger.warn({ submissionId: sub.id }, "Batch worker: Invoice Number field not found");
+        logger.warn({ submissionId: sub.groupId }, "Batch worker: Invoice Number field not found");
       }
     }
 
     if (isGpsIssue) {
-      const gpsValue = ["Yes", "No", "Unknown"].includes(sub.gpsBreadcrumbsAvailable) ? sub.gpsBreadcrumbsAvailable : "";
+      const gpsValue = ["Yes", "No", "Unknown"].includes(legHead.gpsBreadcrumbsAvailable) ? legHead.gpsBreadcrumbsAvailable : "";
       if (gpsValue) {
         const gpsSelector = "#helpdesk_ticket_custom_field_cf_gps_breadcrumbs_available_4128361";
-        const filled = await fillChoicesDropdown(page, gpsSelector, gpsValue, sub.id);
+        const filled = await fillChoicesDropdown(page, gpsSelector, gpsValue, sub.groupId);
         if (filled) {
-          logger.info({ submissionId: sub.id, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs");
+          logger.info({ submissionId: sub.groupId, value: gpsValue }, "Batch worker: filled GPS Breadcrumbs");
         } else {
-          logger.warn({ submissionId: sub.id }, "Batch worker: GPS Breadcrumbs field not found or could not be set");
+          logger.warn({ submissionId: sub.groupId }, "Batch worker: GPS Breadcrumbs field not found or could not be set");
         }
       } else {
-        logger.warn({ submissionId: sub.id, value: sub.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
+        logger.warn({ submissionId: sub.groupId, value: legHead.gpsBreadcrumbsAvailable }, "Batch worker: GPS Breadcrumbs value missing or invalid");
       }
     }
 
@@ -680,7 +830,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       const isVisible = await richEditorFrame.isVisible();
       if (isVisible) {
         await richEditorFrame.fill(descriptionPlainText);
-        logger.info({ submissionId: sub.id }, "Batch worker: filled Description via textarea");
+        logger.info({ submissionId: sub.groupId }, "Batch worker: filled Description via textarea");
       } else {
         const froalaEditor = await page.$('.fr-element.fr-view');
         if (froalaEditor) {
@@ -688,7 +838,7 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
           await froalaEditor.evaluate((el: Element, text: string) => {
             el.textContent = text;
           }, descriptionPlainText);
-          logger.info({ submissionId: sub.id }, "Batch worker: filled Description via Froala editor");
+          logger.info({ submissionId: sub.groupId }, "Batch worker: filled Description via Froala editor");
         } else {
           const contentEditable = await page.$('[contenteditable="true"]');
           if (contentEditable) {
@@ -696,14 +846,14 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
             await contentEditable.evaluate((el: Element, text: string) => {
               el.textContent = text;
             }, descriptionPlainText);
-            logger.info({ submissionId: sub.id }, "Batch worker: filled Description via contenteditable");
+            logger.info({ submissionId: sub.groupId }, "Batch worker: filled Description via contenteditable");
           } else {
-            logger.warn({ submissionId: sub.id }, "Batch worker: Description field hidden and no rich editor found");
+            logger.warn({ submissionId: sub.groupId }, "Batch worker: Description field hidden and no rich editor found");
           }
         }
       }
     } else {
-      logger.warn({ submissionId: sub.id }, "Batch worker: Description textarea not found at all");
+      logger.warn({ submissionId: sub.groupId }, "Batch worker: Description textarea not found at all");
     }
 
     const allInputs = await page.$$eval("input:not([type='hidden']), select, textarea", (elements) => {
@@ -715,26 +865,26 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
           value: ((el as any).value || "").substring(0, 80),
         }));
     });
-    logger.info({ submissionId: sub.id, filledFields: JSON.stringify(allInputs) }, "Batch worker: form fields populated");
+    logger.info({ submissionId: sub.groupId, filledFields: JSON.stringify(allInputs) }, "Batch worker: form fields populated");
 
     const hasEvidence = sub.attachmentUrls && sub.attachmentUrls.length > 0;
 
     if (hasEvidence) {
-      logger.info({ submissionId: sub.id, count: sub.attachmentUrls.length }, "Batch worker: downloading evidence files for upload");
+      logger.info({ submissionId: sub.groupId, count: sub.attachmentUrls.length }, "Batch worker: downloading evidence files for upload");
 
       const failedDownloads: string[] = [];
       for (let i = 0; i < sub.attachmentUrls.length; i++) {
         let downloaded = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const fileLabel = `claim-${sub.confNumber}`;
+            const fileLabel = `claim-${legHead.confNumber || `group-${sub.groupId}`}`;
             const tmpPath = await downloadToTemp(sub.attachmentUrls[i], i, fileLabel);
             downloadedFiles.push(tmpPath);
-            logger.info({ submissionId: sub.id, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
+            logger.info({ submissionId: sub.groupId, file: tmpPath }, `Downloaded evidence file ${i + 1}/${sub.attachmentUrls.length}`);
             downloaded = true;
             break;
           } catch (err) {
-            logger.warn({ submissionId: sub.id, url: sub.attachmentUrls[i], attempt, err: err instanceof Error ? err.message : String(err) }, "Evidence download attempt failed");
+            logger.warn({ submissionId: sub.groupId, url: sub.attachmentUrls[i], attempt, err: err instanceof Error ? err.message : String(err) }, "Evidence download attempt failed");
             if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
           }
         }
@@ -753,17 +903,17 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         await freshdeskFileInput.setInputFiles(downloadedFiles);
         await page.waitForTimeout(2000);
         attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #upload_file (triggers Freshdesk JS handler)");
+        logger.info({ submissionId: sub.groupId, count: downloadedFiles.length }, "Batch worker: files attached via #upload_file (triggers Freshdesk JS handler)");
       } else if (filesListInput) {
         await filesListInput.setInputFiles(downloadedFiles);
         attached = true;
-        logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via #files_list fallback");
+        logger.info({ submissionId: sub.groupId, count: downloadedFiles.length }, "Batch worker: files attached via #files_list fallback");
       } else {
         const anyFileInput = await page.$('input[type="file"]');
         if (anyFileInput) {
           await anyFileInput.setInputFiles(downloadedFiles);
           attached = true;
-          logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: files attached via generic file input fallback");
+          logger.info({ submissionId: sub.groupId, count: downloadedFiles.length }, "Batch worker: files attached via generic file input fallback");
         }
       }
 
@@ -778,13 +928,13 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
         const filesListCount = (document.querySelector('#files_list') as HTMLInputElement)?.files?.length || 0;
         return { childCount, fileNames, filesListCount };
       }).catch(() => ({ childCount: 0, fileNames: [] as string[], filesListCount: 0 }));
-      logger.info({ submissionId: sub.id, verification: JSON.stringify(attachmentVerification), expectedCount: downloadedFiles.length }, "Batch worker: attachment verification");
+      logger.info({ submissionId: sub.groupId, verification: JSON.stringify(attachmentVerification), expectedCount: downloadedFiles.length }, "Batch worker: attachment verification");
       if (attachmentVerification.childCount <= 0 && attachmentVerification.filesListCount <= 0) {
         throw new Error("Evidence upload failed — files were set but Freshdesk did not register them. No attachments visible in form.");
       }
 
       await page.waitForTimeout(1000);
-      logger.info({ submissionId: sub.id, count: downloadedFiles.length }, "Batch worker: all evidence files attached successfully");
+      logger.info({ submissionId: sub.groupId, count: downloadedFiles.length }, "Batch worker: all evidence files attached successfully");
     }
 
     const cleanupTempFiles = () => {
@@ -793,15 +943,41 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       }
     };
 
+    // Per-leg "tick" loop. The group-level fields are filled in once above;
+    // here we iterate every disputed leg in input order so the worker can:
+    //   (a) record a per-leg outcome (`ticked: true/false`) the producer can
+    //       use to update only the leg rows that actually made it onto the
+    //       portal form, and
+    //   (b) hold the seam where future per-leg portal interactions (e.g.
+    //       checking a row in a multi-leg invoice grid) will live.
+    // A failure inside the loop is captured as `ticked: false, error: ...`
+    // for that one leg only — we never throw out of the loop, because the
+    // producer should be free to commit the legs that did succeed.
+    const perLeg: GroupPortalSubmissionResult["perLeg"] = [];
+    for (const leg of sub.legs) {
+      try {
+        // Future: navigate per-leg checkboxes / row toggles in the form.
+        // Today the Freshdesk form has no per-leg widgets, so the tick is
+        // bookkeeping only; the description (built once above) carries the
+        // full enumeration of legs.
+        logger.info({ groupId: sub.groupId, legId: leg.id, confNumber: leg.confNumber }, "Batch worker: ticking leg in form");
+        perLeg.push({ legId: leg.id, ticked: true });
+      } catch (legErr) {
+        const legMsg = legErr instanceof Error ? legErr.message : String(legErr);
+        logger.warn({ groupId: sub.groupId, legId: leg.id, err: legMsg }, "Batch worker: leg tick failed (continuing with remaining legs)");
+        perLeg.push({ legId: leg.id, ticked: false, error: legMsg });
+      }
+    }
+
     if (dryRun) {
-      const screenshotPath = path.join(SESSION_DIR, `dry-run-${sub.id}-${Date.now()}.png`);
+      const screenshotPath = path.join(SESSION_DIR, `dry-run-${sub.groupId}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       await context.storageState({ path: statePath });
       await page.close();
       await browser.close();
       cleanupTempFiles();
-      logger.info({ submissionId: sub.id }, "Batch worker: dry run completed");
-      return { screenshotPath };
+      logger.info({ groupId: sub.groupId, ticked: perLeg.filter(p => p.ticked).length, totalLegs: perLeg.length }, "Batch worker: dry run completed");
+      return { screenshotPath, perLeg };
     }
 
     const submitButton = await page.$('button.new-ticket-submit-button[type="submit"]')
@@ -822,14 +998,14 @@ export async function runBatchWorker(sub: PortalSubmission, dryRun = false): Pro
       await page.close();
       await browser.close();
       cleanupTempFiles();
-      logger.info({ submissionId: sub.id, ticketId }, "Batch worker: submission completed");
-      return { ticketId };
+      logger.info({ groupId: sub.groupId, ticketId, ticked: perLeg.filter(p => p.ticked).length, totalLegs: perLeg.length }, "Batch worker: submission completed");
+      return { ticketId, perLeg };
     } else {
       throw new Error("Submit button not found on Freshdesk portal page");
     }
   } catch (error) {
     try {
-      const screenshotPath = path.join(SESSION_DIR, `error-${sub.id}-${Date.now()}.png`);
+      const screenshotPath = path.join(SESSION_DIR, `error-${sub.groupId}-${Date.now()}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
     } catch {}
 

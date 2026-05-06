@@ -1024,33 +1024,50 @@ async function processViaExternalBot(
   const runBatchWorker = __batchWorkerOverride
     ?? (await import("../bot/batch-worker")).runBatchWorker;
 
-  const workerSub: import("../bot/batch-worker").PortalSubmission = {
-    id: sub.id,
-    confNumber: sub.confNumber || "",
-    serviceDate: sub.serviceDate || "",
-    refNumber: sub.refNumber || "",
+  // Adapter: assemble a one-leg GroupPortalSubmission from this per-leg row
+  // so the worker (Task #484) opens exactly one Playwright session per call
+  // even while the producer + UI are still per-leg. The follow-up that flips
+  // those will pass real multi-leg groups; until then the per-leg row is
+  // also the only leg in its group from the worker's POV.
+  const workerSub: import("../bot/batch-worker").GroupPortalSubmission = {
+    groupId: sub.invoiceGroupId,
+    invoiceNumber: sub.invoiceNumber || "",
     clientNumber: sub.clientNumber || "",
-    carNumber: sub.carNumber || "",
-    claimAmount: sub.claimAmount,
-    errorTypeName: sub.errorTypeName || "",
-    errorDetails: sub.errorDetails || "",
-    issueType,
-    subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
     requesterEmail: sub.requesterEmail || defaults.contactEmail,
     transportationProviderName: sub.transportationProviderName || defaults.providerName,
     phoneNumber: sub.phoneNumber || defaults.contactPhone,
-    invoiceNumber: sub.invoiceNumber || "",
-    gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
+    subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
     attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
+    legs: [{
+      id: sub.id,
+      confNumber: sub.confNumber || "",
+      serviceDate: sub.serviceDate || "",
+      refNumber: sub.refNumber || "",
+      carNumber: sub.carNumber || "",
+      claimAmount: sub.claimAmount,
+      errorTypeName: sub.errorTypeName || "",
+      errorDetails: sub.errorDetails || "",
+      issueType,
+      gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
+    }],
   };
 
-  logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
+  logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
   const result = await runBatchWorker(workerSub, dryRun);
+
+  // The producer owns DB mutations. Honour per-leg outcomes from the worker:
+  // a `ticked: false` entry for this row's leg means the leg-level work
+  // failed inside the portal session, so we surface it as an error and let
+  // the existing failure path schedule a retry / mark failed.
+  const myLegResult = result.perLeg.find((p) => p.legId === sub.id);
+  if (myLegResult && !myLegResult.ticked) {
+    throw new Error(myLegResult.error || `Worker reported leg ${sub.id} as not ticked`);
+  }
 
   if (dryRun) {
     await db.update(portalSubmissionsTable).set({
@@ -1137,32 +1154,42 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     const issueType = sub.issueType || "Other Issue or Question";
 
-    const workerSub: import("../bot/batch-worker").PortalSubmission = {
-      id: sub.id,
-      confNumber: sub.confNumber || "",
-      serviceDate: sub.serviceDate || "",
-      refNumber: sub.refNumber || "",
+    // See the matching adapter comment in processViaExternalBot above —
+    // sandbox runs assemble the same one-leg GroupPortalSubmission so the
+    // sandboxed Playwright session matches what production runs do.
+    const workerSub: import("../bot/batch-worker").GroupPortalSubmission = {
+      groupId: sub.invoiceGroupId,
+      invoiceNumber: sub.invoiceNumber || "",
       clientNumber: sub.clientNumber || "",
-      carNumber: sub.carNumber || "",
-      claimAmount: sub.claimAmount,
-      errorTypeName: sub.errorTypeName || "",
-      errorDetails: sub.errorDetails || "",
-      issueType,
-      subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
       requesterEmail: sub.requesterEmail || defaults.contactEmail,
       transportationProviderName: sub.transportationProviderName || defaults.providerName,
       phoneNumber: sub.phoneNumber || defaults.contactPhone,
-      invoiceNumber: sub.invoiceNumber || "",
-      gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
+      subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
       descriptionHtml: sub.descriptionHtml || "",
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",
       attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
+      legs: [{
+        id: sub.id,
+        confNumber: sub.confNumber || "",
+        serviceDate: sub.serviceDate || "",
+        refNumber: sub.refNumber || "",
+        carNumber: sub.carNumber || "",
+        claimAmount: sub.claimAmount,
+        errorTypeName: sub.errorTypeName || "",
+        errorDetails: sub.errorDetails || "",
+        issueType,
+        gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
+      }],
     };
 
-    logger.info({ submissionId: sub.id, issueType, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");
+    logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");
 
     const result = await runBatchWorker(workerSub, true);
+    const myLegResult = result.perLeg.find((p) => p.legId === sub.id);
+    if (myLegResult && !myLegResult.ticked) {
+      throw new Error(myLegResult.error || `Worker reported leg ${sub.id} as not ticked`);
+    }
 
     let screenshotUrl: string | null = null;
     if (result.screenshotPath) {

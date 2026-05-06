@@ -46,10 +46,17 @@ before(async () => {
   // throws on a sentinel confNumber so we can drive the failure branch.
   __setBatchWorkerForTests(async (sub) => {
     await new Promise((r) => setTimeout(r, 60));
-    if (sub.confNumber === "TEST_FAIL_SENTINEL") {
+    // Task #484: worker now takes a GroupPortalSubmission. Per-leg producers
+    // pass a one-leg group, so legs[0] is the original per-leg row.
+    const head = sub.legs[0];
+    if (head?.confNumber === "TEST_FAIL_SENTINEL") {
       throw new Error("Stubbed bot failure for test");
     }
-    return { ticketId: `TEST-${sub.id}`, screenshotPath: undefined };
+    return {
+      ticketId: `TEST-${head?.id ?? sub.groupId}`,
+      screenshotPath: undefined,
+      perLeg: sub.legs.map((l) => ({ legId: l.id, ticked: true })),
+    };
   });
 
   const app: Express = express();
