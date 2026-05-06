@@ -115,6 +115,18 @@ Behaviour:
 
 `maybeAdvanceInvoice` is the **only** code path that auto-advances an invoice. Everywhere else, advancement is operator-triggered through `transitionInvoice`. This kills the "where does group state actually come from?" question.
 
+**Writer-path consolidation (revised 2026-05-06).** `setClaimDisposition` replaces multiple legacy writers that today produce equivalent operator-facing state through different storage shapes. Specifically, the four writers below all collapse into a single `setClaimDisposition` call:
+
+| Today's writer | Today's audit action | New call |
+|---|---|---|
+| `excludeLegCore(reason='non_issue')` (`POST /claims/:id/exclude` w/ reason=non_issue, blank-sibling auto-exclude) | `leg_excluded` | `setClaimDisposition(id, 'disposed_nonissue', ctx)` |
+| `excludeLegCore(reason='cannot_dispute')` | `leg_excluded` | `setClaimDisposition(id, 'disposed_withdraw', ctx)` |
+| `POST /claims/:id/conclude-leg` w/ `reason='non_issue'` (Task #265 picker) | `leg_concluded` | `setClaimDisposition(id, 'disposed_nonissue', ctx)` |
+| `POST /claims/:id/conclude-leg` w/ `reason='cannot_dispute'` | `leg_concluded` | `setClaimDisposition(id, 'disposed_withdraw', ctx)` |
+| `POST /claims/:id/sop-advance` terminal (`non_issue` / `cannot_dispute` / `portal_dispute` / `dispute`) | `leg_sop_advanced` | `setClaimDisposition(id, <mapped>, ctx)` |
+
+The historical writer-path distinction (audit action name) is preserved by setting `ctx.source` so the new audit registry stamps an equivalent action label. The `included_in_dispute`, `drop_reason`, `dropped_at`, `ready_at` columns are storage-shape artifacts of the legacy two-path design and are dropped in Wave E (see §4 / §5.3).
+
 ### 3.3 The transition table
 
 ```ts
@@ -162,7 +174,7 @@ This is what makes the topology change real:
 | `artifacts/api-server/src/lib/macro-phase.ts` + `claimclear/src/lib/lifecycle-phase.ts` | Macro-phase derivation logic disappears because phase IS macro. The 7 macro values are nearly identical to the 7 invoice phases — see §6.4. |
 | The 7-way truth-table terminal-state helper from `docs/architecture/invoice-terminal-state.md` §3 | Replaced by `invoice.phase === 'closed'`. The 4-column tuple becomes a single read. The mutual-exclusion guard becomes unrepresentable instead of run-time-enforced. |
 | `lib/vocab/src/verdict-outcome.ts` | Already dead per drift bug #5. |
-| `claims.status`, `claims.outcome`, `claims.sop_outcome`, `claims.attestation_state`, `claims.drop_reason` | All folded into `claims.disposition`. Dropped after dual-write window (§7). |
+| `claims.status`, `claims.outcome`, `claims.sop_outcome`, `claims.attestation_state`, `claims.drop_reason`, `claims.dropped_at`, `claims.ready_at`, `claims.included_in_dispute` | All folded into `claims.disposition`. The last four are storage-shape artifacts of the legacy excluded-vs-dropped two-path writer split (see §3.2 consolidation table). Dropped after dual-write window (§7). |
 | `invoice_groups.status`, `invoice_groups.outcome` | Folded into `invoice_groups.phase` + `closure_reason`. Dropped after dual-write window. |
 | The 6 independent writer sites for `group.status` and 5 for `claim.status` | Become callers of `transitionInvoice` / `setClaimDisposition`. Direct `db.update(invoiceGroupsTable).set({status: ...})` is banned by lint rule. |
 | Drift bugs #1, #2, #3, #4, #6, #7, #8, #9 from the audit | Become unrepresentable. |
@@ -230,7 +242,8 @@ This is the **structural** version of the contract. Bad combinations stop being 
 ALTER TABLE invoice_groups DROP COLUMN status, DROP COLUMN outcome;
 ALTER TABLE claims DROP COLUMN status, DROP COLUMN outcome,
                    DROP COLUMN sop_outcome, DROP COLUMN attestation_state,
-                   DROP COLUMN drop_reason;
+                   DROP COLUMN drop_reason, DROP COLUMN dropped_at,
+                   DROP COLUMN ready_at, DROP COLUMN included_in_dispute;
 DROP TYPE claim_status;
 DROP TYPE claim_outcome;
 ```
@@ -262,13 +275,20 @@ This is the deterministic backfill. Every existing row has exactly one target.
 
 ### 6.2 Claim disposition from today's `(status, outcome, sop_outcome, attestation_state, included_in_dispute, duplicate_of_claim_id)` tuple
 
+**Two-path collapse (revised 2026-05-06).** Today's schema has two parallel writers that produce the same operator-facing concept ("this leg won't be disputed: non-issue / non-contestable") through two different storage shapes:
+
+- **Excluded path** — `excludeLegCore` (in `artifacts/api-server/src/lib/claim-transitions.ts`) flips `included_in_dispute=false` and, when reason is `non_issue`, co-writes `sop_outcome='non_issue'`. Audit action: `leg_excluded`. Used by blank-sibling auto-exclusion (Task #232) and the manual leg-detail exclude button.
+- **Dropped path** — `POST /claims/:id/conclude-leg` (Task #265 three-button picker on Queue Panel A) and the `sop-advance` terminal both stamp `sop_outcome` + `drop_reason` + `dropped_at`, leaving `included_in_dispute=true`. Audit action: `leg_concluded` or `leg_sop_advanced` with `metadata.isTerminal=true`. Sub-status derives to `dropped` (vs `excluded` for the other path).
+
+Both paths produce the same operator concept. The new `disposition` column encodes the operator concept, not the storage shape — so both shapes map to the same disposition value below. The historical path distinction is preserved in the append-only `audit_logs` action name, not in the column. Wave D consolidates both writer paths into a single `setClaimDisposition` call (see §3.2 note).
+
 Computed in this order; first match wins:
 
 | Predicate | New `disposition` |
 |---|---|
 | `duplicate_of_claim_id IS NOT NULL` | `duplicate` |
-| `included_in_dispute = false AND sop_outcome = 'non_issue'` | `disposed_nonissue` (or `final_nonissue` if parent phase `closed`) |
-| `included_in_dispute = false AND sop_outcome = 'cannot_dispute'` | `disposed_withdraw` (or `final_withdrawn`) |
+| `sop_outcome = 'non_issue'` | `disposed_nonissue` (or `final_nonissue` if parent phase `closed`) — covers both excluded path (`included_in_dispute=false`, `drop_reason=NULL`) and dropped path (`included_in_dispute=true`, `drop_reason='non_issue'`) |
+| `sop_outcome = 'cannot_dispute'` | `disposed_withdraw` (or `final_withdrawn`) — same two-path collapse as above |
 | `sop_outcome = 'hold'` | `blocked` |
 | `sop_outcome = 'portal_dispute'` AND parent phase ≥ `submitted` AND no verdict yet | (claim continues with `disposed_portal`; parent phase carries the actual progress) |
 | `sop_outcome = 'dispute'` (the deprecated value) AND parent phase ≥ `submitted` | `disposed_email` (fold of `dispute → portal_dispute` from migration plan §4d simplified: `dispute` was email-channel, `portal_dispute` is portal-channel) |
