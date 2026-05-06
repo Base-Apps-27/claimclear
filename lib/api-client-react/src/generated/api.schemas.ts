@@ -876,6 +876,23 @@ export type PortalSubmissionResponseCompletedElsewhere = {
   submittedAt?: string | null;
 } | null;
 
+export type PortalSubmissionResponseLegsItem = {
+  /** Numeric ID of the claims row this leg corresponds to. */
+  legId: number;
+  /**
+   * MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.
+   * @nullable
+   */
+  confNumber?: string | null;
+  /** Whether the bot worker confirmed this leg was selected/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes. */
+  ticked: boolean;
+  /**
+   * Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.
+   * @nullable
+   */
+  error?: string | null;
+};
+
 export interface PortalSubmissionResponse {
   id: number;
   invoiceGroupId: number;
@@ -985,6 +1002,8 @@ null on the success row itself. The latest sibling success wins.
    * @nullable
    */
   completedElsewhere?: PortalSubmissionResponseCompletedElsewhere;
+  /** Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those. */
+  legs: PortalSubmissionResponseLegsItem[];
   createdAt?: string;
   updatedAt?: string;
 }

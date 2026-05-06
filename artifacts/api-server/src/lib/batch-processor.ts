@@ -1004,6 +1004,61 @@ async function processDirectEmail(
   );
 }
 
+/**
+ * Resolve the disputed legs for a group submission as the worker expects them.
+ *
+ * Source-of-truth ordering:
+ *   1. `sub.legs` JSONB recorded at draft time (post-Task #485 rows). We
+ *      use the recorded `legId`s to look up the matching `claims` rows so
+ *      the worker still gets fresh per-leg metadata.
+ *   2. Fallback for legacy rows where `legs == []` (pre-Task #485): use
+ *      every claim on the invoice group. The worker is happy as long as
+ *      *some* legs are passed in.
+ *
+ * The submission row's flat snapshot fields (`confNumber`, `serviceDate`,
+ * etc.) are comma-joined for display only — they are NOT a per-leg source
+ * and must not be used to synthesize a single fake leg.
+ */
+async function loadWorkerLegsForSubmission(
+  sub: typeof portalSubmissionsTable.$inferSelect,
+  defaults: { defaultGpsBreadcrumbs: string },
+  issueType: string,
+): Promise<import("../bot/batch-worker").GroupPortalSubmissionLeg[]> {
+  const recordedLegIds = (sub.legs ?? [])
+    .map((l) => l.legId)
+    .filter((id): id is number => typeof id === "number");
+
+  let claims: (typeof claimsTable.$inferSelect)[] = [];
+  if (recordedLegIds.length > 0) {
+    claims = await db.select().from(claimsTable)
+      .where(inArray(claimsTable.id, recordedLegIds));
+    // Preserve recorded order so the worker tickbox sequence matches what
+    // the operator approved at draft time.
+    const byId = new Map(claims.map((c) => [c.id, c]));
+    claims = recordedLegIds
+      .map((id) => byId.get(id))
+      .filter((c): c is typeof claimsTable.$inferSelect => !!c);
+  } else {
+    // Legacy row — fall back to every claim on the group.
+    claims = await db.select().from(claimsTable)
+      .where(eq(claimsTable.invoiceGroupId, sub.invoiceGroupId))
+      .orderBy(claimsTable.id);
+  }
+
+  return claims.map((c) => ({
+    id: c.id,
+    confNumber: c.confNumber || "",
+    serviceDate: c.date ? String(c.date) : "",
+    refNumber: c.refNumber || "",
+    carNumber: c.carNumber || "",
+    claimAmount: c.claimAmount ?? null,
+    errorTypeName: c.errorTypeName || sub.errorTypeName || "",
+    errorDetails: c.errorDetails || sub.errorDetails || "",
+    issueType,
+    gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
+  }));
+}
+
 async function processViaExternalBot(
   sub: typeof portalSubmissionsTable.$inferSelect,
   batchId?: string | null,
@@ -1024,11 +1079,14 @@ async function processViaExternalBot(
   const runBatchWorker = __batchWorkerOverride
     ?? (await import("../bot/batch-worker")).runBatchWorker;
 
-  // Adapter: assemble a one-leg GroupPortalSubmission from this per-leg row
-  // so the worker (Task #484) opens exactly one Playwright session per call
-  // even while the producer + UI are still per-leg. The follow-up that flips
-  // those will pass real multi-leg groups; until then the per-leg row is
-  // also the only leg in its group from the worker's POV.
+  // Task #485: this row IS the group submission. Build a multi-leg
+  // GroupPortalSubmission from the real claim rows — `sub.legs` (JSONB)
+  // recorded which legs were eligible at draft time; we look them up in
+  // `claims` to get the per-leg fields the worker needs. Legacy rows with
+  // an empty `legs` JSONB fall back to "all claims on the group" so the
+  // worker still has something to tick.
+  const workerLegs = await loadWorkerLegsForSubmission(sub, defaults, issueType);
+
   const workerSub: import("../bot/batch-worker").GroupPortalSubmission = {
     groupId: sub.invoiceGroupId,
     invoiceNumber: sub.invoiceNumber || "",
@@ -1041,37 +1099,40 @@ async function processViaExternalBot(
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
     attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
-    legs: [{
-      id: sub.id,
-      confNumber: sub.confNumber || "",
-      serviceDate: sub.serviceDate || "",
-      refNumber: sub.refNumber || "",
-      carNumber: sub.carNumber || "",
-      claimAmount: sub.claimAmount,
-      errorTypeName: sub.errorTypeName || "",
-      errorDetails: sub.errorDetails || "",
-      issueType,
-      gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
-    }],
+    legs: workerLegs,
   };
 
-  logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
+  logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, legCount: workerSub.legs.length, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
   const result = await runBatchWorker(workerSub, dryRun);
 
-  // The producer owns DB mutations. Honour per-leg outcomes from the worker:
-  // a `ticked: false` entry for this row's leg means the leg-level work
-  // failed inside the portal session, so we surface it as an error and let
-  // the existing failure path schedule a retry / mark failed.
-  const myLegResult = result.perLeg.find((p) => p.legId === sub.id);
-  if (myLegResult && !myLegResult.ticked) {
-    throw new Error(myLegResult.error || `Worker reported leg ${sub.id} as not ticked`);
+  // Persist per-leg outcomes (legId, confNumber, ticked, error) onto the
+  // group submission's `legs` JSONB so the drawer can render the per-leg
+  // breakdown. If any leg failed (`ticked: false`) we still surface it as
+  // a submission-level failure so the existing retry path runs — partial
+  // success is captured in JSONB for forensic review either way.
+  const persistedLegs = workerSub.legs.map((leg) => {
+    const r = result.perLeg.find((p) => p.legId === leg.id);
+    return {
+      legId: leg.id,
+      confNumber: leg.confNumber || null,
+      ticked: r?.ticked ?? false,
+      error: r?.error ?? null,
+    };
+  });
+  const failedLegs = persistedLegs.filter((l) => !l.ticked);
+  if (failedLegs.length > 0) {
+    await db.update(portalSubmissionsTable).set({ legs: persistedLegs })
+      .where(eq(portalSubmissionsTable.id, sub.id));
+    const summary = failedLegs.map((l) => `leg ${l.legId}${l.error ? `: ${l.error}` : ""}`).join("; ");
+    throw new Error(`Worker reported ${failedLegs.length}/${persistedLegs.length} leg${failedLegs.length === 1 ? "" : "s"} not ticked — ${summary}`);
   }
 
   if (dryRun) {
     await db.update(portalSubmissionsTable).set({
       status: "dry_run",
+      legs: persistedLegs,
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     await db.insert(botActivityLogTable).values({
@@ -1093,6 +1154,7 @@ async function processViaExternalBot(
       // Clear any leftover error from a previous failed attempt so the row
       // does not keep showing a stale red error pill after success.
       errorMessage: null,
+      legs: persistedLegs,
     }).where(eq(portalSubmissionsTable.id, sub.id));
 
     const submittedAtIso = new Date().toISOString();
@@ -1154,9 +1216,9 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
 
     const issueType = sub.issueType || "Other Issue or Question";
 
-    // See the matching adapter comment in processViaExternalBot above —
-    // sandbox runs assemble the same one-leg GroupPortalSubmission so the
-    // sandboxed Playwright session matches what production runs do.
+    // Sandbox runs use the same multi-leg shape as production so the
+    // sandboxed Playwright session matches the real submission path.
+    const workerLegs = await loadWorkerLegsForSubmission(sub, defaults, issueType);
     const workerSub: import("../bot/batch-worker").GroupPortalSubmission = {
       groupId: sub.invoiceGroupId,
       invoiceNumber: sub.invoiceNumber || "",
@@ -1169,26 +1231,18 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",
       attachmentUrls: (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string"),
-      legs: [{
-        id: sub.id,
-        confNumber: sub.confNumber || "",
-        serviceDate: sub.serviceDate || "",
-        refNumber: sub.refNumber || "",
-        carNumber: sub.carNumber || "",
-        claimAmount: sub.claimAmount,
-        errorTypeName: sub.errorTypeName || "",
-        errorDetails: sub.errorDetails || "",
-        issueType,
-        gpsBreadcrumbsAvailable: resolveGps(sub.gpsBreadcrumbsAvailable || defaults.defaultGpsBreadcrumbs, issueType),
-      }],
+      legs: workerLegs,
     };
 
-    logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");
+    logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, legCount: workerSub.legs.length, attachmentCount: workerSub.attachmentUrls.length }, "runSandboxForSubmission: resolved submission data");
 
     const result = await runBatchWorker(workerSub, true);
-    const myLegResult = result.perLeg.find((p) => p.legId === sub.id);
-    if (myLegResult && !myLegResult.ticked) {
-      throw new Error(myLegResult.error || `Worker reported leg ${sub.id} as not ticked`);
+    const failedLegs = workerSub.legs
+      .map((leg) => ({ leg, r: result.perLeg.find((p) => p.legId === leg.id) }))
+      .filter((x) => x.r && !x.r.ticked);
+    if (failedLegs.length > 0) {
+      const summary = failedLegs.map((x) => `leg ${x.leg.id}${x.r?.error ? `: ${x.r.error}` : ""}`).join("; ");
+      throw new Error(`Worker reported ${failedLegs.length}/${workerSub.legs.length} leg${failedLegs.length === 1 ? "" : "s"} not ticked — ${summary}`);
     }
 
     let screenshotUrl: string | null = null;

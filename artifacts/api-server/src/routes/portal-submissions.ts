@@ -604,6 +604,45 @@ async function loadContextForSubmission(sub: typeof portalSubmissionsTable.$infe
   return loadGroupContextByGroupId(sub.invoiceGroupId);
 }
 
+/**
+ * Task #485 legacy fallback: rows created before the `legs` JSONB column
+ * existed have `legs = []` (the migration's default). To keep the new
+ * one-row-per-group UI consistent across pre- and post-migration history,
+ * synthesize a per-leg breakdown for those rows from the invoice group's
+ * claims, with `ticked: false` and no per-leg error (the legacy worker
+ * never recorded per-leg outcomes, so the most we can show is the legs
+ * that were eligible at the time). Bulk-fetches claims for every legacy
+ * row in one query so the list endpoint stays a single round-trip.
+ */
+async function enrichLegacyLegs<T extends { id: number; invoiceGroupId: number; legs: Array<{ legId: number; confNumber: string | null; ticked: boolean; error?: string | null }> }>(
+  rows: T[],
+): Promise<T[]> {
+  const legacyGroupIds = Array.from(new Set(
+    rows.filter((r) => !r.legs || r.legs.length === 0).map((r) => r.invoiceGroupId),
+  ));
+  if (legacyGroupIds.length === 0) return rows;
+
+  const claims = await db
+    .select({ id: claimsTable.id, invoiceGroupId: claimsTable.invoiceGroupId, confNumber: claimsTable.confNumber })
+    .from(claimsTable)
+    .where(inArray(claimsTable.invoiceGroupId, legacyGroupIds))
+    .orderBy(claimsTable.id);
+
+  const byGroup = new Map<number, Array<{ legId: number; confNumber: string | null; ticked: boolean; error: null }>>();
+  for (const c of claims) {
+    if (c.invoiceGroupId == null) continue;
+    const list = byGroup.get(c.invoiceGroupId) ?? [];
+    list.push({ legId: c.id, confNumber: c.confNumber ?? null, ticked: false, error: null });
+    byGroup.set(c.invoiceGroupId, list);
+  }
+
+  return rows.map((r) => {
+    if (r.legs && r.legs.length > 0) return r;
+    const fallback = byGroup.get(r.invoiceGroupId) ?? [];
+    return { ...r, legs: fallback };
+  });
+}
+
 router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { status } = req.query;
   const statusStr = typeof status === "string" ? status : undefined;
@@ -665,11 +704,12 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
     }
   }
 
-  const enriched = submissions.map((s) => {
+  const withSibling = submissions.map((s) => {
     const sibling = successByGroup.get(s.invoiceGroupId);
     const completedElsewhere = sibling && sibling.submissionId !== s.id ? sibling : null;
     return { ...s, completedElsewhere };
   });
+  const enriched = await enrichLegacyLegs(withSibling);
 
   res.json(enriched);
 }));
@@ -895,6 +935,15 @@ export async function generatePortalDraftForGroup(
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles,
     attempts: 0,
+    // Task #485: record one entry per disputed leg at draft time so the list
+    // page can render an "N legs" pill and the drawer can show the per-leg
+    // breakdown. `ticked` starts false on every leg; the producer overwrites
+    // this column with worker outcomes after a real submission run.
+    legs: ctx.rides.map((r) => ({
+      legId: r.id,
+      confNumber: r.confNumber || null,
+      ticked: false,
+    })),
   }).returning();
 
   const partialSuffix = isPartialSubmission
@@ -1500,6 +1549,13 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles,
     attempts: 0,
+    // Task #485: same as the draft path above — one legs entry per disputed
+    // leg, ticked=false. The producer overwrites this with worker outcomes.
+    legs: ctx.rides.map((r) => ({
+      legId: r.id,
+      confNumber: r.confNumber || null,
+      ticked: false,
+    })),
   }).returning();
 
   await transitionContext({
@@ -1520,7 +1576,8 @@ router.get("/portal-submissions/:id", asyncHandler(async (req, res): Promise<voi
   const [sub] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
 
-  res.json(sub);
+  const [enriched] = await enrichLegacyLegs([sub]);
+  res.json(enriched);
 }));
 
 router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Promise<void> => {

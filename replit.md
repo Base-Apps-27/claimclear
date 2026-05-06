@@ -40,7 +40,7 @@ The project is structured as a pnpm workspace monorepo utilizing TypeScript, des
 - **Real-time Updates:** Server-Sent Events (SSE) provide real-time updates and collision detection.
 - **API Security:** Role-based authentication middleware protects API routes.
 - **Cron Jobs:** Scheduled jobs for processing portal submissions, daily briefs, and payor response scanning.
-- **Portal Worker (on-demand):** In-process Playwright bot for MAS Portal interaction, launching a fresh browser for each invocation.
+- **Portal Worker (on-demand):** In-process Playwright bot for MAS Portal interaction, launching a fresh browser for each invocation. **Group-atomic end-to-end (Task #485):** `portal_submissions` rows are one per invoice group (not per leg) and carry a `legs` JSONB column (`{ legId, confNumber, ticked, error? }[]`) populated at draft time and overwritten by the producer with the worker's `perLeg[]` outcomes. The list page renders one row per group with an "N legs" pill; the drawer reads `legs[]` directly to show per-leg ticked/error state. Legacy per-leg rows (pre-Task #485) keep `legs == []` and the drawer falls back to a "details unavailable" notice. Migration `0032_portal_submissions_legs_jsonb.sql` is idempotent and does **no** backfill.
 - **System Health Rollup:** Provides a consolidated view of system health, including connector probes, cron freshness, worker status, and overdue submissions.
 - **Header Batch Status Pill:** Persistent UI element displaying live queued-claim count, next batch countdown, and in-flight indicators.
 - **Summary Analytics Page:** Provides time-range-aware analytics, including activity trends, recovery trends, team productivity, and breakdowns by status/outcome/error types.

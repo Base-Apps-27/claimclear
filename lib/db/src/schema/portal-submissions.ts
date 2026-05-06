@@ -27,6 +27,15 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   // direct-email dispatcher (`direct-email-dispatch.ts`). Always a string
   // array on rows produced after Task #389; legacy rows may be null.
   attachmentUrls: jsonb("attachment_urls").$type<string[]>(),
+  // Per-leg breakdown for this group submission (Task #485). One entry per
+  // disputed leg in input order: `{ legId, confNumber, ticked, error? }`.
+  // Populated at draft creation with `ticked: false` for every leg, then
+  // overwritten by the producer after the bot worker run using the worker's
+  // `perLeg[]` return. The list page now renders one row per group and the
+  // drawer reads this column directly to show the per-leg outcome breakdown.
+  // Legacy per-leg rows created before Task #485 keep `legs = []`; the
+  // drawer falls back to a degraded "details unavailable" notice for those.
+  legs: jsonb("legs").$type<Array<{ legId: number; confNumber: string | null; ticked: boolean; error?: string | null }>>().notNull().default([]),
   confNumber: text("conf_number"),
   serviceDate: text("service_date"),
   refNumber: text("ref_number"),

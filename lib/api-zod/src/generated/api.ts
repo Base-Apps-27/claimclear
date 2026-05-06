@@ -2271,6 +2271,36 @@ export const GetInvoiceGroupResponse = zod
               .describe(
                 "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
               ),
+            legs: zod
+              .array(
+                zod.object({
+                  legId: zod
+                    .number()
+                    .describe(
+                      "Numeric ID of the claims row this leg corresponds to.",
+                    ),
+                  confNumber: zod
+                    .string()
+                    .nullish()
+                    .describe(
+                      "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+                    ),
+                  ticked: zod
+                    .boolean()
+                    .describe(
+                      "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+                    ),
+                  error: zod
+                    .string()
+                    .nullish()
+                    .describe(
+                      "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+                    ),
+                }),
+              )
+              .describe(
+                "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+              ),
             createdAt: zod.string().optional(),
             updatedAt: zod.string().optional(),
           }),
@@ -19144,6 +19174,34 @@ export const ListPortalSubmissionsResponseItem = zod.object({
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
     ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -19341,6 +19399,34 @@ export const GetPortalSubmissionResponse = zod.object({
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
     ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -19501,6 +19587,34 @@ export const RetryPortalSubmissionResponse = zod.object({
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
     ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -19660,6 +19774,34 @@ export const CancelPortalSubmissionResponse = zod.object({
     .nullish()
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -19847,6 +19989,34 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
     .nullish()
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -20050,6 +20220,34 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
     ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -20209,6 +20407,34 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
     .nullish()
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -20377,6 +20603,34 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
     .nullish()
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -20561,6 +20815,34 @@ export const ConfirmPortalSubmissionResponse = zod.object({
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
     ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
+    ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -20720,6 +21002,34 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
     .nullish()
     .describe(
       "Populated when a \*different\* portal_submissions row sharing the same\n`invoiceGroupId` has reached status='submitted'. Lets the UI render\nan inline \"Already submitted in run #N\" pill on draft \/ cancelled \/\nfailed rows whose underlying invoice has already been resolved by\nanother attempt. Null when no sibling success exists, and always\nnull on the success row itself. The latest sibling success wins.\n",
+    ),
+  legs: zod
+    .array(
+      zod.object({
+        legId: zod
+          .number()
+          .describe("Numeric ID of the claims row this leg corresponds to."),
+        confNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            "MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.",
+          ),
+        ticked: zod
+          .boolean()
+          .describe(
+            "Whether the bot worker confirmed this leg was selected\/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.",
+          ),
+        error: zod
+          .string()
+          .nullish()
+          .describe(
+            "Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.",
+          ),
+      }),
+    )
+    .describe(
+      "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),

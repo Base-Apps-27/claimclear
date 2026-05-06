@@ -7403,6 +7403,27 @@ components:
               description: ISO timestamp of when the sibling submission reached status='submitted'.
           required:
             - submissionId
+        legs:
+          type: array
+          description: "Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those."
+          items:
+            type: object
+            properties:
+              legId:
+                type: integer
+                description: Numeric ID of the claims row this leg corresponds to.
+              confNumber:
+                type: ["string", "null"]
+                description: MAS confirmation number for the leg, snapshotted at draft time. Null if the leg had no confNumber.
+              ticked:
+                type: boolean
+                description: Whether the bot worker confirmed this leg was selected/ticked in the portal session. Stays false until a real (non-sandbox) submission run completes.
+              error:
+                type: ["string", "null"]
+                description: Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.
+            required:
+              - legId
+              - ticked
         createdAt:
           type: string
         updatedAt:
@@ -7413,6 +7434,7 @@ components:
         - status
         - attempts
         - maxAttempts
+        - legs
 
     CreatePortalSubmissionBody:
       type: object

@@ -1,0 +1,1 @@
+ALTER TABLE "portal_submissions" ADD COLUMN "legs" jsonb DEFAULT '[]'::jsonb NOT NULL;

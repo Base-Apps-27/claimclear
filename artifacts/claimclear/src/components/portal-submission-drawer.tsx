@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, X, Send, Play, ExternalLink, FileText, Image as ImageIcon,
   FlaskConical, Sparkles, Pencil, Save, RefreshCw, ChevronRight,
-  Activity, CheckCircle2, AlertTriangle, Bot, Edit2, Mail,
+  Activity, CheckCircle2, AlertTriangle, Bot, Edit2, Mail, Clock,
 } from "lucide-react";
 import { Link } from "wouter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -481,6 +481,51 @@ export function PortalSubmissionDrawer({
                   )}
                   {submission.descriptionEditorName && !editingDisputeText && (
                     <p className="text-[10px] text-muted-foreground mt-2">Last edited by {submission.descriptionEditorName}</p>
+                  )}
+                </DrawerSection>
+
+                <DrawerSection title={`Legs (${submission.legs?.length ?? 0})`}>
+                  {/* Task #485: per-leg breakdown sourced from `legs` JSONB
+                      on the submission row. One entry per disputed leg, in
+                      the order they were eligible at draft time. `ticked`
+                      flips to true after the worker successfully selects
+                      that leg's checkbox in the portal session; on failure,
+                      `error` carries the per-leg reason. Legacy pre-Task
+                      #485 rows are enriched server-side from the invoice
+                      group's claims (with ticked=false), so this list is
+                      always populated for any group with at least one leg. */}
+                  {(submission.legs?.length ?? 0) === 0 ? (
+                    <div className="text-xs text-muted-foreground italic" data-testid="drawer-legs-empty">
+                      No legs found on this submission's invoice group.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5" data-testid="drawer-legs-list">
+                      {submission.legs!.map((leg) => (
+                        <div
+                          key={leg.legId}
+                          className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted"
+                          data-testid={`drawer-leg-${leg.legId}`}
+                        >
+                          {leg.ticked ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                          ) : leg.error ? (
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-600 flex-shrink-0" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          )}
+                          <span className="font-mono flex-shrink-0">
+                            {leg.confNumber || `Leg #${leg.legId}`}
+                          </span>
+                          <span className="flex-1 min-w-0 truncate text-muted-foreground">
+                            {leg.ticked
+                              ? "Ticked in portal"
+                              : leg.error
+                                ? leg.error
+                                : "Pending — not yet submitted"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </DrawerSection>
 

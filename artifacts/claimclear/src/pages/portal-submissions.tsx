@@ -989,8 +989,22 @@ function SubmissionRow({
         )}
       </div>
 
-      <span className="font-mono font-semibold text-xs text-primary min-w-[112px] truncate" data-testid={`row-conf-${sub.id}`}>
-        {sub.confNumber || `#${sub.id}`}
+      <span className="font-mono font-semibold text-xs text-primary min-w-[112px] truncate flex items-center gap-1.5" data-testid={`row-conf-${sub.id}`}>
+        <span className="truncate">{sub.invoiceNumber || sub.confNumber || `#${sub.id}`}</span>
+        {(() => {
+          // Task #485: this row IS the group submission — show the per-leg
+          // count from the `legs` JSONB so operators see at a glance how
+          // many disputed legs are bundled together. Legacy pre-Task #485
+          // rows have `legs == []`; we hide the pill rather than show "0
+          // legs" which would be misleading.
+          const legCount = sub.legs?.length ?? 0;
+          if (legCount === 0) return null;
+          return (
+            <Badge variant="outline" className="text-[10px] h-4 px-1 font-normal flex-shrink-0" data-testid={`row-leg-count-${sub.id}`}>
+              {legCount} leg{legCount === 1 ? "" : "s"}
+            </Badge>
+          );
+        })()}
       </span>
 
       <Badge variant="outline" className={`${statusPillClass[sub._displayStatus] || ""} text-[10px] h-5 px-1.5 flex-shrink-0`} data-testid={`row-status-${sub.id}`}>
