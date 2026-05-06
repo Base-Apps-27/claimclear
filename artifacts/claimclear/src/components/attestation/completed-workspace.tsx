@@ -6,7 +6,7 @@ import type {
   GroupAttestationHistoryEntry,
   GetInvoiceGroupAttestationHistoryParams,
 } from "@workspace/api-client-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { Section, StatusPill } from "@/components/cohesion";
 import {
@@ -105,43 +105,48 @@ export function CompletedWorkspace() {
         </p>
       </Section>
 
-      {history.isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
-          <Skeleton className="h-[480px] w-full" />
-          <Skeleton className="h-[480px] w-full" />
-        </div>
-      ) : groups.length === 0 ? (
-        <div className="rounded-md border border-border bg-card">
-          <EmptyState
-            icon={ShieldCheck}
-            title={
-              range === "all"
+      <SkeletonSwap
+        loading={history.isLoading}
+        skeleton={
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+            <Skeleton className="h-[480px] w-full" />
+            <Skeleton className="h-[480px] w-full" />
+          </div>
+        }
+      >
+        {groups.length === 0 ? (
+          <div className="rounded-md border border-border bg-card">
+            <EmptyState
+              icon={ShieldCheck}
+              title={
+                range === "all"
+                  ? "No completed re-attestations on file."
+                  : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`
+              }
+              description={
+                range === "all"
+                  ? undefined
+                  : "Try widening the range with the selector above."
+              }
+            />
+            <span data-testid="completed-empty" className="sr-only">
+              {range === "all"
                 ? "No completed re-attestations on file."
-                : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`
-            }
-            description={
-              range === "all"
-                ? undefined
-                : "Try widening the range with the selector above."
-            }
+                : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`}
+            </span>
+          </div>
+        ) : (
+          <CompletedMasterDetail
+            groups={groups}
+            truncated={truncated}
+            selectedId={effectiveSelectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              set({ group: String(id) }, false);
+            }}
           />
-          <span data-testid="completed-empty" className="sr-only">
-            {range === "all"
-              ? "No completed re-attestations on file."
-              : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`}
-          </span>
-        </div>
-      ) : (
-        <CompletedMasterDetail
-          groups={groups}
-          truncated={truncated}
-          selectedId={effectiveSelectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            set({ group: String(id) }, false);
-          }}
-        />
-      )}
+        )}
+      </SkeletonSwap>
     </div>
   );
 }

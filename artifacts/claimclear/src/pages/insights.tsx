@@ -37,7 +37,7 @@ import {
 } from "recharts";
 import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } from "@/components/cohesion";
 import { InfoTooltip } from "@/components/info-tooltip";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { useRole, HideForClerk } from "@/lib/role";
 
@@ -252,9 +252,16 @@ export default function Insights() {
     return (
       <div className="space-y-5">
         <PageHeader title="Insights" sub="Loading…" accent="green" actions={headerActions} />
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
-        </div>
+        <SkeletonSwap
+          loading
+          skeleton={
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+            </div>
+          }
+        >
+          {null}
+        </SkeletonSwap>
       </div>
     );
   }

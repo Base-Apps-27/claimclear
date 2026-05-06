@@ -6,7 +6,7 @@ import type {
   ClaimResponse,
   AttestationPendingExtras,
 } from "@workspace/api-client-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/cohesion";
 import { ShieldCheck } from "lucide-react";
@@ -107,30 +107,6 @@ export function QueueWorkspace() {
         ? selectedKey
         : groups[0]?.key ?? null;
 
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
-        <Skeleton className="h-[480px] w-full" />
-        <Skeleton className="h-[480px] w-full" />
-      </div>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-md border border-border bg-card">
-        <EmptyState
-          icon={ShieldCheck}
-          title="All caught up."
-          description="Nothing waiting on attestation right now."
-        />
-        <span data-testid="open-empty" className="sr-only">
-          All caught up.
-        </span>
-      </div>
-    );
-  }
-
   const selectedGroup = groups.find((g) => g.key === effectiveSelectedKey) ?? null;
 
   const onSelect = (key: string) => {
@@ -139,6 +115,27 @@ export function QueueWorkspace() {
   };
 
   return (
+    <SkeletonSwap
+      loading={isLoading}
+      skeleton={
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+          <Skeleton className="h-[480px] w-full" />
+          <Skeleton className="h-[480px] w-full" />
+        </div>
+      }
+    >
+      {groups.length === 0 ? (
+        <div className="rounded-md border border-border bg-card">
+          <EmptyState
+            icon={ShieldCheck}
+            title="All caught up."
+            description="Nothing waiting on attestation right now."
+          />
+          <span data-testid="open-empty" className="sr-only">
+            All caught up.
+          </span>
+        </div>
+      ) : (
     <MasterDetailShell
       sidebar={
         <QueueSidebar title="Queue" count={groups.length} listTestId="queue-list">
@@ -180,5 +177,7 @@ export function QueueWorkspace() {
       }
       detail={selectedGroup && <GroupReviewPane bucket={selectedGroup} />}
     />
+      )}
+    </SkeletonSwap>
   );
 }

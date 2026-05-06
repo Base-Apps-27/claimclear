@@ -32,7 +32,8 @@ import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
+import { useRotatingCaption } from "@/hooks/use-rotating-caption";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
@@ -279,22 +280,27 @@ function HeroCard({
         )}
       </div>
       <div className="flex-1">
-        {isLoading ? (
-          <div className="px-4 py-3 space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
-        ) : count === 0 ? (
-          <div
-            className="px-4 py-6 text-xs text-center text-muted-foreground"
-            style={{ borderTop: "1px solid hsl(var(--border))" }}
-          >
-            {itemsEmpty ?? "Nothing here right now."}
-          </div>
-        ) : (
-          items
-        )}
+        <SkeletonSwap
+          loading={!!isLoading}
+          skeleton={
+            <div className="px-4 py-3 space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          }
+        >
+          {count === 0 ? (
+            <div
+              className="px-4 py-6 text-xs text-center text-muted-foreground"
+              style={{ borderTop: "1px solid hsl(var(--border))" }}
+            >
+              {itemsEmpty ?? "Nothing here right now."}
+            </div>
+          ) : (
+            items
+          )}
+        </SkeletonSwap>
       </div>
       {footer && (
         <div
@@ -365,6 +371,35 @@ function buildStartHint(args: {
   return <>You're caught up — nothing on the clock today.</>;
 }
 
+const DASHBOARD_LOADING_CAPTIONS = [
+  "loading what's moving today…",
+  "fetching today's queue…",
+  "almost there…",
+] as const;
+
+function DashboardLoading({ firstName }: { firstName: string }) {
+  const caption = useRotatingCaption({
+    active: true,
+    captions: DASHBOARD_LOADING_CAPTIONS,
+  });
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Command Center"
+        sub={`Welcome back, ${firstName} — ${caption}`}
+        accent="blue"
+      />
+      <Skeleton className="h-20 w-full" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 w-full" />)}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[1, 2, 3].map(i => <Skeleton key={i} className="h-64 w-full" />)}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const firstName = firstNameFromUser(user);
@@ -429,22 +464,7 @@ export default function Dashboard() {
   );
 
   if (isLoading) {
-    return (
-      <div className="space-y-5">
-        <PageHeader
-          title="Command Center"
-          sub={`${greetingPrefix}loading what's moving today…`}
-          accent="blue"
-        />
-        <Skeleton className="h-20 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 w-full" />)}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-64 w-full" />)}
-        </div>
-      </div>
-    );
+    return <DashboardLoading firstName={firstName} />;
   }
 
   if (!summary) return null;

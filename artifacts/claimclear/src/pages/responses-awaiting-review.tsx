@@ -28,7 +28,7 @@ import { useAiCalibrations } from "@/hooks/use-ai-calibration";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -441,16 +441,6 @@ function Workspace({
     }
     previousIdRef.current = next;
   }, [selectedGroup?.id]);
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4">
-        <Skeleton className="h-[480px] w-full" />
-        <Skeleton className="h-[480px] w-full" />
-        <Skeleton className="h-[480px] w-full" />
-      </div>
-    );
-  }
-
   if (isError) {
     return (
       <Card>
@@ -467,21 +457,28 @@ function Workspace({
     );
   }
 
-  if (groups.length === 0) {
-    return (
-      <Card data-testid="empty-state">
-        <CardContent className="py-6">
-          <EmptyState
-            icon={CheckCircle}
-            title="All caught up — no payor responses awaiting a verdict"
-            description="When a payor reply needs a human decision, it'll show up here so you can act on it."
-          />
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
+    <SkeletonSwap
+      loading={isLoading}
+      skeleton={
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4">
+          <Skeleton className="h-[480px] w-full" />
+          <Skeleton className="h-[480px] w-full" />
+          <Skeleton className="h-[480px] w-full" />
+        </div>
+      }
+    >
+      {groups.length === 0 ? (
+        <Card data-testid="empty-state">
+          <CardContent className="py-6">
+            <EmptyState
+              icon={CheckCircle}
+              title="All caught up — no payor responses awaiting a verdict"
+              description="When a payor reply needs a human decision, it'll show up here so you can act on it."
+            />
+          </CardContent>
+        </Card>
+      ) : (
     <div
       className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4 items-start"
       data-testid="awaiting-review-workspace"
@@ -523,6 +520,8 @@ function Workspace({
         />
       )}
     </div>
+      )}
+    </SkeletonSwap>
   );
 }
 

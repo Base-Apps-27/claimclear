@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { useRotatingCaption } from "@/hooks/use-rotating-caption";
 import {
   parseExpiringParam,
   filterByExpiringParam,
@@ -1389,6 +1390,29 @@ export default function Queue() {
     );
   };
 
+  // Inbox-zero (Task #493) — true when EVERY lane and the triage inbox
+  // are loaded and empty, no deadline filter is active, and no per-tab
+  // search is narrowing the list. Drives an exclusive empty-state
+  // branch below: when true, the controls / classification inbox /
+  // tabs / workspace block is replaced by a single "all caught up"
+  // EmptyState card so the operator never stares at a wall of empty
+  // tabs.
+  const isInboxZero =
+    !inboxQuery.isLoading &&
+    !newQuery.isLoading &&
+    !needsEvidenceQuery.isLoading &&
+    !generatingEmailQuery.isLoading &&
+    !portalQueuedQuery.isLoading &&
+    !onHoldQuery.isLoading &&
+    inboxTotal === 0 &&
+    actionableTotal === 0 &&
+    portalQueuedTotal === 0 &&
+    onHoldTotal === 0 &&
+    expiringFilter === null &&
+    !searchActionable &&
+    !searchPortalQueued &&
+    !searchOnHold;
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -1407,6 +1431,39 @@ export default function Queue() {
         onSelectUrgentGroup={selectWorkflow}
       />
 
+      {isInboxZero ? (
+        /* Inbox-zero (Task #493). When the page has truly nothing to do —
+           no triage backlog, no actionable / portal-queued / on-hold rows,
+           no active deadline filter, no search narrowing — replace the
+           tabs/controls block entirely with a warm "all caught up"
+           EmptyState so the operator never sees a wall of empty tabs.
+           Per-tab empty states (Task #47) still cover the partial case
+           where one tab happens to be empty while another holds work. */
+        <Card data-testid="queue-inbox-zero">
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Sparkles}
+              title="All caught up — nice work."
+              description="The queue is empty. No triage backlog, nothing on the clock, nothing parked. Check back as new work imports."
+              primaryAction={{
+                label: "Refresh",
+                variant: "outline",
+                onClick: () =>
+                  queryClient.invalidateQueries({
+                    queryKey: getListInvoiceGroupsQueryKey(),
+                  }),
+              }}
+              secondaryAction={{
+                label: "View completed today",
+                href: "/groups?completedToday=true",
+                variant: "ghost",
+              }}
+              className="py-16"
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           {expiringFilter && (
@@ -1705,6 +1762,8 @@ export default function Queue() {
           </Card>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1958,6 +2017,26 @@ function ClassificationInboxRow({
   );
 }
 
+const WORKSPACE_LOADING_CAPTIONS = [
+  "Loading workspace…",
+  "Pulling group details…",
+  "Almost there…",
+] as const;
+
+function WorkspaceLoadingCard() {
+  const caption = useRotatingCaption({
+    active: true,
+    captions: WORKSPACE_LOADING_CAPTIONS,
+  });
+  return (
+    <Card>
+      <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> {caption}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Inline group workspace — stacked layout (restored to original
 // design). Top: Legs section, rendering each leg as a thin strip via
 // <LegConclusionRow />. Each strip's primary action is "Process" /
@@ -1991,13 +2070,7 @@ function InlineGroupWorkspace({
 
   const { data: group, isLoading } = useGetInvoiceGroup(groupId);
   if (isLoading || !group) {
-    return (
-      <Card>
-        <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading workspace…
-        </CardContent>
-      </Card>
-    );
+    return <WorkspaceLoadingCard />;
   }
   const detail = group as InvoiceGroupDetailResponse;
   // Show every leg in the group, including ones that were excluded
