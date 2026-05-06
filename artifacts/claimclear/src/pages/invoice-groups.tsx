@@ -22,6 +22,7 @@ import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
 import { useRowBreath } from "@/hooks/use-breath";
+import { useRowSettle } from "@/hooks/use-row-settle";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
@@ -175,6 +176,29 @@ export default function InvoiceGroupsList() {
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Task #502 — feed `useRowSettle` so a row that leaves the list
+  // because of a status change (closed / withdrawn / resolved on the
+  // detail page, then back to the list) doesn't vanish instantly.
+  // We track the last group whose detail page the operator opened from
+  // this list; sessionStorage carries that across the back-navigation
+  // refetch so the settle ghost still has a "previously selected" id
+  // to settle.
+  const [lastTouchedId, setLastTouchedId] = useState<number | null>(() => {
+    try {
+      const v = sessionStorage.getItem("ig_last_touched");
+      if (!v) return null;
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (lastTouchedId == null) sessionStorage.removeItem("ig_last_touched");
+      else sessionStorage.setItem("ig_last_touched", String(lastTouchedId));
+    } catch {}
+  }, [lastTouchedId]);
   const [bulkAssignSuccess, setBulkAssignSuccess] = useState("");
   // External "open the picker" trigger from the right-rail action; the
   // BulkAssignErrorTypeAction component is otherwise self-managing.
@@ -239,6 +263,14 @@ export default function InvoiceGroupsList() {
   // drilling into a deadline tier with `?expiring=…`.
   const groups: InvoiceGroupResponse[] = data?.groups ?? [];
   const total = data?.total ?? 0;
+
+  // Task #502 — same settle pattern as Queue / Responses / Attestation.
+  // When the previously-touched row leaves the list (status changed it
+  // out of view), it holds its slot for ~360ms while the success-tint
+  // settle plays, then unmounts. There's no auto-advance on this list
+  // (selection is for bulk only), so the highlight ring just no-ops
+  // unless future work introduces a single-row selection.
+  const settle = useRowSettle(groups, (g) => g.id, lastTouchedId);
 
   const allSelected = groups.length > 0 && groups.every(g => selectedIds.has(g.id));
   const someSelected = selectedIds.size > 0;
@@ -832,25 +864,33 @@ export default function InvoiceGroupsList() {
                       </tr>
                     ) : (
                       <>
-                      {groups.map(group => {
+                      {settle.slots.map(slot => {
+                        const group = slot.item;
+                        const isSettling = slot.isSettling;
+                        const isJustSelected = settle.isJustSelected(group.id);
                         const isSel = selectedIds.has(group.id);
                         return (
                           <tr
                             key={group.id}
-                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(group.id)}`}
+                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(group.id)} ${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""}`}
                             style={isSel ? { background: purpleRowTint } : undefined}
                             data-testid={`row-group-${group.id}`}
+                            data-settling={isSettling ? "true" : undefined}
                           >
                             {!clerk && (
                               <td className={`px-4 ${tdPy}`}>
-                                <Checkbox checked={isSel} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber}`} />
+                                <Checkbox checked={isSel} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber}`} disabled={isSettling} />
                               </td>
                             )}
                             {visibleCols.has("invoiceNumber") && (
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.purple.fg }}>
                                 <div className="flex items-center gap-2">
                                   <UrgentTodayBadge isUrgent={group.isUrgent} submittedStuck={group.submittedStuck} />
-                                  <Link href={`/invoice-groups/${group.id}`} className="hover:underline">
+                                  <Link
+                                    href={`/invoice-groups/${group.id}`}
+                                    className="hover:underline"
+                                    onClick={() => setLastTouchedId(group.id)}
+                                  >
                                     <RefNumber value={group.invoiceNumber} variant="inline" />
                                   </Link>
                                 </div>
@@ -923,7 +963,12 @@ export default function InvoiceGroupsList() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem asChild>
-                                      <Link href={`/invoice-groups/${group.id}`}>View details</Link>
+                                      <Link
+                                        href={`/invoice-groups/${group.id}`}
+                                        onClick={() => setLastTouchedId(group.id)}
+                                      >
+                                        View details
+                                      </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       onSelect={(e) => {
