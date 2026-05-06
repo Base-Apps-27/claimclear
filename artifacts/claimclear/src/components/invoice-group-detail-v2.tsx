@@ -69,7 +69,8 @@ import {
   getResponseTypeLabel,
 } from "@/components/queue-response-review-panel";
 import { ActionRow } from "@/components/actions-rail";
-import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
+import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
+import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import {
   mapToGroupConversations,
@@ -1137,17 +1138,27 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 Only render while the group is still in the pre-submit window
                 (New / Needs Evidence) — once it's past pre-submit the surface
                 has nothing actionable, so we hide the whole card per Task #289. */}
-            {isPreSubmit && (
-              <div data-tour="group-gauntlet">
-                <CcCard
-                  title="Submission preview"
-                  icon={<Sparkles className="w-3.5 h-3.5" />}
-                  testId="submission-preview-card"
-                >
-                  <InvoiceGroupSubmissionGauntlet group={detail} groupId={groupId} bare />
-                </CcCard>
-              </div>
-            )}
+            {isPreSubmit &&
+              deriveInvoiceDisputeOutlook(detail, detail.rides ?? [])
+                .outlook !== "nothing_to_do" && (
+                // Task #476: when the outlook is `nothing_to_do` the slot
+                // renders null — we also drop the wrapper card so the
+                // submission section disappears entirely instead of
+                // leaving an empty "Submission preview" container.
+                <div data-tour="group-gauntlet">
+                  <CcCard
+                    title="Submission preview"
+                    icon={<Sparkles className="w-3.5 h-3.5" />}
+                    testId="submission-preview-card"
+                  >
+                    <InvoiceGroupActionSlot
+                      group={detail}
+                      groupId={groupId}
+                      bare
+                    />
+                  </CcCard>
+                </div>
+              )}
 
             {/* Communication thread */}
             <div id="invoice-thread" />

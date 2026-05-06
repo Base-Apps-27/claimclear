@@ -55,7 +55,7 @@ import {
   NeedsEngagementToggle,
   readEngagementMode,
 } from "@/components/engagement-filter-controls";
-import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
+import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { LegConclusionList } from "@/components/leg-conclusion-row";
 import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-client-react";
@@ -1958,7 +1958,7 @@ function InlineGroupWorkspace({
           still review and submit without opening a leg. */}
       {(() => {
         const submissionPreview = (
-          <InvoiceGroupSubmissionGauntlet
+          <InvoiceGroupActionSlot
             group={detail}
             groupId={groupId}
             onJumpToLeg={(claimId) => {

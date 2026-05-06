@@ -63,7 +63,7 @@ export function isActionableLeg(r: ClaimResponse): boolean {
   return true;
 }
 
-function legVerdictBucket(r: ClaimResponse): "approved" | "denied" | "pending" {
+export function legVerdictBucket(r: ClaimResponse): "approved" | "denied" | "pending" {
   // Task #343: a leg "has a selection" if it carries either an
   // `operator_confirmed` verdict in `latestVerdict` OR an
   // `operator_draft` row in `latestDraft`. When both exist (e.g. an
@@ -221,4 +221,93 @@ export function pickSuggestedPayorDenialReason(
  */
 export function isAwaitingPayorAgain(group: InvoiceGroupResponse): boolean {
   return !!group.awaitingPayorAgainAt;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #476 — Invoice-level dispute outlook.
+//
+// Some invoices end triage with **zero dispute-worthy legs**: every leg
+// is either Non-issue (the ride was fine, just needs to be re-attested
+// in the payor portal) or Non-contestable / `cannot_dispute` /
+// sibling-duplicate (nothing to argue). For these the entire dispute-
+// submission section is dead weight — the only real action is to
+// re-attest the survivors and cancel the dropped legs in the portal.
+//
+// This derivation lets the gauntlet's mount points decide on page load
+// whether to render the dispute-submission section, the Re-attest CTA,
+// or nothing.
+//
+//   - **Dispute-eligible leg** = `includedInDispute === true`, NOT a
+//     sibling duplicate, NOT closed as `cannot_dispute` / `non_issue`,
+//     AND verdict bucket is NOT `denied` from a prior payor response.
+//     i.e. a leg that *would* go into a dispute submission today.
+//   - **Survivor leg** = closure is `non_issue` OR verdict bucket is
+//     `approved`. Needs re-attestation in the portal — feeds the
+//     ReattestModal's `approvedLegs`.
+//   - **Dropped leg** = closure is `cannot_dispute` OR sibling
+//     duplicate. Goes into the modal's `deniedLegs` so the operator's
+//     existing portal checklist tells them to cancel it.
+//
+// Outlook ladder:
+//   - `has_disputable` if any dispute-eligible leg exists. Current
+//     gauntlet behaviour is unchanged.
+//   - else `reattest_only` if at least one survivor exists. Gauntlet
+//     does NOT render; Re-attest CTA replaces it.
+//   - else `nothing_to_do`. Neither renders; existing close-out path
+//     takes over.
+// ─────────────────────────────────────────────────────────────────────
+
+export type InvoiceDisputeOutlook =
+  | "has_disputable"
+  | "reattest_only"
+  | "nothing_to_do";
+
+export interface InvoiceDisputeOutlookResult {
+  outlook: InvoiceDisputeOutlook;
+  /** Legs that need re-attestation in the portal (modal `approvedLegs`). */
+  survivors: ClaimResponse[];
+  /** Legs the operator should cancel in the portal (modal `deniedLegs`). */
+  dropped: ClaimResponse[];
+}
+
+export function deriveInvoiceDisputeOutlook(
+  _group: InvoiceGroupResponse,
+  legs: readonly ClaimResponse[],
+): InvoiceDisputeOutlookResult {
+  const survivors: ClaimResponse[] = [];
+  const dropped: ClaimResponse[] = [];
+  let hasDisputable = false;
+
+  for (const leg of legs) {
+    const isSiblingDuplicate = leg.duplicateOfClaimId != null;
+    const closure = leg.sopOutcome ?? null;
+    const isNonIssue = closure === "non_issue";
+    const isCannotDispute = closure === "cannot_dispute";
+    const verdict = legVerdictBucket(leg);
+
+    if (isNonIssue || verdict === "approved") {
+      survivors.push(leg);
+    }
+    if (isCannotDispute || isSiblingDuplicate) {
+      dropped.push(leg);
+    }
+
+    if (
+      leg.includedInDispute === true &&
+      !isSiblingDuplicate &&
+      !isCannotDispute &&
+      !isNonIssue &&
+      verdict !== "denied"
+    ) {
+      hasDisputable = true;
+    }
+  }
+
+  if (hasDisputable) {
+    return { outlook: "has_disputable", survivors, dropped };
+  }
+  if (survivors.length > 0) {
+    return { outlook: "reattest_only", survivors, dropped };
+  }
+  return { outlook: "nothing_to_do", survivors, dropped };
 }
