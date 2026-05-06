@@ -67,13 +67,13 @@ type NavSection = {
 };
 
 const navDescriptions: Record<string, string> = {
-  "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring claims.",
-  "Queue": "Process claims step-by-step through the dispute workflow: review, evidence, decision, submit.",
+  "Dashboard": "Overview of dispute pipeline, recovery metrics, bot status, and expiring invoices.",
+  "Queue": "Process invoices step-by-step through the dispute workflow: review, evidence, decision, submit.",
   "Responses Awaiting Review": "Stage-2 inbox: payor sent something back and a verdict is owed. Master/detail review with response thread, AI hint, and verdict actions.",
-  "Invoice Groups": "View and manage rides grouped by invoice number — the primary unit for disputes.",
-  "All Claims": "Browse, search, and filter the complete claims database.",
+  "All Invoices": "Browse, search, and filter every invoice (the dispute unit).",
+  "All Legs": "Browse the individual ride/leg records that roll up into invoices. Use this for granular search.",
   "Withdrawals": "Review closed claims and groups (withdrawn, non-issue, accepted loss) — capture lessons, who was told, and mark addressed.",
-  "Import": "Upload CSV or Excel files to bulk-import claims from Job Claim Status reports.",
+  "Import": "Upload CSV or Excel files to bulk-import invoices and the legs that belong to them.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
   "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
   "Insights": "Recovery analytics and pattern detection — trend lines, repeat-offender drivers and members, error-type breakdowns, and team performance.",
@@ -89,7 +89,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "admin";
   const isClerk = user?.role === "clerk";
 
-  // Mounts the SSE listener that bumps the personal "claims processed
+  // Mounts the SSE listener that bumps the personal "legs processed
   // today" counter the moment the current user moves a leg into
   // Processed. Lives at the layout level so it's active on every
   // signed-in surface — the pip stays accurate whether you process a
@@ -214,8 +214,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     {
       label: "Browse",
       items: [
-        { label: "Invoice Groups", href: "/invoice-groups", icon: FolderOpen },
-        { label: "All Claims", href: "/claims", icon: Files },
+        { label: "All Invoices", href: "/invoice-groups", icon: FolderOpen },
+        { label: "All Legs", href: "/claims", icon: Files },
         { label: "Withdrawals", href: "/withdrawals", icon: FileMinus },
       ],
     },
