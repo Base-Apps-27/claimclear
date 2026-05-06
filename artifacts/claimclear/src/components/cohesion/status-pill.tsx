@@ -48,6 +48,7 @@ export type StatusPillProps = {
   tone?: Tone;
   children: ReactNode;
   className?: string;
+  "data-testid"?: string;
   /**
    * One-shot decoration used when the pill has just transitioned to a
    * "done" state from the operator's own action. Renders an animated
@@ -63,6 +64,7 @@ export function StatusPill({
   children,
   className = "",
   justTransitioned = false,
+  "data-testid": dataTestId,
 }: StatusPillProps) {
   const c = TONE_STYLE[tone];
   const transitionClass = justTransitioned ? " cc-pill-just-transitioned" : "";
@@ -71,6 +73,7 @@ export function StatusPill({
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap${transitionClass} ${className}`}
       style={{ background: c.bg, color: c.fg }}
       data-just-transitioned={justTransitioned ? "true" : undefined}
+      data-testid={dataTestId}
     >
       {justTransitioned ? <AnimatedCheck /> : null}
       {children}
