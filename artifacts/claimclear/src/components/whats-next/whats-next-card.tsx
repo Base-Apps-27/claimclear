@@ -237,22 +237,50 @@ export function WhatsNextCard({
   return (
     <div
       className={cn(
-        "rounded-md border overflow-hidden transition-colors",
+        // Task #495 — broaden the "wake-up" transition past colour so the
+        // border, ring, and shadow all crossfade together. `transition-all`
+        // covers shadow + ring; `motion-reduce:transition-none` honours
+        // operators with reduced-motion preferences (the swap is still
+        // instantaneous, just unanimated).
+        "rounded-md border overflow-hidden bg-card transition-all duration-300 ease-out motion-reduce:transition-none",
         decisionReady
-          ? "border-blue-300 bg-card shadow-sm ring-1 ring-blue-200"
-          : "border-border bg-card",
+          ? "border-blue-300 shadow-sm ring-1 ring-blue-200"
+          : "border-border ring-0 ring-blue-200/0 shadow-none",
       )}
       data-testid="whats-next-card"
       data-decision-ready={decisionReady ? "true" : "false"}
     >
-      <div
-        className={cn(
-          "px-4 py-3 border-b",
-          decisionReady
-            ? "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200"
-            : "bg-muted/30",
-        )}
-      >
+      {/*
+        Task #495 — the gradient header used to swap between
+        `bg-muted/30` and `bg-gradient-to-r from-blue-50 to-indigo-50`
+        via class-name change, which CSS cannot interpolate (gradients
+        and named colours don't crossfade). Layer the gradient as an
+        absolutely-positioned overlay and animate its opacity instead so
+        the wake-up reads as a smooth fade rather than a flash.
+      */}
+      <div className="relative px-4 py-3 border-b border-border">
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 bg-muted/30 transition-opacity duration-300 ease-out motion-reduce:transition-none",
+            decisionReady ? "opacity-0" : "opacity-100",
+          )}
+        />
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 transition-opacity duration-300 ease-out motion-reduce:transition-none",
+            decisionReady ? "opacity-100" : "opacity-0",
+          )}
+        />
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-x-0 bottom-0 h-px bg-blue-200 transition-opacity duration-300 ease-out motion-reduce:transition-none",
+            decisionReady ? "opacity-100" : "opacity-0",
+          )}
+        />
+        <div className="relative">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
@@ -286,6 +314,7 @@ export function WhatsNextCard({
             <NewInvoiceNumberBadge invoiceNumber={newInvoiceNumber} />
           </div>
         )}
+        </div>
       </div>
 
       <div className="p-3 space-y-2">

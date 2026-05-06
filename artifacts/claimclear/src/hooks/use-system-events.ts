@@ -11,12 +11,28 @@
 // The hook NEVER fires retroactively on reconnect: it stamps a
 // `connectedAt` timestamp on every successful EventSource open, and
 // ignores any incoming event whose own `timestamp` is older than that.
-// We also keep an in-process Set of dates we've already celebrated this
-// page-load so a reconnect-and-replay can't double-fire the same date.
+//
+// Task #495: dedupe is keyed by event TIMESTAMP, not by date, so a day
+// that re-concludes (e.g. operator reverts a closure and re-closes it)
+// celebrates again. The server-side edge check guarantees a fresh
+// `day_completed_celebration` row is only emitted on a true false→true
+// transition; the timestamp dedupe here is purely defensive against
+// SSE replay (the same emitted row redelivered on reconnect).
 //
 // The confetti microinteraction respects `prefers-reduced-motion` — if
 // the user has reduced motion enabled, we still show the toast but skip
 // the canvas burst entirely.
+//
+// ── Confetti size hierarchy (Task #495) ─────────────────────────────────
+// `fireConfettiBurst` below is RESERVED for the day-complete celebration:
+// dual corner bursts × 80 particles, the loudest visual signal in the app.
+// Smaller, scoped microinteractions (e.g. "you finished a leg",
+// "submitted to portal") MUST NOT reuse this helper — they belong on the
+// CSS-driven `cc-check-tick` / `cc-pill-just-transitioned` family or on
+// a future, distinctly-named confetti helper with a smaller particle
+// count, narrower spread, and lower z-index. Do not factor a parameterised
+// `fireConfetti(size)` here without a deliberate UX review — the existing
+// hierarchy is the affordance, not an accident.
 
 import { useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
@@ -31,6 +47,13 @@ type SystemEvent = {
 
 // Two corner bursts for a quick, low-distraction celebration. Origin is
 // in normalized (x, y) where (0, 0) is top-left and (1, 1) is bottom-right.
+//
+// SIZE HIERARCHY (Task #495): this is the LARGEST celebration in the
+// app — two simultaneous bursts of 80 particles each, full viewport
+// spread, top z-index. Reserved for `day_completed`. Do NOT reuse for
+// per-leg or per-group microinteractions; introduce a distinct helper
+// (e.g. `fireMiniBurst`) with smaller particle count and tighter spread
+// if a smaller celebration is needed.
 function fireConfettiBurst(): void {
   if (typeof window === "undefined") return;
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -63,7 +86,12 @@ function fireConfettiBurst(): void {
 
 export function useSystemEvents(opts: { enabled: boolean }): void {
   const { enabled } = opts;
-  const celebratedDates = useRef<Set<string>>(new Set());
+  // Task #495 — dedupe by event timestamp instead of date, so a day
+  // that re-concludes after a manual revert celebrates again. The
+  // server only emits a fresh row on a true false→true edge, so each
+  // legitimate celebration carries a unique timestamp; SSE replay of
+  // the same row will hit this set and short-circuit.
+  const celebratedTimestamps = useRef<Set<string>>(new Set());
   const retryCount = useRef(0);
 
   useEffect(() => {
@@ -87,8 +115,8 @@ export function useSystemEvents(opts: { enabled: boolean }): void {
         }
 
         if (data.type === "day_completed") {
-          if (celebratedDates.current.has(data.date)) return;
-          celebratedDates.current.add(data.date);
+          if (celebratedTimestamps.current.has(data.timestamp)) return;
+          celebratedTimestamps.current.add(data.timestamp);
           fireConfettiBurst();
           toast({
             title: "Day complete",

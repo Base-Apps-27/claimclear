@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import {
   ChevronRight,
   HelpCircle,
@@ -496,6 +497,11 @@ export function SopAdvancePlayer(props: Props) {
     },
     onSuccess: async (updated) => {
       const isTerminal = updated.sopOutcome != null;
+      // Task #495 — leave a local mark so the leg-level "you finished
+      // a thing" microinteraction (claim-detail-v2 + leg-conclusion-row)
+      // can fire on the operator's own SOP advance even if the SSE
+      // author tag hasn't propagated yet. See use-local-action-mark.
+      markLocalAction(`claim:${leg.id}`);
       // Clear pending state for the node we just advanced past.
       if (currentNode) clearPendingForNode(currentNode.id);
       // Invalidate every cache key that includes this leg or its parent
@@ -529,6 +535,17 @@ export function SopAdvancePlayer(props: Props) {
   const bulkAdvanceMutation = useGroupSopAdvance<Error>({
     mutation: {
       onSuccess: async (result: BulkSopAdvanceResponse) => {
+        // Task #495 — bulk advance can resolve sibling legs en masse;
+        // mark each affected claim id and the parent group so any
+        // mounted leg/group watcher animates on this operator's action.
+        for (const c of (result.succeeded ?? []) as ClaimResponse[]) {
+          if (typeof c.id === "number") {
+            markLocalAction(`claim:${c.id}`);
+          }
+        }
+        if (leg.invoiceGroupId != null) {
+          markLocalAction(`group:${leg.invoiceGroupId}`);
+        }
         if (currentNode) clearPendingForNode(currentNode.id);
         qc.invalidateQueries({ queryKey: ["claim", leg.id] });
         qc.invalidateQueries({ queryKey: ["claims"] });

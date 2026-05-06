@@ -16,12 +16,16 @@
 // equals that day satisfies the rule above AND the day has at least one
 // invoice group. An empty day NEVER triggers a celebration.
 //
-// On a successful day-complete detection, we attempt to insert a single
+// On a successful day-complete detection, we insert a fresh
 // `state_events` row with `event_key=day_completed_celebration` and
-// `metadata.date=<ISO date>`. The partial unique index introduced in
-// migration 0019 guarantees at most one row per day across concurrent
-// transitions; if the row already exists the insert is a no-op and the
-// celebration is NOT re-broadcast.
+// `metadata.date=<ISO date>`. Task #495 dropped the partial unique
+// index from migration 0019: deduplication now happens at the EDGE
+// — `checkAndEmitDayCompleteForGroup` requires the caller to hand in
+// the day-aggregate "concluded" state captured BEFORE its update, and
+// only emits when the new state is the false→true edge. This lets a
+// day that re-concludes after a manual revert celebrate again, and
+// keeps the celebration logic close to the transition that caused it
+// instead of buried in a database constraint.
 
 import { sql } from "drizzle-orm";
 import { db, invoiceGroupsTable, stateEventsTable } from "@workspace/db";
@@ -34,8 +38,8 @@ import type { GroupTransitionActor } from "./group-transitions";
 // /delete so callers can't lean on transaction-only escape hatches. The
 // `.execute()` raw-SQL method is always present on the underlying
 // `NodePgDatabase` (and on a `tx` returned from `db.transaction`), so we
-// cast through this helper in the two spots where `ON CONFLICT ... DO
-// NOTHING ... RETURNING` is the cleanest implementation.
+// cast through this helper for the raw `INSERT ... RETURNING` used by the
+// emit path and the CTE used by `isDayConcluded`.
 type DbWithExecute = DbExecutor & Pick<typeof db, "execute">;
 const withExecute = (ex: DbExecutor): DbWithExecute => ex as DbWithExecute;
 
@@ -153,11 +157,12 @@ function formatDayLabel(day: string): string {
 }
 
 /**
- * Idempotently emits a `day_completed_celebration` row for the given day
- * and broadcasts the celebration over the global system-events SSE
- * channel — but ONLY when the row was newly inserted. If a celebration
- * for this day has already been logged, this is a no-op (no duplicate
- * row, no duplicate broadcast).
+ * Inserts a `day_completed_celebration` row for the given day and
+ * broadcasts the celebration over the global system-events SSE
+ * channel. Always emits — Task #495 moved deduplication to the edge
+ * check in `checkAndEmitDayCompleteForGroup`, which only invokes this
+ * helper on a true false→true transition. Direct callers (admin debug
+ * endpoints, tests) are responsible for their own gating.
  *
  * Safe to call from any group transition path. NEVER throws — celebration
  * logging must not block a successful state-machine write.
@@ -179,11 +184,6 @@ export async function tryEmitDayCompletedCelebration(opts: {
       triggeredByUserEmail: actor.userEmail,
       triggeredByUserName: actor.userName,
     };
-    // Use the inference clause (columns + WHERE) to match the partial
-    // unique INDEX from migration 0019. Postgres will not accept
-    // `ON CONSTRAINT <index-name>` here because partial unique indexes
-    // are indexes, not table constraints — only the inference form
-    // resolves them.
     const result = await withExecute(ex).execute(sql`
       INSERT INTO ${stateEventsTable} (event_key, actor_user_id, metadata)
       VALUES (
@@ -191,9 +191,6 @@ export async function tryEmitDayCompletedCelebration(opts: {
         ${actor.userEmail ?? null},
         ${JSON.stringify(metadata)}::jsonb
       )
-      ON CONFLICT (event_key, ((metadata->>'date')))
-      WHERE event_key = 'day_completed_celebration'
-      DO NOTHING
       RETURNING id
     `);
     const inserted = (result.rows ?? []).length > 0;
@@ -217,23 +214,28 @@ export async function tryEmitDayCompletedCelebration(opts: {
 
 /**
  * Convenience wrapper called from `transitionGroup*` after a state change
- * commits. Looks up the day for the group, checks whether it just flipped
- * to concluded, and (if so) idempotently emits + broadcasts.
+ * commits. The caller MUST capture `priorConcluded` before its UPDATE
+ * runs (typically via `snapshotDayConcludedForGroup` below) and pass it
+ * in here; we re-compute the post-update state and only emit on the
+ * false→true edge. Without the snapshot the helper would re-fire for
+ * every status nudge made on an already-concluded day.
  *
  * NEVER throws.
  */
 export async function checkAndEmitDayCompleteForGroup(opts: {
   groupId: number;
   actor: GroupTransitionActor;
+  priorConcluded: boolean;
   executor?: DbExecutor;
 }): Promise<void> {
-  const { groupId, actor, executor } = opts;
+  const { groupId, actor, priorConcluded, executor } = opts;
   const ex: DbExecutor = executor ?? db;
   try {
+    if (priorConcluded) return;
     const day = await getInvoiceGroupDay(groupId, ex);
     if (!day) return;
-    const concluded = await isDayConcluded(day, ex);
-    if (!concluded) return;
+    const nowConcluded = await isDayConcluded(day, ex);
+    if (!nowConcluded) return;
     await tryEmitDayCompletedCelebration({
       day,
       triggeredByGroupId: groupId,
@@ -245,5 +247,30 @@ export async function checkAndEmitDayCompleteForGroup(opts: {
       { err, groupId },
       "checkAndEmitDayCompleteForGroup failed (swallowed)",
     );
+  }
+}
+
+/**
+ * Pre-update snapshot helper for the three `transitionGroup*` paths.
+ * Returns whether the group's day was already day-aggregate concluded
+ * BEFORE the caller's UPDATE statement runs. NEVER throws; on lookup
+ * failure returns `false` so a transient read error can never suppress
+ * a legitimate celebration (the post-update edge check still gates).
+ */
+export async function snapshotDayConcludedForGroup(
+  groupId: number,
+  executor?: DbExecutor,
+): Promise<boolean> {
+  const ex: DbExecutor = executor ?? db;
+  try {
+    const day = await getInvoiceGroupDay(groupId, ex);
+    if (!day) return false;
+    return await isDayConcluded(day, ex);
+  } catch (err) {
+    logger.warn(
+      { err, groupId },
+      "snapshotDayConcludedForGroup failed (returning false)",
+    );
+    return false;
   }
 }

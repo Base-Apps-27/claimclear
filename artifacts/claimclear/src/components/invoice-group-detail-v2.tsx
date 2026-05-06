@@ -4,6 +4,7 @@ import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
+import { consumeLocalActionMark } from "@/hooks/use-local-action-mark";
 import { isPreSubmit as isPreSubmitFn, isInFlight } from "@/lib/lifecycle-phase";
 import {
   useGetInvoiceGroup,
@@ -440,10 +441,14 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     // Only celebrate the bucket transition out of pre-submit into
     // in-flight (the dispute is actually out the door).
     if (!(isPreSubmitFn(prev) && isInFlight(newStatus))) return;
-    // If the most recent SSE event for this group came from another
-    // operator, this transition isn't "ours" — stay quiet.
-    const lastBy = lastGroupUpdateBy.current?.email ?? null;
-    if (lastBy && user?.email && lastBy !== user.email) return;
+    // Task #495 — if the operator's own mutation success handler left
+    // a local mark for this group, animate unconditionally. Otherwise
+    // fall back to the SSE author tag (which arrives asynchronously
+    // and may be missing on server-driven transitions).
+    if (!consumeLocalActionMark(`group:${groupId}`)) {
+      const lastBy = lastGroupUpdateBy.current?.email ?? null;
+      if (lastBy && user?.email && lastBy !== user.email) return;
+    }
     setJustShipped(true);
     const t = setTimeout(() => setJustShipped(false), 500);
     return () => clearTimeout(t);

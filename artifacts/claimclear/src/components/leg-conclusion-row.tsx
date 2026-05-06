@@ -33,6 +33,7 @@ import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
+import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
 import { useAuth } from "@workspace/replit-auth-web";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
 
@@ -175,10 +176,17 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
       if (prev === undefined) return;
       if (prev === variant) return;
       if (variant !== "processed") return;
-      // If the most recent SSE event for this claim came from a different
-      // operator, the transition isn't "ours" — stay quiet.
-      const lastBy = lastClaimUpdateBy.current?.email ?? null;
-      if (lastBy && user?.email && lastBy !== user.email) return;
+      // Task #495 — the SSE author tag arrives asynchronously and on
+      // some paths (admin tools, server-driven cascades) carries no
+      // email at all. A local mark left by the operator's own mutation
+      // success handler short-circuits the SSE-based gate so the
+      // animation always plays for the operator who earned it; if no
+      // local mark is set we fall back to the existing collaborator
+      // suppression rule.
+      if (!consumeLocalActionMark(`claim:${claim.id}`)) {
+        const lastBy = lastClaimUpdateBy.current?.email ?? null;
+        if (lastBy && user?.email && lastBy !== user.email) return;
+      }
       setJustProcessed(true);
       const t = setTimeout(() => setJustProcessed(false), 500);
       return () => clearTimeout(t);
@@ -199,6 +207,10 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         { id: claim.id, data: { reason } },
         {
           onSuccess: () => {
+            // Task #495 — leave a local mark so the variant watcher above
+            // animates this row's pill on the operator's own action even
+            // when the SSE replay hasn't arrived (or carries no author).
+            markLocalAction(`claim:${claim.id}`);
             toast({
               title:
                 reason === "non_issue"

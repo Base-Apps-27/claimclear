@@ -4,6 +4,7 @@ import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
+import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
 import {
   useGetClaim,
   getGetClaimQueryKey,
@@ -344,8 +345,15 @@ export function ClaimDetailV2({
     if (prev === undefined) return;
     if (prev === newStatus) return;
     if (newStatus !== "Processed") return;
-    const lastBy = lastClaimUpdateBy.current?.email ?? null;
-    if (lastBy && user?.email && lastBy !== user.email) return;
+    // Task #495 — short-circuit the collaborator suppression when the
+    // operator's own mutation just succeeded. SSE author tags arrive
+    // asynchronously and some server-driven mutation paths carry no
+    // email at all; the local mark guarantees the operator who earned
+    // the check sees it. See `hooks/use-local-action-mark.ts`.
+    if (!consumeLocalActionMark(`claim:${claimId}`)) {
+      const lastBy = lastClaimUpdateBy.current?.email ?? null;
+      if (lastBy && user?.email && lastBy !== user.email) return;
+    }
     setJustProcessed(true);
     const t = setTimeout(() => setJustProcessed(false), 500);
     return () => clearTimeout(t);
@@ -524,6 +532,7 @@ export function ClaimDetailV2({
       { id: claimId },
       {
         onSuccess: () => {
+          markLocalAction(`claim:${claimId}`);
           toast({ title: "Leg reclassified — pick an error type to start over" });
           setReclassifyOpen(false);
           invalidateLeg();
@@ -543,6 +552,7 @@ export function ClaimDetailV2({
       { id: claimId, data: { reason: excludeReason, note: excludeNote || undefined } },
       {
         onSuccess: () => {
+          markLocalAction(`claim:${claimId}`);
           toast({ title: "Leg excluded from dispute" });
           setExcludeOpen(false);
           setExcludeReason("");
@@ -565,6 +575,7 @@ export function ClaimDetailV2({
       { id: claimId, data: { primaryClaimId: primaryId, note: duplicateNote || null } },
       {
         onSuccess: () => {
+          markLocalAction(`claim:${claimId}`);
           toast({ title: "Leg marked as Sibling Duplicate" });
           setDuplicateOpen(false);
           setDuplicatePrimaryId("");
@@ -585,6 +596,7 @@ export function ClaimDetailV2({
       { id: claimId },
       {
         onSuccess: () => {
+          markLocalAction(`claim:${claimId}`);
           toast({ title: "Sibling-duplicate link cleared" });
           setUnmarkDuplicateOpen(false);
           invalidateLeg();

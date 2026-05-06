@@ -126,7 +126,11 @@ function deriveState(status: QueueStatus | undefined, now: number): DerivedState
       subtext: "Sending batch",
       progress: 100,
       icon: Zap,
-      pulse: false,
+      // Task #495: pulse-ring belongs to the running state — that's
+      // when "the system is doing something right now" and the visual
+      // halo is meaningful. The amber/imminent state already carries
+      // its own colour cue and shouldn't share the same affordance.
+      pulse: true,
       running: true,
       empty: false,
       degraded: false,
@@ -203,7 +207,9 @@ function deriveState(status: QueueStatus | undefined, now: number): DerivedState
       subtext: baseSubtext,
       progress,
       icon: Clock,
-      pulse: true,
+      // Imminent keeps the amber tint as its visual cue; the pulse-ring
+      // is reserved for the running state (Task #495).
+      pulse: false,
       running: false,
       empty: false,
       degraded: false,
@@ -254,7 +260,7 @@ function PillButton({ state, collapsed = false }: PillProps) {
         "relative group flex items-center border rounded-md overflow-hidden transition-all hover:opacity-90 cursor-pointer",
         collapsed ? "h-8" : "h-9",
         PILL_CLASSES[state.color],
-        state.pulse ? "animate-pulse" : "",
+        state.pulse ? "animate-pulse-ring" : "",
       ].join(" ")}
     >
       <div className={`flex items-center h-full ${collapsed ? "px-2.5 gap-1.5" : "px-2.5 gap-2"} relative z-10`}>

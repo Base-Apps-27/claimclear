@@ -175,10 +175,14 @@
   }
 }
 
+/* Task #495 — `animate-pulse-ring` is applied directly to the
+   BatchStatusPill button (not an overlay), so it MUST remain
+   interactive while pulsing. The `box-shadow`-based ring never
+   captures pointer events on its own, so no overlay shielding is
+   needed; keep `pointer-events` on `auto` (the default). */
 .animate-pulse-ring {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   border-radius: 9999px;
-  pointer-events: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────

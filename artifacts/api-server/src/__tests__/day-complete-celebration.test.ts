@@ -1,11 +1,16 @@
-// Integration tests for Task #313 (Day-Complete Celebration).
+// Integration tests for Task #313 (Day-Complete Celebration), updated
+// for Task #495 (every false→true day-completion fires confetti).
 //
 // Covers:
-//   • The day-completed event is recorded EXACTLY ONCE per ISO date even
-//     when multiple groups for the same day flip to a concluded state in
-//     parallel and even when a redundant manual trigger races with the
-//     transition (idempotency via the partial unique index introduced in
-//     migration 0019).
+//   • The day-completed event is recorded ONCE per `transitionGroup*`
+//     edge from "day not yet concluded" → "day fully concluded". Task
+//     #495 dropped the partial unique index from migration 0019 (see
+//     migration 0033) and moved deduplication to the
+//     `priorConcluded` edge check that callers pass to
+//     `checkAndEmitDayCompleteForGroup`. This means a day that
+//     re-concludes (e.g. an operator reverts a closure and re-closes
+//     it) WILL emit a second celebration row — that is the desired
+//     behaviour now.
 //   • An empty calendar day (no invoice groups) NEVER triggers the
 //     celebration.
 //   • Per-group transitions through `transitionGroupStatus`,
@@ -13,8 +18,6 @@
 //     all wire the day-complete check in the same way (status enters
 //     in-flight, outcome flips to Non-Issue, and the combined status
 //     +outcome closure path).
-//   • The admin debug endpoint refuses to fire for unconcluded days
-//     unless `force=true`.
 
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
@@ -117,6 +120,12 @@ async function createGroupOnDay(opts: {
     invoiceNumber,
     status: opts.status ?? "Needs Evidence",
     outcome: opts.outcome ?? "Pending",
+    // Task #350/#356 — `getInvoiceGroupDay` and `isDayConcluded` read
+    // the canonical `invoice_groups.service_date` column. Stamp it
+    // here so raw-insert fixtures don't depend on the (non-deferred)
+    // trigger that normally backfills service_date when claims are
+    // inserted/updated.
+    serviceDate: opts.day,
   }).returning();
 
   const confNumber = `T313-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -276,7 +285,10 @@ test("transitionGroupStatusAndOutcome (Non-Issue closure): triggers celebration 
   }
 });
 
-test("idempotency: repeated tryEmitDayCompletedCelebration calls insert ONLY ONE row", async () => {
+test("tryEmitDayCompletedCelebration: ALWAYS inserts (Task #495 — dedupe moved to the edge check)", async () => {
+  // Direct callers (admin debug endpoint, tests) are responsible for
+  // their own gating now that the partial unique index is gone. The
+  // helper itself must always insert a row when invoked.
   const day = nextDay();
   const a = await createGroupOnDay({ day, status: "Awaiting Response" });
   try {
@@ -284,67 +296,81 @@ test("idempotency: repeated tryEmitDayCompletedCelebration calls insert ONLY ONE
     const r1 = await tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR });
     const r2 = await tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR });
     const r3 = await tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR });
-    assert.equal(r1.emitted, true, "first call must emit");
-    assert.equal(r2.emitted, false, "second call must be a no-op");
-    assert.equal(r3.emitted, false, "third call must be a no-op");
-    assert.equal(await countCelebrations(day), 1);
+    assert.equal(r1.emitted, true);
+    assert.equal(r2.emitted, true);
+    assert.equal(r3.emitted, true);
+    assert.equal(await countCelebrations(day), 3);
   } finally {
     await cleanupGroup(a.group.id);
   }
 });
 
-test("idempotency under concurrency: parallel emits insert ONLY ONE row", async () => {
-  const day = nextDay();
-  const a = await createGroupOnDay({ day, status: "Awaiting Response" });
-  try {
-    const calls = await Promise.all([
-      tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR }),
-      tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR }),
-      tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR }),
-      tryEmitDayCompletedCelebration({ day, triggeredByGroupId: a.group.id, actor: ACTOR }),
-    ]);
-    const emittedCount = calls.filter((c) => c.emitted).length;
-    assert.equal(emittedCount, 1, "exactly one of the parallel callers must claim the celebration");
-    assert.equal(await countCelebrations(day), 1);
-  } finally {
-    await cleanupGroup(a.group.id);
-  }
-});
-
-test("checkAndEmitDayCompleteForGroup: triggers exactly when the day flips to concluded", async () => {
+test("checkAndEmitDayCompleteForGroup: emits only on the false→true edge (priorConcluded gating)", async () => {
   const day = nextDay();
   // Two groups for the same day; one already in-flight, one not.
   const a = await createGroupOnDay({ day, status: "Awaiting Response" });
   const b = await createGroupOnDay({ day, status: "Needs Review" });
   try {
-    // Day is NOT yet concluded — the helper must NOT emit.
-    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR });
+    // Day is NOT yet concluded — the helper must NOT emit even when
+    // priorConcluded is correctly false.
+    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR, priorConcluded: false });
     assert.equal(await countCelebrations(day), 0);
 
-    // Move B to a concluded status directly (simulating a packaging/email
-    // pipeline that flipped the row outside of transitionGroupStatus).
+    // Snapshot the pre-update state, then move B to a concluded status
+    // directly (simulating a packaging/email pipeline that flipped the
+    // row outside of transitionGroupStatus).
+    const priorConcluded = await isDayConcluded(day);
+    assert.equal(priorConcluded, false);
     await db.update(invoiceGroupsTable)
       .set({ status: "Portal Queued" })
       .where(eq(invoiceGroupsTable.id, b.group.id));
 
-    // Sanity-check our preconditions before invoking the helper so a
-    // failure at this assertion clearly distinguishes a SQL-level issue
-    // from a helper-glue issue.
     const dayLookup = await getInvoiceGroupDay(b.group.id);
     assert.equal(dayLookup, day, "getInvoiceGroupDay should return the test day");
-    const concluded = await isDayConcluded(day);
-    assert.equal(concluded, true, "isDayConcluded should be true after both groups closed");
+    const nowConcluded = await isDayConcluded(day);
+    assert.equal(nowConcluded, true, "isDayConcluded should be true after both groups closed");
 
-    // Now the day IS concluded — the helper must emit exactly one row.
-    await checkAndEmitDayCompleteForGroup({ groupId: b.group.id, actor: ACTOR });
+    // The day IS now concluded and priorConcluded was false — emit once.
+    await checkAndEmitDayCompleteForGroup({ groupId: b.group.id, actor: ACTOR, priorConcluded });
     assert.equal(await countCelebrations(day), 1);
 
-    // Calling again is a no-op (no second row).
-    await checkAndEmitDayCompleteForGroup({ groupId: b.group.id, actor: ACTOR });
-    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR });
+    // Calling again with priorConcluded=true (the day was already
+    // concluded before the no-op transition) is a no-op — the gate
+    // suppresses repeated emits on no-edge calls.
+    await checkAndEmitDayCompleteForGroup({ groupId: b.group.id, actor: ACTOR, priorConcluded: true });
+    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR, priorConcluded: true });
     assert.equal(await countCelebrations(day), 1);
   } finally {
     await cleanupGroup(a.group.id);
     await cleanupGroup(b.group.id);
+  }
+});
+
+test("checkAndEmitDayCompleteForGroup: re-concludes celebrate again (Task #495)", async () => {
+  // Operator reverts a terminal closure and re-closes it later in the
+  // day. With the unique index gone, each true false→true edge fires.
+  const day = nextDay();
+  const a = await createGroupOnDay({ day, status: "Awaiting Response" });
+  try {
+    assert.equal(await isDayConcluded(day), true);
+    // Simulate the *first* edge: caller observed prior=false, now=true.
+    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR, priorConcluded: false });
+    assert.equal(await countCelebrations(day), 1);
+
+    // Operator reverts: flip the group back to a non-concluded status.
+    await db.update(invoiceGroupsTable)
+      .set({ status: "Needs Review" })
+      .where(eq(invoiceGroupsTable.id, a.group.id));
+    assert.equal(await isDayConcluded(day), false);
+
+    // Operator re-closes: another false→true edge — this MUST celebrate
+    // again under the Task #495 rules.
+    await db.update(invoiceGroupsTable)
+      .set({ status: "Awaiting Response" })
+      .where(eq(invoiceGroupsTable.id, a.group.id));
+    await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR, priorConcluded: false });
+    assert.equal(await countCelebrations(day), 2);
+  } finally {
+    await cleanupGroup(a.group.id);
   }
 });

@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
 
@@ -291,6 +292,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
       },
       {
         onSuccess: () => {
+          // Task #495 — leave a local mark so the parent
+          // invoice-group-detail-v2 page's "just shipped" microinteraction
+          // fires for the operator who pressed Submit even when SSE author
+          // tags are missing or replay-suppressed.
+          markLocalAction(`group:${groupId}`);
           toast({
             title: isDirectEmail ? "Email sent" : "Submitted to portal",
           });

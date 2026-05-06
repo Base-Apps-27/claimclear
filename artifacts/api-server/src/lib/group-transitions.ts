@@ -6,7 +6,7 @@ import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
 import { computeAttestationDelta, engageMasEligibleAttestationCascade } from "./attestation";
-import { checkAndEmitDayCompleteForGroup } from "./day-complete";
+import { checkAndEmitDayCompleteForGroup, snapshotDayConcludedForGroup } from "./day-complete";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
 type GroupOutcome = typeof invoiceGroupsTable.outcome.enumValues[number];
@@ -394,6 +394,10 @@ export async function transitionGroupStatus(opts: {
   const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = { status: newStatus, ...extraFields };
   applyHoldFields(updateData, old.status, newStatus, extraFields?.holdReason);
 
+  // Task #495 — capture day-aggregate concluded state BEFORE the UPDATE
+  // so the day-complete celebration can fire only on the false→true edge.
+  const priorConcluded = await snapshotDayConcludedForGroup(groupId, ex);
+
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
   const statusChanged = old.status !== newStatus;
@@ -453,8 +457,10 @@ export async function transitionGroupStatus(opts: {
 
     // Day-complete celebration: re-check after every status change because
     // entering in-flight or closed can make the group's day fully concluded.
-    // Idempotent — guarded by a partial unique index on state_events.
-    await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
+    // Task #495 — gated on the false→true edge by `priorConcluded` captured
+    // before the UPDATE; the unique-index dedupe was dropped in 0033 so the
+    // edge check is the sole guard against duplicate broadcasts.
+    await checkAndEmitDayCompleteForGroup({ groupId, actor, priorConcluded, executor: ex });
   }
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
@@ -571,6 +577,10 @@ export async function transitionGroupOutcome(opts: {
     updateData.closureReviewState = "pending";
   }
 
+  // Task #495 — capture pre-update day-aggregate concluded state for
+  // the day-complete edge check below.
+  const priorConcluded = await snapshotDayConcludedForGroup(groupId, ex);
+
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
   // Cascade the attestation flip to all disputed children so the queue
@@ -625,8 +635,9 @@ export async function transitionGroupOutcome(opts: {
   });
 
   // Day-complete celebration: setting outcome to Non-Issue or Withdrawn
-  // can be the final action that concludes the group's day.
-  await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
+  // can be the final action that concludes the group's day. Task #495 —
+  // gated on `priorConcluded` captured before the UPDATE.
+  await checkAndEmitDayCompleteForGroup({ groupId, actor, priorConcluded, executor: ex });
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
 }
@@ -730,6 +741,10 @@ export async function transitionGroupStatusAndOutcome(opts: {
   }
   applyHoldFields(updateData, old.status, newStatus, extraFields?.holdReason);
 
+  // Task #495 — capture pre-update day-aggregate concluded state for
+  // the day-complete edge check below.
+  const priorConcluded = await snapshotDayConcludedForGroup(groupId, ex);
+
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
   // Cascade attestation flip to disputed children — see note in
@@ -818,8 +833,9 @@ export async function transitionGroupStatusAndOutcome(opts: {
 
   // Day-complete celebration: combined status+outcome transitions are how
   // the closure path (Resolved / Denied / Withdrawn) commits, so this is
-  // the most common terminal flip for the day-complete signal.
-  await checkAndEmitDayCompleteForGroup({ groupId, actor, executor: ex });
+  // the most common terminal flip for the day-complete signal. Task #495 —
+  // gated on `priorConcluded` captured before the UPDATE.
+  await checkAndEmitDayCompleteForGroup({ groupId, actor, priorConcluded, executor: ex });
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
 }
