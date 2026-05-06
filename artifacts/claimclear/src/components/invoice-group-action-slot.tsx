@@ -14,9 +14,10 @@ import type {
 import { useAuth } from "@workspace/replit-auth-web";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShieldCheck } from "lucide-react";
+import { Archive, ShieldCheck } from "lucide-react";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { ReattestModal } from "@/components/whats-next/reattest-modal";
+import { useClosureLauncher } from "@/components/closure/closure-launcher";
 import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
 import { useToast } from "@/hooks/use-toast";
 
@@ -78,8 +79,20 @@ export function InvoiceGroupActionSlot({
     );
   }
 
-  // nothing_to_do — close-out path takes over.
-  return null;
+  // nothing_to_do — every leg is non-contestable / sibling-duplicate
+  // with no survivors. There's no dispute to file and nothing to
+  // re-attest, so the only forward motion is to close the invoice
+  // out as Withdrawn (cannot_dispute). Render an explicit close-out
+  // card explaining why so the operator isn't left staring at an
+  // empty submission area.
+  return (
+    <NothingToDoCloseOut
+      group={group}
+      groupId={groupId}
+      dropped={dropped}
+      bare={bare}
+    />
+  );
 }
 
 interface ReattestCtaProps {
@@ -178,6 +191,121 @@ function ReattestOnlyCta({
           toast({ title: "Re-attest", description: msg });
         }}
       />
+    </div>
+  );
+
+  if (bare) return body;
+
+  return (
+    <Card>
+      <CardContent className="pt-4">{body}</CardContent>
+    </Card>
+  );
+}
+
+interface NothingToDoProps {
+  group: InvoiceGroupDetailResponse;
+  groupId: number;
+  dropped: ClaimResponse[];
+  bare?: boolean;
+}
+
+// Task #481 — explicit close-out affordance for the `nothing_to_do`
+// outlook. Replaces the previous `return null`, which left operators
+// staring at a blank submission area with no guidance about how to
+// advance the invoice's lifecycle. The card explains why dispute
+// steps don't apply and offers a single CTA that opens the standard
+// structured closure intake (cannot_dispute → Withdrawn) — the same
+// dialog/launcher the rail uses, so the resulting audit trail and
+// query invalidations are identical no matter where the operator
+// closed from. If the invoice has already been closed out we render
+// a passive confirmation row instead of the button.
+function NothingToDoCloseOut({
+  group,
+  groupId,
+  dropped,
+  bare,
+}: NothingToDoProps) {
+  const queryClient = useQueryClient();
+  const { open: openClosure, dialog } = useClosureLauncher();
+  const droppedCount = dropped.length;
+
+  const alreadyClosed =
+    !!group.outcome &&
+    // vocab-allow-next-line — comparing against the API enum value, not a label.
+    (group.outcome === "Withdrawn" || group.outcome === "Non-Issue");
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getGetInvoiceGroupQueryKey(groupId),
+    });
+    queryClient.invalidateQueries({
+      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
+    });
+    queryClient.invalidateQueries({
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+    });
+  };
+
+  const body = (
+    <div
+      className="rounded-md border-2 border-amber-200 bg-amber-50/50 p-4 space-y-3"
+      data-testid="invoice-nothing-to-do-closeout"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Archive className="h-5 w-5" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-amber-900">
+            Nothing left to dispute on this invoice.
+          </h3>
+          <p
+            className="text-xs text-amber-900/80 mt-0.5"
+            data-testid="invoice-nothing-to-do-summary"
+          >
+            {droppedCount > 0 ? (
+              <>
+                {droppedCount} leg{droppedCount === 1 ? "" : "s"} closed as
+                non-contestable / sibling duplicate, with no survivors to
+                re-attest.
+              </>
+            ) : (
+              <>
+                No legs remain to dispute or re-attest.
+              </>
+            )}{" "}
+            Close the invoice out as Withdrawn so it stops sitting in your
+            queue.
+          </p>
+        </div>
+        {alreadyClosed ? (
+          <span
+            className="text-xs font-medium text-amber-900/80 px-2 py-1"
+            data-testid="invoice-nothing-to-do-already-closed"
+          >
+            Closed · {group.outcome}
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              openClosure({
+                target: { kind: "group", id: groupId },
+                reason: "cannot_dispute",
+                onSuccess: invalidate,
+              })
+            }
+            data-testid="invoice-nothing-to-do-close"
+          >
+            <Archive className="h-3.5 w-3.5 mr-1" />
+            Mark as closed
+          </Button>
+        )}
+      </div>
+      {dialog}
     </div>
   );
 

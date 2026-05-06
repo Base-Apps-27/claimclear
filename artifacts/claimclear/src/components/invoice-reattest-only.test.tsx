@@ -67,6 +67,27 @@ mock.module("@/components/prompt-context-badge", {
   namedExports: { PromptContextBadge: () => null },
 });
 
+// Stub the closure launcher so the nothing_to_do close-out test can
+// observe the open() args without mounting the heavy intake dialog.
+interface CapturedClosureCall {
+  target: { kind: string; id: number };
+  reason: string;
+}
+const closureCalls: CapturedClosureCall[] = [];
+function clearClosureCalls() {
+  closureCalls.length = 0;
+}
+mock.module("@/components/closure/closure-launcher", {
+  namedExports: {
+    useClosureLauncher: () => ({
+      open: (args: CapturedClosureCall) => {
+        closureCalls.push({ target: args.target, reason: args.reason });
+      },
+      dialog: null,
+    }),
+  },
+});
+
 // Stub the heavy ReattestModal — capture the props it was last called
 // with so case (e) can assert the survivor / dropped partition is
 // passed through correctly.
@@ -302,8 +323,8 @@ test("InvoiceGroupActionSlot (has_disputable) — gauntlet present, CTA absent",
   );
 });
 
-// ─── nothing_to_do render: neither renders ────────────────────────
-test("InvoiceGroupActionSlot (nothing_to_do) — neither gauntlet nor CTA renders", () => {
+// ─── Task #481 — nothing_to_do renders the close-out card ─────────
+test("InvoiceGroupActionSlot (nothing_to_do) — close-out card renders, gauntlet + reattest CTA absent", () => {
   const g = group([
     leg({ id: 1, sopOutcome: "cannot_dispute" }),
     leg({ id: 2, sopOutcome: "cannot_dispute" }),
@@ -311,14 +332,101 @@ test("InvoiceGroupActionSlot (nothing_to_do) — neither gauntlet nor CTA render
   const html = renderHtml(
     React.createElement(InvoiceGroupActionSlot, { group: g, groupId: 99 }),
   );
+  assert.match(html, /data-testid="invoice-nothing-to-do-closeout"/);
+  assert.match(html, /data-testid="invoice-nothing-to-do-close"/);
+  assert.match(html, /Nothing left to dispute on this invoice\./);
+  assert.match(html, /2 legs closed as non-contestable/);
+  assert.match(html, /Mark as closed/);
   assert.equal(
     html.includes(`data-testid="invoice-reattest-only-cta"`),
     false,
+    "Re-attest CTA must not render in nothing_to_do",
   );
   assert.equal(
     html.includes(`data-testid="generate-preview"`),
     false,
+    "gauntlet must not render in nothing_to_do",
   );
+});
+
+// ─── Task #481 — already-closed nothing_to_do shows passive row ───
+test("InvoiceGroupActionSlot (nothing_to_do, already closed) — shows passive Closed row, no Mark as closed button", () => {
+  const g = group([
+    leg({ id: 1, sopOutcome: "cannot_dispute" }),
+    leg({ id: 2, sopOutcome: "cannot_dispute" }),
+  ]);
+  // vocab-allow-next-line — comparing against the API enum value, not a label.
+  (g as unknown as { outcome: string }).outcome = "Withdrawn";
+  const html = renderHtml(
+    React.createElement(InvoiceGroupActionSlot, { group: g, groupId: 99 }),
+  );
+  assert.match(html, /data-testid="invoice-nothing-to-do-already-closed"/);
+  assert.equal(
+    html.includes(`data-testid="invoice-nothing-to-do-close"`),
+    false,
+    "Mark-as-closed button must not render once the invoice is already closed",
+  );
+});
+
+// ─── Task #481 — clicking Mark as closed opens the closure launcher ─
+test("InvoiceGroupActionSlot (nothing_to_do) — clicking Mark as closed opens closure launcher with cannot_dispute on the group", async () => {
+  const { JSDOM } = await import("jsdom");
+  const ReactDOM = await import("react-dom/client");
+  const ReactTestUtils = await import("react-dom/test-utils");
+
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  const win = dom.window as unknown as Window & typeof globalThis;
+  (globalThis as Record<string, unknown>).window = win;
+  (globalThis as Record<string, unknown>).document = win.document;
+  (globalThis as Record<string, unknown>).HTMLElement = win.HTMLElement;
+  (globalThis as Record<string, unknown>).Element = win.Element;
+  (globalThis as Record<string, unknown>).Node = win.Node;
+  (globalThis as Record<string, unknown>).getComputedStyle = (
+    win as unknown as { getComputedStyle: typeof window.getComputedStyle }
+  ).getComputedStyle;
+
+  clearClosureCalls();
+  const g = group([
+    leg({ id: 1, sopOutcome: "cannot_dispute" }),
+    leg({ id: 2, sopOutcome: "cannot_dispute" }),
+    leg({ id: 3, sopOutcome: "cannot_dispute" }),
+  ]);
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const container = win.document.createElement("div");
+  win.document.body.appendChild(container);
+  const root = ReactDOM.createRoot(container);
+
+  await ReactTestUtils.act(async () => {
+    root.render(
+      React.createElement(
+        QueryClientProvider,
+        { client: qc },
+        React.createElement(InvoiceGroupActionSlot, {
+          group: g,
+          groupId: 99,
+        }),
+      ),
+    );
+  });
+
+  const button = container.querySelector(
+    `[data-testid="invoice-nothing-to-do-close"]`,
+  ) as HTMLButtonElement | null;
+  assert.ok(button, "Mark as closed button must render");
+
+  await ReactTestUtils.act(async () => {
+    button.click();
+  });
+
+  assert.equal(closureCalls.length, 1, "closure launcher must be opened once");
+  assert.deepEqual(closureCalls[0].target, { kind: "group", id: 99 });
+  assert.equal(closureCalls[0].reason, "cannot_dispute");
+
+  await ReactTestUtils.act(async () => {
+    root.unmount();
+  });
 });
 
 // ─── (e) clicking Re-attest opens the modal with the right partition ──
