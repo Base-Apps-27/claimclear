@@ -4,8 +4,10 @@ import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
-import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
+import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
+import { useTransientFlag } from "@/hooks/use-transient-flag";
 import {
   useGetClaim,
   getGetClaimQueryKey,
@@ -334,36 +336,28 @@ export function ClaimDetailV2({
   // briefly draw a check inside the status pill. Suppressed when the
   // change came from a different operator.
   // ─────────────────────────────────────────────────────────────────────
-  const { user } = useAuth();
   const { lastClaimUpdateBy } = useClaimEvents(claimId);
-  const prevStatusRef = useRef<string | null | undefined>(undefined);
-  const [justProcessed, setJustProcessed] = useState(false);
-  useEffect(() => {
-    const newStatus = claim?.status;
-    if (newStatus === undefined) return;
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = newStatus;
-    if (prev === undefined) return;
-    if (prev === newStatus) return;
-    if (newStatus !== "Processed") return;
-    // Task #495 — short-circuit the collaborator suppression when the
-    // operator's own mutation just succeeded. SSE author tags arrive
-    // asynchronously and some server-driven mutation paths carry no
-    // email at all; the local mark guarantees the operator who earned
-    // the check sees it. See `hooks/use-local-action-mark.ts`.
-    if (!consumeLocalActionMark(`claim:${claimId}`)) {
-      const lastBy = lastClaimUpdateBy.current?.email ?? null;
-      if (lastBy && user?.email && lastBy !== user.email) return;
-    }
-    setJustProcessed(true);
-    // Task #491 — same trigger that fires the per-pill flourish also
-    // bumps the session milestone counter. Dedupe is per-claim inside
-    // `notifyClaimProcessedThisSession`, so visiting the same leg in
-    // a second view (queue row, group page) won't double-count.
-    notifyClaimProcessedThisSession(claimId);
-    const t = setTimeout(() => setJustProcessed(false), 500);
-    return () => clearTimeout(t);
-  }, [claim?.status, user?.email, lastClaimUpdateBy, claimId]);
+  // Task #509 — the previous-value tracking, mount/same-value skip,
+  // local-mark fast path, and SSE-author collaborator gate all live
+  // in `useActorCausedTransition`; the one-shot timer + cleanup live
+  // in `useTransientFlag`. Behavior is byte-identical (500ms duration,
+  // same trigger condition).
+  const { active: justProcessed, fire: fireJustProcessed } = useTransientFlag(500);
+  useActorCausedTransition({
+    key: `claim:${claimId}`,
+    lastUpdateBy: lastClaimUpdateBy,
+    currentValue: claim?.status,
+    isTransition: (_prev, next) => next === "Processed",
+    onTransition: () => {
+      fireJustProcessed();
+      // Task #491 — same trigger that fires the per-pill flourish also
+      // bumps the session milestone counter. Dedupe is per-claim
+      // inside `notifyClaimProcessedThisSession`, so visiting the
+      // same leg in a second view (queue row, group page) won't
+      // double-count.
+      notifyClaimProcessedThisSession(claimId);
+    },
+  });
 
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();

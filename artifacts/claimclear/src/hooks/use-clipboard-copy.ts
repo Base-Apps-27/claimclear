@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTransientFlag } from "@/hooks/use-transient-flag";
 
 // Standard "copy chirp" hook (Task #494).
 //
@@ -13,6 +14,10 @@ import * as React from "react";
 // pick which icon to render. The duration matches the existing 1.5s
 // flash used by the original ad-hoc CopyButton in ref-number.tsx so
 // no consumer sees a behavior change after migrating.
+//
+// Internals delegate to the framework's `useTransientFlag` (Task #509);
+// this hook keeps the public clipboard-write logic and the
+// `copied`/`copy` naming the rest of the app reads against.
 const COPY_FLASH_MS = 1500;
 
 export interface UseClipboardCopyResult {
@@ -27,34 +32,20 @@ export interface UseClipboardCopyResult {
 }
 
 export function useClipboardCopy(): UseClipboardCopyResult {
-  const [copied, setCopied] = React.useState(false);
-  const timerRef = React.useRef<number | null>(null);
+  const { active: copied, fire } = useTransientFlag(COPY_FLASH_MS);
 
-  const copy = React.useCallback(async (value: string | null | undefined) => {
-    if (!value) return false;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      return false;
-    }
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-    }
-    setCopied(true);
-    timerRef.current = window.setTimeout(() => {
-      setCopied(false);
-      timerRef.current = null;
-    }, COPY_FLASH_MS);
-    return true;
-  }, []);
-
-  React.useEffect(
-    () => () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
+  const copy = React.useCallback(
+    async (value: string | null | undefined) => {
+      if (!value) return false;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        return false;
       }
+      fire();
+      return true;
     },
-    [],
+    [fire],
   );
 
   return { copied, copy };

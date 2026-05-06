@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetClaimQueryKey,
@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { toast } from "@/hooks/use-toast";
+import { useEventSource } from "@/hooks/use-event-source";
 
 interface ClaimEvent {
   type: string;
@@ -59,7 +60,6 @@ export interface ClaimEventsHandle {
 export function useClaimEvents(claimId: number | undefined): ClaimEventsHandle {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const retryCount = useRef(0);
   const lastClaimUpdateBy = useRef<{ email: string | null; type: string; timestamp: string } | null>(null);
 
   const handleEvent = useCallback(
@@ -107,40 +107,11 @@ export function useClaimEvents(claimId: number | undefined): ClaimEventsHandle {
     [queryClient],
   );
 
-  useEffect(() => {
-    if (!claimId) return;
-
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/claims/${claimId}/events`, {
-        withCredentials: true,
-      });
-
-      es.addEventListener("claim_update", handleEvent);
-      es.addEventListener("presence_update", handlePresenceEvent);
-
-      es.onopen = () => {
-        retryCount.current = 0;
-      };
-
-      es.onerror = () => {
-        es?.close();
-        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
-        retryCount.current += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    }
-
-    connect();
-
-    return () => {
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, [claimId, handleEvent, handlePresenceEvent]);
+  useEventSource({
+    url: `/api/claims/${claimId}/events`,
+    events: { claim_update: handleEvent, presence_update: handlePresenceEvent },
+    enabled: !!claimId,
+  });
 
   return { lastClaimUpdateBy };
 }
@@ -180,7 +151,6 @@ export interface InvoiceGroupEventsHandle {
 export function useInvoiceGroupEvents(groupId: number | undefined): InvoiceGroupEventsHandle {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const retryCount = useRef(0);
   const lastGroupUpdateBy = useRef<{ email: string | null; type: string; timestamp: string } | null>(null);
 
   const handleEvent = useCallback(
@@ -214,193 +184,102 @@ export function useInvoiceGroupEvents(groupId: number | undefined): InvoiceGroup
     [queryClient, user?.email],
   );
 
-  useEffect(() => {
-    if (!groupId) return;
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const handlePresenceEvent = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const data: PresenceSSEEvent = JSON.parse(event.data);
+        queryClient.invalidateQueries({
+          queryKey: getGetPresenceQueryKey(data.resourceType, data.resourceId),
+        });
+      } catch {
+        // ignore malformed events
+      }
+    },
+    [queryClient],
+  );
 
-    function connect() {
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/invoice-groups/${groupId}/events`, {
-        withCredentials: true,
-      });
-      es.addEventListener("group_update", handleEvent);
-      es.addEventListener("presence_update", (event: MessageEvent) => {
-        try {
-          const data: PresenceSSEEvent = JSON.parse(event.data);
-          queryClient.invalidateQueries({
-            queryKey: getGetPresenceQueryKey(data.resourceType, data.resourceId),
-          });
-        } catch {
-          // ignore malformed events
-        }
-      });
-      es.onopen = () => { retryCount.current = 0; };
-      es.onerror = () => {
-        es?.close();
-        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
-        retryCount.current += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    }
-    connect();
-    return () => {
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, [groupId, handleEvent]);
+  useEventSource({
+    url: `/api/invoice-groups/${groupId}/events`,
+    events: { group_update: handleEvent, presence_update: handlePresenceEvent },
+    enabled: !!groupId,
+  });
 
   return { lastGroupUpdateBy };
 }
 
 export function useInvoiceGroupsListEvents() {
   const queryClient = useQueryClient();
-  const retryCount = useRef(0);
 
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/invoice-groups/events`, {
-        withCredentials: true,
-      });
-      es.addEventListener("group_update", () => {
-        queryClient.invalidateQueries({
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/invoice-groups");
-          },
-        });
-      });
-      es.onopen = () => { retryCount.current = 0; };
-      es.onerror = () => {
-        es?.close();
-        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
-        retryCount.current += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    }
-    connect();
-    return () => {
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
+  const handleGroupUpdate = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/invoice-groups");
+      },
+    });
   }, [queryClient]);
+
+  useEventSource({
+    url: "/api/invoice-groups/events",
+    events: { group_update: handleGroupUpdate },
+  });
 }
 
 export function useClaimsListEvents() {
   const queryClient = useQueryClient();
-  const retryCount = useRef(0);
 
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/claims/events`, {
-        withCredentials: true,
-      });
-
-      es.addEventListener("claim_update", () => {
-        queryClient.invalidateQueries({
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) && key[0] === "/api/claims";
-          },
-        });
-      });
-
-      es.addEventListener("group_update", () => {
-        queryClient.invalidateQueries({
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) && key[0] === "/api/invoice-groups";
-          },
-        });
-      });
-
-      es.onopen = () => {
-        retryCount.current = 0;
-      };
-
-      es.onerror = () => {
-        es?.close();
-        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
-        retryCount.current += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    }
-
-    connect();
-
-    return () => {
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
+  const handleClaimUpdate = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && key[0] === "/api/claims";
+      },
+    });
   }, [queryClient]);
+
+  const handleGroupUpdate = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && key[0] === "/api/invoice-groups";
+      },
+    });
+  }, [queryClient]);
+
+  useEventSource({
+    url: "/api/claims/events",
+    events: { claim_update: handleClaimUpdate, group_update: handleGroupUpdate },
+  });
 }
 
 // Dashboard summary/activity invalidation. Listens to both the claims-list
 // and invoice-groups-list SSE streams so any status/outcome change anywhere
 // in the app refreshes the "Expiring Soon" cards and KPIs in real time.
+//
+// Each EventSource gets its own independent reconnect cycle via
+// `useEventSource` (Task #509). Previously a single shared reconnect
+// timer driven by the claims source meant a groups-stream error would
+// silently leave that source dead until the claims stream also errored;
+// the per-source reconnect is the simpler and more correct shape.
 export function useDashboardLiveUpdates() {
   const queryClient = useQueryClient();
-  const retryCount = useRef(0);
 
-  useEffect(() => {
-    const sources: EventSource[] = [];
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-
-    function invalidateDashboard() {
-      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-      queryClient.invalidateQueries({
-        predicate: (query) => {
-          const key = query.queryKey;
-          return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
-        },
-      });
-    }
-
-    function connect() {
-      if (cancelled) return;
-      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-
-      const groupsEs = new EventSource(`${base}/api/invoice-groups/events`, { withCredentials: true });
-      groupsEs.addEventListener("group_update", invalidateDashboard);
-      groupsEs.onopen = () => { retryCount.current = 0; };
-      groupsEs.onerror = () => {
-        groupsEs.close();
-      };
-      sources.push(groupsEs);
-
-      const claimsEs = new EventSource(`${base}/api/claims/events`, { withCredentials: true });
-      claimsEs.addEventListener("claim_update", invalidateDashboard);
-      claimsEs.addEventListener("group_update", invalidateDashboard);
-      claimsEs.onopen = () => { retryCount.current = 0; };
-      claimsEs.onerror = () => {
-        claimsEs.close();
-        if (cancelled) return;
-        const delay = Math.min(1000 * 2 ** Math.min(retryCount.current, 5), 30000);
-        retryCount.current += 1;
-        reconnectTimer = setTimeout(() => {
-          // Close any leftover sources before reconnecting.
-          while (sources.length) sources.pop()?.close();
-          connect();
-        }, delay);
-      };
-      sources.push(claimsEs);
-    }
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      while (sources.length) sources.pop()?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
+  const invalidateDashboard = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/dashboard");
+      },
+    });
   }, [queryClient]);
+
+  useEventSource({
+    url: "/api/invoice-groups/events",
+    events: { group_update: invalidateDashboard },
+  });
+  useEventSource({
+    url: "/api/claims/events",
+    events: { claim_update: invalidateDashboard, group_update: invalidateDashboard },
+  });
 }

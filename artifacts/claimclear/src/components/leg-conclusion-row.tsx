@@ -33,8 +33,10 @@ import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useClaimEvents } from "@/hooks/use-claim-events";
-import { consumeLocalActionMark, markLocalAction } from "@/hooks/use-local-action-mark";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
+import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
+import { useTransientFlag } from "@/hooks/use-transient-flag";
 import { useAuth } from "@workspace/replit-auth-web";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
 
@@ -164,39 +166,26 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     // refetch, and `prefers-reduced-motion` is honored by the shared CSS
     // hooks (`cc-check-tick` / `cc-pill-just-transitioned`).
     // ─────────────────────────────────────────────────────────────────────
-    const { user } = useAuth();
     const { lastClaimUpdateBy } = useClaimEvents(claim.id);
-    const prevVariantRef = useRef<LegVariant | undefined>(undefined);
-    const [justProcessed, setJustProcessed] = useState(false);
-    useEffect(() => {
-      const prev = prevVariantRef.current;
-      prevVariantRef.current = variant;
-      // Skip on initial mount (and on subsequent re-renders that don't
-      // actually flip the variant) so the animation cannot replay on
-      // remount or background refetches.
-      if (prev === undefined) return;
-      if (prev === variant) return;
-      if (variant !== "processed") return;
-      // Task #495 — the SSE author tag arrives asynchronously and on
-      // some paths (admin tools, server-driven cascades) carries no
-      // email at all. A local mark left by the operator's own mutation
-      // success handler short-circuits the SSE-based gate so the
-      // animation always plays for the operator who earned it; if no
-      // local mark is set we fall back to the existing collaborator
-      // suppression rule.
-      if (!consumeLocalActionMark(`claim:${claim.id}`)) {
-        const lastBy = lastClaimUpdateBy.current?.email ?? null;
-        if (lastBy && user?.email && lastBy !== user.email) return;
-      }
-      setJustProcessed(true);
-      // Task #491 — bump the session milestone counter from the same
-      // gated trigger so processing a leg from the queue counts toward
-      // the 10/25/50 celebration. Dedupe is per-claim inside
-      // `notifyClaimProcessedThisSession`.
-      notifyClaimProcessedThisSession(claim.id);
-      const t = setTimeout(() => setJustProcessed(false), 500);
-      return () => clearTimeout(t);
-    }, [variant, user?.email, lastClaimUpdateBy, claim.id]);
+    // Task #509 — `useActorCausedTransition` owns the prev-ref +
+    // mount/same-value skip + local-mark fast path + SSE-author
+    // collaborator gate; `useTransientFlag` owns the one-shot timer.
+    // Behavior is byte-identical (500ms, same condition).
+    const { active: justProcessed, fire: fireJustProcessed } = useTransientFlag(500);
+    useActorCausedTransition<LegVariant>({
+      key: `claim:${claim.id}`,
+      lastUpdateBy: lastClaimUpdateBy,
+      currentValue: variant,
+      isTransition: (_prev, next) => next === "processed",
+      onTransition: () => {
+        fireJustProcessed();
+        // Task #491 — bump the session milestone counter from the
+        // same gated trigger so processing a leg from the queue
+        // counts toward the 10/25/50 celebration. Dedupe is per-claim
+        // inside `notifyClaimProcessedThisSession`.
+        notifyClaimProcessedThisSession(claim.id);
+      },
+    });
 
     const concludeLegMutation = useConcludeLeg();
 

@@ -4,7 +4,8 @@ import { BackBar } from "@/components/back-bar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
-import { consumeLocalActionMark } from "@/hooks/use-local-action-mark";
+import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
+import { useTransientFlag } from "@/hooks/use-transient-flag";
 import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed } from "@/lib/lifecycle-phase";
 import {
   useGetInvoiceGroup,
@@ -356,15 +357,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   // claim-detail-v2 (Task #315).
   // ─────────────────────────────────────────────────────────────────────
   const { lastGroupUpdateBy } = useInvoiceGroupEvents(groupId);
-  const prevGroupStatusRef = useRef<string | null | undefined>(undefined);
-  const [justShipped, setJustShipped] = useState(false);
-  // Task #491 — distinct one-shot for the "group cleared" moment so the
-  // primary detail card itself can fade (cc-card-just-cleared) while
-  // the status pill plays its existing checkmark-draw beat. Kept as a
-  // separate flag from `justShipped` so the two beats can have their
-  // own durations and so a future tweak to one doesn't accidentally
+  // Task #509 — `useTransientFlag` owns the one-shot timers; the
+  // gated transition watcher below uses `useActorCausedTransition`.
+  // The two flags stay distinct (justShipped for the pill flourish,
+  // justCleared for the card fade) so a future tweak to one doesn't
   // re-style the other.
-  const [justCleared, setJustCleared] = useState(false);
+  const { active: justShipped, fire: fireJustShipped } = useTransientFlag(500);
+  const { active: justCleared, fire: fireJustCleared } = useTransientFlag(800);
 
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
@@ -437,50 +436,29 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const excludedCount = allRides.length - disputedRides.length;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
 
-  useEffect(() => {
-    const newStatus = group?.status;
-    if (newStatus === undefined) return; // group hasn't loaded yet
-    const prev = prevGroupStatusRef.current;
-    prevGroupStatusRef.current = newStatus;
-    // Skip on initial mount and on background refetches that don't
-    // change status — only the actual transition fires the animation.
-    if (prev === undefined) return;
-    if (prev === newStatus) return;
-    // Only celebrate the bucket transition out of pre-submit into
-    // in-flight (the dispute is actually out the door).
-    // Task #491 — broaden the trigger so the same checkmark-draw + soft
-    // glow on the status pill also celebrates the *other* milestone
-    // moment a group can hit: every open claim resolved and the group
-    // is now closed (Resolved / Denied / Withdrawn). The visual is
-    // deliberately the same as the "shipped" flourish (no confetti)
-    // because the day-complete burst is reserved for the end-of-day
-    // celebration; per-group close-outs are a quieter "card completes"
-    // moment, not a confetti event.
-    const wasShipped = isPreSubmitFn(prev) && isInFlight(newStatus);
-    const wasCleared = !isClosed(prev) && isClosed(newStatus);
-    if (!wasShipped && !wasCleared) return;
-    // Task #495 — if the operator's own mutation success handler left
-    // a local mark for this group, animate unconditionally. Otherwise
-    // fall back to the SSE author tag (which arrives asynchronously
-    // and may be missing on server-driven transitions).
-    if (!consumeLocalActionMark(`group:${groupId}`)) {
-      const lastBy = lastGroupUpdateBy.current?.email ?? null;
-      if (lastBy && user?.email && lastBy !== user.email) return;
-    }
-    setJustShipped(true);
-    if (wasCleared) {
-      // Task #491 — fire the card-level fade in addition to the pill
-      // flourish so the operator perceives the *card* as completing.
-      // Duration matches the CSS animation (700ms) plus a small buffer.
-      setJustCleared(true);
-    }
-    const t = setTimeout(() => setJustShipped(false), 500);
-    const tc = setTimeout(() => setJustCleared(false), 800);
-    return () => {
-      clearTimeout(t);
-      clearTimeout(tc);
-    };
-  }, [group?.status, user?.email, lastGroupUpdateBy]);
+  useActorCausedTransition<string>({
+    key: `group:${groupId}`,
+    lastUpdateBy: lastGroupUpdateBy,
+    currentValue: group?.status,
+    // Two milestone moments share the pill flourish:
+    //   • "shipped" — pre-submit → in-flight (dispute is out the door)
+    //   • "cleared" — every open claim resolved and the group closes
+    //                 (Resolved / Denied / Withdrawn). Same visual,
+    //                 no confetti — the day-complete burst is reserved
+    //                 for end-of-day, per-group close-outs are quieter.
+    isTransition: (prev, next) =>
+      (isPreSubmitFn(prev) && isInFlight(next)) ||
+      (!isClosed(prev) && isClosed(next)),
+    onTransition: (next, prev) => {
+      fireJustShipped();
+      // Card-level fade ONLY on the cleared transition so the operator
+      // perceives the *card* as completing. CSS animation is 700ms;
+      // flag duration is 800ms to give a small post-animation buffer.
+      if (!isClosed(prev) && isClosed(next)) {
+        fireJustCleared();
+      }
+    },
+  });
 
   /* Aggregate-context state removed in Task #265 — per-leg context lives
      on each leg row in the queue and the editable AI write-up replaces

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTransientFlag, useTransientFlagSet } from "@/hooks/use-transient-flag";
 
 // Save-confirmation "breath" microinteraction (Task #316).
 //
@@ -9,6 +10,10 @@ import * as React from "react";
 // tint, with a `prefers-reduced-motion` variant that drops the scale and
 // only tints. The button is briefly disabled while `breathing` is true so
 // it can't be double-clicked mid-animation.
+//
+// Internals delegate to the framework's `useTransientFlag` (Task #509);
+// this hook is the thin semantic wrapper that adds the
+// `animate-cc-breath` class-name convention and the "save" naming.
 const BREATH_DURATION_MS = 250;
 
 export interface UseBreathResult {
@@ -21,34 +26,11 @@ export interface UseBreathResult {
 }
 
 export function useBreath(): UseBreathResult {
-  const [breathing, setBreathing] = React.useState(false);
-  const timerRef = React.useRef<number | null>(null);
-
-  const trigger = React.useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    setBreathing(true);
-    timerRef.current = window.setTimeout(() => {
-      setBreathing(false);
-      timerRef.current = null;
-    }, BREATH_DURATION_MS);
-  }, []);
-
-  React.useEffect(
-    () => () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-    },
-    [],
-  );
-
+  const { active, fire } = useTransientFlag(BREATH_DURATION_MS);
   return {
-    breathing,
-    trigger,
-    className: breathing ? "animate-cc-breath" : "",
+    breathing: active,
+    trigger: fire,
+    className: active ? "animate-cc-breath" : "",
   };
 }
 
@@ -63,6 +45,10 @@ export function useBreath(): UseBreathResult {
 /* (empty string when not pulsing); the dedicated `cc-row-breath`     */
 /* class lives in `index.css` and is reduced-motion aware (drops the  */
 /* fade keyframe to a static tint flash).                              */
+/*                                                                     */
+/* Internals delegate to the framework's `useTransientFlagSet`         */
+/* (Task #509); this hook is the thin semantic wrapper that adds the  */
+/* `cc-row-breath` class-name convention.                              */
 /* ------------------------------------------------------------------ */
 const ROW_BREATH_DURATION_MS = 600;
 
@@ -76,41 +62,10 @@ export interface UseRowBreathResult<Id> {
 }
 
 export function useRowBreath<Id>(): UseRowBreathResult<Id> {
-  const [active, setActive] = React.useState<ReadonlySet<Id>>(
-    () => new Set<Id>(),
-  );
-  const timerRef = React.useRef<number | null>(null);
-
-  const triggerForIds = React.useCallback(
-    (ids: ReadonlyArray<Id> | ReadonlySet<Id>) => {
-      const next = new Set<Id>(ids as Iterable<Id>);
-      if (next.size === 0) return;
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-      setActive(next);
-      timerRef.current = window.setTimeout(() => {
-        setActive(new Set<Id>());
-        timerRef.current = null;
-      }, ROW_BREATH_DURATION_MS);
-    },
-    [],
-  );
-
-  React.useEffect(
-    () => () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-    },
-    [],
-  );
-
-  const isBreathing = React.useCallback((id: Id) => active.has(id), [active]);
+  const { isActive, fire } = useTransientFlagSet<Id>(ROW_BREATH_DURATION_MS);
   const rowClassName = React.useCallback(
-    (id: Id) => (active.has(id) ? "cc-row-breath" : ""),
-    [active],
+    (id: Id) => (isActive(id) ? "cc-row-breath" : ""),
+    [isActive],
   );
-
-  return { isBreathing, rowClassName, triggerForIds };
+  return { isBreathing: isActive, rowClassName, triggerForIds: fire };
 }

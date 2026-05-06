@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { prefersReducedMotion } from "@/hooks/use-reduced-motion";
 
 const DURATION_MS = 400;
 const SNAP_DELTA = 2;
-
-function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
