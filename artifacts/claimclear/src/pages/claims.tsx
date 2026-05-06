@@ -527,12 +527,12 @@ export default function ClaimsList() {
   return (
     <div className="space-y-4" data-testid="page-claims">
       <PageHeader
-        title="Claims"
-        sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "claim" : "claims"} · search and classify individual claims`}
+        title="All Legs"
+        sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "leg" : "legs"} · granular search across the rides that roll up into invoices`}
         accent="blue"
         actions={
           <Button asChild data-testid="button-create-claim">
-            <Link href="/claims/new">Create Claim</Link>
+            <Link href="/claims/new">Create Leg</Link>
           </Button>
         }
       />
@@ -548,7 +548,7 @@ export default function ClaimsList() {
         <div
           className="flex flex-wrap items-center gap-1"
           role="tablist"
-          aria-label="Filter claims by leg sub-status"
+          aria-label="Filter legs by sub-status"
           data-testid="leg-sub-status-tabs"
         >
           {CLAIM_LEG_TABS.map((s) => (

@@ -1023,7 +1023,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 <>
                   Rides &amp; legs
                   <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                    · {allRides.length} ride{allRides.length === 1 ? "" : "s"} · {inDisputeCount} disputed
+                    · {allRides.length} leg{allRides.length === 1 ? "" : "s"} · {inDisputeCount} disputed
                   </span>
                 </>
               }

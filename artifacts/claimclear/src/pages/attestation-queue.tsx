@@ -92,8 +92,8 @@ export default function AttestationQueue() {
         <p className="text-sm text-muted-foreground mt-1">
           Invoice groups with approved verdicts that still need to be re-attested in the payor
           portal off-system — both the ones still on you and the ones parked for a teammate with
-          portal access. Open each group in the portal, complete the re-attestation for every
-          ride in it, then confirm it here so the dashboard and audit trail line up.
+          portal access. Open each invoice in the portal, complete the re-attestation for every
+          leg in it, then confirm it here so the dashboard and audit trail line up.
         </p>
       </div>
       <Tabs
