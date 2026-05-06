@@ -17,9 +17,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Loader2, Calendar as CalendarIcon, Eye, Users } from "lucide-react";
+import { X, Download, Inbox, Filter, CheckCircle2, RotateCcw, ClipboardCopy, Check, Loader2, Calendar as CalendarIcon, Eye, Users } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useUrlParams } from "@/lib/use-url-params";
+import { useRowBreath } from "@/hooks/use-breath";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
@@ -40,7 +41,8 @@ import {
 } from "@/components/cohesion";
 import { TONE_STYLE, type Tone } from "@/components/cohesion/tone";
 import { EmptyState } from "@/components/empty-state";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
+import { useClipboardCopy } from "@/hooks/use-clipboard-copy";
 import { WithdrawalReviewDrawer } from "@/components/withdrawal-review-drawer";
 import { closureReasonLabel } from "@workspace/vocab";
 
@@ -150,6 +152,10 @@ export default function WithdrawalsPage() {
   }, [rows, drawerRow]);
 
   const bulk = useBulkAddressWithdrawals();
+  // Bulk-action shimmer (Task #494): pulse the affected rows in
+  // unison after a successful bulk address/reopen so the change
+  // reads as one confirmed sweep instead of silent success.
+  const rowBreath = useRowBreath<string>();
 
   const handleTabChange = (key: TabKey) => {
     const t = TABS.find((x) => x.key === key);
@@ -218,9 +224,17 @@ export default function WithdrawalsPage() {
           addressed,
         },
       });
-      toast({
-        title: addressed ? `Marked ${res.updated} addressed` : `Reopened ${res.updated}`,
+      // Verb variety (Task #494): swap the static "Marked"/"Reopened"
+      // title for a friendlier verb pulled from the success-verb pool
+      // and keep the count in the description so the operator still
+      // sees how many rows the bulk action touched.
+      successToast({
+        title: "__VERB__",
+        description: addressed
+          ? `Marked ${res.updated} addressed`
+          : `Reopened ${res.updated}`,
       });
+      rowBreath.triggerForIds(selectedRows.map(rowKey));
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
     } catch {
@@ -228,6 +242,11 @@ export default function WithdrawalsPage() {
     }
   };
 
+  // Standardized copy chirp (Task #494): drives the Check-icon swap
+  // on the "Copy summary" button via the shared useClipboardCopy
+  // hook so this surface flashes the same way every other copy
+  // affordance does (ref-numbers, addresses, etc).
+  const summaryCopy = useClipboardCopy();
   const handleCopySummary = async () => {
     const subject = selectedRows.length > 0 ? selectedRows : rows;
     if (subject.length === 0) return;
@@ -239,10 +258,10 @@ export default function WithdrawalsPage() {
       return `• [${reason}] ${r.kind === "claim" ? "Claim" : "Group"} ${r.identifier} · ${amt} · closed ${closed}${noteBit}`;
     });
     const text = `Withdrawals summary (${subject.length} item${subject.length === 1 ? "" : "s"}):\n${lines.join("\n")}`;
-    try {
-      await navigator.clipboard.writeText(text);
-      toast({ title: `Copied ${subject.length} to clipboard` });
-    } catch {
+    const ok = await summaryCopy.copy(text);
+    if (ok) {
+      successToast({ title: "__VERB__", description: `Copied ${subject.length} to clipboard` });
+    } else {
       toast({ title: "Copy failed", description: "Clipboard access denied.", variant: "destructive" });
     }
   };
@@ -468,7 +487,12 @@ export default function WithdrawalsPage() {
                   <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reopen
                 </Button>
                 <Button size="sm" variant="outline" onClick={handleCopySummary} data-testid="button-copy-summary">
-                  <ClipboardCopy className="h-3.5 w-3.5 mr-1.5" /> Copy summary
+                  {summaryCopy.copied ? (
+                    <Check className="h-3.5 w-3.5 mr-1.5 text-emerald-600" />
+                  ) : (
+                    <ClipboardCopy className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  {summaryCopy.copied ? "Copied" : "Copy summary"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
                   <X className="h-3.5 w-3.5 mr-1.5" /> Clear
@@ -548,7 +572,7 @@ export default function WithdrawalsPage() {
                       return (
                         <tr
                           key={k}
-                          className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+                          className={`border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer ${rowBreath.rowClassName(k)}`}
                           style={isSel ? { background: accentBg } : undefined}
                           data-testid={`withdrawals-row-${r.kind}-${r.id}`}
                           onClick={() => setDrawerRow(r)}

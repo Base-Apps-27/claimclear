@@ -59,7 +59,7 @@ import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "@/components/cohesion";
@@ -559,7 +559,7 @@ export function ClaimDetailV2({
       {
         onSuccess: () => {
           markLocalAction(`claim:${claimId}`);
-          toast({ title: "Leg excluded from dispute" });
+          successToast({ title: "__VERB__", description: "Leg excluded from dispute" });
           setExcludeOpen(false);
           setExcludeReason("");
           setExcludeNote("");
@@ -582,7 +582,7 @@ export function ClaimDetailV2({
       {
         onSuccess: () => {
           markLocalAction(`claim:${claimId}`);
-          toast({ title: "Leg marked as Sibling Duplicate" });
+          successToast({ title: "__VERB__", description: "Leg marked as Sibling Duplicate" });
           setDuplicateOpen(false);
           setDuplicatePrimaryId("");
           setDuplicateNote("");
@@ -603,7 +603,7 @@ export function ClaimDetailV2({
       {
         onSuccess: () => {
           markLocalAction(`claim:${claimId}`);
-          toast({ title: "Sibling-duplicate link cleared" });
+          successToast({ title: "__VERB__", description: "Sibling-duplicate link cleared" });
           setUnmarkDuplicateOpen(false);
           invalidateLeg();
         },

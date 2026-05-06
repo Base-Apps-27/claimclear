@@ -30,6 +30,7 @@ import SystemHealth from "@/pages/system-health";
 import NotFound from "@/pages/not-found";
 import ClerkNotAvailable from "@/pages/clerk-not-available";
 import { isClerk } from "@/lib/role";
+import { useKonamiDarkMode } from "@/hooks/use-easter-eggs";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -116,6 +117,10 @@ function SessionInterceptor() {
 }
 
 function App() {
+  // Easter egg (Task #494): Konami code (↑↑↓↓←→←→BA) toggles dark
+  // mode. Mount-once, no UI; silently no-ops while typing in inputs
+  // and on any error so the gag can never break a real interaction.
+  useKonamiDarkMode();
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

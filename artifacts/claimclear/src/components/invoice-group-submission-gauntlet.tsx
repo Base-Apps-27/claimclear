@@ -31,7 +31,7 @@ import {
   Save,
 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
@@ -177,7 +177,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
       { id: groupId, data: { readback } },
       {
         onSuccess: () => {
-          toast({ title: "Understanding readback confirmed" });
+          successToast({ title: "__VERB__", description: "Understanding readback confirmed" });
           invalidateGroup();
         },
         onError: (e: unknown) => toast({ title: "Readback failed", description: String((e as Error).message), variant: "destructive" }),
@@ -190,7 +190,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
       { id: groupId },
       {
         onSuccess: () => {
-          toast({ title: "Submission preview generated" });
+          successToast({ title: "__VERB__", description: "Submission preview generated" });
           invalidateGroup();
         },
         onError: (e: unknown) => toast({ title: "Preview generation failed", description: String((e as Error).message), variant: "destructive" }),
@@ -226,7 +226,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
       { id: groupId },
       {
         onSuccess: () => {
-          toast({ title: "Draft regenerated from preview" });
+          successToast({ title: "__VERB__", description: "Draft regenerated from preview" });
           invalidateGroup();
         },
         onError: (e: unknown) =>
@@ -247,7 +247,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
         { id: groupId },
         {
           onSuccess: () => {
-            toast({ title: "Draft marked as reviewed" });
+            successToast({ title: "__VERB__", description: "Draft marked as reviewed" });
             invalidateGroup();
           },
           onError: (e: unknown) =>

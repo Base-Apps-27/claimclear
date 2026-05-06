@@ -21,6 +21,7 @@ import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
+import { useRowBreath } from "@/hooks/use-breath";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
@@ -224,6 +225,10 @@ export default function InvoiceGroupsList() {
 
   const { data: errorTypesData } = useListErrorTypes();
   const bulkAssign = useBulkAssignInvoiceGroupErrorType();
+  // Bulk-action shimmer (Task #494): pulse the affected group rows
+  // together after a successful bulk assign so the change reads as
+  // one confirmed sweep across the table.
+  const rowBreath = useRowBreath<number>();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
   // Past-deadline groups are now hidden server-side via the
@@ -832,7 +837,7 @@ export default function InvoiceGroupsList() {
                         return (
                           <tr
                             key={group.id}
-                            className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(group.id)}`}
                             style={isSel ? { background: purpleRowTint } : undefined}
                             data-testid={`row-group-${group.id}`}
                           >
@@ -997,6 +1002,13 @@ export default function InvoiceGroupsList() {
                     msg += ` · skipped ${skipped.length} (${sample}${more})`;
                   }
                   setBulkAssignSuccess(msg);
+                  // Pulse the affected group rows together so the
+                  // bulk assign reads as one confirmed sweep — skipped
+                  // ids are filtered out of the shimmer set.
+                  const skippedIdSet = new Set(skipped.map((s) => s.id));
+                  rowBreath.triggerForIds(
+                    Array.from(selectedIds).filter((id) => !skippedIdSet.has(id)),
+                  );
                   setSelectedIds(new Set());
                   queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
                   setTimeout(() => setBulkAssignSuccess(""), skipped.length > 0 ? 6000 : 3000);

@@ -356,7 +356,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarHeader className="p-4 border-b border-sidebar-border">
             <div className="flex items-center gap-2.5 font-bold text-xl text-sidebar-foreground tracking-tight">
               <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                <svg width="28" height="28" viewBox="0 0 100 100" fill="none">
+                <svg width="28" height="28" viewBox="0 0 100 100" fill="none" className="cc-logo-wink">
                   <path d="M50 8 C50 8 20 55 20 70 C20 85 33 95 50 95 C67 95 80 85 80 70 C80 55 50 8 50 8Z" fill="none" stroke="white" strokeWidth="7"/>
                   <path d="M35 72 L50 45 L65 72" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/>
                   <path d="M65 72 C72 60 78 65 82 58" fill="none" stroke="#E85D3A" strokeWidth="6" strokeLinecap="round"/>

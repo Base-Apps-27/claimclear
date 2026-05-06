@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useClipboardCopy } from "@/hooks/use-clipboard-copy";
 
 interface CopyButtonProps {
   value: string | null | undefined;
@@ -10,16 +10,18 @@ interface CopyButtonProps {
 /**
  * Standalone copy-icon button that puts `value` on the clipboard
  * (with any leading `#` defensively stripped) and flashes a Check
- * icon for 1.5s. Exported separately so adoption sites that already
- * render the invoice text inside a `<Link>` (where nesting an
- * additional interactive Button would be invalid HTML) can drop the
- * copy affordance next to the link instead of inside it.
+ * icon for ~1s via the shared `useClipboardCopy` hook (Task #494 —
+ * standardizes the chirp across every copy-icon site). Exported
+ * separately so adoption sites that already render the invoice text
+ * inside a `<Link>` (where nesting an additional interactive Button
+ * would be invalid HTML) can drop the copy affordance next to the
+ * link instead of inside it.
  *
  * Click handler stops propagation + prevents default so the button
  * can sit inside row-level click targets without triggering them.
  */
 export function CopyButton({ value, className = "" }: CopyButtonProps) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useClipboardCopy();
   if (!value) return null;
   const payload = String(value).trim().split(/\s+/)[0].replace(/^#+/, "");
   if (!payload) return null;
@@ -27,11 +29,7 @@ export function CopyButton({ value, className = "" }: CopyButtonProps) {
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    try {
-      await navigator.clipboard.writeText(payload);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    await copy(payload);
   };
 
   return (

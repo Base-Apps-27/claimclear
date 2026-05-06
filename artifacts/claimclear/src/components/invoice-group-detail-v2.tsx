@@ -46,7 +46,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -674,7 +674,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       { id: groupId, data: { reason: trimmed } },
       {
         onSuccess: () => {
-          toast({ title: "Group placed on hold" });
+          successToast({ title: "__VERB__", description: "Group placed on hold" });
           setHoldOpen(false);
           setHoldReason("");
           invalidateGroup();
@@ -694,7 +694,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       { id: groupId },
       {
         onSuccess: () => {
-          toast({ title: "Hold cleared" });
+          successToast({ title: "__VERB__", description: "Hold cleared" });
           invalidateGroup();
         },
         onError: (e: unknown) =>

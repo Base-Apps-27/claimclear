@@ -15,7 +15,7 @@ import {
 } from "@workspace/api-client-react";
 import type { WithdrawalRow } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 // Pulled from @workspace/vocab so this drawer reads the same as
 // every other surface that mentions a closure reason.
@@ -80,9 +80,9 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
       }
       queryClient.invalidateQueries({ queryKey: getListWithdrawalsQueryKey() });
       if (overrides.addressed === true) {
-        toast({ title: "Marked addressed" });
+        successToast({ title: "__VERB__", description: "Marked addressed" });
       } else if (overrides.addressed === false) {
-        toast({ title: "Reopened for review" });
+        successToast({ title: "__VERB__", description: "Reopened for review" });
       } else {
         // Routine notes-only save — quiet breath on the button, no toast.
         setNotesSaveTick((n) => n + 1);

@@ -11,7 +11,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Copy, Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast, successToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 export interface SiblingDuplicatePromptProps {
@@ -108,7 +108,7 @@ export function SiblingDuplicatePrompt({
       buildMarkDuplicateRequest({ legId, primaryClaimId }),
       {
         onSuccess: () => {
-          toast({ title: "Leg marked as Sibling Duplicate" });
+          successToast({ title: "__VERB__", description: "Leg marked as Sibling Duplicate" });
           qc.invalidateQueries({ queryKey: getGetClaimQueryKey(legId) });
           qc.invalidateQueries({ queryKey: ["claims"] });
           if (invoiceGroupId != null) {

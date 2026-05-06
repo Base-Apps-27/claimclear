@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/empty-state";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
+import { useRowBreath } from "@/hooks/use-breath";
 import { ColumnVisibilityMenu, type ColumnDef } from "@/components/list-table/column-visibility-menu";
 import { DensityToggle, type Density } from "@/components/list-table/density-toggle";
 import { PaginationFooter, type PageSize } from "@/components/list-table/pagination-footer";
@@ -221,6 +222,10 @@ export default function ClaimsList() {
   // invoice-group endpoint, never the leg endpoint. We map selected
   // leg ids → distinct invoice group ids before issuing the call.
   const bulkAssign = useBulkAssignInvoiceGroupErrorType();
+  // Bulk-action shimmer (Task #494): pulse the affected leg rows in
+  // unison after a successful bulk assign so the operator sees the
+  // change land instead of a silent table refresh.
+  const rowBreath = useRowBreath<number>();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
   // Past-deadline claims are now hidden server-side via the
@@ -757,7 +762,7 @@ export default function ClaimsList() {
                         return (
                           <tr
                             key={claim.id}
-                            className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(claim.id)}`}
                             style={isSel ? { background: blueRowTint } : undefined}
                             data-testid={`row-claim-${claim.id}`}
                           >
@@ -944,6 +949,13 @@ export default function ClaimsList() {
                     msg += ` · ${skippedReasons.join(" · ")}`;
                   }
                   setBulkAssignSuccess(msg);
+                  // Pulse the included leg rows together so the bulk
+                  // assign reads as one confirmed sweep — skipped legs
+                  // (no_invoice_group) are intentionally excluded.
+                  const includedIds = selectedClaims
+                    .filter(c => c.invoiceGroupId != null)
+                    .map(c => c.id);
+                  rowBreath.triggerForIds(includedIds);
                   setSelectedIds(new Set());
                   queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
                   queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });

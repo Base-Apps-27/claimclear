@@ -321,6 +321,63 @@
   }
 }
 
+/* ---------------------------------------------------------------- */
+/* Bulk-action row shimmer (Task #494).                             */
+/* Sibling of `animate-cc-breath` for table rows. After a bulk      */
+/* mutation (e.g. assign error type to N rows), every affected row  */
+/* pulses the same soft success tint together for ~600ms — reads   */
+/* as one confirmed sweep instead of silent success. Implemented as */
+/* a row-wide background fade so it works regardless of how the row */
+/* paints its cells. The `prefers-reduced-motion` branch keeps a    */
+/* short static tint instead of the fade animation.                 */
+/* ---------------------------------------------------------------- */
+@keyframes cc-row-breath {
+  0%   { background-color: hsl(142 71% 45% / 0); }
+  35%  { background-color: hsl(142 71% 45% / 0.20); }
+  100% { background-color: hsl(142 71% 45% / 0); }
+}
+
+.cc-row-breath {
+  animation: cc-row-breath 600ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-row-breath {
+    animation: none;
+    background-color: hsl(142 71% 45% / 0.16);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Easter egg: logo wink on hover (Task #494).                      */
+/* The sidebar logo SVG carries `cc-logo-wink`; on pointer hover    */
+/* the inner check stroke nudges into a tiny salute and the accent  */
+/* highlight does a quick flicker. Pure CSS, hover-only, gracefully */
+/* degrades to nothing under prefers-reduced-motion.                */
+/* ---------------------------------------------------------------- */
+@keyframes cc-logo-wink-tick {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  40%      { transform: translateY(-1px) rotate(-4deg); }
+  70%      { transform: translateY(-1px) rotate(2deg); }
+}
+
+@keyframes cc-logo-wink-spark {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  50%      { opacity: 0.55; transform: translateX(1.5px); }
+}
+
+.cc-logo-wink path { transform-origin: 50% 60%; transform-box: fill-box; }
+.cc-logo-wink:hover path:nth-child(2) {
+  animation: cc-logo-wink-tick 600ms ease-in-out;
+}
+.cc-logo-wink:hover path:nth-child(3) {
+  animation: cc-logo-wink-spark 600ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-logo-wink:hover path { animation: none !important; }
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   color: hsl(var(--muted-foreground));
   content: attr(data-placeholder);

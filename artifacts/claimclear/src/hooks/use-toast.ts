@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { pickSuccessVerb } from "@/lib/success-verb"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -188,4 +189,26 @@ function useToast() {
   }
 }
 
-export { useToast, toast }
+/* ------------------------------------------------------------------ */
+/* Success-toast verb variety (Task #494).                              */
+/*                                                                     */
+/* Thin wrapper over `toast()` that swaps a placeholder of `__VERB__`  */
+/* in the title for a randomly-picked verb from the curated pool       */
+/* (Saved / Locked in / Got it / Done). If the title omits the         */
+/* placeholder it's left alone — sites with bespoke success copy keep  */
+/* their wording. Description, variant, and other props pass through   */
+/* untouched. Reserved for success toasts only; do not route           */
+/* error/warning toasts through this helper.                           */
+/* ------------------------------------------------------------------ */
+function successToast(
+  props: Toast & { verbRng?: () => number },
+): ReturnType<typeof toast> {
+  const { verbRng, ...rest } = props
+  const rawTitle = typeof rest.title === "string" ? rest.title : ""
+  const finalTitle = rawTitle.includes("__VERB__")
+    ? rawTitle.replace(/__VERB__/g, pickSuccessVerb(verbRng))
+    : rest.title
+  return toast({ ...rest, title: finalTitle })
+}
+
+export { useToast, toast, successToast }
