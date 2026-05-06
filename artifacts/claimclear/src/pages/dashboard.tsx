@@ -26,6 +26,7 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
+import { useNumberTicker } from "@/hooks/use-number-ticker";
 import { useServerDayRolloverInvalidator } from "@/lib/server-day-rollover";
 import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
@@ -80,6 +81,48 @@ function firstNameFromUser(user: { displayName?: string | null; firstName?: stri
   if (display) return display.split(/\s+/)[0];
   if (user.email) return user.email.split("@")[0];
   return "there";
+}
+
+// Local-hour-based greeting. Falls back to "Hello" if Date misbehaves.
+// English-only by design (see task #492 out-of-scope).
+function timeOfDayGreeting(now: Date = new Date()): string {
+  const hour = now.getHours();
+  if (!Number.isFinite(hour)) return "Hello";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+// Animated integer for KPI counts. Honors prefers-reduced-motion and
+// snaps tiny deltas (see use-number-ticker).
+function TickerInt({ value }: { value: number }) {
+  const display = useNumberTicker(value);
+  return <>{Math.round(display).toLocaleString()}</>;
+}
+
+// Animated currency wrapper. Accepts the raw amount (which may be null
+// or a non-numeric string from the server) and a formatter. When the
+// amount can't be parsed to a finite number we skip animation entirely
+// and let the formatter render its placeholder ("—" for formatCurrency)
+// — matching the pre-ticker behavior so server-nulled money fields
+// don't suddenly display "$0.00".
+function TickerCurrency({
+  value,
+  format,
+}: {
+  value: string | number | null | undefined;
+  format: (n: string | number | null | undefined) => string;
+}) {
+  const numeric = toFiniteNumber(value);
+  const display = useNumberTicker(numeric ?? 0);
+  if (numeric === null) return <>{format(value)}</>;
+  return <>{format(display)}</>;
+}
+
+function toFiniteNumber(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 type KpiTone = "neutral" | "danger" | "good";
@@ -325,6 +368,12 @@ function buildStartHint(args: {
 export default function Dashboard() {
   const { user } = useAuth();
   const firstName = firstNameFromUser(user);
+  const greeting = timeOfDayGreeting();
+  // If the user's first name resolves to the generic "there" fallback,
+  // skip the comma so the line reads cleanly as "Good morning — …".
+  const greetingPrefix = firstName === "there"
+    ? `${greeting} — `
+    : `${greeting}, ${firstName} — `;
   useDashboardLiveUpdates();
 
   // `refetchOnWindowFocus: true` is scoped to the deadline-driven
@@ -384,7 +433,7 @@ export default function Dashboard() {
       <div className="space-y-5">
         <PageHeader
           title="Command Center"
-          sub={`Welcome back, ${firstName} — loading what's moving today…`}
+          sub={`${greetingPrefix}loading what's moving today…`}
           accent="blue"
         />
         <Skeleton className="h-20 w-full" />
@@ -472,7 +521,7 @@ export default function Dashboard() {
       <div className="space-y-5 pb-8">
         <PageHeader
           title="Command Center"
-          sub={`Welcome back, ${firstName} — here's what's moving today.`}
+          sub={`${greetingPrefix}here's what's moving today.`}
           accent="blue"
         />
         <Card>
@@ -494,7 +543,7 @@ export default function Dashboard() {
     <div className="space-y-5 pb-8">
       <PageHeader
         title="Command Center"
-        sub={`Welcome back, ${firstName} — here's what's moving today.`}
+        sub={`${greetingPrefix}here's what's moving today.`}
         accent="blue"
       />
 
@@ -550,7 +599,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" data-tour="dashboard-kpis">
         <KpiTile
           label="Invoices pending"
-          value={(pipeline.needsEvidence ?? 0) + (pipeline.awaitingResponse ?? 0)}
+          value={<TickerInt value={(pipeline.needsEvidence ?? 0) + (pipeline.awaitingResponse ?? 0)} />}
           sub={`${pipeline.needsEvidence ?? 0} need evidence · ${pipeline.awaitingResponse ?? 0} awaiting response`}
           tooltip="Open invoice groups still in flight: those needing evidence and those waiting on a payor response."
           testid="kpi-invoices-pending"
@@ -558,7 +607,7 @@ export default function Dashboard() {
         <HideForClerk>
           <KpiTile
             label="At risk"
-            value={formatCurrency(amounts.atRiskExposure ?? amounts.totalExposure)}
+            value={<TickerCurrency value={amounts.atRiskExposure ?? amounts.totalExposure} format={formatCurrency} />}
             sub={
               <>
                 {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} invoice amount + ~70% driver prepay
@@ -575,7 +624,7 @@ export default function Dashboard() {
         <HideForClerk>
           <KpiTile
             label="Already lost"
-            value={formatCurrency(amounts.lostExposureTotal ?? amounts.totalLost)}
+            value={<TickerCurrency value={amounts.lostExposureTotal ?? amounts.totalLost} format={formatCurrency} />}
             sub={
               <>
                 {formatCurrency(amounts.lostExpiredExposure ?? "0")} expired
@@ -596,7 +645,7 @@ export default function Dashboard() {
         <HideForClerk>
           <KpiTile
             label="Reclaimed"
-            value={formatCurrency(amounts.reclaimedApproved ?? amounts.totalApproved)}
+            value={<TickerCurrency value={amounts.reclaimedApproved ?? amounts.totalApproved} format={formatCurrency} />}
             sub={
               <span className="inline-flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
