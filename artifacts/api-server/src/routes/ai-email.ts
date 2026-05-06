@@ -139,6 +139,94 @@ async function generateWithLLM(
   return parsed;
 }
 
+/**
+ * Upgrade a user-authored reply draft via AI. Cleans up grammar,
+ * punctuation, and structure only — meaning, tone, and all factual
+ * details (numbers, dates, claim/invoice IDs, currency amounts, proper
+ * nouns) are preserved verbatim. Returns plain text or HTML matching
+ * the input format.
+ */
+const UPGRADE_REPLY_MAX_CHARS = 20000;
+
+const UPGRADE_REPLY_SYSTEM_PROMPT = `You are an expert editor helping a Non-Emergency Medical Transportation (NEMT) claims operator polish an email reply they are about to send to a payor.
+
+Your job is to rewrite the operator's draft to fix grammar, punctuation, spelling, and structural clarity ONLY.
+
+Hard rules — never violate:
+- Preserve the original meaning exactly. Do NOT add new claims, requests, justifications, or commitments. Do NOT remove substantive content.
+- Preserve the writer's tone and voice. If they were brief, stay brief. If they were formal, stay formal. Do not make a casual reply formal or vice versa.
+- Preserve every factual detail VERBATIM: numbers, dates, currency amounts, claim numbers, invoice numbers, confirmation numbers, ticket IDs, proper nouns (people, payors, organizations), addresses, email addresses, phone numbers, and URLs. Do not reword them, normalize them, or change capitalization.
+- Match the input format. If the input contains HTML tags, return well-formed HTML using the same tag vocabulary the input used (e.g. <p>, <br>, <ul>, <li>, <strong>, <em>, <a>). If the input is plain text with no tags, return plain text.
+- Do NOT translate or change languages.
+- Do NOT add greetings, sign-offs, signatures, disclaimers, or commentary that wasn't in the original.
+- Do NOT wrap the result in code fences, quotes, or explanations. Return ONLY the rewritten body.`;
+
+function buildUpgradeReplyPrompt(body: string, subject?: string): string {
+  const subjectLine = subject && subject.trim().length > 0
+    ? `Subject (for context only — do not modify or reference): ${subject.trim()}\n\n`
+    : "";
+  return `${subjectLine}Rewrite the draft below to fix grammar, punctuation, and structure. Follow every rule from the system prompt. Return ONLY the rewritten body in the same format as the input.
+
+Draft:
+"""
+${body}
+"""`;
+}
+
+router.post("/ai/upgrade-reply", asyncHandler(async (req, res): Promise<void> => {
+  const rawBody = req.body?.body;
+  const rawSubject = req.body?.subject;
+  if (typeof rawBody !== "string") {
+    res.status(400).json({ error: "body is required" });
+    return;
+  }
+  const trimmed = rawBody.trim();
+  if (trimmed.length === 0) {
+    res.status(400).json({ error: "body cannot be empty" });
+    return;
+  }
+  if (rawBody.length > UPGRADE_REPLY_MAX_CHARS) {
+    res.status(400).json({
+      error: `body is too long (${rawBody.length} chars; max ${UPGRADE_REPLY_MAX_CHARS}).`,
+    });
+    return;
+  }
+  const subject = typeof rawSubject === "string" ? rawSubject : undefined;
+
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 4096,
+      system: UPGRADE_REPLY_SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: buildUpgradeReplyPrompt(rawBody, subject) },
+      ],
+    });
+
+    const textBlock = message.content.find((b: any) => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      res.status(502).json({ error: "AI returned an empty response." });
+      return;
+    }
+
+    let upgradedBody = textBlock.text;
+    // Strip optional fenced wrapping if the model added one despite instructions.
+    const fenced = upgradedBody.match(/^```(?:html|text)?\s*([\s\S]*?)```\s*$/);
+    if (fenced) upgradedBody = fenced[1];
+    upgradedBody = upgradedBody.trim();
+
+    if (upgradedBody.length === 0) {
+      res.status(502).json({ error: "AI returned an empty rewrite." });
+      return;
+    }
+
+    res.json({ upgradedBody });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI rewrite failed: ${msg}` });
+  }
+}));
+
 router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);

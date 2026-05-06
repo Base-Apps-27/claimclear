@@ -17700,6 +17700,29 @@ export const AnalyzeSOPTextResponse = zod.object({
 });
 
 /**
+ * Rewrites the user's draft to clean up grammar, punctuation and
+structure while preserving meaning, tone, and all factual details
+(numbers, dates, claim/invoice IDs, currency amounts, proper nouns)
+verbatim. Returns the upgraded body in the same format as input
+(HTML in, HTML out; plain text in, plain text out).
+
+ * @summary Upgrade an email reply draft via AI
+ */
+export const UpgradeReplyDraftBody = zod.object({
+  body: zod
+    .string()
+    .describe("The current draft body. May be HTML or plain text."),
+  subject: zod
+    .string()
+    .optional()
+    .describe("Optional subject line for context. Not modified."),
+});
+
+export const UpgradeReplyDraftResponse = zod.object({
+  upgradedBody: zod.string(),
+});
+
+/**
  * @summary Generate dispute email via AI
  */
 export const GenerateClaimEmailParams = zod.object({

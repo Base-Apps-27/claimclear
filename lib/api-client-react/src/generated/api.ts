@@ -194,6 +194,10 @@ import type {
   UpdateNotificationPreferencesBody,
   UpdatePortalSubmissionDraftBody,
   UpdateUserTourStateBody,
+  UpgradeReplyDraft200,
+  UpgradeReplyDraft400,
+  UpgradeReplyDraft502,
+  UpgradeReplyDraftBody,
   UploadResponse,
   UrgentTodayTransitions,
   ValidTransitionsResponse,
@@ -6469,6 +6473,100 @@ export const useAnalyzeSOPText = <
   TContext
 > => {
   return useMutation(getAnalyzeSOPTextMutationOptions(options));
+};
+
+/**
+ * Rewrites the user's draft to clean up grammar, punctuation and
+structure while preserving meaning, tone, and all factual details
+(numbers, dates, claim/invoice IDs, currency amounts, proper nouns)
+verbatim. Returns the upgraded body in the same format as input
+(HTML in, HTML out; plain text in, plain text out).
+
+ * @summary Upgrade an email reply draft via AI
+ */
+export const getUpgradeReplyDraftUrl = () => {
+  return `/api/ai/upgrade-reply`;
+};
+
+export const upgradeReplyDraft = async (
+  upgradeReplyDraftBody: UpgradeReplyDraftBody,
+  options?: RequestInit,
+): Promise<UpgradeReplyDraft200> => {
+  return customFetch<UpgradeReplyDraft200>(getUpgradeReplyDraftUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(upgradeReplyDraftBody),
+  });
+};
+
+export const getUpgradeReplyDraftMutationOptions = <
+  TError = ErrorType<UpgradeReplyDraft400 | UpgradeReplyDraft502>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upgradeReplyDraft>>,
+    TError,
+    { data: BodyType<UpgradeReplyDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upgradeReplyDraft>>,
+  TError,
+  { data: BodyType<UpgradeReplyDraftBody> },
+  TContext
+> => {
+  const mutationKey = ["upgradeReplyDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upgradeReplyDraft>>,
+    { data: BodyType<UpgradeReplyDraftBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return upgradeReplyDraft(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpgradeReplyDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upgradeReplyDraft>>
+>;
+export type UpgradeReplyDraftMutationBody = BodyType<UpgradeReplyDraftBody>;
+export type UpgradeReplyDraftMutationError = ErrorType<
+  UpgradeReplyDraft400 | UpgradeReplyDraft502
+>;
+
+/**
+ * @summary Upgrade an email reply draft via AI
+ */
+export const useUpgradeReplyDraft = <
+  TError = ErrorType<UpgradeReplyDraft400 | UpgradeReplyDraft502>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upgradeReplyDraft>>,
+    TError,
+    { data: BodyType<UpgradeReplyDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upgradeReplyDraft>>,
+  TError,
+  { data: BodyType<UpgradeReplyDraftBody> },
+  TContext
+> => {
+  return useMutation(getUpgradeReplyDraftMutationOptions(options));
 };
 
 /**

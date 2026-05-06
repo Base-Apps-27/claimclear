@@ -2501,6 +2501,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/SOPAnalysisResult"
 
+  /ai/upgrade-reply:
+    post:
+      operationId: upgradeReplyDraft
+      tags: [ai]
+      summary: Upgrade an email reply draft via AI
+      description: |
+        Rewrites the user's draft to clean up grammar, punctuation and
+        structure while preserving meaning, tone, and all factual details
+        (numbers, dates, claim/invoice IDs, currency amounts, proper nouns)
+        verbatim. Returns the upgraded body in the same format as input
+        (HTML in, HTML out; plain text in, plain text out).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  description: The current draft body. May be HTML or plain text.
+                subject:
+                  type: string
+                  description: Optional subject line for context. Not modified.
+      responses:
+        "200":
+          description: Upgraded body
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upgradedBody]
+                properties:
+                  upgradedBody:
+                    type: string
+        "400":
+          description: Validation error (empty or oversized body).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "502":
+          description: AI provider failed to return a usable rewrite.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /claims/{id}/generate-email:
     post:
       operationId: generateClaimEmail

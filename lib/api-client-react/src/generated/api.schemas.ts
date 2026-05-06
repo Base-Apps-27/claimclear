@@ -4372,6 +4372,25 @@ export type GetAiCalibrationParams = {
   windowDays?: number;
 };
 
+export type UpgradeReplyDraftBody = {
+  /** The current draft body. May be HTML or plain text. */
+  body: string;
+  /** Optional subject line for context. Not modified. */
+  subject?: string;
+};
+
+export type UpgradeReplyDraft200 = {
+  upgradedBody: string;
+};
+
+export type UpgradeReplyDraft400 = {
+  error?: string;
+};
+
+export type UpgradeReplyDraft502 = {
+  error?: string;
+};
+
 export type ListPortalSubmissionsParams = {
   status?: string;
 };

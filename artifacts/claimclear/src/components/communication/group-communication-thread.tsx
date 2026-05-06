@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
+import { useUpgradeReplyDraft } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import {
   Mail,
   MailOpen,
@@ -14,6 +16,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Undo2,
+  Wand2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -426,6 +430,57 @@ function ReplyComposer({
   const [subject, setSubject] = useState(defaultSubject);
   const [bodyHtml, setBodyHtml] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Stash of the pre-upgrade draft so we can offer a one-step Undo back
+  // to exactly what the user typed. Cleared on send/cancel and replaced
+  // every time the user upgrades again.
+  const [previousBodyHtml, setPreviousBodyHtml] = useState<string | null>(null);
+  // Bumping the editor key after a programmatic body swap (upgrade or
+  // undo) is the simplest way to make the uncontrolled TipTap editor
+  // pick up the new content — RichTextEditor only reads `content` on
+  // initial mount.
+  const [editorKey, setEditorKey] = useState(0);
+  const { toast } = useToast();
+  const upgradeMutation = useUpgradeReplyDraft();
+
+  const bodyPlainCheck = bodyHtml.replace(/<[^>]*>/g, "").trim();
+  const canUpgrade = bodyPlainCheck.length > 0 && !upgradeMutation.isPending && !isSending;
+
+  const handleUpgrade = async () => {
+    if (!canUpgrade) return;
+    const original = bodyHtml;
+    try {
+      const { upgradedBody } = await upgradeMutation.mutateAsync({
+        data: { body: original, subject: subject.trim() || defaultSubject },
+      });
+      if (typeof upgradedBody !== "string" || upgradedBody.trim().length === 0) {
+        throw new Error("AI returned an empty rewrite.");
+      }
+      setPreviousBodyHtml(original);
+      setBodyHtml(upgradedBody);
+      setEditorKey((k) => k + 1);
+      setError(null);
+      toast({
+        title: "Draft upgraded",
+        description: "Review the changes and click Undo if you'd rather keep your original wording.",
+        duration: 4000,
+      });
+    } catch (err) {
+      // Original draft is preserved (we never touched bodyHtml on failure).
+      const msg = err instanceof Error ? err.message : "Couldn't upgrade the draft.";
+      toast({
+        title: "Upgrade failed",
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUndoUpgrade = () => {
+    if (previousBodyHtml === null) return;
+    setBodyHtml(previousBodyHtml);
+    setPreviousBodyHtml(null);
+    setEditorKey((k) => k + 1);
+  };
 
   const handleSend = async () => {
     const toList = to
@@ -508,6 +563,7 @@ function ReplyComposer({
       <div>
         <Label className="text-xs">Message</Label>
         <RichTextEditor
+          key={editorKey}
           content={bodyHtml}
           onUpdate={setBodyHtml}
           placeholder="Write your reply… mention legs with CLM-XXXX to link them."
@@ -523,7 +579,7 @@ function ReplyComposer({
           {error}
         </div>
       )}
-      <div className="flex justify-end gap-2 pt-1">
+      <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
         <Button
           size="sm"
           variant="ghost"
@@ -532,7 +588,41 @@ function ReplyComposer({
         >
           Cancel
         </Button>
-        <Button size="sm" onClick={handleSend} disabled={isSending}>
+        {previousBodyHtml !== null && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleUndoUpgrade}
+            disabled={upgradeMutation.isPending || isSending}
+            data-testid="group-thread-undo-upgrade"
+            title="Restore your original draft"
+          >
+            <Undo2 className="h-3 w-3 mr-1" /> Undo upgrade
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleUpgrade}
+          disabled={!canUpgrade}
+          data-testid="group-thread-upgrade-with-ai"
+          title={
+            bodyPlainCheck.length === 0
+              ? "Write a draft first, then I'll polish it."
+              : "Polish grammar and structure without changing meaning."
+          }
+        >
+          {upgradeMutation.isPending ? (
+            <>
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Upgrading…
+            </>
+          ) : (
+            <>
+              <Wand2 className="h-3 w-3 mr-1" /> Upgrade with AI
+            </>
+          )}
+        </Button>
+        <Button size="sm" onClick={handleSend} disabled={isSending || upgradeMutation.isPending}>
           {isSending ? (
             <>
               <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Sending…
