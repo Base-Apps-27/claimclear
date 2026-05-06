@@ -18458,7 +18458,15 @@ export const SaveErrorDetailMappingsResponse = zod.object({
 });
 
 /**
- * @summary Bulk assign error type to multiple claims
+ * Pivot B2 (Task #471): the invoice-first model requires that bulk
+error-type writes go through `POST /invoice-groups/bulk-assign-error-type`
+whenever any selected leg belongs to an invoice group. This
+endpoint refuses with `409 { code: "use_group_endpoint", groupIds }`
+in that case. It still succeeds for legacy un-grouped legs
+(`invoiceGroupId IS NULL`) for back-compat, but no first-party
+UI calls it directly anymore.
+
+ * @summary Bulk assign error type to multiple claims (legacy un-grouped legs only)
  */
 export const BulkAssignErrorTypeBody = zod.object({
   claimIds: zod.array(zod.number()),

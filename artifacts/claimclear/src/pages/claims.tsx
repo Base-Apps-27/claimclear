@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useListClaims, useListErrorTypes, useBulkAssignErrorType, getListClaimsQueryKey, getExportClaimsCsvUrl, ListClaimsSort, ListClaimsDir } from "@workspace/api-client-react";
+import { useListClaims, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, getListClaimsQueryKey, getListInvoiceGroupsQueryKey, getExportClaimsCsvUrl, ListClaimsSort, ListClaimsDir } from "@workspace/api-client-react";
 import type { ClaimResponse, ErrorTypeResponse, ListClaimsParams } from "@workspace/api-client-react";
 import { useClaimsListEvents } from "@/hooks/use-claim-events";
 import { useQueryClient } from "@tanstack/react-query";
@@ -217,7 +217,10 @@ export default function ClaimsList() {
   });
 
   const { data: errorTypesData } = useListErrorTypes();
-  const bulkAssign = useBulkAssignErrorType();
+  // Pivot B2 (Task #471): bulk error-type writes go through the
+  // invoice-group endpoint, never the leg endpoint. We map selected
+  // leg ids → distinct invoice group ids before issuing the call.
+  const bulkAssign = useBulkAssignInvoiceGroupErrorType();
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
   // Past-deadline claims are now hidden server-side via the
@@ -865,29 +868,86 @@ export default function ClaimsList() {
                 isPending={bulkAssign.isPending}
                 open={showBulkAssign}
                 onOpenChange={setShowBulkAssign}
-                onApply={async (errorTypeId) => {
+                onApply={async (errorTypeId, errorType) => {
+                  // Pivot B2 (Task #471): map selected leg ids → distinct
+                  // invoice group ids and call the group endpoint. Legs
+                  // without an invoiceGroupId (legacy untriaged rows)
+                  // are excluded from the call and surfaced in the
+                  // toast as "N legs skipped (no_invoice_group)".
+                  const selectedClaims = claims.filter(c => selectedIds.has(c.id));
+                  const groupIds = Array.from(new Set(
+                    selectedClaims
+                      .map(c => c.invoiceGroupId)
+                      .filter((id): id is number => id != null),
+                  ));
+                  const skippedLegs = selectedClaims.filter(c => c.invoiceGroupId == null);
+                  const totalSelectedLegs = selectedIds.size;
+                  const includedLegCount = totalSelectedLegs - skippedLegs.length;
+
+                  if (groupIds.length === 0) {
+                    // Endpoint-Action Contract: invoice-first toast even
+                    // in the all-skipped case so the contract wording
+                    // stays consistent. "0 invoices (0 legs)" plus the
+                    // skipped breakdown tells the operator exactly why
+                    // nothing changed.
+                    const sample = skippedLegs.slice(0, 5).map(c => c.confNumber || `#${c.id}`).join(", ");
+                    const more = skippedLegs.length > 5 ? ` +${skippedLegs.length - 5} more` : "";
+                    setBulkAssignSuccess(
+                      `Updated error type on 0 invoices (0 legs) · ${skippedLegs.length} leg${skippedLegs.length !== 1 ? "s" : ""} skipped (no_invoice_group: ${sample}${more})`,
+                    );
+                    setSelectedIds(new Set());
+                    setTimeout(() => setBulkAssignSuccess(""), 6000);
+                    return;
+                  }
+
                   const res = await bulkAssign.mutateAsync({
-                    data: { claimIds: Array.from(selectedIds), errorTypeId: Number(errorTypeId) },
+                    data: {
+                      groupIds,
+                      errorTypeId: String(errorType.id),
+                      errorTypeName: errorType.name,
+                    },
                   });
-                  // Task #411 audit, Tier 4: backend now returns a
-                  // per-row breakdown so the toast tells the operator
-                  // exactly which selected rows actually changed and
-                  // which were silently skipped (e.g. id no longer
-                  // exists). Surface skipped count + first few ids in
-                  // the success line so "Updated 5 claims" stops
-                  // misleading them.
+
+                  // Endpoint-Action Contract: invoice-first toast —
+                  // "Updated error type on X invoices (Y legs)". Skipped
+                  // groups (already on this error type) and skipped
+                  // legs (no invoice group) both feed the skipped list
+                  // with stable reasons (`already_assigned`,
+                  // `no_invoice_group`) — truncated at 5.
                   const updated = res.updated ?? 0;
-                  const skipped = Array.isArray(res.skipped) ? res.skipped : [];
-                  let msg = `Updated ${updated} claim${updated !== 1 ? "s" : ""}`;
-                  if (skipped.length > 0) {
-                    const sample = skipped.slice(0, 3).map((s) => s.refNumber || `#${s.id}`).join(", ");
-                    const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
-                    msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                  const skippedGroups = Array.isArray(res.skipped) ? res.skipped : [];
+                  let msg = `Updated error type on ${updated} invoice${updated !== 1 ? "s" : ""} (${includedLegCount} leg${includedLegCount !== 1 ? "s" : ""})`;
+                  const skippedReasons: string[] = [];
+                  if (skippedLegs.length > 0) {
+                    const sample = skippedLegs.slice(0, 5).map(c => c.confNumber || `#${c.id}`).join(", ");
+                    const more = skippedLegs.length > 5 ? ` +${skippedLegs.length - 5} more` : "";
+                    skippedReasons.push(`${skippedLegs.length} leg${skippedLegs.length !== 1 ? "s" : ""} skipped (no_invoice_group: ${sample}${more})`);
+                  }
+                  // Group the skipped rows by reason so the toast doesn't
+                  // collapse `already_assigned` and `not_found` into a
+                  // single misleading line. Stable reason strings
+                  // (`already_assigned`, `not_found`) keep the toast +
+                  // log analysis grep-able.
+                  const skippedByReason = new Map<string, typeof skippedGroups>();
+                  for (const s of skippedGroups) {
+                    const reason = s.reason ?? "already_assigned";
+                    const list = skippedByReason.get(reason) ?? [];
+                    list.push(s);
+                    skippedByReason.set(reason, list);
+                  }
+                  for (const [reason, list] of skippedByReason) {
+                    const sample = list.slice(0, 5).map((s) => s.refNumber || `#${s.id}`).join(", ");
+                    const more = list.length > 5 ? ` +${list.length - 5} more` : "";
+                    skippedReasons.push(`${list.length} group${list.length !== 1 ? "s" : ""} skipped (${reason}: ${sample}${more})`);
+                  }
+                  if (skippedReasons.length > 0) {
+                    msg += ` · ${skippedReasons.join(" · ")}`;
                   }
                   setBulkAssignSuccess(msg);
                   setSelectedIds(new Set());
                   queryClient.invalidateQueries({ queryKey: getListClaimsQueryKey() });
-                  setTimeout(() => setBulkAssignSuccess(""), skipped.length > 0 ? 6000 : 3000);
+                  queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                  setTimeout(() => setBulkAssignSuccess(""), skippedReasons.length > 0 ? 6000 : 3000);
                 }}
               />
             ) : (

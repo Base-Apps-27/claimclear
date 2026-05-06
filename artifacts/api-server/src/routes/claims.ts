@@ -1401,9 +1401,36 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
     return;
   }
 
-  const claims = await db.select({ id: claimsTable.id, confNumber: claimsTable.confNumber })
+  const claims = await db.select({
+    id: claimsTable.id,
+    confNumber: claimsTable.confNumber,
+    invoiceGroupId: claimsTable.invoiceGroupId,
+  })
     .from(claimsTable)
     .where(inArray(claimsTable.id, requestedIds));
+
+  // Pivot B2 (Task #471): the invoice-first model says an invoice's
+  // dispute reason **is** its error type — per-leg divergence within
+  // one invoice has no real-world meaning (MAS won't accept it). If
+  // any of the requested legs belong to an invoice group, refuse with
+  // a stable 409 + code so callers (and any out-of-tree integrations)
+  // get a fail-loud signal to route through
+  // `POST /invoice-groups/bulk-assign-error-type` instead. We do NOT
+  // auto-translate the request server-side — that would hide the
+  // architectural rule. Legacy un-grouped legs (invoiceGroupId IS NULL)
+  // remain handled here for back-compat.
+  const groupedClaims = claims.filter(c => c.invoiceGroupId != null);
+  if (groupedClaims.length > 0) {
+    const groupIds = Array.from(new Set(
+      groupedClaims.map(c => c.invoiceGroupId as number),
+    )).sort((a, b) => a - b);
+    res.status(409).json({
+      error: "Bulk error-type assignment must go through the invoice-group endpoint when any selected leg belongs to an invoice group.",
+      code: "use_group_endpoint",
+      groupIds,
+    });
+    return;
+  }
 
   // Task #411 audit, Tier 4: previously this endpoint returned only
   // `{ updated: N }`, which silently masked the case where some of

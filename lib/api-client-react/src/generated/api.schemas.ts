@@ -4391,6 +4391,19 @@ export type UpgradeReplyDraft502 = {
   error?: string;
 };
 
+export type BulkAssignErrorType409Code =
+  (typeof BulkAssignErrorType409Code)[keyof typeof BulkAssignErrorType409Code];
+
+export const BulkAssignErrorType409Code = {
+  use_group_endpoint: "use_group_endpoint",
+} as const;
+
+export type BulkAssignErrorType409 = {
+  error: string;
+  code: BulkAssignErrorType409Code;
+  groupIds: number[];
+};
+
 export type ListPortalSubmissionsParams = {
   status?: string;
 };

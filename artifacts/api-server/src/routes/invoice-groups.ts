@@ -1433,6 +1433,14 @@ router.delete("/invoice-groups/:id/hold", asyncHandler(async (req, res): Promise
   }
 }));
 
+// Pivot B2 (Task #471): this is the **only** sanctioned bulk
+// error-type write path. Per the invoice-first model, an invoice's
+// dispute reason **is** its error type, so per-leg divergence within
+// one invoice has no real-world meaning. The sibling leg endpoint
+// (`POST /claims/bulk-assign-error-type`) returns
+// `409 { code: "use_group_endpoint" }` for any leg that belongs to a
+// group; UI callers must map selected leg ids → distinct group ids and
+// call this endpoint instead.
 router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(async (req, res): Promise<void> => {
   const { groupIds, errorTypeId, errorTypeName } = req.body;
   if (!Array.isArray(groupIds) || groupIds.length === 0 || !errorTypeId) {
@@ -1452,14 +1460,28 @@ router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(as
   const existing = await db.select({
     id: invoiceGroupsTable.id,
     invoiceNumber: invoiceGroupsTable.invoiceNumber,
+    errorTypeId: invoiceGroupsTable.errorTypeId,
   })
     .from(invoiceGroupsTable)
     .where(inArray(invoiceGroupsTable.id, requestedIds));
 
   const matchedIds = new Set(existing.map((g) => g.id));
-  const skipped = requestedIds
+  const skipped: Array<{ id: number; refNumber: string | null; reason: string }> = requestedIds
     .filter((id) => !matchedIds.has(id))
-    .map((id) => ({ id, refNumber: null as string | null, reason: "not_found" as const }));
+    .map((id) => ({ id, refNumber: null, reason: "not_found" }));
+
+  // Pivot B2 (Task #471): groups already carrying the target error
+  // type are excluded from the write and surfaced in the toast with
+  // the stable reason `already_assigned` so operators can see "no-op"
+  // rows. Stable reason strings keep the toast / log analysis
+  // grep-able.
+  const targetErrorTypeId = String(errorTypeId);
+  const toUpdate = existing.filter((g) => String(g.errorTypeId ?? "") !== targetErrorTypeId);
+  for (const g of existing) {
+    if (String(g.errorTypeId ?? "") === targetErrorTypeId) {
+      skipped.push({ id: g.id, refNumber: g.invoiceNumber, reason: "already_assigned" });
+    }
+  }
 
   if (existing.length === 0) {
     res.status(404).json({
@@ -1471,25 +1493,27 @@ router.post("/invoice-groups/bulk-assign-error-type", denyClerk, asyncHandler(as
     return;
   }
 
-  await db.update(invoiceGroupsTable)
-    .set({ errorTypeId, errorTypeName: errorTypeName || null })
-    .where(inArray(invoiceGroupsTable.id, existing.map((g) => g.id)));
+  if (toUpdate.length > 0) {
+    await db.update(invoiceGroupsTable)
+      .set({ errorTypeId, errorTypeName: errorTypeName || null })
+      .where(inArray(invoiceGroupsTable.id, toUpdate.map((g) => g.id)));
 
-  const actor = actorFromReq(req);
-  for (const g of existing) {
-    await db.insert(auditLogsTable).values({
-      invoiceGroupId: g.id,
-      action: "group_error_type_assigned",
-      details: `Error type assigned: ${errorTypeName || errorTypeId}`,
-      metadata: { errorTypeId, errorTypeName },
-      ...actor,
-    });
+    const actor = actorFromReq(req);
+    for (const g of toUpdate) {
+      await db.insert(auditLogsTable).values({
+        invoiceGroupId: g.id,
+        action: "group_error_type_assigned",
+        details: `Error type assigned: ${errorTypeName || errorTypeId}`,
+        metadata: { errorTypeId, errorTypeName },
+        ...actor,
+      });
+    }
   }
 
   res.json({
     success: true,
-    updated: existing.length,
-    updatedItems: existing.map((g) => ({ id: g.id, refNumber: g.invoiceNumber })),
+    updated: toUpdate.length,
+    updatedItems: toUpdate.map((g) => ({ id: g.id, refNumber: g.invoiceNumber })),
     skipped,
   });
 }));

@@ -48,6 +48,8 @@ export * from "./bulkAddressBody";
 export * from "./bulkAddressBodyItemsItem";
 export * from "./bulkAddressBodyItemsItemKind";
 export * from "./bulkAddressResponse";
+export * from "./bulkAssignErrorType409";
+export * from "./bulkAssignErrorType409Code";
 export * from "./bulkAssignErrorTypeBody";
 export * from "./bulkAssignInvoiceGroupErrorTypeBody";
 export * from "./bulkAssignResult";

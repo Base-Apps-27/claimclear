@@ -43,6 +43,7 @@ import type {
   BotActivityLogResponse,
   BulkAddressBody,
   BulkAddressResponse,
+  BulkAssignErrorType409,
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
@@ -7931,7 +7932,15 @@ export const useSaveErrorDetailMappings = <
 };
 
 /**
- * @summary Bulk assign error type to multiple claims
+ * Pivot B2 (Task #471): the invoice-first model requires that bulk
+error-type writes go through `POST /invoice-groups/bulk-assign-error-type`
+whenever any selected leg belongs to an invoice group. This
+endpoint refuses with `409 { code: "use_group_endpoint", groupIds }`
+in that case. It still succeeds for legacy un-grouped legs
+(`invoiceGroupId IS NULL`) for back-compat, but no first-party
+UI calls it directly anymore.
+
+ * @summary Bulk assign error type to multiple claims (legacy un-grouped legs only)
  */
 export const getBulkAssignErrorTypeUrl = () => {
   return `/api/claims/bulk-assign-error-type`;
@@ -7950,7 +7959,7 @@ export const bulkAssignErrorType = async (
 };
 
 export const getBulkAssignErrorTypeMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BulkAssignErrorType409>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7991,13 +8000,14 @@ export type BulkAssignErrorTypeMutationResult = NonNullable<
   Awaited<ReturnType<typeof bulkAssignErrorType>>
 >;
 export type BulkAssignErrorTypeMutationBody = BodyType<BulkAssignErrorTypeBody>;
-export type BulkAssignErrorTypeMutationError = ErrorType<unknown>;
+export type BulkAssignErrorTypeMutationError =
+  ErrorType<BulkAssignErrorType409>;
 
 /**
- * @summary Bulk assign error type to multiple claims
+ * @summary Bulk assign error type to multiple claims (legacy un-grouped legs only)
  */
 export const useBulkAssignErrorType = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<BulkAssignErrorType409>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

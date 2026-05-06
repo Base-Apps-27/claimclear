@@ -2864,7 +2864,15 @@ paths:
     post:
       operationId: bulkAssignErrorType
       tags: [claims]
-      summary: Bulk assign error type to multiple claims
+      summary: Bulk assign error type to multiple claims (legacy un-grouped legs only)
+      description: |
+        Pivot B2 (Task #471): the invoice-first model requires that bulk
+        error-type writes go through `POST /invoice-groups/bulk-assign-error-type`
+        whenever any selected leg belongs to an invoice group. This
+        endpoint refuses with `409 { code: "use_group_endpoint", groupIds }`
+        in that case. It still succeeds for legacy un-grouped legs
+        (`invoiceGroupId IS NULL`) for back-compat, but no first-party
+        UI calls it directly anymore.
       requestBody:
         required: true
         content:
@@ -2878,6 +2886,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkAssignResult"
+        "409":
+          description: |
+            One or more requested leg ids belong to an invoice group;
+            caller must re-issue the request against
+            `POST /invoice-groups/bulk-assign-error-type` using the
+            returned distinct `groupIds` set.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, code, groupIds]
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [use_group_endpoint]
+                  groupIds:
+                    type: array
+                    items:
+                      type: integer
 
   /portal-submissions:
     get:
