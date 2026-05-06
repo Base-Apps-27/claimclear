@@ -13,6 +13,7 @@ import type {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StatusBadge } from "@/components/status-badge";
+import { RefNumber } from "@/components/ref-number";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1296,7 +1297,7 @@ export default function Queue() {
                 submittedStuck={group.submittedStuck}
                 size={group.isUrgent || group.submittedStuck ? "md" : "sm"}
               />
-              <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+              <RefNumber value={group.invoiceNumber} variant="inline" className="font-semibold" />
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
             <StatusBadge status={group.status} />
@@ -1586,7 +1587,7 @@ export default function Queue() {
                   Process Invoice Group
                   {selectedWorkflowGroupSummary && (
                     <span className="ml-2 text-sm font-normal text-muted-foreground">
-                      {selectedWorkflowGroupSummary.invoiceNumber} · {selectedWorkflowGroupSummary.status}
+                      <RefNumber value={selectedWorkflowGroupSummary.invoiceNumber} variant="inline" /> · {selectedWorkflowGroupSummary.status}
                     </span>
                   )}
                 </h3>
@@ -1810,19 +1811,30 @@ function ClassificationInboxRow({
   const qualifying = group.qualifyingSiblingCount;
   const blank = group.needsClassificationCount;
   return (
-    <button
-      type="button"
+    // Container is a div (not <button>) because RefNumber renders a
+    // nested copy <button>; <button> within <button> is invalid HTML.
+    // We keep the same row-click + keyboard semantics via role/tabIndex
+    // and aria-pressed.
+    <div
+      role="button"
+      tabIndex={0}
       data-testid={`inbox-group-${group.invoiceNumber}`}
       aria-pressed={isSelected}
       onClick={onSelect}
-      className={`w-full text-left rounded-lg border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`w-full text-left rounded-lg border bg-card transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/50"
       }`}
     >
       <div className="py-3 px-4 space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-mono font-semibold">{group.invoiceNumber}</span>
+            <RefNumber value={group.invoiceNumber} variant="inline" className="font-semibold" />
             <Badge variant="outline" className="text-[10px]">{group.status}</Badge>
             {group.allBlank ? (
               <Badge
@@ -1875,7 +1887,7 @@ function ClassificationInboxRow({
           )}
         </ul>
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -1,4 +1,5 @@
 import { FileText } from "lucide-react";
+import { RefNumber } from "@/components/ref-number";
 
 interface Props {
   invoiceNumber: string;
@@ -21,7 +22,7 @@ export function NewInvoiceNumberBadge({ invoiceNumber }: Props) {
     >
       <FileText className="h-3 w-3" />
       <span className="font-medium">Payor cited a new invoice #:</span>
-      <span className="font-mono">{invoiceNumber}</span>
+      <RefNumber value={invoiceNumber} variant="inline" />
     </div>
   );
 }

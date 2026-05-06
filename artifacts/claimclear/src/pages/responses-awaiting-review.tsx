@@ -46,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusBadge } from "@/components/status-badge";
+import { RefNumber } from "@/components/ref-number";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
   pickLatestReviewableResponse,
@@ -558,8 +559,8 @@ function ListRow({ group, isSelected, onSelect }: ListRowProps) {
       >
         <div className="flex items-center gap-2 flex-wrap">
           <UrgentTodayBadge isUrgent={group.isUrgent} />
-          <span className="font-mono text-sm font-semibold">
-            #{group.invoiceNumber}
+          <span className="font-mono text-sm font-semibold inline-flex items-center gap-1">
+            #<RefNumber value={group.invoiceNumber} variant="inline" />
           </span>
           <span className="text-xs text-muted-foreground">
             {includedCount !== null && includedCount !== totalCount
@@ -1600,7 +1601,7 @@ function InlineResponseFallback({
             )}
             <p className="text-xs text-muted-foreground">
               Received {formatDateTime(response.receivedAt)} ·{" "}
-              {invoiceNumber}
+              <RefNumber value={invoiceNumber} variant="inline" />
             </p>
           </div>
           <span

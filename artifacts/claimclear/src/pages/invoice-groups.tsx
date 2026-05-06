@@ -42,6 +42,7 @@ import {
 } from "@/components/cohesion";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
+import { RefNumber } from "@/components/ref-number";
 import {
   LIFECYCLE_TABS,
   deriveLifecycleTab,
@@ -834,7 +835,9 @@ export default function InvoiceGroupsList() {
                               <td className={`px-4 ${tdPy} font-medium font-mono text-xs`} style={{ color: TONE_STYLE.purple.fg }}>
                                 <div className="flex items-center gap-2">
                                   <UrgentTodayBadge isUrgent={group.isUrgent} submittedStuck={group.submittedStuck} />
-                                  <Link href={`/invoice-groups/${group.id}`}>{group.invoiceNumber}</Link>
+                                  <Link href={`/invoice-groups/${group.id}`} className="hover:underline">
+                                    <RefNumber value={group.invoiceNumber} variant="inline" />
+                                  </Link>
                                 </div>
                               </td>
                             )}

@@ -36,6 +36,7 @@ import { InfoTooltip } from "@/components/info-tooltip";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
+import { RefNumber } from "@/components/ref-number";
 import {
   getUrgentGroupCountFromSummary,
   selectUrgentRows,
@@ -640,7 +641,7 @@ export default function Dashboard() {
                   key={g.id}
                   to={`/invoice-groups/${g.id}`}
                   testid={`file-today-row-${g.id}`}
-                  primary={g.invoiceNumber}
+                  primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                   sub={
                     <>
                       <span style={{ color: labelTone, fontWeight: 600 }}>
@@ -697,7 +698,7 @@ export default function Dashboard() {
                 key={g.id}
                 to={`/invoice-groups/${g.id}`}
                 testid={`stuck-row-${g.id}`}
-                primary={g.invoiceNumber}
+                primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                 sub={
                   <>
                     {formatDate(g.earliestDate)} · {g.status}
@@ -724,7 +725,7 @@ export default function Dashboard() {
                 key={g.id}
                 to={`/responses-awaiting-review/${g.id}`}
                 testid={`response-row-${g.id}`}
-                primary={g.invoiceNumber}
+                primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                 sub={
                   <>
                     <ServiceDateCell
@@ -766,7 +767,7 @@ export default function Dashboard() {
                 key={g.id}
                 to={`/invoice-groups/${g.id}`}
                 testid={`reattest-row-${g.id}`}
-                primary={g.invoiceNumber}
+                primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                 sub={
                   <>
                     <ServiceDateCell

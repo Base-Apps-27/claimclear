@@ -189,14 +189,21 @@ test("Queue mount: clicking a currently-urgent row calls onSelectUrgentGroup, cl
 
   const row = await waitForRow("urgent-today-current-101");
 
-  // Shape: in Queue mode the row is a <button>, not an <a> pointing at
-  // the standalone detail page. This is the central guard — the row
-  // must NOT silently revert to /invoice-groups/<id> and yank the
-  // operator off the Queue.
-  assert.equal(
+  // Shape: in Queue mode the row is an in-page click target with
+  // role="button" (a <span role=button>, not a real <button>, so the
+  // nested copy <button> inside <RefNumber> stays valid HTML), and
+  // crucially NOT an <a> pointing at the standalone detail page. The
+  // central guard is that the row must NOT silently revert to
+  // /invoice-groups/<id> and yank the operator off the Queue.
+  assert.notEqual(
     row.tagName,
-    "BUTTON",
-    "Queue-mode currently-urgent row should render as a <button>, not a Link",
+    "A",
+    "Queue-mode currently-urgent row must not render as a Link",
+  );
+  assert.equal(
+    row.getAttribute("role"),
+    "button",
+    "Queue-mode row must expose role=button for assistive tech",
   );
   assert.equal(
     row.getAttribute("href"),

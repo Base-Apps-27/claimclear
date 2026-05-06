@@ -31,6 +31,7 @@ import {
   PageHeader, Section, StatusPill, TONE_STYLE, ToneButton, type Tone,
 } from "@/components/cohesion";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
+import { RefNumber } from "@/components/ref-number";
 import {
   ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow,
 } from "@/components/actions-rail";
@@ -1630,7 +1631,13 @@ export function PostUploadBridge({ batchId }: { batchId: string }) {
               data-testid={`bridge-row-${g.id}`}
             >
               <div className="text-sm min-w-0 flex-1">
-                <div className="font-mono font-medium truncate">{g.invoiceNumber || `Group #${g.id}`}</div>
+                <div className="font-mono font-medium truncate">
+                  {g.invoiceNumber ? (
+                    <RefNumber value={g.invoiceNumber} variant="inline" />
+                  ) : (
+                    <span>Group #{g.id}</span>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {g.rideCount} ride{g.rideCount === 1 ? "" : "s"}
                   {(() => {

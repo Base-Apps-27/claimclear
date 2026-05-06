@@ -63,7 +63,7 @@ export function HistoryTracker(): null {
 // ────────────────────────────────────────────────────────────────────────────
 
 export type Crumb = {
-  label: string;
+  label: React.ReactNode;
   href?: string;
   // When true, render the label in monospace — useful for invoice numbers
   // and IDs that should read as identifiers, not prose.
@@ -119,7 +119,7 @@ export function BackBar({ fallbackHref, crumbs, testId }: BackBarProps) {
           );
           return (
             <span
-              key={`${i}-${c.label}`}
+              key={i}
               className="inline-flex items-center gap-1.5"
             >
               {i > 0 && <span>/</span>}

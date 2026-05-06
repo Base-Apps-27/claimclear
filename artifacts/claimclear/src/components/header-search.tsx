@@ -20,6 +20,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { RefNumber } from "@/components/ref-number";
 import { formatCurrency } from "@/lib/format";
 
 // Debounce keystrokes so we don't fire a query for every letter — 200ms feels
@@ -114,8 +115,12 @@ export function HeaderSearch() {
     >
       <FolderOpen className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="flex flex-col min-w-0">
-        <span className="truncate font-medium">
-          {g.invoiceNumber ?? `Group #${g.id}`}
+        <span className="truncate font-medium inline-flex items-center gap-1">
+          {g.invoiceNumber ? (
+            <RefNumber value={g.invoiceNumber} variant="inline" />
+          ) : (
+            <span>Group #{g.id}</span>
+          )}
         </span>
         <span className="truncate text-xs text-muted-foreground">
           {shortContext([

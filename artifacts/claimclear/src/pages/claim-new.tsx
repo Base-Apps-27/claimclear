@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { RefNumber } from "@/components/ref-number";
 import {
   PageHeader, Section, TONE_STYLE, ToneButton,
 } from "@/components/cohesion";
@@ -401,7 +402,7 @@ export default function ClaimNew() {
                   <div className="flex items-center gap-2 text-sm">
                     <Truck className="w-3.5 h-3.5" style={{ color: TONE_STYLE.purple.fg }} />
                     <span className="font-mono font-semibold" style={{ color: TONE_STYLE.purple.fg }}>
-                      {linkedGroup.invoiceNumber}
+                      <RefNumber value={linkedGroup.invoiceNumber} variant="inline" />
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">

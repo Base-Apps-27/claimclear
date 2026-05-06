@@ -61,6 +61,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "@/components/cohesion";
+import { RefNumber } from "@/components/ref-number";
 import type { Tone } from "@/components/cohesion/tone";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
@@ -1642,7 +1643,11 @@ export function ClaimDetailV2({
                 action={<GoToGroupLink groupId={parentGroup.id}>Open group</GoToGroupLink>}
               >
                 <div className="text-base font-bold mono mb-1">
-                  {parentGroup.invoiceNumber || `INV-${parentGroup.id}`}
+                  {parentGroup.invoiceNumber ? (
+                    <RefNumber value={parentGroup.invoiceNumber} variant="inline" />
+                  ) : (
+                    <span>INV-{parentGroup.id}</span>
+                  )}
                 </div>
                 <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
                   {parentGroup.rideCount ?? 0} {parentGroup.rideCount === 1 ? "leg" : "legs"}
@@ -1788,8 +1793,8 @@ export function ClaimDetailV2({
                       <div style={{ color: "var(--cc-fg)" }}>
                         {e.details || e.action}
                         {e.viaGroup && e.invoiceNumber ? (
-                          <span className="ml-1 text-[10px] font-medium px-1.5 py-[1px] rounded" style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}>
-                            via {e.invoiceNumber}
+                          <span className="ml-1 text-[10px] font-medium px-1.5 py-[1px] rounded inline-flex items-center gap-1" style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}>
+                            via <RefNumber value={e.invoiceNumber} variant="inline" />
                           </span>
                         ) : null}
                       </div>

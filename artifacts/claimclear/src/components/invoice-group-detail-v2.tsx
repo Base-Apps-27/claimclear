@@ -52,6 +52,7 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
 import { StatusPill } from "@/components/cohesion";
+import { RefNumber } from "@/components/ref-number";
 import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { legSubStatusLabel as glossarySubStatusLabel } from "@workspace/vocab";
@@ -718,7 +719,14 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           fallbackHref="/invoice-groups"
           crumbs={[
             { label: "Invoice groups", href: "/invoice-groups" },
-            { label: group.invoiceNumber || `#${group.id}`, mono: true },
+            {
+              label: group.invoiceNumber ? (
+                <RefNumber value={group.invoiceNumber} variant="inline" />
+              ) : (
+                <span className="mono">#{group.id}</span>
+              ),
+              mono: true,
+            },
           ]}
           testId="invoice-group-back-bar"
         />
@@ -738,7 +746,13 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   Invoice group
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold mono">{group.invoiceNumber || `#${group.id}`}</h1>
+                  <h1 className="text-xl font-bold mono inline-flex items-center gap-2">
+                    {group.invoiceNumber ? (
+                      <RefNumber value={group.invoiceNumber} variant="chip" />
+                    ) : (
+                      <span>#{group.id}</span>
+                    )}
+                  </h1>
                   <StatusPill tone={statusTone(group.status)} justTransitioned={justShipped}>{group.status}</StatusPill>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
@@ -941,7 +955,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 }
               >
                 <div className="space-y-0">
-                  <FieldRow label="Invoice #" value={<span className="mono">{group.invoiceNumber || `#${group.id}`}</span>} />
+                  <FieldRow label="Invoice #" value={group.invoiceNumber ? <RefNumber value={group.invoiceNumber} variant="inline" /> : <span className="mono">#{group.id}</span>} />
                   <FieldRow label="Payor" value={group.payorEmail || <span style={{ color: "var(--cc-muted-fg)" }}>—</span>} />
                   <FieldRow label="Plan" value={group.clientNumber || <span style={{ color: "var(--cc-muted-fg)" }}>—</span>} />
                   <FieldRow

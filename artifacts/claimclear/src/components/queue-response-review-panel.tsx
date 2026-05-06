@@ -35,6 +35,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useClosureConfirmLauncher } from "@/components/closure/closure-launcher";
+import { RefNumber } from "@/components/ref-number";
 
 function getErrorMessage(err: unknown): string | undefined {
   if (err instanceof Error) return err.message;
@@ -333,7 +334,7 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
           <div className="space-y-1 min-w-0">
             <CardTitle className="text-lg flex items-center gap-2">
               <span>Review payor response</span>
-              <span className="font-mono text-sm text-muted-foreground">#{group.invoiceNumber}</span>
+              <span className="font-mono text-sm text-muted-foreground inline-flex items-center gap-1">#<RefNumber value={group.invoiceNumber} variant="inline" /></span>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               The AI hint is just a suggestion — you decide the verdict.

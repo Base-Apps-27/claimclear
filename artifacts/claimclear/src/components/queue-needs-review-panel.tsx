@@ -19,6 +19,7 @@ import type {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { RefNumber } from "@/components/ref-number";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -206,9 +207,11 @@ export function QueueNeedsReviewPanel({
           <div className="space-y-1 min-w-0">
             <CardTitle className="text-lg flex items-center gap-2">
               <Inbox className="h-4 w-4" />
-              {highlightLegId !== undefined
-                ? `Classify leg in ${inboxGroup.invoiceNumber}`
-                : `Triage ${inboxGroup.invoiceNumber}`}
+              {highlightLegId !== undefined ? (
+                <>Classify leg in <RefNumber value={inboxGroup.invoiceNumber} variant="inline" /></>
+              ) : (
+                <>Triage <RefNumber value={inboxGroup.invoiceNumber} variant="inline" /></>
+              )}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               {highlightLegId !== undefined ? (

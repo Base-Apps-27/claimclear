@@ -23,6 +23,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ChevronRight, Activity } from "lucide-react";
 import { deriveUrgentTodayWhy } from "@/lib/urgent-today-why";
+import { RefNumber } from "@/components/ref-number";
 
 type Tone = "red" | "amber" | "green";
 
@@ -250,38 +251,44 @@ export function UrgentTodayActivityPanelBody({
           <ul className="space-y-1">
             {data.currentlyUrgent.slice(0, 20).map((g: UrgentTodayTransitions["currentlyUrgent"][number]) => (
               <li key={g.id} className="text-sm flex items-center justify-between gap-2 border-b border-border/50 py-1">
-                {onSelectUrgentGroup ? (
-                  // Queue-mounted: in-page jump that selects the group in
-                  // the inline workspace and closes the Sheet. The host's
-                  // `selectWorkflow` callback owns both the URL
-                  // `?group=<id>` write and the scroll-into-view, so we
-                  // don't duplicate that here.
-                  <button
-                    type="button"
-                    className="font-mono hover:underline truncate text-left bg-transparent p-0 border-0 cursor-pointer"
-                    data-testid={`urgent-today-current-${g.id}`}
-                    onClick={() => {
-                      onSelectUrgentGroup(g.id);
-                      onClose?.();
-                    }}
-                    style={{ color: "inherit" }}
-                  >
-                    {g.invoiceNumber}
-                  </button>
-                ) : (
-                  // Dashboard-mounted (no inline workspace to jump into):
-                  // land the operator on the Queue with the group already
-                  // selected via the same `?group=<id>` param the Queue
-                  // uses for its inline workspace selection.
-                  <Link
-                    href={`/queue?group=${g.id}`}
-                    className="font-mono hover:underline truncate"
-                    data-testid={`urgent-today-current-${g.id}`}
-                    onClick={() => onClose?.()}
-                  >
-                    {g.invoiceNumber}
-                  </Link>
-                )}
+                <div className="flex items-center gap-1 min-w-0">
+                  {onSelectUrgentGroup ? (
+                    // Queue-mounted: in-page jump via host `selectWorkflow`.
+                    // Container is role=button (not a real <button>) so
+                    // RefNumber's nested copy button is valid HTML.
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="hover:underline truncate cursor-pointer"
+                      data-testid={`urgent-today-current-${g.id}`}
+                      onClick={() => {
+                        onSelectUrgentGroup(g.id);
+                        onClose?.();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectUrgentGroup(g.id);
+                          onClose?.();
+                        }
+                      }}
+                      style={{ color: "inherit" }}
+                    >
+                      <RefNumber value={g.invoiceNumber} variant="inline" />
+                    </span>
+                  ) : (
+                    // Dashboard-mounted: navigate to /queue with the
+                    // group preselected via `?group=<id>`.
+                    <Link
+                      href={`/queue?group=${g.id}`}
+                      className="hover:underline truncate"
+                      data-testid={`urgent-today-current-${g.id}`}
+                      onClick={() => onClose?.()}
+                    >
+                      <RefNumber value={g.invoiceNumber} variant="inline" />
+                    </Link>
+                  )}
+                </div>
                 <span className="text-xs text-muted-foreground shrink-0">
                   {g.status}
                 </span>
@@ -310,10 +317,10 @@ export function UrgentTodayActivityPanelBody({
                     {r.invoiceGroupId != null && r.invoiceNumber ? (
                       <Link
                         href={`/invoice-groups/${r.invoiceGroupId}`}
-                        className="font-mono hover:underline"
+                        className="hover:underline"
                         data-testid={`urgent-today-cleared-${r.id}`}
                       >
-                        {r.invoiceNumber}
+                        <RefNumber value={r.invoiceNumber} variant="inline" />
                       </Link>
                     ) : (
                       <span className="font-mono text-muted-foreground">—</span>
