@@ -18,7 +18,10 @@ const STATUSES_BY_PHASE: Record<Exclude<MacroPhase, "awaiting-payout">, readonly
   "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
   "response-pending": ["Ready to Review", "Needs Review"],
   "mas-action-required": ["MAS Eligible"],
-  "closed": ["Resolved", "Denied", "Withdrawn"],
+  // "Withdrawn" was removed here (Task #512): it is an outcome value,
+  // never a status, so the original entry was unreachable. See
+  // docs/architecture/invoice-terminal-state.md §7.
+  "closed": ["Resolved", "Denied"],
   "on-hold": ["On Hold"],
 };
 
