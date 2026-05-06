@@ -5,7 +5,14 @@ import {
   runBatchWorker,
   __setChromiumForTests,
   legsFromPortalSubmissionRows,
+  assembleGroupSubmission,
+  EmptyGroupError,
+  MissingDescriptionError,
+  MissingConfNumberError,
+  InvoiceNumberMismatchError,
+  AttachmentDriftError,
   type GroupPortalSubmission,
+  type PortalSubmission,
 } from "../bot/batch-worker";
 
 /**
@@ -244,4 +251,135 @@ test("legsFromPortalSubmissionRows: groups per-leg rows by invoiceGroupId, prese
   assert.equal(group500.legs[1].issueType, "GPS Control Deviation");
   assert.equal(group600.legs.length, 1);
   assert.equal(group600.invoiceNumber, "INV-600");
+});
+
+// ---------------------------------------------------------------------------
+// assembleGroupSubmission: producer-side strict adapter that fails LOUDLY
+// when the per-leg rows it gets handed don't form a coherent invoice group.
+// These tests pin down each named error so future producer changes (Task
+// #485 onward) can't silently revert the safety guarantees.
+// ---------------------------------------------------------------------------
+
+function makeRow(overrides: Partial<PortalSubmission> = {}): PortalSubmission {
+  return {
+    id: 1,
+    confNumber: "CONF-001",
+    serviceDate: "2025-01-15",
+    refNumber: "REF-001",
+    clientNumber: "CLIENT-X",
+    carNumber: "CAR-001",
+    claimAmount: "10.00",
+    errorTypeName: "GPS Deviation",
+    errorDetails: "GPS off route",
+    issueType: "Other Issue or Question",
+    subject: "Multi-leg dispute",
+    requesterEmail: "ops@example.com",
+    transportationProviderName: "Acme Transit",
+    phoneNumber: "555-1212",
+    invoiceNumber: "INV-9001",
+    gpsBreadcrumbsAvailable: "Yes",
+    descriptionHtml: "<p>Real description present</p>",
+    disputeReason: "Reason text",
+    evidenceNotes: "Evidence text",
+    attachmentUrls: ["/objects/a.pdf"],
+    invoiceGroupId: 9001,
+    ...overrides,
+  };
+}
+
+test("assembleGroupSubmission: happy path returns a coherent group", () => {
+  const group = assembleGroupSubmission([
+    makeRow({ id: 1, confNumber: "A" }),
+    makeRow({ id: 2, confNumber: "B" }),
+  ]);
+  assert.equal(group.groupId, 9001);
+  assert.equal(group.invoiceNumber, "INV-9001");
+  assert.equal(group.legs.length, 2);
+  assert.deepEqual(group.legs.map((l) => l.id), [1, 2]);
+});
+
+test("assembleGroupSubmission: empty rows throws EmptyGroupError", () => {
+  assert.throws(() => assembleGroupSubmission([]), EmptyGroupError);
+});
+
+test("assembleGroupSubmission: empty descriptionHtml throws MissingDescriptionError", () => {
+  assert.throws(
+    () => assembleGroupSubmission([makeRow({ descriptionHtml: "   " })]),
+    MissingDescriptionError,
+  );
+});
+
+test("assembleGroupSubmission: empty confNumber on any leg throws MissingConfNumberError", () => {
+  try {
+    assembleGroupSubmission([
+      makeRow({ id: 1, confNumber: "A" }),
+      makeRow({ id: 2, confNumber: "" }),
+    ]);
+    assert.fail("expected MissingConfNumberError");
+  } catch (err) {
+    assert.ok(err instanceof MissingConfNumberError);
+    assert.equal((err as MissingConfNumberError).legId, 2);
+  }
+});
+
+test("assembleGroupSubmission: divergent invoiceNumber across legs throws InvoiceNumberMismatchError", () => {
+  try {
+    assembleGroupSubmission([
+      makeRow({ id: 1, invoiceNumber: "INV-9001" }),
+      makeRow({ id: 2, invoiceNumber: "INV-WRONG" }),
+    ]);
+    assert.fail("expected InvoiceNumberMismatchError");
+  } catch (err) {
+    assert.ok(err instanceof InvoiceNumberMismatchError);
+    assert.equal((err as InvoiceNumberMismatchError).legId, 2);
+    assert.equal((err as InvoiceNumberMismatchError).expected, "INV-9001");
+    assert.equal((err as InvoiceNumberMismatchError).seen, "INV-WRONG");
+  }
+});
+
+test("assembleGroupSubmission: divergent attachmentUrls across legs throws AttachmentDriftError", () => {
+  try {
+    assembleGroupSubmission([
+      makeRow({ id: 1, attachmentUrls: ["/objects/a.pdf", "/objects/b.pdf"] }),
+      makeRow({ id: 2, attachmentUrls: ["/objects/a.pdf"] }),
+    ]);
+    assert.fail("expected AttachmentDriftError");
+  } catch (err) {
+    assert.ok(err instanceof AttachmentDriftError);
+    assert.equal((err as AttachmentDriftError).legId, 2);
+    assert.equal((err as AttachmentDriftError).headCount, 2);
+    assert.equal((err as AttachmentDriftError).legCount, 1);
+  }
+});
+
+test("assembleGroupSubmission: attachment list order does not matter (sorted comparison)", () => {
+  // Drift check is set-equality, not list-equality — same urls in a
+  // different order is the same set of evidence and must not throw.
+  const group = assembleGroupSubmission([
+    makeRow({ id: 1, attachmentUrls: ["/objects/a.pdf", "/objects/b.pdf"] }),
+    makeRow({ id: 2, attachmentUrls: ["/objects/b.pdf", "/objects/a.pdf"] }),
+  ]);
+  assert.equal(group.legs.length, 2);
+});
+
+test("assembleGroupSubmission: rows from different invoiceGroupIds throws (programmer error)", () => {
+  assert.throws(
+    () =>
+      assembleGroupSubmission([
+        makeRow({ id: 1, invoiceGroupId: 9001 }),
+        makeRow({ id: 2, invoiceGroupId: 9002 }),
+      ]),
+    /invoiceGroupId/,
+  );
+});
+
+test("runBatchWorker: empty group throws the named EmptyGroupError (not a generic Error)", async () => {
+  const launchCalls = { count: 0 };
+  __setChromiumForTests(makeFakeChromium(launchCalls));
+  try {
+    await assert.rejects(() => runBatchWorker(makeGroup(0), false), EmptyGroupError);
+    assert.equal(launchCalls.count, 0);
+  } finally {
+    __setChromiumForTests(null);
+  }
 });

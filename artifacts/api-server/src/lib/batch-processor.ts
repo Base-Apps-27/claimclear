@@ -934,7 +934,7 @@ async function processDirectEmail(
   const attachmentUrls = (sub.attachmentUrls ?? []).filter((u): u is string => typeof u === "string");
 
   const subject = sub.subject
-    || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`;
+    || `Dispute - Invoice #${sub.invoiceNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`;
 
   logger.info(
     { submissionId: sub.id, attachmentCount: attachmentUrls.length, recipientTo: recipientTo || "(unset)" },
@@ -1036,7 +1036,7 @@ async function processViaExternalBot(
     requesterEmail: sub.requesterEmail || defaults.contactEmail,
     transportationProviderName: sub.transportationProviderName || defaults.providerName,
     phoneNumber: sub.phoneNumber || defaults.contactPhone,
-    subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
+    subject: sub.subject || `Dispute - Invoice #${sub.invoiceNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
     descriptionHtml: sub.descriptionHtml || "",
     disputeReason: sub.disputeReason || "",
     evidenceNotes: sub.evidenceNotes || "",
@@ -1164,7 +1164,7 @@ export async function runSandboxForSubmission(subId: number): Promise<typeof por
       requesterEmail: sub.requesterEmail || defaults.contactEmail,
       transportationProviderName: sub.transportationProviderName || defaults.providerName,
       phoneNumber: sub.phoneNumber || defaults.contactPhone,
-      subject: sub.subject || `Dispute - Conf #${sub.confNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
+      subject: sub.subject || `Dispute - Invoice #${sub.invoiceNumber || "N/A"} - ${sub.errorTypeName || "Claim Correction"}`,
       descriptionHtml: sub.descriptionHtml || "",
       disputeReason: sub.disputeReason || "",
       evidenceNotes: sub.evidenceNotes || "",

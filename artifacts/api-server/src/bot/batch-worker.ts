@@ -179,6 +179,150 @@ export interface GroupPortalSubmissionResult {
   perLeg: Array<{ legId: number; ticked: boolean; error?: string }>;
 }
 
+// ---------------------------------------------------------------------------
+// Named errors for GroupPortalSubmission assembly. These exist so the
+// producer + worker boundary fails LOUDLY when the group's invariants are
+// violated, rather than silently coercing missing fields to empty strings
+// and submitting a malformed dispute. Each error carries the relevant ids
+// so the producer can mark exactly the right row(s) failed without guessing.
+//
+// Today (Task #484) the producer always assembles a 1-leg group, so most of
+// these only fire from tests; the moment Task #485 starts producing real
+// multi-leg groups, they become the safety net that catches drift between
+// invoice_groups and portal_submissions before a bad ticket is filed.
+// ---------------------------------------------------------------------------
+export class EmptyGroupError extends Error {
+  constructor(public readonly groupId: number) {
+    super(`GroupPortalSubmission group ${groupId} has no legs to submit`);
+    this.name = "EmptyGroupError";
+  }
+}
+export class MissingDescriptionError extends Error {
+  constructor(public readonly groupId: number) {
+    super(`GroupPortalSubmission group ${groupId} is missing descriptionHtml`);
+    this.name = "MissingDescriptionError";
+  }
+}
+export class MissingConfNumberError extends Error {
+  constructor(public readonly groupId: number, public readonly legId: number) {
+    super(`GroupPortalSubmission group ${groupId} leg ${legId} is missing confNumber`);
+    this.name = "MissingConfNumberError";
+  }
+}
+export class InvoiceNumberMismatchError extends Error {
+  constructor(
+    public readonly groupId: number,
+    public readonly expected: string,
+    public readonly seen: string,
+    public readonly legId: number,
+  ) {
+    super(
+      `GroupPortalSubmission group ${groupId} invoiceNumber mismatch: head="${expected}" but leg ${legId} carries "${seen}"`,
+    );
+    this.name = "InvoiceNumberMismatchError";
+  }
+}
+export class AttachmentDriftError extends Error {
+  constructor(
+    public readonly groupId: number,
+    public readonly headCount: number,
+    public readonly legId: number,
+    public readonly legCount: number,
+  ) {
+    super(
+      `GroupPortalSubmission group ${groupId} attachment drift: head has ${headCount} url(s) but leg ${legId} has ${legCount}`,
+    );
+    this.name = "AttachmentDriftError";
+  }
+}
+
+/**
+ * Strict producer-side adapter: assemble a single GroupPortalSubmission from
+ * a non-empty list of per-leg `portal_submissions` rows that all belong to
+ * the SAME invoice group. Throws a named error (see above) if any of the
+ * group's invariants are violated. Producers should call this instead of
+ * hand-building the GroupPortalSubmission object so the safety net is
+ * exercised on every real submission.
+ *
+ * Invariants enforced:
+ *   - rows.length >= 1                        → EmptyGroupError
+ *   - all rows share invoiceGroupId           → throws (programmer error)
+ *   - all rows agree on invoiceNumber         → InvoiceNumberMismatchError
+ *   - head.descriptionHtml is non-empty       → MissingDescriptionError
+ *   - every leg has a non-empty confNumber    → MissingConfNumberError
+ *   - all rows agree on attachmentUrls list   → AttachmentDriftError
+ */
+export function assembleGroupSubmission(rows: PortalSubmission[]): GroupPortalSubmission {
+  if (!rows || rows.length === 0) {
+    throw new EmptyGroupError(0);
+  }
+  const head = rows[0];
+  const groupId = head.invoiceGroupId ?? head.id;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const rGid = r.invoiceGroupId ?? r.id;
+    if (rGid !== groupId) {
+      throw new Error(
+        `assembleGroupSubmission: row ${r.id} has invoiceGroupId=${rGid} but head group=${groupId}`,
+      );
+    }
+  }
+
+  const headInvoice = (head.invoiceNumber || "").trim();
+  for (const r of rows) {
+    const rInvoice = (r.invoiceNumber || "").trim();
+    if (rInvoice !== headInvoice) {
+      throw new InvoiceNumberMismatchError(groupId, headInvoice, rInvoice, r.id);
+    }
+  }
+
+  if (!head.descriptionHtml || !head.descriptionHtml.trim()) {
+    throw new MissingDescriptionError(groupId);
+  }
+
+  for (const r of rows) {
+    if (!r.confNumber || !r.confNumber.trim()) {
+      throw new MissingConfNumberError(groupId, r.id);
+    }
+  }
+
+  const headAtt = (head.attachmentUrls ?? []).filter((u): u is string => typeof u === "string");
+  const headKey = JSON.stringify([...headAtt].sort());
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const rAtt = (r.attachmentUrls ?? []).filter((u): u is string => typeof u === "string");
+    if (JSON.stringify([...rAtt].sort()) !== headKey) {
+      throw new AttachmentDriftError(groupId, headAtt.length, r.id, rAtt.length);
+    }
+  }
+
+  return {
+    groupId,
+    invoiceNumber: headInvoice,
+    clientNumber: head.clientNumber || "",
+    requesterEmail: head.requesterEmail || "",
+    transportationProviderName: head.transportationProviderName || "",
+    phoneNumber: head.phoneNumber || "",
+    subject: head.subject || "",
+    descriptionHtml: head.descriptionHtml,
+    disputeReason: head.disputeReason || "",
+    evidenceNotes: head.evidenceNotes || "",
+    attachmentUrls: headAtt,
+    legs: rows.map((r) => ({
+      id: r.id,
+      confNumber: r.confNumber,
+      serviceDate: r.serviceDate || "",
+      refNumber: r.refNumber || "",
+      carNumber: r.carNumber || "",
+      claimAmount: r.claimAmount,
+      errorTypeName: r.errorTypeName || "",
+      errorDetails: r.errorDetails || "",
+      issueType: r.issueType || "Other Issue or Question",
+      gpsBreadcrumbsAvailable: r.gpsBreadcrumbsAvailable || "",
+    })),
+  };
+}
+
 /**
  * Adapter: group a flat list of per-leg `portal_submissions` rows into the
  * GroupPortalSubmission shape the worker now consumes. Used by callers that
@@ -608,7 +752,7 @@ export async function runBatchWorker(sub: GroupPortalSubmission, dryRun = false)
   const MAS_PASSWORD = process.env.MAS_PORTAL_PASSWORD || "";
 
   if (!sub.legs || sub.legs.length === 0) {
-    throw new Error(`runBatchWorker: group ${sub.groupId} has no legs to submit`);
+    throw new EmptyGroupError(sub.groupId);
   }
   // Group-shared values (issueType, GPS breadcrumbs) are looked up off the
   // first leg — every leg in an invoice group shares the same error scheme
