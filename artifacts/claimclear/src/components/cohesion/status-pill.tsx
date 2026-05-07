@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TONE_STYLE, toneForStatus, type Tone } from "./tone";
+import { TONE_STYLE, toneForRow, toneForStatus, type RowForTone, type Tone } from "./tone";
 import { WrapTooltip } from "@/components/info-tooltip";
 import {
   CLAIM_STATUS,
@@ -87,7 +87,26 @@ export type StatusPillForStatusProps = {
 };
 
 export function StatusPillForStatus({ status, className }: StatusPillForStatusProps) {
-  const tone = toneForStatus(status);
+  return renderStatusPill(toneForStatus(status), status, className);
+}
+
+// Wave C T006-B: row-aware sibling. Tone is taken from the canonical
+// `disposition` column (via `toneForRow`); the displayed label still
+// derives from `status` because the user-facing glossary in
+// `@workspace/vocab` is status-keyed. Use this from row-context
+// callsites that have a full claim/leg row in scope. Status-only
+// callsites (URL filter pills, group rows that have no disposition,
+// tab labels) keep using `StatusPillForStatus`.
+export type StatusPillForRowProps = {
+  row: RowForTone & { status: string };
+  className?: string;
+};
+
+export function StatusPillForRow({ row, className }: StatusPillForRowProps) {
+  return renderStatusPill(toneForRow(row), row.status, className);
+}
+
+function renderStatusPill(tone: Tone, status: string, className?: string) {
   const description = statusDescriptions[status];
   const label = CLAIM_STATUS[status as keyof typeof CLAIM_STATUS]
     ? claimStatusLabel(status)
