@@ -31,7 +31,7 @@ const STAGES = [
     n: "5",
     label: "Outcome",
     where: "Claim Detail · Withdrawals",
-    desc: "Resolved (won), Denied (payor said no), or Withdrawn — supervisor signs off in Withdrawals Review",
+    desc: "Resolved (won — re-attest in MAS first if approved) or Denied (payor said no). Closures land in Withdrawals Review for sign-off",
     color: "bg-[#16A34A]",
   },
 ];

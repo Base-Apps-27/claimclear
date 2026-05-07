@@ -51,7 +51,7 @@ export default function SubmitDispute() {
                 <button className="flex-1 bg-white border border-primary/20 text-primary font-display font-semibold rounded-[0.4vw]" style={{ padding: "1vh 1vw", fontSize: "0.85vw" }}>Generate Preview (Dry Run)</button>
                 <button className="flex-1 bg-orange text-white font-display font-semibold rounded-[0.4vw]" style={{ padding: "1vh 1vw", fontSize: "0.9vw" }}>Send to Portal Queue</button>
               </div>
-              <p className="font-body text-muted text-center" style={{ fontSize: "0.7vw", marginTop: "1vh" }}>Status will change: Ready to Review → Portal Queued</p>
+              <p className="font-body text-muted text-center" style={{ fontSize: "0.7vw", marginTop: "1vh" }}>Status: Ready to Review → Portal Queued · Invoice phase stays ready_to_submit until the bot files (then → submitted)</p>
               <div className="flex items-center justify-center gap-[0.5vw]" style={{ marginTop: "0.6vh" }}>
                 <StatusPill label="Ready to Review" kind="amber" />
                 <span className="text-muted" style={{ fontSize: "1vw" }}>→</span>

@@ -59,7 +59,7 @@ export default function Classify() {
         <Callout number="1" title="Search or scroll the list" body="Type a keyword from the raw MAS error to filter. Match the SOP your team has built for that scenario." />
         <Callout number="2" title="Pick the error type" body="Click the row. The selected one shows a blue check on the right." color="orange" />
         <Callout number="3" title="Don't see a match?" body="Click 'Create new error type' to launch the SOP builder. Most processors should grab a supervisor first — once created, it applies to all future claims." color="primary" />
-        <Callout number="4" title="Assign and continue" body="The group's status flips from Needs Review → Needs Evidence and shows up in Action Required. Walking away (Non-Issue / Cannot Dispute) happens later as a Stage 1 closure exit." />
+        <Callout number="4" title="Assign and continue" body="The leg's disposition flips from `unclassified` to `classifying`, the badge moves Needs Review → Needs Evidence, and the row lands in Action Required. Walking away (Non-Issue / Cannot Dispute) happens later as a Stage 1 closure exit." />
       </div>
     </SlideShell>
   );

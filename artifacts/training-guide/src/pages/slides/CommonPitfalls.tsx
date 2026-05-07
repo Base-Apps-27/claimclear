@@ -9,7 +9,7 @@ const PITFALLS = [
   {
     bad: "Re-submitting the same claim twice",
     why: "Counts as two filings against your account. The payor notices and gets stricter.",
-    fix: "Use Re-dispute (after a denial) or post a Note. Never Send to Portal a second time on a claim that's still Awaiting.",
+    fix: "Use Re-dispute (after a denial) or post a Note. Never Send to Portal a second time on a claim whose invoice is still in the submitted or response_received phase.",
   },
   {
     bad: "Closing claims as Cannot Dispute / Non-Issue / Denied by Payor without lessons learned",

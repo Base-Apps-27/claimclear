@@ -57,7 +57,7 @@ export default function HandlingResponse() {
       </div>
       <div className="flex flex-col gap-[1.2vh]" style={{ flex: 1 }}>
         <Callout number="1" title="AI tags, you decide" body="Every payor reply gets auto-classified (approval / denial / partial / info_request / other). The tag is a hint — even an apparent approval still needs you to re-attest and confirm payment off-platform. Acknowledgments are the only exception: they don't change status." />
-        <Callout number="2" title="Continuation = keep fighting" body="Re-dispute when you've got stronger evidence. Re-attest when the payor needs a fresh signature. Submit New Invoice when you can re-bill correctly (e.g. fix the member name)." color="orange" />
+        <Callout number="2" title="Continuation = keep fighting" body="All three continuation buttons are interim today: each one routes the group back to Needs Evidence and writes a follow-up note explaining what to do next (re-dispute with stronger points, re-attest in MAS, or re-bill). Dedicated workflows for each are tracked separately." color="orange" />
         <Callout number="3" title="Closure here = Denied by Payor only" body="Stage 2 closures only have one reason: the payor formally rejected us. Cannot Dispute and Non-Issue belong to Stage 1 (before submission) — you can't pick them here." color="primary" />
         <Callout number="4" title="Find it in Responses Awaiting Review" body="Every claim with a fresh response surfaces on the Queue page's Responses Awaiting Review card. Pick the verdict from there or open the claim and use the same buttons." />
       </div>
