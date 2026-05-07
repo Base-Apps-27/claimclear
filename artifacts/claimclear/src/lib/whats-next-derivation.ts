@@ -279,10 +279,16 @@ export function deriveInvoiceDisputeOutlook(
   let hasDisputable = false;
 
   for (const leg of legs) {
+    // Wave C: closure classification flows through `outcomeRole` (the
+    // canonical helper in @workspace/leg-state), not the raw
+    // `sopOutcome` column. `outcomeRole` already pre-empts duplicates,
+    // but we keep a separate `isSiblingDuplicate` because a duplicate
+    // leg is also dropped here (different bucket from cannot_dispute /
+    // non_issue) and the role check would mask the underlying closure.
     const isSiblingDuplicate = leg.duplicateOfClaimId != null;
-    const closure = leg.sopOutcome ?? null;
-    const isNonIssue = closure === "non_issue";
-    const isCannotDispute = closure === "cannot_dispute";
+    const role = outcomeRole(leg);
+    const isNonIssue = role === "non_issue";
+    const isCannotDispute = role === "cannot_dispute";
     const verdict = legVerdictBucket(leg);
 
     if (isNonIssue || verdict === "approved") {
