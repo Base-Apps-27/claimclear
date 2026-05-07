@@ -9,18 +9,16 @@ import {
 } from "../queue-redesign/_shared";
 
 /**
- * Round 4 · Q6 — Reattest off-ramp.
+ * Round 4 · Q6 — Reattest off-ramp (slim).
  *
  * Walk-complete state where SOP returned "Cannot dispute" on every leg,
- * BUT survivor legs still owe MAS re-attestation (Task #476 path —
- * `/invoice-groups/:id/reattest/queue` from the
- * mas-action-required phase). Operator does NOT write a dispute note;
- * instead, they queue the legs for the next re-attestation cycle.
- *
- * Same chrome as the dispute path so the operator stays oriented; the
- * lower panel + footer gauntlet are what change.
+ * BUT survivor legs still owe MAS re-attestation. The ENTIRE decision
+ * here is "confirm and commit" — so the body collapses to one compact
+ * action strip (callout + inline what-happens line + Add-note disclosure).
+ * Cards stay as the dominant visual to match the rest of the walkthrough.
  */
 export default function Q6() {
+  const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState("");
   const invoice = "INV-2026-0481";
   const payor = "MAS Medicaid · $612.40";
@@ -50,14 +48,13 @@ export default function Q6() {
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: 760 }}>
         <MasterList dense />
 
-        <div style={{ display: "flex", flexDirection: "column", padding: "0.75rem", gap: "0.625rem", overflow: "hidden" }}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "0.75rem", gap: "0.625rem" }}>
           <InvoiceHeader invoice={invoice} payor={payor} />
 
           <div style={{ padding: "0 1.25rem" }}>
             <Annotation>
               <strong>Nothing to write up — but these legs still owe MAS re-attestation.</strong>{" "}
-              SOP returned <em>Cannot dispute</em> on both legs. There is no portal note to send; the
-              operator commits by queueing the legs for the next attestation cycle.
+              No portal note; commit by queueing the legs for the next attestation cycle.
             </Annotation>
           </div>
 
@@ -67,7 +64,15 @@ export default function Q6() {
             ))}
           </CardRow>
 
-          <ReattestPanel note={note} setNote={setNote} legCount={noContestLegs.length} />
+          <ActionStrip
+            legCount={noContestLegs.length}
+            showNote={showNote}
+            toggleNote={() => setShowNote((v) => !v)}
+            note={note}
+            setNote={setNote}
+          />
+
+          <div style={{ flex: 1 }} />
           <FooterReattest legCount={noContestLegs.length} />
         </div>
       </div>
@@ -133,8 +138,7 @@ function LegCardNoContest({
       <div className="text-[11px]" style={{ color: "var(--cc-fg)", lineHeight: 1.45 }}>
         {reason}
       </div>
-      <div style={{ marginTop: "auto" }} />
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap" style={{ marginTop: "0.15rem" }}>
         <span className="cc-pill cc-pill-amber">No dispute</span>
         <span className="cc-pill" style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)", borderColor: "var(--cc-purple-bg)" }}>
           Owes re-attest
@@ -144,92 +148,65 @@ function LegCardNoContest({
   );
 }
 
-function ReattestPanel({
-  note, setNote, legCount,
+function ActionStrip({
+  legCount, showNote, toggleNote, note, setNote,
 }: {
-  note: string; setNote: (v: string) => void; legCount: number;
+  legCount: number; showNote: boolean; toggleNote: () => void;
+  note: string; setNote: (v: string) => void;
 }) {
   return (
-    <div style={{ flex: 1, padding: "0 1.25rem", overflow: "auto", display: "grid", gridTemplateColumns: "1fr 280px", gap: "0.75rem" }}>
-      {/* Optional operator note */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", minWidth: 0 }}>
-        <div className="flex items-center gap-2">
-          <Icons.FileText className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-          <span className="font-semibold text-sm">Internal note · optional</span>
-          <span className="cc-meta text-xs ml-auto">Stays on the audit trail; not sent to MAS.</span>
+    <div style={{ padding: "0 1.25rem" }}>
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          padding: "0.625rem 0.875rem",
+          background: "var(--cc-card)",
+          border: "1px solid var(--cc-border)",
+          borderLeft: "3px solid var(--cc-purple-fg)",
+          borderRadius: "var(--cc-radius)",
+        }}
+      >
+        <Icons.Send className="w-4 h-4 flex-none" style={{ color: "var(--cc-purple-fg)" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem", minWidth: 0, flex: 1 }}>
+          <div className="text-[13px] font-semibold">Queue {legCount} legs for MAS re-attestation</div>
+          <div className="cc-meta text-[11px]">
+            <span className="mono">attestation_state → queued</span>
+            {" · "}group → <span className="mono">awaiting_payor_again</span>
+            {" · "}audit row written · no portal post
+          </div>
         </div>
+        <button
+          className="cc-btn"
+          onClick={toggleNote}
+          style={{ fontSize: "11px", padding: "0.25rem 0.55rem", flex: "none" }}
+        >
+          <Icons.FileText className="w-3 h-3 inline" /> {showNote ? "Hide note" : "Add note"}
+        </button>
+      </div>
+
+      {showNote && (
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. Mileage variance under tolerance on both legs — queued for the next attestation cycle."
+          placeholder="Optional internal note · audit-trail only, not sent to MAS."
           style={{
-            flex: 1,
-            minHeight: 200,
-            padding: "0.875rem 1rem",
+            width: "100%",
+            marginTop: "0.5rem",
+            minHeight: 60,
+            padding: "0.5rem 0.75rem",
             background: "var(--cc-card)",
             border: "1px solid var(--cc-border)",
             borderLeft: "3px solid var(--cc-blue-fg)",
             borderRadius: "var(--cc-radius)",
             fontSize: "0.8125rem",
-            lineHeight: 1.6,
+            lineHeight: 1.5,
             color: "var(--cc-fg)",
             fontFamily: "inherit",
             resize: "none",
             outline: "none",
           }}
         />
-      </div>
-
-      {/* What happens panel */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div className="flex items-center gap-2">
-          <Icons.Send className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-          <span className="font-semibold text-sm">What happens</span>
-        </div>
-        <div
-          style={{
-            padding: "0.625rem 0.75rem",
-            background: "var(--cc-card)",
-            border: "1px solid var(--cc-border)",
-            borderRadius: "var(--cc-radius)",
-            display: "flex", flexDirection: "column", gap: "0.5rem",
-          }}
-        >
-          <Bullet>
-            <strong>{legCount} legs</strong> flip to <span className="mono text-[11px]">attestation_state = queued</span>
-          </Bullet>
-          <Bullet>Group stamped <span className="mono text-[11px]">awaiting_payor_again</span> · drops off Responses Awaiting Review</Bullet>
-          <Bullet>One umbrella audit row + per-leg audit rows written</Bullet>
-          <Bullet>No portal submission · no dispute note generated</Bullet>
-        </div>
-
-        <div
-          style={{
-            marginTop: "auto",
-            padding: "0.5rem 0.75rem",
-            background: "var(--cc-blue-bg, var(--cc-card))",
-            border: "1px solid var(--cc-blue-fg)",
-            borderRadius: "var(--cc-radius)",
-            display: "flex", flexDirection: "column", gap: "0.25rem",
-          }}
-        >
-          <div className="flex items-center gap-1.5">
-            <Icons.Bot className="w-3 h-3" style={{ color: "var(--cc-blue-fg)" }} />
-            <span className="text-[11px] font-semibold">Queueing as</span>
-          </div>
-          <div className="text-[12px]">Sarah Chen · ClaimClear bot</div>
-          <div className="cc-meta text-[10px]">May 7, 2026 · 11:24 PM ET</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Bullet({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px]" style={{ display: "flex", gap: "0.4rem", lineHeight: 1.5 }}>
-      <Icons.CheckCircle2 className="w-3 h-3 mt-0.5 flex-none" style={{ color: "var(--cc-green-fg)" }} />
-      <span>{children}</span>
+      )}
     </div>
   );
 }
@@ -240,21 +217,15 @@ function FooterReattest({ legCount }: { legCount: number }) {
       <span className="cc-pill" style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)", borderColor: "var(--cc-purple-bg)" }}>
         Reattest path
       </span>
-      <span className="cc-meta text-xs flex-1">
-        Branching from walk-complete: no dispute → queue {legCount} legs for re-attest.
-      </span>
-      <div className="cc-gauntlet-row" style={{ margin: 0 }}>
-        <span className="cc-gauntlet-step cc-gauntlet-done"><Icons.CheckCircle2 className="w-3 h-3" /> Walk legs</span>
+      <div className="cc-gauntlet-row" style={{ margin: 0, marginLeft: "auto" }}>
+        <span className="cc-gauntlet-step cc-gauntlet-done"><Icons.CheckCircle2 className="w-3 h-3" /> Walk</span>
         <span className="cc-gauntlet-step cc-gauntlet-active">
           <Icons.Send className="w-3 h-3" /> Queue re-attest
         </span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Generate · skipped</span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Review · skipped</span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Submit · skipped</span>
       </div>
       <button className="cc-btn">Back to walk</button>
       <button className="cc-btn cc-btn-primary">
-        <Icons.Send className="w-3.5 h-3.5" /> Queue {legCount} legs for re-attest
+        <Icons.Send className="w-3.5 h-3.5" /> Queue {legCount} legs
       </button>
     </div>
   );

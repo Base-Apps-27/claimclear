@@ -9,19 +9,16 @@ import {
 } from "../queue-redesign/_shared";
 
 /**
- * Round 4 · Q7 — Close off-ramp.
+ * Round 4 · Q7 — Close off-ramp (slim).
  *
- * Walk-complete state where SOP returned "Cannot dispute" on every leg
- * AND there is nothing to re-attest (legs already attested, or operator
- * is closing as withdrawn / non-issue). Quick-close with a reason; no
- * portal submission, no re-attest queue, just an audit row + status flip.
- *
- * Same chrome and same cards as the Reattest off-ramp — what changes is
- * the lower panel (close-reason picker) and the footer gauntlet (Close
- * active instead of Reattest).
+ * Walk-complete with nothing to dispute and nothing to re-attest. The
+ * decision is small: pick a reason, optionally add a note, click close.
+ * Body collapses to one compact action strip with an inline reason
+ * dropdown; optional note is a disclosure.
  */
 export default function Q7() {
   const [reason, setReason] = useState("non_issue");
+  const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState("");
   const invoice = "INV-2026-0481";
   const payor = "MAS Medicaid · $612.40";
@@ -51,14 +48,13 @@ export default function Q7() {
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: 760 }}>
         <MasterList dense />
 
-        <div style={{ display: "flex", flexDirection: "column", padding: "0.75rem", gap: "0.625rem", overflow: "hidden" }}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "0.75rem", gap: "0.625rem" }}>
           <InvoiceHeader invoice={invoice} payor={payor} />
 
           <div style={{ padding: "0 1.25rem" }}>
             <Annotation>
               <strong>Nothing to dispute, nothing to re-attest.</strong>{" "}
-              Close this invoice with a reason for the audit trail and move to the next one.
-              No portal submission; status flips to <em>Closed</em>.
+              Pick a reason for the audit trail and close. Status flips to <em>Closed</em>; no portal post.
             </Annotation>
           </div>
 
@@ -68,8 +64,17 @@ export default function Q7() {
             ))}
           </CardRow>
 
-          <ClosePanel reason={reason} setReason={setReason} note={note} setNote={setNote} />
-          <FooterClose reason={reason} />
+          <ActionStrip
+            reason={reason}
+            setReason={setReason}
+            showNote={showNote}
+            toggleNote={() => setShowNote((v) => !v)}
+            note={note}
+            setNote={setNote}
+          />
+
+          <div style={{ flex: 1 }} />
+          <FooterClose />
         </div>
       </div>
     </div>
@@ -134,8 +139,7 @@ function LegCardCloseable({
       <div className="text-[11px]" style={{ color: "var(--cc-fg)", lineHeight: 1.45 }}>
         {reason}
       </div>
-      <div style={{ marginTop: "auto" }} />
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap" style={{ marginTop: "0.15rem" }}>
         <span className="cc-pill cc-pill-amber">No dispute</span>
         <span className="cc-pill cc-pill-muted">Already attested</span>
       </div>
@@ -143,68 +147,74 @@ function LegCardCloseable({
   );
 }
 
-const REASONS: { value: string; label: string; help: string }[] = [
-  { value: "non_issue", label: "Non-issue / payor accepted", help: "Walk surfaced no contestable variance and the payor's calc holds." },
-  { value: "withdrawn", label: "Withdrawn — not pursuing", help: "There may be a small variance, but it's not worth a dispute." },
-  { value: "tolerance", label: "Within tolerance on every leg", help: "All legs cleared SOP tolerance bands; no offset to reverse." },
-  { value: "duplicate", label: "Duplicate of another invoice", help: "Already covered by a sibling invoice; close as duplicate." },
+const REASONS: { value: string; label: string }[] = [
+  { value: "non_issue", label: "Non-issue / payor accepted" },
+  { value: "withdrawn", label: "Withdrawn — not pursuing" },
+  { value: "tolerance", label: "Within tolerance on every leg" },
+  { value: "duplicate", label: "Duplicate of another invoice" },
 ];
 
-function ClosePanel({
-  reason, setReason, note, setNote,
+function ActionStrip({
+  reason, setReason, showNote, toggleNote, note, setNote,
 }: {
   reason: string; setReason: (v: string) => void;
+  showNote: boolean; toggleNote: () => void;
   note: string; setNote: (v: string) => void;
 }) {
   return (
-    <div style={{ flex: 1, padding: "0 1.25rem", overflow: "auto", display: "grid", gridTemplateColumns: "1fr 280px", gap: "0.75rem" }}>
-      {/* Reason picker + optional note */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 0 }}>
-        <div className="flex items-center gap-2">
-          <Icons.Archive className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-          <span className="font-semibold text-sm">Close reason · required</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+    <div style={{ padding: "0 1.25rem" }}>
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          padding: "0.625rem 0.875rem",
+          background: "var(--cc-card)",
+          border: "1px solid var(--cc-border)",
+          borderLeft: "3px solid var(--cc-amber-fg)",
+          borderRadius: "var(--cc-radius)",
+        }}
+      >
+        <Icons.Archive className="w-4 h-4 flex-none" style={{ color: "var(--cc-amber-fg)" }} />
+        <label className="text-[12px] font-semibold flex-none">Close as</label>
+        <select
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          style={{
+            padding: "0.3rem 0.5rem",
+            background: "var(--cc-card)",
+            border: "1px solid var(--cc-border)",
+            borderRadius: "var(--cc-radius)",
+            fontSize: "0.8125rem",
+            color: "var(--cc-fg)",
+            fontFamily: "inherit",
+            minWidth: 220,
+          }}
+        >
           {REASONS.map((r) => (
-            <label
-              key={r.value}
-              style={{
-                display: "flex", alignItems: "flex-start", gap: "0.5rem",
-                padding: "0.5rem 0.625rem",
-                background: "var(--cc-card)",
-                border: reason === r.value ? "1px solid var(--cc-blue-fg)" : "1px solid var(--cc-border)",
-                borderLeft: reason === r.value ? "3px solid var(--cc-blue-fg)" : "3px solid transparent",
-                borderRadius: "var(--cc-radius)",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="radio"
-                name="close-reason"
-                value={r.value}
-                checked={reason === r.value}
-                onChange={() => setReason(r.value)}
-                style={{ marginTop: "0.2rem" }}
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
-                <span className="text-[12px] font-semibold">{r.label}</span>
-                <span className="cc-meta text-[11px]">{r.help}</span>
-              </div>
-            </label>
+            <option key={r.value} value={r.value}>{r.label}</option>
           ))}
+        </select>
+        <div className="cc-meta text-[11px]" style={{ flex: 1, minWidth: 0 }}>
+          status → <span className="mono">Closed</span> · audit row written · no portal post · no re-attest queued
         </div>
+        <button
+          className="cc-btn"
+          onClick={toggleNote}
+          style={{ fontSize: "11px", padding: "0.25rem 0.55rem", flex: "none" }}
+        >
+          <Icons.FileText className="w-3 h-3 inline" /> {showNote ? "Hide note" : "Add note"}
+        </button>
+      </div>
 
-        <div className="flex items-center gap-2" style={{ marginTop: "0.25rem" }}>
-          <Icons.FileText className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-          <span className="font-semibold text-sm">Internal note · optional</span>
-        </div>
+      {showNote && (
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. Both legs within tolerance after re-walk; no contestable variance."
+          placeholder="Optional internal note · audit-trail only, not sent to MAS."
           style={{
-            minHeight: 70,
-            padding: "0.625rem 0.75rem",
+            width: "100%",
+            marginTop: "0.5rem",
+            minHeight: 60,
+            padding: "0.5rem 0.75rem",
             background: "var(--cc-card)",
             border: "1px solid var(--cc-border)",
             borderLeft: "3px solid var(--cc-blue-fg)",
@@ -217,79 +227,22 @@ function ClosePanel({
             outline: "none",
           }}
         />
-      </div>
-
-      {/* What happens panel */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div className="flex items-center gap-2">
-          <Icons.Archive className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-          <span className="font-semibold text-sm">What happens</span>
-        </div>
-        <div
-          style={{
-            padding: "0.625rem 0.75rem",
-            background: "var(--cc-card)",
-            border: "1px solid var(--cc-border)",
-            borderRadius: "var(--cc-radius)",
-            display: "flex", flexDirection: "column", gap: "0.5rem",
-          }}
-        >
-          <Bullet>Invoice status flips to <span className="mono text-[11px]">Closed</span></Bullet>
-          <Bullet>Audit row written with reason + optional note</Bullet>
-          <Bullet>No portal submission · no dispute note generated</Bullet>
-          <Bullet>No re-attest queued · legs stay as-attested</Bullet>
-          <Bullet>Available later under <em>Closure review</em> if you change your mind</Bullet>
-        </div>
-
-        <div
-          style={{
-            marginTop: "auto",
-            padding: "0.5rem 0.75rem",
-            background: "var(--cc-blue-bg, var(--cc-card))",
-            border: "1px solid var(--cc-blue-fg)",
-            borderRadius: "var(--cc-radius)",
-            display: "flex", flexDirection: "column", gap: "0.25rem",
-          }}
-        >
-          <div className="flex items-center gap-1.5">
-            <Icons.Bot className="w-3 h-3" style={{ color: "var(--cc-blue-fg)" }} />
-            <span className="text-[11px] font-semibold">Closing as</span>
-          </div>
-          <div className="text-[12px]">Sarah Chen · ClaimClear bot</div>
-          <div className="cc-meta text-[10px]">May 7, 2026 · 11:24 PM ET</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function Bullet({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px]" style={{ display: "flex", gap: "0.4rem", lineHeight: 1.5 }}>
-      <Icons.CheckCircle2 className="w-3 h-3 mt-0.5 flex-none" style={{ color: "var(--cc-green-fg)" }} />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-function FooterClose({ reason }: { reason: string }) {
-  const reasonLabel = REASONS.find((r) => r.value === reason)?.label ?? "—";
+function FooterClose() {
   return (
     <div className="cc-footer-card cc-footer-pinned" style={{ padding: "0.5rem 0.875rem" }}>
       <span className="cc-pill cc-pill-muted">
         <Icons.Archive className="w-3 h-3 inline" /> Close path
       </span>
-      <span className="cc-meta text-xs flex-1">
-        Closing as: <strong>{reasonLabel}</strong>
-      </span>
-      <div className="cc-gauntlet-row" style={{ margin: 0 }}>
-        <span className="cc-gauntlet-step cc-gauntlet-done"><Icons.CheckCircle2 className="w-3 h-3" /> Walk legs</span>
+      <div className="cc-gauntlet-row" style={{ margin: 0, marginLeft: "auto" }}>
+        <span className="cc-gauntlet-step cc-gauntlet-done"><Icons.CheckCircle2 className="w-3 h-3" /> Walk</span>
         <span className="cc-gauntlet-step cc-gauntlet-active">
           <Icons.Archive className="w-3 h-3" /> Close
         </span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Generate · skipped</span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Review · skipped</span>
-        <span className="cc-gauntlet-step" style={{ opacity: 0.4 }}>Submit · skipped</span>
       </div>
       <button className="cc-btn">Back to walk</button>
       <button className="cc-btn cc-btn-primary">
