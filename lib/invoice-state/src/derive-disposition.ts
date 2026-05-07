@@ -25,10 +25,35 @@ export function deriveDispositionFromLegacy(
     return responseDisposition(claim);
   }
 
+  if (parentPhase === "ready_to_submit" || parentPhase === "submitted") {
+    // The claim is on or past the submit step. If `sop_outcome` / `drop_reason`
+    // explicitly says how the operator concluded the leg, honor that; otherwise
+    // pick the submitted-via-X default from the denormalized `claim.status`
+    // mirror (Wave B prod backfill, 2026-05-07: 12 legacy rows have
+    // error_type_id set but never went through the SOP triage system, so the
+    // pure-triage fallback `errorTypeId != null → classifying` produced
+    // dispositions invalid for these phases per VALID_DISPOSITIONS_BY_PHASE).
+    return submittedDisposition(claim);
+  }
+
   return triageDisposition(claim);
 }
 
-function triageDisposition(claim: LegacyClaimShape): ClaimDisposition {
+function submittedDisposition(claim: LegacyClaimShape): ClaimDisposition {
+  const fromSop = sopOrDropReasonDisposition(claim);
+  if (fromSop != null) return fromSop;
+  if (claim.includedInDispute === false) return "disposed_nonissue";
+  // `claim.status` mirrors the parent group's submission path: Portal Queued
+  // means the group went out via the MAS portal, anything else (Awaiting
+  // Response, Generating Email, Processed) means the email path. There is no
+  // claim-level column that records the submission method directly, so the
+  // mirror is the cleanest signal we have without expanding the deriver
+  // signature to take the full parent row.
+  if (claim.status === "Portal Queued") return "disposed_portal";
+  return "disposed_email";
+}
+
+function sopOrDropReasonDisposition(claim: LegacyClaimShape): ClaimDisposition | null {
   switch (claim.sopOutcome) {
     case "non_issue":
       return "disposed_nonissue";
@@ -43,6 +68,12 @@ function triageDisposition(claim: LegacyClaimShape): ClaimDisposition {
   }
   if (claim.dropReason === "non_issue") return "disposed_nonissue";
   if (claim.dropReason === "cannot_dispute") return "disposed_withdraw";
+  return null;
+}
+
+function triageDisposition(claim: LegacyClaimShape): ClaimDisposition {
+  const fromSop = sopOrDropReasonDisposition(claim);
+  if (fromSop != null) return fromSop;
   if (claim.includedInDispute === false && claim.sopOutcome == null) {
     return "disposed_nonissue";
   }

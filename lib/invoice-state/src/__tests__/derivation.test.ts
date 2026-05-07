@@ -186,6 +186,54 @@ describe("deriveDispositionFromLegacy — triage phase", () => {
   });
 });
 
+describe("deriveDispositionFromLegacy — submitted/ready_to_submit phases (Wave B+ heal, 2026-05-07)", () => {
+  it("ready_to_submit + status=Portal Queued + no sop_outcome + included → disposed_portal", () => {
+    // Repro of the 2 prod legacy rows in invoice_groups 15 (Portal Queued)
+    // that would otherwise fall into the triage `errorTypeId → classifying`
+    // branch and violate VALID_DISPOSITIONS_BY_PHASE for ready_to_submit.
+    const c = claim({
+      status: "Portal Queued",
+      attestationState: "not_required",
+      includedInDispute: true,
+      errorTypeId: "et_5",
+    });
+    assert.equal(deriveDispositionFromLegacy(c, "ready_to_submit"), "disposed_portal");
+  });
+
+  it("submitted + status=Awaiting Response + no sop_outcome + included → disposed_email", () => {
+    // Repro of the 10 prod legacy rows whose parent groups are in
+    // 'Awaiting Response' (submitted phase) without a portal-vs-email
+    // claim-level signal — the email path is the conservative default.
+    const c = claim({
+      status: "Awaiting Response",
+      attestationState: "not_required",
+      includedInDispute: true,
+      errorTypeId: "et_3",
+    });
+    assert.equal(deriveDispositionFromLegacy(c, "submitted"), "disposed_email");
+  });
+
+  it("submitted + sopOutcome=non_issue still wins over the submission-path default", () => {
+    const c = claim({ status: "Awaiting Response", sopOutcome: "non_issue" });
+    assert.equal(deriveDispositionFromLegacy(c, "submitted"), "disposed_nonissue");
+  });
+
+  it("submitted + sopOutcome=portal_dispute keeps disposed_portal even on email-path mirror", () => {
+    const c = claim({ status: "Awaiting Response", sopOutcome: "portal_dispute" });
+    assert.equal(deriveDispositionFromLegacy(c, "submitted"), "disposed_portal");
+  });
+
+  it("submitted + includedInDispute=false → disposed_nonissue", () => {
+    const c = claim({ status: "Awaiting Response", includedInDispute: false });
+    assert.equal(deriveDispositionFromLegacy(c, "submitted"), "disposed_nonissue");
+  });
+
+  it("ready_to_submit with sopOutcome=hold maps to blocked (sop wins over default)", () => {
+    const c = claim({ status: "Portal Queued", sopOutcome: "hold" });
+    assert.equal(deriveDispositionFromLegacy(c, "ready_to_submit"), "blocked");
+  });
+});
+
 describe("deriveDispositionFromLegacy — response/reviewed phases", () => {
   it("response_received with no verdict yet → awaiting_review", () => {
     assert.equal(
