@@ -167,6 +167,16 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   }
 
   const needsEvidence = (statusCounts["New"] || 0) + (statusCounts["Needs Evidence"] || 0);
+  // Display axis — keep on `status`. The "portal pipeline" tile sums
+  // three statuses that intentionally span two canonical phases:
+  //   • Portal Queued     → phase = submitted        (post D-PR5 `submitted_via` rewire)
+  //   • Generating Email  → phase = ready_to_submit  (draft being composed)
+  //   • Ready to Review   → phase = ready_to_submit  (draft awaiting human review)
+  // The bucket is the UI's "things in the email/portal pipeline"
+  // workload counter, not a state-machine predicate, so flipping to
+  // a single `phase ∈ {…}` aggregate would either silently fold in
+  // unrelated `ready_to_submit` rows (e.g. New that's been advanced)
+  // or split the tile in half. Wave D-PR6 §3.E: keep on status.
   const portalQueued = (statusCounts["Portal Queued"] || 0) + (statusCounts["Generating Email"] || 0) + (statusCounts["Ready to Review"] || 0);
   const awaitingResponse = statusCounts["Awaiting Response"] || 0;
   // `expired` is reported separately so the dashboard tile/sparkline
@@ -737,6 +747,11 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
     .where(inWindow);
 
   // Breakdown queries. Run in parallel — none depend on each other.
+  // `statusRows` is the per-status histogram for the analytics page
+  // chart — display axis, NOT a state-machine predicate (Wave D-PR6
+  // §3.E). Keep on `status`: the chart legend renders status names
+  // verbatim, and collapsing onto `phase` would lose the breakdown
+  // the operator is reading the chart for.
   const [statusRows, outcomeRows, errorTypeRows, payorRows] = await Promise.all([
     db
       .select({ key: claimsTable.status, count: count() })

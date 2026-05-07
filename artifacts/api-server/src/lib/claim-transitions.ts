@@ -84,14 +84,20 @@ export const CLAIM_EXPIRABLE_STATUSES = [
 
 const SYSTEM_CONTROLLED_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
 
+// "Non-Issue" is a triage classification ("not really an error") emitted
+// by the prod /triage route (routes/claims.ts) and by the closure intake
+// dialog when reason="non_issue". It must be valid from any pre-submit
+// status — otherwise the validator 400s on legitimate UI calls. Mirrors
+// group-transitions.ts where "Non-Issue" is valid for the equivalent
+// pre-submit group statuses.
 const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
-  "New": ["Pending", "Withdrawn"],
-  "Needs Review": ["Pending", "Withdrawn"],
-  "Needs Evidence": ["Pending", "Withdrawn"],
+  "New": ["Pending", "Withdrawn", "Non-Issue"],
+  "Needs Review": ["Pending", "Withdrawn", "Non-Issue"],
+  "Needs Evidence": ["Pending", "Withdrawn", "Non-Issue"],
   // "Processed" is a pre-filing status — same outcome envelope as the
   // other pre-submit statuses. No portal/email outcomes until the
   // dispute has actually been filed.
-  "Processed": ["Pending", "Withdrawn"],
+  "Processed": ["Pending", "Withdrawn", "Non-Issue"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
@@ -100,7 +106,7 @@ const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
   // See group-transitions.ts: Expired keeps outcome=Pending so a
   // revert preserves the original outcome envelope.
   "Expired": ["Pending"],
-  "Resolved": ["Approved", "Partially Approved", "Denied", "Withdrawn"],
+  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };
 

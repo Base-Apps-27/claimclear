@@ -105,6 +105,12 @@ function emitGroupEvent(invoiceGroupId: number, type: string, req: Request) {
   });
 }
 
+// Display axis (Wave D-PR6 §3.E): the listing page's "Sort by status"
+// column header sorts the visible status name alphabetically — keep
+// on `status`, not `phase`. Phase is a coarse 5-bucket grouping that
+// would scramble the within-phase ordering the operator reads
+// (e.g. "Awaiting Response" and "Ready to Review" both sit under
+// `phase='submitted'` and would tie under a phase sort).
 const INVOICE_GROUP_SORTABLE_COLUMNS = {
   invoiceNumber: invoiceGroupsTable.invoiceNumber,
   rideCount: invoiceGroupsTable.rideCount,

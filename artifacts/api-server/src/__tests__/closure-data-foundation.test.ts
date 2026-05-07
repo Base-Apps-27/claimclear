@@ -100,7 +100,12 @@ async function fetchJson<T = unknown>(
 }
 
 async function createSeedClaim(opts: {
-  status?: "New" | "Needs Review" | "Needs Evidence";
+  // Wave D-PR6 / Sub-PR 8: widened to include the post-submit
+  // "Awaiting Response" status so Denied-outcome tests can seed at a
+  // status that satisfies VALID_OUTCOME_BY_STATUS in
+  // claim-transitions.ts (which only admits Denied from
+  // Awaiting Response / Needs Review / Processed / Resolved).
+  status?: "New" | "Needs Review" | "Needs Evidence" | "Awaiting Response";
   errorTypeId?: string | null;
   withGroup?: boolean;
 } = {}): Promise<typeof claimsTable.$inferSelect> {
@@ -616,7 +621,11 @@ test("POST /claim-evidence/closure rejects an empty-string imageUrl", async () =
 });
 
 test("PATCH /claims/:id/outcome with Denied + structured Denied-by-Payor closure persists the closure_* columns", async () => {
-  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  // Wave D-PR6 fixture rot: Denied is only a valid outcome from a status
+  // whose VALID_OUTCOME_BY_STATUS list contains it (Awaiting Response /
+  // Resolved / Denied — see lib/claim-transitions.ts). Pre-submit
+  // statuses like "Needs Review" only allow Pending/Withdrawn/Non-Issue.
+  const seed = await createSeedClaim({ status: "Awaiting Response", errorTypeId: "et-x" });
   const [resp] = await db.insert(portalResponsesTable).values({
     claimId: seed.id,
     source: "manual",
@@ -652,7 +661,9 @@ test("PATCH /claims/:id/outcome with Denied + structured Denied-by-Payor closure
 });
 
 test("PATCH /claims/:id/outcome with Denied (no closureReason, no structured fields) records a bare denial", async () => {
-  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  // See note on the structured-Denied test above — Denied requires a
+  // post-submit seed status.
+  const seed = await createSeedClaim({ status: "Awaiting Response", errorTypeId: "et-x" });
   const [resp] = await db.insert(portalResponsesTable).values({
     claimId: seed.id,
     source: "manual",
@@ -862,7 +873,9 @@ test("PATCH /claims/:id/outcome rejects Withdrawn/cannot_dispute once a portal_s
 });
 
 test("PATCH /claims/:id/outcome rejects Denied when no portal_response (or email response) is on file", async () => {
-  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x", withGroup: true });
+  // Seed at Awaiting Response so the Denied response-gate (rather than
+  // the upstream "valid outcomes for status" guard) is what rejects.
+  const seed = await createSeedClaim({ status: "Awaiting Response", errorTypeId: "et-x", withGroup: true });
   await db.insert(portalSubmissionsTable).values({
     invoiceGroupId: seed.invoiceGroupId!,
     status: "submitted",
@@ -948,8 +961,14 @@ test("PATCH /invoice-groups/:id/outcome cascades closure detail and closureReaso
   const seed = await createSeedGroup();
   const childA = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   const childB = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
-  await db.update(claimsTable).set({ invoiceGroupId: seed.id }).where(eq(claimsTable.id, childA.id));
-  await db.update(claimsTable).set({ invoiceGroupId: seed.id }).where(eq(claimsTable.id, childB.id));
+  // The seed group is at phase=response_received (createSeedGroup → status
+  // "Needs Review" → phaseForStatus → "response_received"). Moving a child
+  // claim into it trips the validate_disposition_against_phase trigger
+  // unless the child's disposition matches the parent phase's allowed set
+  // — "unclassified" is only valid under phase='triage'. Stamp the
+  // post-response disposition alongside the move so the trigger passes.
+  await db.update(claimsTable).set({ invoiceGroupId: seed.id, disposition: "awaiting_review" }).where(eq(claimsTable.id, childA.id));
+  await db.update(claimsTable).set({ invoiceGroupId: seed.id, disposition: "awaiting_review" }).where(eq(claimsTable.id, childB.id));
   try {
     const res = await fetchJson<typeof invoiceGroupsTable.$inferSelect>(
       `/api/invoice-groups/${seed.id}/outcome`,

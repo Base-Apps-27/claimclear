@@ -137,6 +137,10 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
       .where(and(inArray(claimsTable.id, touchedClaimIds), openFilter))
       .orderBy(desc(claimsTable.updatedAt))
       .limit(10);
+    // Display axis (Wave D-PR6 §3.E): `r.status` is rendered verbatim
+    // in the brief item ("Awaiting Response", "Needs Evidence", …) —
+    // keep on `status`. Phase is too coarse to render in a single-line
+    // item.
     recentlyTouched = rows.map((r) => ({
       id: r.id,
       confNumber: r.confNumber,
@@ -237,6 +241,11 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
     )
     .orderBy(desc(claimsTable.updatedAt))
     .limit(10);
+  // Display axis (Wave D-PR6 §3.E): `r.status` rendered verbatim in
+  // the brief — keep on `status`. The state-machine predicate above
+  // (`disposition='awaiting_review'` with the legacy `Needs Review`
+  // fallback) is the canonical filter; the rendered field stays as
+  // the human-readable status name.
   const needsReview: NeedsYouItem[] = reviewRows.map((r) => ({
     id: r.id,
     confNumber: r.confNumber,
