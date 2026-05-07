@@ -1,0 +1,179 @@
+Yes — there are three ways to do this, with very different costs. Let me peek at how ClaimClear's routes are set up so I can recommend the right one with a real plan.
+
+
+4 actions
+Yes — three real options, ranked by cost/value:
+
+Option A — Static preview route in the live app (recommended)
+Copy the _shared.tsx + _queue.css + the V3 components into artifacts/claimclear/src/pages/queue-redesign/, mount at /queue-redesign, add a phase tab switcher (Walk in-progress · Walk done · Preview · Review · Submitted), and add a nav entry. Rendered with the fake sample data the mockups already use, with a yellow banner on top: "Design preview — static, not connected to live data."
+
+Cost: ~30 min, ~6 files copied + 1 new page + 1 router entry + 1 nav link.
+Pros: Real app shell (sidebar, header, auth), shareable URL inside the org, click-through navigation between phases. Stakeholders compare by opening /queue in one tab and /queue-redesign in another.
+Cons: Not wired to real data — clicking buttons does nothing. People may try to "use" it. The banner mitigates this.
+Option B — Iframe the mockup-sandbox at a new route
+Same /queue-redesign route, but the page is a thin shell that iframes https://<dev-domain>/__mockup/preview/queue-redesign/V3PhaseXxx with a phase switcher.
+
+Cost: ~10 min, but only works in dev. The mockup-sandbox isn't part of the production deploy bundle, so the iframe URL would break in prod unless we also publish the sandbox or proxy it.
+Verdict: skip — fragile.
+Option C — Real implementation backed by the actual queue API
+Port V3 into a real route that hits GET /api/invoice-groups/:id etc., so users can actually walk a real claim through the new UI.
+
+Cost: Days. Real wiring of SOP walk, evidence picker, preview generator, submission, polling.
+Pros: True A/B test possible.
+Verdict: This is what you do after stakeholders bless the static preview.
+My recommendation: Option A, exposing just the V3 5-phase flow (since that's the variant under serious consideration), gated nav-wise so it's visible to everyone but clearly labeled "Preview." If you want operators to also see V1/V2/V4/V5 for comparison, I can add a "Variants" sub-menu — but I'd hold off until V3 lands feedback, otherwise the choice paralysis kicks in.
+
+Two questions before I build:
+
+Scope — just V3 (5 phases), or include V1/V2/V4/V5 in a sidebar of variants too?
+Nav placement — top-level sidebar entry ("Queue redesign preview"), or a small banner inside the existing /queue page that says "Try the redesign →"?
+If you don't have a strong preference, I'll go with just V3 + top-level sidebar entry labeled "Queue redesign (preview)" and ship. Say the word.
+
+
+Worked for 1 minute
+were going with option C. i need a full inventory of everything the current page has and does, and how we are solving for them
+
+
+1 shape
+1 hour ago
+
+Show less
+
+Planning queue page feature inventory (12 seconds)
+Got it — Plan mode, going to Option C. Before I propose project tasks, I need to actually inventory what /queue does today and map each capability to a V3 solution. Launching deep exploration in parallel: one for the UI surface, one for the data/API surface, plus loading the task-planning skill so I can structure the proposal correctly when the inventory's done.
+
+
+6 actions
+Both inventories came back. Let me synthesize them into a single plan file with the current-state inventory mapped to V3 solutions, plus a list of design gaps that need your input before I propose the task.
+
+
+2 actions
+Plan file written. Here's the summary you asked for — full inventory of /queue mapped to V3, plus the gaps that need your call.
+
+📄 Full document: .local/tasks/queue-v3-real-implementation.md
+
+What /queue does today (10 UI regions)
+Region	Items	V3 disposition
+1. Urgency hero	hero (red/amber/green), why-line, sticky	Keep all
+2. Classification inbox	inbox panel, classify dialog, needs-review panel, bulk "mark all no-issue"	Keep all
+3. Master list	tabs, search, multi-line rows, click→?group=, row-settle anim, deadline tiers	Keep all (G1: restyle?)
+4. Right-pane workspace	InlineGroupWorkspace, leg list, quick-conclude, submission slot teleport	Replace with V3 wizard
+5. SOP walk	ClaimDetailV2 embed, SopAdvancePlayer, transcript, leg actions	Reuse data layer, render in wizard mode
+6. Submission gauntlet	4 sub-steps: Readback → Preview → AI Write-up → Submit	Remap to phases 1–4 (G2, G3)
+7. MAS rail / activity / notes / thread	4 right-column panels	Move to slide-over drawer
+8. Filters / chips / params	7 query params + sortByUrgency	Keep all unchanged
+9. Tour	help popover + data-tour anchors	Keep, write parallel V3 tour (G7)
+10. Global	re-attest modal, empty state, day-rollover, HideForClerk, withdrawals	Keep; withdrawal stays at own route (G5)
+Backend (no changes needed)
+Reuses every existing endpoint: invoice-groups list/detail, presence (heartbeat/poll/leave), SSE event streams, classify mutation, notes, gauntlet submit chain, and the same TanStack cache key. All 6 cron jobs (portal_batch_sweeper, stuck_submission_reset, expired_sweep, urgent_snapshot, response_tracker, daily_brief) keep running unchanged.
+
+Gaps that block implementation — need your call
+Each one decides a step of the build. I won't propose the task until these are answered:
+
+#	Question	My recommendation
+G1	Restyle the master list rows to match V3 visuals, or keep today's row exactly?	Keep today's — lower diff, preserves row-settle
+G2	Does Readback need an explicit operator confirmation step, or is it implicit when all legs reach walk-done?	Implicit — Readback was always a courtesy step
+G3	One combined narrative (today) or per-leg narratives (V3 mockup shows this)?	Per-leg — that's the whole point of V3, but it means a backend payload change → may push into scope
+G4	Re-attest from MAS: keep modal triggered from a Phase 4 banner, or build a real Phase 5 "Awaiting re-attest" state?	Banner + modal for v1; phase 5 later
+G5	Surface "Withdraw leg" inline in V3 wizard, or leave at /withdrawals?	Leave at own route
+G6	Bulk "mark all no-issue" stays in classification inbox, not wizard?	Confirm yes
+G7	Write a parallel V3 tour, or skip tour on /queue-v3 until cutover?	Parallel V3 tour
+G8	Per-user toggle in settings (default off + admin kill switch), or org-wide flag?	Per-user
+G9	Mobile / tablet support — out of scope for V3 MVP?	Out of scope
+G10	Add usage telemetry to /queue-v3 for quantitative A/B comparison?	Yes — otherwise the comparison is vibes-only
+Two scope flags worth highlighting before you answer
+G3 is the big one. "Per-leg narratives" looks like a UI change but if today's submission payload carries a single combined narrative, it requires a backend payload change + MAS portal verification that per-leg narratives are accepted. This could double the task's size. If MAS only accepts one combined narrative on the wire, V3 Phase 3 has to collapse to one editor regardless of how it looks in the mockup.
+The 4 ancillary panels moving to a drawer (notes, activity, thread, MAS rail) is a real UX change. Operators who live in those panels today will lose at-a-glance access. Worth confirming with whoever uses them most before committing.
+Once you answer G1–G10 (or say "go with your recommendations"), I'll finalize the plan and propose the project task for your approval.
+
+
+Worked for 5 minutes
+g1. keep todays
+2. implicit
+
+the submission is for 1 invoice, with x number of legs. the narrative is always combined. the generator is currently solving for this already.
+im not sure why this is here honestly. these items leave this page all together when they are submited, no? and theyre 'queded for portal' not directly sent out from here. this page is primary workspace, not the inventory list. clarify the intent and likely use case.
+unclear what this means. /Withdrawls are inoices which could not be contested. that determination is made based on each leg being defined as such. not sure what this question means or intends. we do have to be able to surface all 'next' steps from here though. i believe they are "queue for portal" "reatest" and " close". check our documentation.
+yes
+skip until cutover
+i dont understand what this refers to
+9.out of scope
+no tele. im sitting in the room with the users
+
+1 shape
+
+Show more
+51 minutes ago
+
+Show less
+
+Analyzing re-attestation and withdrawal (11 seconds)
+Good calls. Three need clarification — let me dig into the code/docs to answer G4, G5, and re-frame G8 in plain language. Running these reads in parallel.
+
+
+4 actions
+Confirmed answers from the code. Three of your replies need a follow-up before I finalize.
+
+G4 — Re-attest: you were right to question it, and the code answers cleanly
+I was wrong to put it as a "modal that fires from Phase 4." Looking at invoice-group-action-slot.tsx, re-attest is a third terminal path on this very page today, decided by deriveInvoiceDisputeOutlook(group, rides):
+
+outlook === "has_disputable" → submission gauntlet (the dispute path)
+outlook === "reattest_only"  → Re-attest CTA card → opens ReattestModal
+outlook === "nothing_to_do"  → NothingToDoCloseOut close-out card
+
+So the workspace doesn't just submit — it's a branching terminator that lands on one of three actions depending on what's left to do. Re-attest fires when every survivor leg is Approved/Partial and the rest are non-issue / cannot-dispute — there's nothing to dispute but MAS still needs the re-attestation. (The separate /attestation-queue route is the inventory/tracking view for those, not the trigger.)
+
+G5 — Next steps inventory (from replit.md + the action-slot code)
+You're exactly right. Three terminal "next steps" surface from this workspace:
+
+Outlook	Terminal action	Backend
+has_disputable	Queue for portal (submission gauntlet → portal_submissions, status → Portal Queued)	submit chain
+reattest_only	Re-attest — ReattestModal offers Re-attest now / Queue for later / Record offline (admin only)	POST /api/invoice-groups/:id/reattest/queue (group-level atomic, per replit.md:56)
+nothing_to_do	Close out as Withdrawn (cannot_dispute)	NothingToDoCloseOut → close mutation
+Withdrawals as a route is correct as you described — that's the inventory of legs marked non-contestable, not an action you take from /queue.
+
+→ New decision needed (was buried under G4):
+V3 only mocks the dispute terminator (Phase 4 = Submit + tracking). It has no Phase-4 variant for Re-attest or Close. So either:
+
+(a) Build all 3 Phase-4 variants — wizard footer + hero swap based on outlook (Submit / Re-attest / Close). True parity with today.
+(b) Build only the Submit variant; for reattest_only and nothing_to_do groups, fall back to the existing CTA cards rendered inline (no wizard hero/segmented switcher). V3 wizard only "owns" disputable groups.
+Recommendation: (a). Otherwise operators on a reattest_only group on /queue-v3 get a dead wizard with no walk to perform. (a) means designing/mocking 2 more Phase-4 variants — small lift since the modal/CTA logic already exists, V3 just rehouses them in the wizard chrome.
+
+G8 — In plain English
+The question is how operators get access to V3. Three options ranked simplest → most controlled:
+
+No toggle. /queue-v3 is just a URL. Anyone can visit it by typing the address or clicking a sidebar link. You and the people in the room navigate to it; no one else sees it unless told. Simplest.
+One admin switch. An admin flips one setting and the link appears in everyone's sidebar (or disappears). All-or-nothing.
+Per-user opt-in. Each operator goes to settings and flips their own "Try V3" switch. Lets willing volunteers test while skeptics stay on the old one.
+For "I'm sitting in the room with the users" — you want option 1. Skip the toggle entirely, just expose the URL. If V3 breaks, you remove the sidebar link. No flag plumbing.
+
+Confirmed decisions captured
+Your call
+G1 master list visual	Keep today's
+G2 Readback	Implicit
+G3 narrative	Combined (matches today's backend payload, no changes needed)
+G4 re-attest	(now folded into G5 — needs the (a)/(b) call above)
+G5 next-step inventory	Submit / Re-attest / Close confirmed; need (a) vs (b) call
+G6 bulk in inbox	Yes
+G7 tour	Skip until cutover
+G8 cutover	(recommending option 1 — no toggle, just URL — confirm?)
+G9 mobile	Out of scope
+G10 telemetry	None
+Two things to confirm before I update the plan and propose the task:
+
+G5 follow-up — (a) all three Phase-4 variants, or (b) Submit-only with fallback to today's CTA cards for the other two outlooks?
+G8 — option 1 (no toggle, sidebar link only)?
+
+Worked for 1 minute
+Build all 3 phase 4 variants
+
+just a URL. we will access both and then once ready we will replace /queue with the v3 variation with a simple url change
+
+
+1 shape
+46 minutes ago
+
+Show less
+
+Updating plan file details
+All decisions captured. Updating the plan file and proposing the task.
