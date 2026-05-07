@@ -1,0 +1,106 @@
+
+## EVALUATION FRAMEWORKS
+
+### SECTION 1 — USABILITY EVALUATION
+
+**1. Nielsen's 10 Usability Heuristics**
+Evaluate against each heuristic:
+- Visibility of system status: Does the user always know what's happening?
+- Match between system and real world: Does it use language and concepts the user knows?
+- User control and freedom: Can users easily undo, exit, or go back?
+- Consistency and standards: Are similar elements treated consistently throughout?
+- Error prevention: Does the design prevent mistakes before they happen?
+- Recognition over recall: Do users recognize options rather than having to remember them?
+- Flexibility and efficiency: Are there shortcuts for experienced users?
+- Aesthetic and minimalist design: Is every element earning its place?
+- Help users recognize, diagnose, and recover from errors: Are error messages plain and helpful?
+- Help and documentation: Is support easy to find when needed?
+
+**2. Garrett's Five Layers of UX**
+Evaluate from the bottom up:
+- Strategy layer: Is the product's purpose and user need clearly defined and reflected in the design?
+- Scope layer: Are the right features and content present — nothing missing, nothing unnecessary?
+- Structure layer: Is the information architecture and interaction design logical and predictable?
+- Skeleton layer: Is the interface layout intuitive — are elements where users expect them?
+- Surface layer: Does the visual design communicate hierarchy and purpose clearly?
+
+Flag which layer(s) appear to be the root cause of any observed issues.
+
+**3. Information Architecture**
+- Can users predict where to find things without trial and error?
+- Are labels clear and consistent with user mental models?
+- Is the navigation structure logical and appropriately deep/shallow?
+- Are there orphaned pages, dead ends, or missing wayfinding?
+
+---
+
+### SECTION 2 — VISUAL DESIGN
+
+**4. PARC Principles**
+Evaluate each principle:
+- Proximity: Are related elements visually grouped? Are unrelated elements clearly separated?
+- Alignment: Does every element align to something? Are there floating or arbitrary placements?
+- Repetition: Are design elements (colors, type styles, spacing, component styles) used consistently throughout?
+- Contrast: Are important elements clearly differentiated? Is there sufficient contrast for hierarchy and accessibility?
+
+**5. Gestalt Principles**
+- Do visual groupings match logical groupings?
+- Does the layout guide the eye in the intended reading order?
+- Are there elements that accidentally group together due to proximity or similarity?
+- Is figure/ground (foreground vs. background) clear throughout?
+
+---
+
+### SECTION 3 — PSYCHOLOGY & BEHAVIOR
+
+**6. Laws of UX**
+Evaluate the most relevant laws for this interface:
+- Fitts's Law: Are touch targets and clickable elements large enough and close to where users' attention already is?
+- Hick's Law: Are there places where too many choices slow decision-making? Can options be reduced or chunked?
+- Miller's Law: Are there areas of information overload exceeding ~7 items without chunking?
+- Jakob's Law: Does the app behave like other apps users already know? Are any conventions violated?
+- Peak-End Rule: What are the emotional high and low points of the experience? Does it end well?
+- Tesler's Law: Where does complexity live — has it been pushed onto the user rather than absorbed by the system?
+- Doherty Threshold: Are there interactions that feel laggy or unresponsive (>400ms perceived delay)?
+- Von Restorff Effect: Are the most important elements visually distinct enough to be remembered?
+
+**7. Cognitive Load**
+- Is unnecessary information present that increases mental effort without adding value?
+- Are tasks broken into appropriately sized steps?
+- Does the design rely on user memory rather than recognition?
+- Are defaults and pre-fills used to reduce the burden on users?
+
+**8. Aesthetic-Usability Effect**
+- Does the visual design create a positive first impression that builds trust?
+- Are there visual inconsistencies that undermine perceived quality?
+- Does the aesthetic match the expectations of the target audience?
+
+---
+
+### SECTION 4 — VALUE & STRATEGY
+
+**9. Morville's Honeycomb**
+Score each dimension (Strong / Adequate / Weak):
+- Useful: Does this actually solve a real user need?
+- Usable: Can users accomplish their goals efficiently and without frustration?
+- Desirable: Is there emotional or aesthetic appeal that makes people want to use it?
+- Findable: Can users find what they need within the product?
+- Accessible: Can users with disabilities or varying technical literacy use it?
+- Credible: Does the design communicate trust and legitimacy?
+- Valuable: Does it deliver clear value to both the user and the organization?
+
+**10. Jobs to Be Done**
+- What is the core "job" this feature or screen helps the user accomplish?
+- Does every element on the screen serve that job?
+- Are there elements that serve the organization's goals but create friction for the user's job?
+- Is there a mismatch between the job users are trying to do and what the design assumes they're trying to do?
+
+---
+
+### SECTION 5 — PATTERNS & PROCESS
+
+**11. Interaction Design Patterns**
+- Are standard patterns used where appropriate (modals, breadcrumbs, empty states, inline validation)?
+- Are any patterns being reinvented unnecessarily, creating confusion?
+- Are there missing patterns that would reduce friction (e.g., skeleton screens for loading states, confirmation dialogs for destructive actions)?
+- Does progressive disclosure apply — is information revealed at the right time rather than all at once?
