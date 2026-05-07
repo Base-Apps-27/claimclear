@@ -4,6 +4,63 @@ import {
   EMAIL_MESSAGE_MAX_BYTES,
   INLINE_ATTACHMENT_THRESHOLD_BYTES,
 } from "@workspace/api-zod";
+import { logger } from "./logger";
+
+// RFC 6761 reserves these TLDs as guaranteed-non-resolvable for testing /
+// documentation. Sending to any of them produces an internal Graph bounce
+// that counts against our sender reputation — Microsoft suspended our
+// outbound on 2026-05-07 after a test sweep generated ~42 such bounces in
+// 3 hours. This blocklist is the bottom-of-the-stack guard: ANY caller
+// (route, cron, ad-hoc script) that feeds a test recipient short-circuits
+// to a synthetic success and never reaches Graph.
+const RESERVED_TEST_TLDS = new Set(["test", "example", "invalid", "local"]);
+
+function isReservedTestRecipient(email: string): boolean {
+  const at = email.lastIndexOf("@");
+  if (at < 0) return false;
+  const domain = email.slice(at + 1).toLowerCase().trim();
+  if (!domain) return false;
+  // Match either the full TLD or any subdomain ending in `.<tld>`.
+  const lastDot = domain.lastIndexOf(".");
+  const tld = lastDot < 0 ? domain : domain.slice(lastDot + 1);
+  return RESERVED_TEST_TLDS.has(tld);
+}
+
+function splitRecipients(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : String(value).split(",");
+  return list.map((e) => e.trim()).filter(Boolean);
+}
+
+/**
+ * Returns true iff every supplied recipient (To + Cc combined) lies in an
+ * RFC 6761 reserved-test TLD. When true, the caller MUST short-circuit
+ * before hitting Graph — bounces from these domains will get our sender
+ * suspended.
+ *
+ * Mixed batches (one real recipient + one test recipient) return false so
+ * the real recipient still receives the email; if you want to block those
+ * too, scrub the recipient list at the call site.
+ */
+function allRecipientsAreReservedTest(
+  to: string | string[] | undefined,
+  cc?: string | string[] | undefined,
+): boolean {
+  const all = [...splitRecipients(to), ...splitRecipients(cc)];
+  if (all.length === 0) return false;
+  return all.every(isReservedTestRecipient);
+}
+
+function syntheticTestSendResult(): SendEmailResult {
+  // Stable-ish synthetic IDs so any DB row that captures them is obviously
+  // a test artefact (and not mistaken for a real Graph messageId).
+  const stamp = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return {
+    messageId: `synthetic-test-${stamp}-${rand}`,
+    conversationId: `synthetic-test-conv-${stamp}-${rand}`,
+  };
+}
 
 let connectionSettings: any;
 
@@ -163,6 +220,17 @@ export async function attachToDraft(
 }
 
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
+  // RFC 6761 reserved-test TLD guard. See module-top comment on
+  // RESERVED_TEST_TLDS for the 2026-05-07 incident this prevents.
+  if (allRecipientsAreReservedTest(options.to, options.cc)) {
+    const recipients = [...splitRecipients(options.to), ...splitRecipients(options.cc)];
+    logger.warn(
+      { recipients, subject: options.subject },
+      "outlook.sendEmail: short-circuited — all recipients are RFC 6761 reserved test domains; no Graph call made",
+    );
+    return syntheticTestSendResult();
+  }
+
   const client = await getOutlookClient();
 
   const toRecipients = (Array.isArray(options.to) ? options.to : options.to.split(","))
@@ -256,6 +324,17 @@ export interface ReplyToMessageOptions {
  * an `outbound_emails` row that ties the new message back into the same thread.
  */
 export async function replyToMessage(options: ReplyToMessageOptions): Promise<SendEmailResult> {
+  // Same RFC 6761 reserved-test TLD guard as sendEmail. Replies from a
+  // test fixture (which may pass synthetic to/cc) must never hit Graph.
+  if (allRecipientsAreReservedTest(options.to, options.cc)) {
+    const recipients = [...splitRecipients(options.to), ...splitRecipients(options.cc)];
+    logger.warn(
+      { recipients, subject: options.subject },
+      "outlook.replyToMessage: short-circuited — all recipients are RFC 6761 reserved test domains; no Graph call made",
+    );
+    return syntheticTestSendResult();
+  }
+
   const client = await getOutlookClient();
 
   // 1. createReply: Graph wires up In-Reply-To / References / threading headers
