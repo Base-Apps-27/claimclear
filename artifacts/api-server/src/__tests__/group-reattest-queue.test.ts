@@ -140,6 +140,28 @@ async function seedLeg(
 ): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T-BULKQ-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const errorTypeId = opts.disputed === false ? null : "et-test";
+  const verdictOutcome = opts.verdictOutcome ?? "Approved";
+  // Pick a disposition compatible with the parent's `phase` column —
+  // the DB has a deferrable trigger (validate_disposition_against_phase)
+  // that will reject `unclassified` for any phase past `triage`.
+  const [parent] = await db.select({ phase: invoiceGroupsTable.phase })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, groupId));
+  const disposition: string | undefined = (() => {
+    switch (parent?.phase) {
+      case "submitted":
+      case "ready_to_submit":
+        return "disposed_portal";
+      case "response_received":
+      case "reviewed":
+      case "awaiting_reattestation":
+        if (verdictOutcome === "Denied") return "verdict_denied";
+        if (verdictOutcome === "Partial") return "verdict_partial";
+        return "verdict_approved";
+      default:
+        return undefined;
+    }
+  })();
   const [leg] = await db.insert(claimsTable).values({
     confNumber,
     status: "Awaiting Response",
@@ -149,6 +171,7 @@ async function seedLeg(
     invoiceGroupId: groupId,
     claimAmount: "100.00",
     attestationState: opts.attestationState ?? "not_required",
+    ...(disposition ? { disposition: disposition as any } : {}),
   }).returning();
 
   await db.insert(claimVerdictTable).values({
@@ -161,12 +184,25 @@ async function seedLeg(
 }
 
 async function seedGroup(
-  opts: { withResponse?: boolean; status?: string } = {},
+  opts: { withResponse?: boolean; status?: string; phase?: string } = {},
 ): Promise<typeof invoiceGroupsTable.$inferSelect> {
   const invoiceNumber = `T-BULKQ-G-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const status = opts.status ?? "Needs Review";
+  // The canonical `phase` column drives getGroupMacroPhase. Pick a
+  // sensible default per status so seedGroup() callers don't all have
+  // to pass it explicitly.
+  const phase = opts.phase ?? (() => {
+    switch (status) {
+      case "Needs Review": return "response_received";
+      case "MAS Eligible": return "awaiting_reattestation";
+      case "Awaiting Response": return "submitted";
+      default: return "triage";
+    }
+  })();
   const [group] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber,
-    status: (opts.status ?? "Needs Review") as any,
+    status: status as any,
+    phase: phase as any,
     outcome: "Pending",
   }).returning();
 
@@ -384,7 +420,10 @@ test("returns 409 when the group has no eligible legs (defense in depth)", async
   }
 });
 
-test("returns 409 when the group is not in Needs Review", async () => {
+test("returns 409 when the group is in a phase outside Needs Review / MAS Eligible", async () => {
+  // `Awaiting Response` is the in-flight phase — neither
+  // `response-pending` nor `mas-action-required`, so the bulk-queue
+  // contract rejects it.
   const group = await seedGroup({ status: "Awaiting Response" });
   await seedLeg(group.id);
   try {
@@ -393,13 +432,13 @@ test("returns 409 when the group is not in Needs Review", async () => {
       { method: "POST", body: {} },
     );
     assert.equal(res.status, 409);
-    assert.match(res.json.error, /Needs Review/i);
+    assert.match(res.json.error, /Needs Review or MAS Eligible/i);
   } finally {
     await cleanupGroup(group.id);
   }
 });
 
-test("returns 409 when the group has no inbound payor response on file", async () => {
+test("returns 409 in Needs Review when no inbound payor response is on file", async () => {
   const group = await seedGroup({ withResponse: false });
   await seedLeg(group.id);
   try {
@@ -409,6 +448,48 @@ test("returns 409 when the group has no inbound payor response on file", async (
     );
     assert.equal(res.status, 409);
     assert.match(res.json.error, /payor response/i);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+// ---- Early Re-attest (mas-action-required) path -------------------------
+
+test("succeeds from MAS Eligible (Early Re-attest) without an inbound payor response", async () => {
+  // Task #476 entry point: a group with survivor legs that need
+  // re-attestation before any payor response has arrived. The bulk
+  // queue must succeed for parity with `/reattest/complete`, but
+  // must NOT stamp `awaitingPayorAgainAt` (there's nothing to drop
+  // off Responses Awaiting Review here).
+  const group = await seedGroup({ status: "MAS Eligible", withResponse: false });
+  const leg = await seedLeg(group.id);
+  try {
+    const res = await fetchJson<{
+      group: { awaitingPayorAgainAt: string | null };
+      queuedLegIds: number[];
+    }>(`/api/invoice-groups/${group.id}/reattest/queue`, {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.deepEqual(res.json.queuedLegIds, [leg.id]);
+    assert.equal(
+      res.json.group.awaitingPayorAgainAt,
+      null,
+      "Early Re-attest must NOT stamp awaitingPayorAgainAt — there's no review surface to drop off",
+    );
+
+    const [refreshed] = await db.select().from(claimsTable).where(eq(claimsTable.id, leg.id));
+    assert.equal(refreshed.attestationState, "queued");
+
+    // Umbrella audit row must record the source phase so the activity
+    // feed can distinguish Early Re-attest from the response-review path.
+    const groupAudits = await db.select().from(auditLogsTable)
+      .where(eq(auditLogsTable.invoiceGroupId, group.id));
+    const umbrella = groupAudits.find((r) => r.action === "group_reattest_queued_bulk");
+    assert.ok(umbrella, "umbrella audit row must be written on the Early Re-attest path too");
+    assert.equal((umbrella!.metadata as any).sourcePhase, "mas-action-required");
+    assert.equal((umbrella!.metadata as any).newAwaitingPayorAgainAt, null);
   } finally {
     await cleanupGroup(group.id);
   }

@@ -3650,28 +3650,48 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
     return;
   }
 
-  // Same source-state contract as `/awaiting-payor-again`: this is
-  // the "drop the group off Responses Awaiting Review" leg of the
-  // operation, so the group must be in Needs Review with at least
-  // one inbound payor response on file. Without these guards the
-  // bulk-queue would silently re-stamp `awaitingPayorAgainAt` on a
-  // group whose state doesn't justify it.
-  if (group.status !== "Needs Review") {
+  // Source-state contract — mirrors `/reattest/complete` so the two
+  // sibling actions stay in lock-step. Two valid entry phases:
+  //
+  //   * `response-pending` (status=Needs Review) — the original
+  //     "park the response review for the portal user" path. Requires
+  //     an inbound payor response on file (otherwise there's nothing
+  //     to be reviewing) and stamps `awaitingPayorAgainAt` so the
+  //     group drops off Responses Awaiting Review.
+  //
+  //   * `mas-action-required` (status=MAS Eligible / phase=
+  //     awaiting_reattestation) — the Early Re-attest path
+  //     (Task #476): an invoice has zero disputable legs but
+  //     survivor legs that still need re-attestation. There is no
+  //     payor-response review to drop off, so we DON'T require an
+  //     inbound response and we DON'T stamp `awaitingPayorAgainAt`.
+  //
+  // Any other phase (pre-submit, in-flight, awaiting-payout, closed,
+  // on-hold) is rejected — the same predicate `/reattest/complete`
+  // uses, so an admin can never reach a state where one sibling
+  // action would succeed and the other would 409.
+  const sourcePhase = getGroupMacroPhase(group);
+  const isResponsePending = sourcePhase === "response-pending"
+    && group.status === "Needs Review";
+  const isMasActionRequired = sourcePhase === "mas-action-required";
+  if (!isResponsePending && !isMasActionRequired) {
     res.status(409).json({
-      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review.",
-      expectedState: "status=Needs Review",
-      actualState: `status=${group.status}`,
+      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review or MAS Eligible.",
+      expectedState: "phase in (response-pending with status=Needs Review, mas-action-required)",
+      actualState: `phase=${sourcePhase}, status=${group.status}`,
     });
     return;
   }
-  const hasResponse = await groupHasResponse(id);
-  if (!hasResponse) {
-    res.status(409).json({
-      error: "Group cannot be bulk-queued for re-attestation before any payor response has arrived.",
-      expectedState: "at least one inbound portal_responses row for the group",
-      actualState: "no inbound responses on file",
-    });
-    return;
+  if (isResponsePending) {
+    const hasResponse = await groupHasResponse(id);
+    if (!hasResponse) {
+      res.status(409).json({
+        error: "Group cannot be bulk-queued for re-attestation before any payor response has arrived.",
+        expectedState: "at least one inbound portal_responses row for the group",
+        actualState: "no inbound responses on file",
+      });
+      return;
+    }
   }
 
   const actor = actorFromReq(req);
@@ -3800,25 +3820,41 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
       }, tx);
     }
 
-    const [g] = await tx.update(invoiceGroupsTable)
-      .set({ awaitingPayorAgainAt: now })
-      .where(eq(invoiceGroupsTable.id, id))
-      .returning();
+    // Only stamp `awaitingPayorAgainAt` when the source phase is
+    // `response-pending` — that's the leg of the contract that drops
+    // the group off Responses Awaiting Review. The Early Re-attest
+    // (`mas-action-required`) entry has nothing to drop off, so we
+    // leave the timestamp untouched (and skip the matching SSE event
+    // post-commit).
+    let g: typeof invoiceGroupsTable.$inferSelect;
+    if (isResponsePending) {
+      [g] = await tx.update(invoiceGroupsTable)
+        .set({ awaitingPayorAgainAt: now })
+        .where(eq(invoiceGroupsTable.id, id))
+        .returning();
+    } else {
+      [g] = await tx.select().from(invoiceGroupsTable)
+        .where(eq(invoiceGroupsTable.id, id));
+    }
 
     const queuedLegIds = eligibleLegs.map((l) => l.id);
+    const detailTail = isResponsePending
+      ? "and flipped the group back to awaiting payor"
+      : "from the MAS Eligible phase (early re-attest)";
     await tx.insert(auditLogsTable).values({
       invoiceGroupId: id,
       action: "group_reattest_queued_bulk",
       details: noteForDb
-        ? `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation and flipped the group back to awaiting payor — Note: ${noteForDb}`
-        : `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation and flipped the group back to awaiting payor.`,
+        ? `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation ${detailTail} — Note: ${noteForDb}`
+        : `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation ${detailTail}.`,
       metadata: {
         queuedLegIds,
         legCount: queuedLegIds.length,
+        sourcePhase,
         previousAwaitingPayorAgainAt: group.awaitingPayorAgainAt
           ? group.awaitingPayorAgainAt.toISOString()
           : null,
-        newAwaitingPayorAgainAt: now.toISOString(),
+        newAwaitingPayorAgainAt: isResponsePending ? now.toISOString() : null,
         note: noteForDb,
       },
       userEmail: actor.userEmail,
@@ -3832,6 +3868,7 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
       metadata: {
         queuedLegIds,
         legCount: queuedLegIds.length,
+        sourcePhase,
         note: noteForDb,
       },
     }, tx);
@@ -3865,7 +3902,13 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
     });
   }
   emitGroupEvent(id, "group_reattest_queued_bulk", req);
-  emitGroupEvent(id, "group_awaiting_payor_again", req);
+  if (isResponsePending) {
+    // Only fire the "awaiting payor again" event when we actually
+    // stamped that timestamp. The Early Re-attest path doesn't move
+    // the group on/off Responses Awaiting Review, so listeners that
+    // refresh that surface have nothing to react to.
+    emitGroupEvent(id, "group_awaiting_payor_again", req);
+  }
   await refreshGroupDerivedFields(id);
 
   res.json({ group: updatedGroup, queuedLegIds: eligibleLegs.map((l) => l.id) });
