@@ -100,6 +100,24 @@ async function ensureBrowsersInstalled(): Promise<void> {
   throw new Error("Playwright browser installation failed. The bot cannot run without a browser. Tried multiple installation methods.");
 }
 
+/**
+ * Thrown when `runBatchWorker` is asked to file a dispute for an invoice
+ * group whose `legs` array is empty. The worker pre-flights this before
+ * launching Playwright so we never open a browser, log into MAS, and then
+ * discover there's nothing to tick — that path used to silently submit a
+ * blank ticket. Re-introduced 2026-05-07 (the class was originally added in
+ * commit 52210749 then accidentally dropped during the Task #485 reshape;
+ * the throw site at the top of `runBatchWorker` survived, so the file
+ * stopped typechecking — surfaced when the Wave B+ heal cleared the
+ * mockup-sandbox typecheck failure that was masking it).
+ */
+export class EmptyGroupError extends Error {
+  constructor(public readonly groupId: number) {
+    super(`GroupPortalSubmission group ${groupId} has no legs to submit`);
+    this.name = "EmptyGroupError";
+  }
+}
+
 /** A single disputed leg within an invoice-group submission. */
 export interface GroupPortalSubmissionLeg {
   id: number;

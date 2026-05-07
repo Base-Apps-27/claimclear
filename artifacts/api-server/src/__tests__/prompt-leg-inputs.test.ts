@@ -93,6 +93,11 @@ function makeGroup(overrides: Partial<InvoiceGroup> = {}): InvoiceGroup {
     errorTypeName: "Trip Distance Mismatch",
     status: "New",
     outcome: "Pending",
+    // Wave B columns (migration 0034) — NOT NULL with column defaults; the
+    // fixture sets them to the same defaults the migration uses so test rows
+    // satisfy the trigger and `$inferSelect` requires no overrides.
+    phase: "triage",
+    phaseEnteredAt: FIXED_TS,
     approvedAmount: null,
     rideCount: 2,
     serviceDate: null,
@@ -189,6 +194,9 @@ function makeClaim(overrides: Partial<Claim> & Pick<Claim, "id" | "confNumber">)
     generatedEmailBody: null,
     generatedEmailAt: null,
     includedInDispute: true,
+    // Wave B column (migration 0034) — NOT NULL with column default
+    // 'unclassified'; same rationale as `phase` on the group fixture.
+    disposition: "unclassified",
     sopNodeId: null,
     sopAnswers: [],
     sopOutcome: null,

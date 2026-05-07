@@ -17,6 +17,7 @@ function Mark({ size = 14 }: { size?: number }) {
 export type ActivePage =
   | "dashboard" | "queue" | "responses" | "attestation"
   | "invoice-groups" | "group-detail" | "claims" | "claim-detail"
+  | "portal"
   | null;
 
 const PAGE_LABELS: Record<string, string> = {
@@ -28,6 +29,7 @@ const PAGE_LABELS: Record<string, string> = {
   "group-detail": "Invoice Groups / G-4291",
   claims: "Claims",
   "claim-detail": "Claims / Car #1042",
+  portal: "Portal Submissions",
 };
 
 const PAGE_FRIENDLY: Record<string, string> = {
@@ -39,6 +41,7 @@ const PAGE_FRIENDLY: Record<string, string> = {
   "group-detail": "Group detail",
   claims: "Claims",
   "claim-detail": "Claim detail",
+  portal: "Portal Submissions",
 };
 
 const SIDEBAR_KEY: Record<string, string> = {
@@ -50,6 +53,7 @@ const SIDEBAR_KEY: Record<string, string> = {
   "group-detail": "groups",
   claims: "claims",
   "claim-detail": "claims",
+  portal: "portal",
 };
 
 type Props = {

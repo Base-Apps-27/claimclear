@@ -1,0 +1,453 @@
+# Wave C handoff prompt — Switch readers to `phase` / `disposition`
+
+Paste this entire file as the first user message of the next session.
+
+---
+
+You are continuing work on the ClaimClear hierarchical state machine refactor. Wave A shipped 2026-05-06; Wave B shipped 2026-05-07; Wave B+heal (B-PR2) shipped 2026-05-07 a few hours later. You are about to start **Wave C**. Read this entire prompt before doing anything else, then read the four documents it references, then start.
+
+This handoff is intentionally exhaustive. It covers everything that was found, everything that changed, everything that was decided (with the alternatives we considered and why), and the undocumented sharp edges that bit us on Waves A and B so they don't bite you on C. If a section feels redundant — read it anyway.
+
+---
+
+## 0. The one-sentence mental model (do not lose this)
+
+The invoice is the noun that moves through 7 sequential phases. Each claim is a work item that contributes to the next phase transition. Phase advancement is gated by an aggregate over claim dispositions — never by a free-running cache. Today's `groups + claims as peers with overlapping state, kept in sync by a bidirectional cache (denormalized-cache.ts)` model is the actual root cause of every drift bug catalogued in `state-vocabularies-audit.md`. Waves A-B added the new authoritative columns and backfilled them; **Wave C flips every reader to the new columns**; Waves D-E flip writers and drop the old columns.
+
+After Wave C: every read path uses `invoice_groups.phase` / `claims.disposition`. The legacy columns (`status`, `outcome`, `sop_outcome`, `attestation_state`, `drop_reason`) are still being **written** by today's writers, and the bidirectional cache (`denormalized-cache.ts`) still runs in the background — but nothing reads from those legacy outputs anymore. Wave D deletes the cache and the writer-side scaffolding; Wave E drops the legacy columns. Wave C is **fully reversible** by `git revert` because the legacy columns stay populated.
+
+---
+
+## 1. Read these first, in this order
+
+1. **`docs/architecture/state-hierarchy-v1.md`** — the spec. Pay closest attention to:
+   - §1 (the 7 phases)
+   - §2 (per-phase valid disposition sets — backed by `VALID_DISPOSITIONS_BY_PHASE` in `lib/vocab/src/claim-disposition.ts` and by the `validate_disposition_against_phase` Postgres trigger added in Wave B)
+   - §5 (schema diff — already implemented in Wave B's migration `0034_…`)
+   - §6 (the deterministic legacy→new mapping — already implemented in Wave A's derivers and B's SQL backfill, and **patched in B-PR2 to fix a non-triage fallthrough bug**, see §3 below)
+   - **§7 Wave C** (lines 373-395) — the four-bullet sketch this prompt expands.
+2. **`docs/architecture/state-hierarchy-execution-plan.md`** — Wave C section is around line ~500 (search for `## 6. Wave C`). Gives the file-by-file C.1-C.5 step list, the anti-slop audit IDs (A1-A7), and the 12-step manual smoke runbook. **Use that file-list as the spine of your work.**
+3. **`docs/architecture/state-wave-0.5-catalogue.md`** — the wave delivery log. §8 has full notes for A-PR1, A-PR2, A-PR3, **B-PR1, B-PR2** (read both B entries — B-PR2 is the heal). The §1-§7 reader inventories (`sopOutcome` consumers, `attestationState` consumers, etc.) are the canonical blast-radius list — your Wave C work IS the C-column of that inventory.
+4. **`docs/architecture/state-wave-b-handoff-prompt.md`** — the previous handoff, for format reference and to understand the constraints Wave B operated under.
+
+Optional but useful:
+- `docs/architecture/state-vocabularies-audit.md` (drift census)
+- `docs/architecture/state-pre-migration-census.md` (the prod row census from before Wave B; useful to compare against the post-publish prod state in §4 below)
+
+---
+
+## 2. What's already built — the ground truth as of 2026-05-07
+
+### 2.1 Wave A packages (shipped 2026-05-06, infrastructure-only, no behavior change)
+
+Three workspace packages, all type-clean, all in root `tsconfig.json` references. Dependency graph: `observability` (leaf) → `vocab` (leaf) → `invoice-state` (depends only on `@workspace/vocab`).
+
+**`@workspace/observability`** (`lib/observability/`)
+- `actor.ts` — `TransitionActor` discriminated union: `{ kind: "user", userId, displayName? } | { kind: "system", source }`.
+- `sources.ts` — `TRANSITION_SOURCES` 32-tuple covering every batch-worker, cron, SOP-advance, response-matcher, importer, and MAS-evaluator origin tag.
+- `audit-actions.ts` — `AUDIT_ACTION_NAMES` 80-tuple — every `audit_logs.action` value currently emitted, harvested by `rg "action:" artifacts/api-server/src/`.
+- `registry.ts` — `SOURCE_TO_ACTION_TABLE: Record<TransitionSource, AuditActionName[]>` declaring which actions each source is allowed to emit.
+- **NOT YET WIRED** into any emit site. That's Wave D's job. Wave C does not touch this package.
+
+**`@workspace/vocab` additions**
+- `lib/vocab/src/invoice-phase.ts` — `INVOICE_PHASES` 7-tuple, `InvoicePhase` type, glossary entry per value, and helpers `comparePhase`, `isPhaseAtLeast`, `invoicePhaseLabel`, `isInvoicePhase`. The 7-phase sequence is exactly: `triage → ready_to_submit → submitted → response_received → reviewed → awaiting_reattestation → closed`.
+- `lib/vocab/src/claim-disposition.ts` — `CLAIM_DISPOSITIONS` 22-tuple, `ClaimDisposition` type, glossary, plus the **cross-row contract tables** that Wave C readers will consult heavily:
+  - `VALID_DISPOSITIONS_BY_PHASE` — per-phase valid set from spec §5.1; mirrored by the Postgres trigger.
+  - `TERMINAL_TRIAGE_DISPOSITIONS` — the 4 dispositions that promote `triage → ready_to_submit`.
+  - `CONFIRMED_VERDICT_DISPOSITIONS` — `verdict_approved | verdict_denied | verdict_partial`.
+  - `REATTEST_REQUIRING_DISPOSITIONS` — `verdict_approved | verdict_partial`.
+  - Helper `isDispositionValidForPhase(d, phase)` — runtime mirror of the SQL trigger.
+- `lib/vocab/src/domains.ts` — `VocabDomain` union extended with `"invoice_phase"` and `"claim_disposition"`. Both new domains land in the flat `GLOSSARY`.
+- The existing `lib/vocab/{claim-status.ts, outcome.ts, leg-sub-status.ts, leg-conclusion.ts, hold-reason.ts, closure-reason.ts, submission-stage.ts, verbs.ts, verdict-outcome.ts, audit-action.ts, forbidden-literals.ts}` are intentionally **kept verbatim through Waves A-D**. They become dead code in Wave E. Don't touch them in Wave C.
+
+**`@workspace/invoice-state`** (`lib/invoice-state/`)
+- `package.json` declares `"@workspace/vocab": "workspace:*"`. Composite TS project. **45 tests pass** (39 from Wave A + 6 added in B-PR2 — see §3 below).
+- `src/legacy-shapes.ts` — narrow input types `LegacyInvoiceGroupShape` and `LegacyClaimShape` that the migration JS / Wave-C readers can pass DB rows into.
+- `src/derive-phase.ts` — `derivePhaseFromLegacy(group)` returning `{ phase, closureReason, prePhaseHint }`. Pure first-match-wins implementation of spec §6.1.
+- `src/derive-disposition.ts` — `deriveDispositionFromLegacy(claim, parentPhase): ClaimDisposition`. Phase-aware. **Updated in B-PR2** — see §3 for the new submit-phase branch.
+
+### 2.2 Wave B schema dual-write (shipped 2026-05-07, B-PR1)
+
+One atomic migration `lib/db/migrations/0034_invoice_phase_and_disposition.sql` plus matching Drizzle snapshot `lib/db/drizzle/0031_invoice_phase_and_disposition.sql`.
+
+**What's in prod after publish #1:**
+- Two new Postgres enums: `invoice_phase` (7 values, byte-identical to `INVOICE_PHASES`), `claim_disposition` (22 values, byte-identical to `CLAIM_DISPOSITIONS`).
+- Three new columns:
+  - `invoice_groups.phase invoice_phase NOT NULL DEFAULT 'triage'`
+  - `invoice_groups.phase_entered_at timestamptz NOT NULL DEFAULT NOW()` — **all rows currently carry the same migration-time timestamp**; recovering historical entry times is Wave D's job (when `transitionInvoice` starts maintaining it).
+  - `claims.disposition claim_disposition NOT NULL DEFAULT 'unclassified'`
+- Pre-backfill closure-reason heal block — populated `closure_reason` for rows the closed-phase deriver needs (denied_by_payor / non_issue / reattested / expired / cannot_dispute heals for previously-NULL rows).
+- Two atomic `UPDATE … CASE WHEN … END` statements that ran the §6.1 / §6.2 mapping inside the same `BEGIN/COMMIT` as the column adds. Disposition `UPDATE` joins to `invoice_groups g` so it can branch on the just-populated `g.phase`.
+- **Cross-row validation trigger.** `validate_disposition_against_phase()` PL/pgSQL function + `claims_disposition_phase_chk` `CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED AFTER INSERT OR UPDATE OF disposition, invoice_group_id ON claims`. The per-phase `valid_set` `CASE` mirrors `VALID_DISPOSITIONS_BY_PHASE`. **Created AFTER the bulk backfill** so partial state during the migration cannot trip it; deferrable so a multi-row Wave-D writer that flips a parent phase + every child disposition in one transaction validates only at COMMIT.
+- Three reader indexes — `invoice_groups_phase_idx`, `claims_disposition_idx`, `claims_invoice_group_disposition_idx (invoice_group_id, disposition)` — sized for Wave C's "claims in phase X by parent group" queries.
+
+**Three lockstep invariants enforced in CI** (do not break any of these):
+1. **Postgres enum value list ↔ TS literal union.** `scripts/src/__tests__/enum-parity.test.ts` deep-equals `invoicePhaseEnum.enumValues` to `[...INVOICE_PHASES]` and `claimDispositionEnum.enumValues` to `[...CLAIM_DISPOSITIONS]`. 4/4 pass. Adds/renames must touch all four files together.
+2. **Drizzle schema ↔ generated SQL.** `pnpm --filter @workspace/db run check-drift` runs `drizzle-kit generate` and diffs `lib/db/drizzle/`. Wired into `.replit` as the `schema-drift` validation workflow (parallel-run under `Project`, `isValidation = true`). After any `lib/db/src/schema/*` edit, regenerate snapshots before committing.
+3. **SQL backfill CASE ↔ TS derivers.** `scripts/src/check-invoice-state-derivation.ts` (`pnpm --filter @workspace/scripts exec tsx src/check-invoice-state-derivation.ts`) reads every `(invoice_groups, claims)` row, runs `derivePhaseFromLegacy` / `deriveDispositionFromLegacy` against the legacy columns, and asserts equality with the stored `phase` / `disposition`. Also runs `isDispositionValidForPhase` per row as the runtime mirror of the SQL trigger. Returns nonzero on any mismatch, prints the first 20 violations.
+
+**Reversibility.** `lib/db/migrations/rollback/0034_invoice_phase_and_disposition.down.sql` drops trigger → fn → indexes → columns → enums and removes the `__schema_migrations` row. Stored OUTSIDE `migrations/` so the runner (`apply-migrations.mjs` globs `migrations/*.sql` only) does not auto-apply it.
+
+**SSE plumbing (additive).** `artifacts/api-server/src/lib/sse.ts` — `ClaimEvent.disposition?: string|null` and `GroupEvent.phase?: string|null`. Older clients ignore the fields; **Wave C should start populating them in the SSE emit sites that already have access to `phase`/`disposition` after the read switch**, but it's not strictly required until Wave D.
+
+### 2.3 Wave B+ heal (shipped 2026-05-07, B-PR2)
+
+**The bug we found.** Post-publish prod conformance via `executeSql` against the production DB (read-only) flagged 12 rows with `claims.disposition='classifying'` under non-triage parent phases (10 under `submitted` with parent status `Awaiting Response`; 2 under `ready_to_submit` with parent status `Portal Queued`, both inside invoice group 15). All 12 shared the same legacy shape: `sop_outcome IS NULL`, `attestation_state='not_required'`, `included_in_dispute=true`, `error_type_id IS NOT NULL`, `outcome='Pending'`, `closure_reason IS NULL`. These violate `VALID_DISPOSITIONS_BY_PHASE` (`classifying` is only valid for `triage`).
+
+**Root cause.** `deriveDispositionFromLegacy` had explicit branches for `closed`, `awaiting_reattestation`, `reviewed`, and `response_received`, then fell through to `triageDisposition()` for *every* other phase including `submitted`/`ready_to_submit`. `triageDisposition()`'s last fallback returns `"classifying"` whenever `errorTypeId != null` — correct for triage, structurally invalid for the post-submit phases. The 12 rows are real legacy data: claims that had an error type assigned but were never run through the per-leg SOP triage system that would have set `sop_outcome`, then went out as part of a group submission. The Wave B SQL backfill CASE was a faithful mirror of the TS deriver, so it produced the same wrong answer; the cross-row trigger didn't catch the rows because B-PR1 intentionally creates the trigger AFTER the bulk UPDATE (so pre-trigger data can be healed), and the backfill never re-touches those rows so the trigger never fired for them.
+
+**Why dev tests didn't catch it.** Wave A's 39 derivation tests covered triage, closed, response_received, reviewed, and awaiting_reattestation — but not the cross-phase case "`error_type_id` set on a `submitted`-phase claim with no `sop_outcome`". Dev DB has only 9 groups / 4 claims; `check-invoice-state-derivation.ts` passed locally with 0 violations because none of the dev rows exercise this shape. **The full prod dataset (1,310 / 2,406) was the first place that surfaced the gap.** This is why the conformance audit must be re-run against prod, not just dev, after every wave.
+
+**The fix shipped.**
+
+1. **Deriver fix in `lib/invoice-state/src/derive-disposition.ts`:**
+   - Factored the SOP / drop_reason precedence out of `triageDisposition()` into a shared helper `sopOrDropReasonDisposition(claim): ClaimDisposition | null` (used by both triage and submit branches now).
+   - Added a new branch for `parentPhase ∈ {ready_to_submit, submitted}` that calls `submittedDisposition(claim)`: respects an explicit `sopOutcome`/`dropReason` first, returns `disposed_nonissue` for `includedInDispute=false`, then falls back to the submission-path default — `disposed_portal` when `claim.status='Portal Queued'` (the denormalized mirror of the parent group's submission method, the only claim-level signal we have without expanding the deriver signature to take the full parent row), `disposed_email` otherwise (covers Awaiting Response / Generating Email / Processed).
+   - **Trade-off recorded in code comments:** `claim.status` is officially a "denormalized read cache" of parent state; using it for derivation is pragmatic but has a cleanup path — Wave D's writer can promote the submission-method signal to a proper claim column at re-backfill time if needed. Wave C readers should NOT add new dependencies on `claim.status` — read `disposition` from the column instead.
+
+2. **Test coverage.** Six new test cases in `lib/invoice-state/src/__tests__/derivation.test.ts` under a new `submitted/ready_to_submit phases (Wave B+ heal)` describe block: the two prod repros (Portal Queued → disposed_portal, Awaiting Response → disposed_email), SOP-precedence guards (sopOutcome=non_issue still wins on email-mirror, sopOutcome=portal_dispute still wins, sopOutcome=hold maps to blocked), and the `includedInDispute=false` short-circuit. Total: **45/45 pass**.
+
+3. **Data heal.** `lib/db/migrations/0035_heal_legacy_classifying_dispositions.sql` — single-statement UPDATE inside `BEGIN/COMMIT` that rewrites `disposition` for every row currently storing `classifying` whose parent group is in `ready_to_submit`/`submitted`, picking `disposed_portal` when `c.status='Portal Queued'` and `disposed_email` otherwise. Idempotent (post-apply re-runs match zero rows). Safe under the live trigger (the new dispositions are valid for both target phases). Rollback at `lib/db/migrations/rollback/0035_….down.sql`.
+
+4. **No schema change**, so no Drizzle snapshot bump.
+
+### 2.4 Pre-existing typecheck cleanup (shipped 2026-05-07, alongside this handoff)
+
+While preparing this handoff I discovered three pre-existing typecheck failures that had been masking each other (pnpm `-r` runs projects in parallel and stops on first error per project, so each fix exposed the next). All three are now fixed:
+
+1. **`artifacts/mockup-sandbox/.../tour-cards/full-tour/MockApp.tsx`** — `ActivePage` union didn't include `"portal"` even though `steps.ts` references `page: "portal"` for steps 14-15. Added `"portal"` to the union and to the `PAGE_LABELS`/`PAGE_FRIENDLY`/`SIDEBAR_KEY` maps. The renderPage switch already defaults to Dashboard for unknown pages, so runtime behavior is unchanged. Mockup-sandbox isn't deployed; this was masking the rest.
+2. **`artifacts/api-server/src/__tests__/group-portal-submission.test.ts`** — imported a stale `PortalSubmission` type alongside `GroupPortalSubmission`. The per-leg `PortalSubmission` was removed during Task #485's reshape (one row per group instead of per leg). Removed the stale import.
+3. **`artifacts/api-server/src/bot/batch-worker.ts`** — referenced `EmptyGroupError` at the top of `runBatchWorker` but the class was never defined in this revision (it was originally added in commit 52210749 then accidentally dropped during Task #485's reshape; the throw site survived). Re-added the class definition with a doc comment explaining the history.
+4. **`artifacts/api-server/src/__tests__/prompt-leg-inputs.test.ts`** — `makeGroup` and `makeClaim` fixtures didn't include `phase`/`phaseEnteredAt`/`disposition` (the new Wave B columns). Added all three with the migration-default values (`phase: "triage"`, `phaseEnteredAt: FIXED_TS`, `disposition: "unclassified"`). **This is the canonical pattern Wave C must use everywhere**: any test fixture that constructs an `InvoiceGroup` or `Claim` `$inferSelect` shape must now set these columns explicitly.
+
+After all four fixes: `pnpm -r typecheck` is green across all 19 projects.
+
+### 2.5 Prod data state (verified 2026-05-07 post-B+heal publish via `executeSql`, environment: production)
+
+```
+invoice_groups.phase          claims.disposition
+─────────────────────         ────────────────────
+triage                933     classifying        1184  (was 1196)
+submitted             205     disposed_nonissue   605
+closed                171     final_nonissue      269
+ready_to_submit         1     disposed_portal     279  (was 277)
+                              disposed_email       12  (was 2)
+TOTAL: 1,310 groups           unclassified         31
+                              final_reattested     12
+                              final_denied          6
+                              duplicate             3
+                              final_withdrawn       2
+                              disposed_withdraw     1
+                              blocked               1
+                              TOTAL: 2,406 claims
+
+Conformance: 0 invalid (phase, disposition) pairs.  
+Migrations recorded: 0034_invoice_phase_and_disposition.sql, 0035_heal_legacy_classifying_dispositions.sql.  
+Trigger: claims_disposition_phase_chk present on claims.
+```
+
+**Read this as the ground truth** when planning Wave C reader behavior. Note that `phase_entered_at` for every group is the migration timestamp — Wave C readers MUST NOT surface this as "time entered phase" in the UI yet, because it's a lie until Wave D maintains it correctly. Either don't read it, or label it as "phase tracked since" with a per-row asterisk.
+
+### 2.6 Catalogue + memory + recent commits
+
+- `docs/architecture/state-wave-0.5-catalogue.md` §8 has full delivery notes for A-PR1/PR2/PR3, B-PR1, **B-PR2** (the heal — read this entry in full).
+- `replit.md` "State model" section has a Wave A bullet, a Wave B bullet, and a Wave B+ heal bullet.
+- Recent commits (most-recent first):
+  - `70c9cad` Published your App (Wave B+heal publish #2)
+  - `190a80b` Fix error in how claims are categorized after submission (B-PR2 + heal migration + 6 new tests + replit.md + catalogue update)
+  - `5b459db` Published your App (Wave B publish #1)
+  - `ba2b371` Add usability and design evaluation frameworks to project assets (canvas content, unrelated)
+  - `5a1a6497` Add new system for tracking invoice and claim states (B-PR1 — migration 0034 + Drizzle snapshot 0031 + parity test + conformance script + SSE additions + replit.md + catalogue)
+  - `2fd2286` Add new vocabulary for invoice phases and claim dispositions (Wave A — A-PR2 + A-PR3 + observability registry)
+- The Wave C work goes onto the same `main` branch (this is the main agent's branch — there is no separate task agent for this work unless you decide to delegate).
+
+---
+
+## 3. Wave C — what to build this session
+
+Per spec §7-Wave-C and execution-plan §6: **every read path switches to `phase`/`disposition`**. Old columns stay populated (writers untouched). The bidirectional cache (`denormalized-cache.ts`) still runs in the background but nothing reads from its outputs. **One PR, code-only, no schema change, fully reversible by `git revert`.**
+
+The cleanest commit topology is one commit per file (or per closely-related file group) — that gives you a clean bisect surface and lets you ship partial Wave C if you run out of session time. The reader inventory below is grouped by commit unit.
+
+### 3.1 OpenAPI spec changes (do this first)
+
+`lib/api-spec/openapi.yaml`:
+- Add `phase: { type: string, enum: [...7 values...] }` to `InvoiceGroupResponse`.
+- Add `disposition: { type: string, enum: [...22 values...] }` to `ClaimResponse`.
+- Mark `status`, `outcome`, `macroPhase` as `deprecated: true` on both responses (kept for backward shape — Wave E removes them).
+
+Then regen the clients:
+```sh
+pnpm --filter @workspace/api-spec run codegen
+```
+
+This regenerates `lib/api-zod` (Zod schemas + types) and `lib/api-client-react` (React Query hooks + Orval client). **Commit the regenerated `lib/api-zod/src/generated/*` and `lib/api-client-react/src/generated/*` together with the openapi.yaml edit.** The schema-drift check does NOT cover OpenAPI codegen — there is no automated drift guard for that, so manual codegen + commit is the contract.
+
+### 3.2 Server: switch read paths (one commit per file)
+
+In order (bisect-friendly: each file independently typechecks and runs):
+
+1. `artifacts/api-server/src/routes/dashboard.ts` (1,499 lines — KPI queries; uses `GROUP_EXPIRING_ACTIONABLE_STATUSES` and `GROUP_SUBMITTED_STUCK_STATUSES`). Replace status-based aggregates with `phase`-based ones; replace `getMacroPhase(g.status)` with direct `phase` reads.
+2. `artifacts/api-server/src/routes/response-tracker.ts` — **fix the 2 missed terminal predicates here** (per execution plan §6.C.2 — search the file for terminal-state checks that miss `Withdrawn`/`Non-Issue`).
+3. `artifacts/api-server/src/routes/responses.ts`
+4. `artifacts/api-server/src/routes/daily-brief.ts`
+5. `artifacts/api-server/src/routes/search.ts`
+6. `artifacts/api-server/src/routes/batch-jobs.ts`
+7. `artifacts/api-server/src/routes/system-health.ts`
+8. `artifacts/api-server/src/routes/invoice-groups.ts` (3,857 lines — **GET handlers only**; write handlers stay status-based until Wave D)
+9. `artifacts/api-server/src/routes/claims.ts` (3,016 lines — **GET handlers only**)
+10. `artifacts/api-server/src/lib/expiring-filter.ts` (135 lines — `ExpiringMode = "soon" | "urgent" | "stuck"`; replace `GROUP_EXPIRING_ACTIONABLE_STATUSES`/`GROUP_SUBMITTED_STUCK_STATUSES` predicates with phase-based equivalents)
+11. `artifacts/api-server/src/lib/group-packaging.ts` — `computeGroupReadiness`; reads claim states to decide if the group can advance from `triage` → `ready_to_submit`.
+12. `artifacts/api-server/src/lib/group-readiness.ts`
+13. `artifacts/api-server/src/lib/system-health-rollup.ts`
+14. `artifacts/api-server/src/lib/urgent-snapshot.ts` (118 lines — must read `disposition` for "what's urgent right now" rollup)
+15. `artifacts/api-server/src/lib/day-complete.ts`
+16. `artifacts/api-server/src/lib/email-thread.ts`
+17. `artifacts/api-server/src/lib/stuck-submissions.ts` (read paths only; cron writer paths stay status-based)
+18. `artifacts/api-server/src/lib/macro-phase.ts` — **does NOT get deleted yet** (Wave D deletes it). Convert it to a temporary passthrough that maps `phase` → the legacy `MacroPhase` union for any caller that hasn't yet been switched. Add a `@deprecated` JSDoc tag pointing to `INVOICE_PHASES`. The execution plan calls this pattern out explicitly.
+
+**Pattern for the read switch.** Today's code does:
+```ts
+if (group.status === "Awaiting Response") { ... }
+if (claim.outcome === "Approved" && claim.attestationState === "completed") { ... }
+```
+
+After Wave C:
+```ts
+if (group.phase === "submitted") { ... }
+if (claim.disposition === "attested") { ... }  // or "final_reattested" depending on parent phase
+```
+
+**Where multiple legacy values map to one phase**, you can drop the disjunction:
+```ts
+// before
+status === "New" || status === "Needs Evidence" || status === "Needs Review"
+// after
+phase === "triage"
+```
+
+**Do not derive phase from status in Wave C.** The whole point is to read the column. If you find a call site that wants phase but only has status, fix the SELECT to also pull `phase`, don't add `derivePhaseFromLegacy(group)` calls. The derivers are migration tooling, not runtime.
+
+### 3.3 Frontend: switch read paths (one commit per file or group)
+
+Per execution plan §6.C.3:
+
+1. `artifacts/claimclear/src/lib/lifecycle-phase.ts` (225 lines) — temporarily wraps `phase` (becomes a passthrough that maps `InvoicePhase` → the existing `LifecyclePhase` union for legacy callers). **Deleted in Wave D.** This is the same passthrough pattern as `macro-phase.ts` on the server.
+
+2. `artifacts/claimclear/src/components/cohesion/tone.ts`:
+   - Add `toneForPhase(phase: InvoicePhase): Tone`
+   - Add `toneForDisposition(d: ClaimDisposition): Tone`
+   - Keep `toneForStatus()` as a `@deprecated` passthrough that maps status → phase first via `lifecycle-phase.ts`
+
+3. `artifacts/claimclear/src/lib/whats-next-derivation.ts` — read disposition.
+4. `artifacts/claimclear/src/lib/sop-terminal-routing.ts` — disposition-aware.
+5. `artifacts/claimclear/src/lib/sop-transcript.ts`
+6. `artifacts/claimclear/src/lib/prompt-context-counters.ts`
+7. `artifacts/claimclear/src/lib/sop-sibling-eligibility.ts`
+
+8. **All 13 components/pages from catalogue §1.5** — the inventory in `state-wave-0.5-catalogue.md` lists them; the search results below are the current set:
+   - `artifacts/claimclear/src/pages/dashboard.tsx`
+   - `artifacts/claimclear/src/pages/queue.tsx`
+   - `artifacts/claimclear/src/pages/responses-awaiting-review.tsx`
+   - `artifacts/claimclear/src/components/leg-sub-status-pill.tsx`
+   - `artifacts/claimclear/src/components/queue-needs-review-panel.tsx`
+   - `artifacts/claimclear/src/components/classify-dialog.tsx`
+   - `artifacts/claimclear/src/components/claim-detail-v2.tsx`
+   - `artifacts/claimclear/src/components/invoice-group-detail-v2.tsx`
+   - …plus any other component/page that imports from `lifecycle-phase.ts` or matches `rg "macroPhase|getMacroPhase|LifecyclePhase|getLifecyclePhase|isPreSubmit|isInFlight|isResponsePending|isClosed|isOnHold" artifacts/claimclear/src/{components,pages}/` — re-run that ripgrep before you start; the catalogue list may be stale.
+
+9. **`lib/leg-state/src/per-leg-sub-status.ts`** (`deriveLegSubStatus`) is the canonical leg sub-status deriver. It currently reads `(status, sopOutcome, attestationState, includedInDispute, dropReason, …)` from the leg. Wave C should add a `disposition` field to its `LegForSubStatus` input type and use it as the primary signal, falling back to legacy fields for legs that haven't been backfilled (none in prod, but the type system shouldn't require all callers to upgrade in lockstep). **Do not delete the legacy field reads** — Wave D does that.
+
+### 3.4 Training guide rewrite (mandatory in same publish)
+
+Per execution plan §6.C.4 and §1.9:
+
+**This is end-user training material.** It teaches operators the current vocabulary. If you ship Wave C with new phase names but training still teaches "Awaiting Response" → operator confusion → bug reports.
+
+`artifacts/training-guide/` (slides artifact, kind: `slides`):
+1. `StatusLifecycle.tsx` — rewrite slide. New content: "An invoice is in one of 7 phases. Here's what each means and what action it expects from you." Phase cards with friendly names from `INVOICE_PHASES` glossary, entry conditions (e.g. "triage: anything you can still classify or set aside"), what the operator does. Disposition mini-cards showing the per-phase claim states from `VALID_DISPOSITIONS_BY_PHASE`.
+2. `ReviewQueue.tsx`, `InvoiceGroupDetail.tsx`, etc. — replace status references with phase references where they correspond. Keep status references in slides specifically about the legacy import (operators still see status pills until Wave E).
+3. `slides-manifest.json`: any slide title containing status terminology gets updated.
+
+Use the slides skill (`.local/skills/slides/SKILL.md`) to understand the slide artifact contract.
+
+### 3.5 Tests
+
+Per execution plan §6.C.5:
+
+1. Tests that fixture invoices/claims (the `makeGroup`/`makeClaim` pattern in `prompt-leg-inputs.test.ts` is the canonical reference — see §2.4 #4 above) automatically get phase/disposition. New tests in Wave C should construct fixtures with `phase`/`disposition` set explicitly, not derive them.
+2. Tests that read response payload `.status`/`.outcome` add equivalent assertion on `.phase`/`.disposition`. Don't remove the status assertions — they're still valid until Wave E.
+3. **Audit A5:** count of test files asserting `.phase` ≥ count asserting `.status` after Wave C lands.
+
+### 3.6 Files NOT to touch in Wave C (defer to D/E)
+
+- `artifacts/api-server/src/lib/denormalized-cache.ts` — still runs. Wave D deletes it.
+- All write-side route handlers (POST/PATCH/DELETE on invoice-groups, claims). Still status-based. Wave D rewires them.
+- `artifacts/api-server/src/lib/transitionInvoice.ts` / `setClaimDisposition.ts` — these don't exist yet. Wave D creates them.
+- The legacy vocab files (`claim-status.ts`, `outcome.ts`, `leg-sub-status.ts`, etc. in `lib/vocab/src/`). Dead code in Wave E, kept verbatim through D.
+- Any cron / batch / bot file under `artifacts/api-server/src/bot/` or `artifacts/api-server/src/lib/cron-*` — these are writers. Wave D.
+- `lib/db/src/schema/*` — no schema change in Wave C.
+
+---
+
+## 4. Anti-slop audits to run during Wave C (per catalogue + execution plan)
+
+Run these as you go, not just at the end:
+
+**A1 (parity)** — `pnpm exec tsx --test scripts/src/__tests__/enum-parity.test.ts` should still be 4/4. If you add a phase or disposition value (you shouldn't in Wave C), four files move together: PG enum in migration, PG enum in `lib/db/src/schema/{invoice-groups,claims}.ts`, TS literal in `lib/vocab/src/{invoice-phase,claim-disposition}.ts`, glossary entry. Plus the `VALID_DISPOSITIONS_BY_PHASE` table if a disposition.
+
+**A2 (deprecation grep)** — these `rg` queries should hit the targets shown:
+- `rg "macroPhase|getMacroPhase" artifacts/api-server/src/routes/ artifacts/api-server/src/lib/` — should return ONLY references to the deprecated passthrough `macro-phase.ts` (no new call sites).
+- `rg "macroPhase|getMacroPhase" artifacts/claimclear/src/` — should return zero (claimclear no longer derives macro phase client-side).
+- `rg "lifecyclePhase|LifecyclePhase|getLifecyclePhase" artifacts/claimclear/src/components/ artifacts/claimclear/src/pages/` — should return zero (only the temporary passthrough file in `src/lib/` remains).
+- `rg "toneForStatus" artifacts/claimclear/src/` — should return ONLY the deprecated function definition (no callers).
+
+**A3 (conformance)** — `pnpm --filter @workspace/scripts exec tsx src/check-invoice-state-derivation.ts` against dev (always) and via `executeSql` against prod (after publish). Must stay at 0 violations.
+
+**A4 (SSE contract)** — payload unchanged in Wave C (the additive `disposition?` / `phase?` fields are still optional). The `__tests__/sse-event-contract.test.ts` (if it exists; check) should still pass. If you start populating the optional fields in Wave C SSE emit sites (recommended), assert they're present in the test.
+
+**A5 (test count)** — `rg -l "\.phase" artifacts/api-server/src/__tests__/ artifacts/claimclear/src/__tests__/ | wc -l` ≥ `rg -l "\.status" artifacts/api-server/src/__tests__/ artifacts/claimclear/src/__tests__/ | wc -l`.
+
+**A6 (manual smoke runbook — 12 steps, mandatory before publish)** — execute against running claimclear + training-guide in dev:
+1. Open dashboard → KPI tiles render with correct phase counts.
+2. Open invoice queue → invoices display correct phase pill with correct tone color.
+3. Open invoice detail page for triage invoice → "Triage" phase shown, claims display dispositions.
+4. Open invoice detail for closed invoice → "Closed" phase, closure_reason displayed.
+5. Open responses-awaiting-review → list filters by `phase=response_received`.
+6. Open insights → KPIs come from phase rollups.
+7. Open training-guide → StatusLifecycle slide shows new vocabulary.
+8. Open training-guide → ReviewQueue slide screenshots match running app.
+9. SSE: open invoice detail in two tabs, edit one, confirm other updates (proves SSE payload still has the fields the client reads).
+10. Micro-interaction: trigger a disposition → save breath fires.
+11. Micro-interaction: complete decision tree → checkmark fires.
+12. Micro-interaction: invoice clears → card-fade fires.
+
+Per execution plan §1.6: also component-preview each at-risk celebration (`day-complete confetti`, `decision-tree checkmark`, `group-cleared card fade`) in mockup-sandbox.
+
+**A7 (training drift)** — manual: confirm slide vocabulary matches `INVOICE_PHASES.glossary` exactly. No "Awaiting Response" copy in slides outside the legacy-import slide.
+
+---
+
+## 5. Validation gauntlet (must all be green before publish)
+
+```sh
+# Type safety
+pnpm -r typecheck                                                   # all 19 projects green
+
+# Schema drift (no schema change expected; should remain green)
+pnpm --filter @workspace/db run check-drift
+
+# Unit + integration tests
+pnpm --filter @workspace/invoice-state test                         # 45/45
+pnpm --filter @workspace/vocab test                                 # 41+/41+
+pnpm --filter @workspace/observability test                         # 11/11
+pnpm exec tsx --test scripts/src/__tests__/enum-parity.test.ts      # 4/4
+pnpm --filter @workspace/api-server test                            # everything green
+pnpm --filter @workspace/claimclear test                            # everything green (if it has node:test files)
+
+# Conformance (lockstep invariant 3)
+pnpm --filter @workspace/scripts exec tsx src/check-invoice-state-derivation.ts
+
+# Build (catches sometimes-missed import errors that typecheck misses)
+pnpm -r build                                                       # at minimum: api-server, claimclear, training-guide
+
+# OpenAPI codegen (only if you touched openapi.yaml)
+pnpm --filter @workspace/api-spec run codegen                       # then commit lib/api-zod + lib/api-client-react
+```
+
+Plus the A2 ripgrep audits above.
+
+---
+
+## 6. Publish strategy + safety
+
+Per execution plan §6 publish-gate:
+- **One publish** for Wave C. Combined with Wave D? **No** — keep separate. Wave C is reversible (`git revert` makes it whole; legacy columns still populated). Wave D is the topology change. Want C in prod for ≥24h before D ships, so we can confirm:
+  - All UI elements render correctly with phase data.
+  - Training guide changes are well-received.
+  - No surprise consumer of old fields surfaces in error logs.
+
+**The `.replit` deploy hook applies migrations via `lib/db/scripts/apply-migrations.mjs` in the `[deployment.build]` pre-build step.** Wave C ships no migration, so this is a no-op for C.
+
+**Known publish-time gotcha (from Wave B publish #1).** Replit's deploy-time schema validator runs an introspect-and-diff check that's separate from the project's own `apply-migrations.mjs`. On Wave B's first publish attempt it returned `Branch with ID … not found` (an infrastructure error, not a real schema conflict) and surfaced a "Migrations failed validation" gate with two options:
+- "Copy your development database schema & data to production" — **NEVER pick this**. It would replace prod's 1,310 groups / 2,406 claims with dev's 9 / 4.
+- "Cancel deployment" — pick this and retry. The infra error usually clears.
+
+If retry fails twice with the same `Branch not found`, that's a Replit platform issue → contact Replit support, don't try to work around it by hand-pushing schema.
+
+**Post-publish verification.** Use `executeSql` with `environment: "production"` to:
+1. Confirm the 0034/0035 migrations are still recorded (Wave C doesn't add migrations, but checking is cheap).
+2. Re-run the conformance audit query (the SQL is in §2.5 above and in `scripts/src/check-invoice-state-derivation.ts`). Must still return 0 invalid pairs.
+3. Sample a few rows: `SELECT id, phase, status FROM invoice_groups ORDER BY updated_at DESC LIMIT 10;` — phases should still match the legacy status mapping (writers haven't been switched yet, so the legacy column drives both, and Wave B's backfill was correct after the heal).
+
+---
+
+## 7. Open questions + sharp edges (the undocumented gotchas)
+
+1. **`phase_entered_at` is a lie.** Every prod row currently carries the migration-time timestamp because the original B-PR1 migration left it at `DEFAULT NOW()` (the `phase_entered_at` follow-up decision in B handoff §B.3 explicitly deferred audit-log resolution to Wave D). Wave C MUST NOT surface this column as "time entered phase" without an asterisk. Suggested treatment: if you need it, label as "Phase tracked since (migration baseline)" with a note. Better: just don't read it in Wave C; Wave D will repopulate it correctly.
+
+2. **`claim.status` as a portal-vs-email signal in B-PR2's deriver fix.** The deriver now reads `claim.status` to disambiguate Portal-Queued from email-path submits. This is pragmatic but adds a soft dependency on the legacy `status` column INSIDE the `lib/invoice-state` package. Wave C readers should NOT replicate this pattern — read `disposition` from the column. The reason this is acceptable inside the deriver is that the deriver is migration tooling (used by B-PR1's backfill SQL and by Wave D's re-backfill at writer-swap time), not runtime read code. Wave D can replace the `claim.status` lookup with a proper claim-level submission-method column if needed.
+
+3. **`makeGroup`/`makeClaim` test fixture pattern.** Any test fixture that constructs an `InvoiceGroup` or `Claim` `$inferSelect` shape now MUST set `phase`+`phaseEnteredAt` (group) and `disposition` (claim). The reference implementation is `artifacts/api-server/src/__tests__/prompt-leg-inputs.test.ts` after the §2.4 #4 fix. There is currently no `__tests__/fixtures/state.ts` shared helper — execution plan §6.C.5 mentions one, but it doesn't exist yet. **Wave C should create `artifacts/api-server/src/__tests__/fixtures/state.ts`** with `makeGroup({phase, ...})` / `makeClaim({disposition, ...})` builders so future fixture creation goes through one place. Today the pattern is duplicated.
+
+4. **Mockup-sandbox typecheck masking.** Pnpm's parallel `-r` runner stops on the first error per project, so a single failure in one project can mask real failures in another. **Run `pnpm -r typecheck` AFTER each significant change**, not just at the end — and read the output for "Done" lines on every project, not just the last error. The mockup-sandbox `"portal"` failure had been masking the api-server `EmptyGroupError` failure for ≥1 week before the Wave B work surfaced it.
+
+5. **The `GROUP_EXPIRING_ACTIONABLE_STATUSES` / `GROUP_SUBMITTED_STUCK_STATUSES` exports** in `routes/dashboard.ts` are imported by `lib/expiring-filter.ts`, `routes/invoice-groups.ts`, and `routes/claims.ts`. These two sets are the formal definition of the "two on-clock tiers" from `replit.md` (Task #352). When you switch reads to phase, **both sets become derivable from phase alone**:
+   - `GROUP_EXPIRING_ACTIONABLE_STATUSES` ≈ `phase ∈ {triage, ready_to_submit}` (the pre-submit urgent tier)
+   - `GROUP_SUBMITTED_STUCK_STATUSES` ≈ `phase = submitted` AND parent status is currently `Portal Queued` (the submitted-but-unconfirmed tier)
+   But the second one needs both — Portal Queued is post-submit at the group level but pre-submit at the claim level (per `replit.md`'s Task #352 entry). **Be careful preserving this asymmetry across the read switch.** The execution plan does not call this out; this is the kind of subtle behavior that A6's manual smoke is the primary defense for.
+
+6. **SSE event payload.** Wave B added optional `disposition?` / `phase?` fields. Wave C should **start populating them in any SSE emit site that already has access to the new columns after the read switch** (specifically `routes/invoice-groups.ts` and `routes/claims.ts` write endpoints — they emit SSE after committing). It's not strictly required for Wave C's "code-only" scope, but it's free if you're already in the file, and it sets up Wave D nicely. If you do, add the assertion to the SSE contract test.
+
+7. **The `validate_disposition_against_phase` trigger fires on UPDATE OF disposition or invoice_group_id.** Wave C readers don't trigger it (no writes). But if you add any new test that exercises the test database (api-server's integration tests), be aware: writing a `disposition` value invalid for the parent's `phase` will throw `disposition X not valid for parent invoice phase Y`. The `__tests__/fixtures/state.ts` helper from #3 should default to consistent (phase, disposition) pairs to avoid surprise trigger throws.
+
+8. **`derive-leg-sub-status.ts` lives in `lib/leg-state/src/per-leg-sub-status.ts`** (not in `claimclear/src/lib/` as the spec / catalogue suggests). The function is `deriveLegSubStatus(leg: LegForSubStatus): LegSubStatus`. Input shape is in the same file. Wave C should add `disposition?` to the input shape and prefer it; the spec lists this as a Wave C deliverable.
+
+9. **`docs/architecture/state-pre-migration-census.md` §C** flagged 2 NULL claim rows pre-Wave-A. Wave A's deriver covered them via the `unclassified` fallthrough. Don't re-investigate unless census drift surfaces something new.
+
+10. **Recreate of `EmptyGroupError`.** The class was added in commit 52210749 then accidentally dropped during Task #485's reshape; only the throw site at the top of `runBatchWorker` survived. I re-added the class in `artifacts/api-server/src/bot/batch-worker.ts:107` with a doc comment explaining the history. If a future refactor moves the throw site, move the class with it.
+
+11. **The mockup-sandbox `"portal"` page in `FullTour.tsx`** has no real Portal page component — `renderPage` defaults to `<Dashboard />`. Adding `"portal"` to the `ActivePage` union and to the three label/sidebar maps was the minimal type fix; if a future task wants a real Portal page mockup, build one and wire it into the renderPage switch.
+
+---
+
+## 8. What Wave C does NOT do (preserving for D/E)
+
+For the avoidance of doubt — these are explicitly out of scope:
+- No writer changes (all `db.update(invoiceGroupsTable).set({status: ...})` sites stay as-is).
+- No `transitionInvoice` / `setClaimDisposition` writer entry points (Wave D creates them).
+- No `denormalized-cache.ts` deletion (Wave D).
+- No `macro-phase.ts` / `lifecycle-phase.ts` deletion (Wave D — they become passthroughs in C).
+- No audit-log rewire to use `SOURCE_TO_ACTION_TABLE` (Wave D).
+- No drop of legacy columns (Wave E).
+- No drop of legacy enums `claim_status` / `claim_outcome` (Wave E).
+- No removal of legacy vocab files (`lib/vocab/src/{claim-status,outcome,leg-sub-status,…}.ts`) (Wave E).
+
+---
+
+## 9. Done definition
+
+- [ ] OpenAPI spec updated; `lib/api-zod` + `lib/api-client-react` regenerated and committed.
+- [ ] Every server file in §3.2 reads `phase`/`disposition` instead of legacy fields.
+- [ ] Every frontend file in §3.3 reads `phase`/`disposition` instead of legacy fields.
+- [ ] `macro-phase.ts` (server) and `lifecycle-phase.ts` (frontend) are passthroughs with `@deprecated` JSDoc.
+- [ ] `lib/leg-state/src/per-leg-sub-status.ts` accepts and prefers `disposition` in `LegForSubStatus`.
+- [ ] Training guide vocabulary updated (StatusLifecycle slide + others).
+- [ ] `__tests__/fixtures/state.ts` shared helper exists; existing fixtures consolidated where reasonable.
+- [ ] All A1-A7 audits green.
+- [ ] All commands in §5's gauntlet green.
+- [ ] Manual smoke runbook (12 steps) executed successfully in dev.
+- [ ] `replit.md` "State model" section gets a Wave C bullet (mirror the Wave B bullet's format).
+- [ ] `docs/architecture/state-wave-0.5-catalogue.md` §8 gets a `### C-PR1 — switch readers to new columns (shipped YYYY-MM-DD)` entry with: what shipped, validation evidence (test counts, audit results), out-of-scope (write paths, cache deletion), what's next (Wave D scope hand-off).
+- [ ] User publishes; you re-run conformance against prod via `executeSql` to confirm 0 violations.
+- [ ] Write the next handoff: `docs/architecture/state-wave-d-handoff-prompt.md`, mirroring this file's format, capturing every Wave C decision and finding for the Wave D agent.
+
+---
+
+## 10. Final note to the next agent
+
+Do not rush. Wave C touches ~50 files and has the highest "subtle behavior change" surface area of any wave. The on-clock tier asymmetry (sharp edge #5 above), the `phase_entered_at` lie (#1), the deriver's `claim.status` dependency (#2), and the `GROUP_SUBMITTED_STUCK_STATUSES` portal-queued asymmetry are exactly the kind of things that will pass typecheck + tests but surface as operator-visible regressions in production. The 12-step manual smoke runbook is the primary defense — do all 12, in order, and don't skip the screenshots-against-training step.
+
+If you find anything that looks like a regression from B-PR2's deriver fix or B-PR1's backfill, **stop and re-run the prod conformance audit before writing any code**. The deriver and backfill have both been audited end-to-end against prod data once; any "weird" reading is likely a Wave C reader bug, not a Wave B residue.
+
+Good luck. Ship it correctly, not fast.

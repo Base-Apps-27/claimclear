@@ -5,7 +5,6 @@ import {
   runBatchWorker,
   __setChromiumForTests,
   type GroupPortalSubmission,
-  type PortalSubmission,
 } from "../bot/batch-worker";
 
 /**
