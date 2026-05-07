@@ -118,6 +118,14 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 export async function getNeedsYouToday(userEmail: string, now: Date): Promise<NeedsYouToday> {
   const since = new Date(now.getTime() - FOURTEEN_DAYS_MS);
+  // Wave C residual (§3.B): kept on legacy `claims.status` because there is
+  // no clean `disposition` equivalent for this 8-status set. The set excludes
+  // `MAS Eligible` (which lives in `awaiting_reattestation` phase with
+  // dispositions `attest_*` — all NOT in the `final_*` closed set), so
+  // `disposition NOT IN (final_*)` would over-include those legs and start
+  // surfacing in-attestation work in the operator's "recently touched open"
+  // section. Same residual class as `routes/daily-brief.ts` open-claim
+  // filter; switch in Wave D once a per-claim closed/open mirror lands.
   const openFilter = or(...OPEN_STATUSES.map((s) => eq(claimsTable.status, s)));
 
   // Recently touched claims (open) — distinct claim ids the user touched in last 14 days
@@ -221,7 +229,15 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
     }
   }
 
-  // Needs Review claims (shared worklist)
+  // Needs Review claims (shared worklist). Wave C: prefer canonical
+  // `claims.disposition === 'awaiting_review'` and fall back to legacy
+  // `status === 'Needs Review'` for rows still on the `unclassified`
+  // disposition default. Per `lib/invoice-state/derive-disposition.ts`,
+  // `awaiting_review` is only emitted by `responseDisposition()` (parent
+  // phase = `response_received`, no verdict yet) — the same condition the
+  // legacy "Needs Review" status mirrors — so the two predicates are
+  // semantically equivalent. The legacy fallback covers the migration window
+  // where some response_received legs have not yet been re-derived.
   const reviewRows = await db
     .select({
       id: claimsTable.id,
@@ -229,7 +245,15 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
       status: claimsTable.status,
     })
     .from(claimsTable)
-    .where(eq(claimsTable.status, "Needs Review"))
+    .where(
+      or(
+        eq(claimsTable.disposition, "awaiting_review"),
+        and(
+          eq(claimsTable.disposition, "unclassified"),
+          eq(claimsTable.status, "Needs Review"),
+        ),
+      ),
+    )
     .orderBy(desc(claimsTable.updatedAt))
     .limit(10);
   const needsReview: NeedsYouItem[] = reviewRows.map((r) => ({
