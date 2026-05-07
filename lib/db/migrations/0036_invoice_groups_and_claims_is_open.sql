@@ -37,8 +37,14 @@
 
 BEGIN;
 
+-- All ADD COLUMN / CREATE INDEX statements use IF NOT EXISTS so the
+-- migration is idempotent. The dev DB had this column applied manually
+-- during D-PR1 development before the migration runner saw the file;
+-- IF NOT EXISTS makes that re-apply a no-op without compromising the
+-- behaviour on a fresh database.
+
 ALTER TABLE invoice_groups
-  ADD COLUMN is_open boolean
+  ADD COLUMN IF NOT EXISTS is_open boolean
     GENERATED ALWAYS AS (
       status IN (
         'New',
@@ -53,7 +59,7 @@ ALTER TABLE invoice_groups
     ) STORED;
 
 ALTER TABLE claims
-  ADD COLUMN is_open boolean
+  ADD COLUMN IF NOT EXISTS is_open boolean
     GENERATED ALWAYS AS (
       status IN (
         'New',
@@ -70,18 +76,18 @@ ALTER TABLE claims
 -- Partial indexes covering the hot read pattern (`WHERE is_open = true`).
 -- Most queries scoped to "currently in-flight" work, so a partial index
 -- is materially smaller than a full-column one.
-CREATE INDEX invoice_groups_is_open_idx
+CREATE INDEX IF NOT EXISTS invoice_groups_is_open_idx
   ON invoice_groups (id)
   WHERE is_open = true;
 
-CREATE INDEX claims_is_open_idx
+CREATE INDEX IF NOT EXISTS claims_is_open_idx
   ON claims (id)
   WHERE is_open = true;
 
 -- Compound partial indexes that match the most common filter+order
 -- pairings on the dashboard / daily-brief surfaces. Cheap (only open
 -- rows are indexed) and avoids planner regressions on D-PR3.
-CREATE INDEX claims_is_open_invoice_group_idx
+CREATE INDEX IF NOT EXISTS claims_is_open_invoice_group_idx
   ON claims (invoice_group_id)
   WHERE is_open = true;
 
