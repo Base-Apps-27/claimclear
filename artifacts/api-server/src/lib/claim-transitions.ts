@@ -5,6 +5,7 @@ import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastClaimEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { computeAttestationDelta, type AttestationGroupContext } from "./attestation";
+import { setClaimDisposition } from "./leg-state/set-claim-disposition";
 
 // A "DB executor" is anything with the same select/update/insert surface as
 // the top-level `db` handle. The drizzle transaction object passed to
@@ -549,36 +550,39 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
   const { claimId, reason, note, source, actor, leg, ex, backfillId } = params;
   const executor = ex ?? db;
 
-  // When the exclusion reason is "non_issue", also stamp
-  // `sop_outcome = 'non_issue'` on the same row update. The invoice-level
-  // outlook (Task #476, `deriveInvoiceDisputeOutlook`) treats a leg as a
-  // re-attest survivor only when `sopOutcome === 'non_issue'`; without
-  // this co-write, audit-reason and sop_outcome diverge and the outlook
-  // gate misses the leg, falling through to the amber "Mark as closed"
-  // CTA. The 2026-05-06 backfill healed 680 historical rows produced by
-  // callers that bypassed sop_outcome (the 2026-05-01 retro and the
-  // 2026-05-04 stranded-unclassified cleanup); this guard prevents the
-  // class of bug from re-emerging through any future caller of the
-  // helper. Conservative: only write sop_outcome when it's currently
-  // null, so we never clobber an SOP-walk verdict that already landed
-  // before exclusion.
+  // Wave D-PR2b: route through `setClaimDisposition` so the canonical
+  // `disposition` column is stamped alongside the legacy mirrors in
+  // one UPDATE. Disposition for an excluded leg is `disposed_nonissue`
+  // regardless of reason — the deriver's triage branch returns it for
+  // any `included_in_dispute = false` row whose `sop_outcome` is
+  // currently null, and `excludeLegCore` is only ever called from the
+  // `needs_classification` sub-status (manual exclude route + auto
+  // exclusion after classification cascade), both of which run in
+  // pre-submit / triage phases. See `derive-disposition.ts` line 78.
+  //
+  // Mirror policy:
+  //   • `reason === "non_issue"` → `mirror: "derived"` so the writer
+  //     co-writes `sop_outcome = 'non_issue'` (Task #476 contract).
+  //     The writer's null-guard prevents clobbering an SOP-walk
+  //     verdict that landed before exclusion.
+  //   • Other reasons (e.g. `cannot_dispute`) → `mirror: "skip"` so
+  //     `sop_outcome` stays null, matching the legacy code path's
+  //     intentional non-co-write — `cannot_dispute` exclusion is an
+  //     audit-reason signal, NOT an SOP verdict, and stamping
+  //     `sop_outcome = 'non_issue'` here would falsely mark the leg
+  //     as a re-attest survivor in `deriveInvoiceDisputeOutlook`.
+  //
+  // `onlyWhenIncluded` mirrors the previous predicate
+  // (`included_in_dispute = true`) so a double-exclude is a no-op
+  // and the existing row is returned unchanged.
   const setNonIssueSopOutcome = reason === "non_issue" && leg.sopOutcome == null;
-  const updateSet: { includedInDispute: false; sopOutcome?: "non_issue" } = {
+  const claim = (await setClaimDisposition(claimId, "disposed_nonissue", {
+    isTerminal: false,
+    mirror: reason === "non_issue" ? "derived" : "skip",
     includedInDispute: false,
-  };
-  if (setNonIssueSopOutcome) updateSet.sopOutcome = "non_issue";
-
-  const [updated] = await executor
-    .update(claimsTable)
-    .set(updateSet)
-    .where(and(eq(claimsTable.id, claimId), eq(claimsTable.includedInDispute, true)))
-    .returning();
-
-  // If `updated` is undefined the row was already excluded (or vanished).
-  // Treat the no-op as success so callers in bulk paths don't have to
-  // special-case it; we still return the leg row so the caller has
-  // something coherent to work with.
-  const claim = updated ?? leg;
+    onlyWhenIncluded: true,
+    ex: executor,
+  })) ?? leg;
 
   const metadata: Record<string, unknown> = {
     reason,

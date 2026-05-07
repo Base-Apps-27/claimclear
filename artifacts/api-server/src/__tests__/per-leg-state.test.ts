@@ -1701,7 +1701,13 @@ test("POST /claims/:id/reclassify preserves claim_verdict rows (append-only inva
 
 test("Needs Review → Needs Evidence via group classify auto-excludes blank-description sibling claims", async () => {
   const errType = await createSeedErrorType();
-  const group = await createSeedGroup({ status: "Needs Review" });
+  // The Needs Review → Needs Evidence auto_after_classify path is a
+  // triage-phase transition (per `derivePhaseFromLegacy`); override
+  // the default fixture mapping (which treats Needs Review as
+  // response_received for the response-pending tests) so the deferred
+  // disposition phase trigger sees the correct parent phase when
+  // excludeLegCore stamps disposition='disposed_nonissue'.
+  const group = await createSeedGroup({ status: "Needs Review", phase: "triage" });
   // Qualifying claim — has errorDetails. The classify endpoint will set
   // the group's errorTypeId, which fires auto_after_classify and the
   // sibling-clear hook.
@@ -1760,7 +1766,8 @@ test("Needs Review → Needs Evidence via group classify auto-excludes blank-des
 
 test("Needs Review → Needs Evidence is a no-op for the sibling-clear hook when every leg is blank", async () => {
   const errType = await createSeedErrorType();
-  const group = await createSeedGroup({ status: "Needs Review" });
+  // See sibling test above re: Needs Review → Needs Evidence triage override.
+  const group = await createSeedGroup({ status: "Needs Review", phase: "triage" });
   const a = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
   const b = await createSeedClaim({ invoiceGroupId: group.id, errorTypeId: null });
   await db.update(claimsTable).set({ errorDetails: null }).where(inArray(claimsTable.id, [a.id, b.id]));

@@ -21,6 +21,7 @@ import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
+import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
@@ -1869,20 +1870,28 @@ router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<vo
     // the leg's last-visited node pointer (terminal or mid-walk).
     nextNodeId = nodeId;
     updateData.sopNodeId = nextNodeId;
-    updateData.sopOutcome = nextSopOutcome;
-    if (SOP_DROP_REASONS.has(nextSopOutcome)) {
-      updateData.dropReason = nextSopOutcome;
-      updateData.droppedAt = new Date();
-    } else if (SOP_READY_REASONS.has(nextSopOutcome)) {
-      updateData.readyAt = new Date();
-    }
   }
 
-  let [updated] = await db
-    .update(claimsTable)
-    .set(updateData)
-    .where(eq(claimsTable.id, id))
-    .returning();
+  // Wave D-PR2b: terminal SOP outcomes flow through `setClaimDisposition`
+  // so the canonical `claims.disposition` column is stamped alongside
+  // the legacy mirrors (sop_outcome, drop_reason, dropped_at, ready_at)
+  // in one UPDATE. Mid-walk advances bypass the writer (no terminal
+  // disposition to stamp) and just save sopAnswers/sopNodeId; the
+  // downstream `refreshClaimDenormalizedCache` recomputes their
+  // `classifying` disposition from `errorTypeId != null`.
+  let updated: typeof claimsTable.$inferSelect | null;
+  if (isTerminal && nextSopOutcome) {
+    updated = await setClaimDisposition(id, sopOutcomeToDisposition(nextSopOutcome), {
+      isTerminal: true,
+      extraFields: updateData,
+    });
+  } else {
+    [updated] = await db
+      .update(claimsTable)
+      .set(updateData)
+      .where(eq(claimsTable.id, id))
+      .returning();
+  }
 
   // Contract: every sop-advance writes a `leg_sop_advanced` audit row
   // regardless of whether the step was a terminal or mid-walk one. The
@@ -1981,16 +1990,16 @@ router.post("/claims/:id/conclude-leg", asyncHandler(async (req, res): Promise<v
     return;
   }
 
+  // Wave D-PR2b: stamp canonical disposition alongside legacy mirrors
+  // (sop_outcome + drop_reason + dropped_at) in one UPDATE. Conclude-leg
+  // is always terminal — the operator is short-circuiting the SOP walk
+  // to a terminal outcome — so `isTerminal: true` lets the writer stamp
+  // drop_reason from the inverted mirror.
   const now = new Date();
-  let [updated] = await db
-    .update(claimsTable)
-    .set({
-      sopOutcome: reason,
-      dropReason: reason,
-      droppedAt: now,
-    })
-    .where(eq(claimsTable.id, id))
-    .returning();
+  let updated = await setClaimDisposition(id, sopOutcomeToDisposition(reason), {
+    isTerminal: true,
+    droppedAt: now,
+  });
 
   await createAuditLog(
     id,

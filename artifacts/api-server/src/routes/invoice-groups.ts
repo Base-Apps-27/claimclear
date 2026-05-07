@@ -10,6 +10,7 @@ import { refreshGroupDerivedFields, refreshClaimDenormalizedCache } from "../lib
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
+import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
 import { blockMutationOnTourSampleGroup } from "../lib/tour-sample";
@@ -3267,19 +3268,29 @@ router.post("/invoice-groups/:id/sop-advance", requireAuth, denyClerk, asyncHand
           throw new Error(`Terminal node has unknown outcomeType: ${option.outcomeType}`);
         }
         updateData.sopNodeId = nodeId;
-        updateData.sopOutcome = nextSopOutcome;
-        if (SOP_BULK_DROP_REASONS.has(nextSopOutcome)) {
-          updateData.dropReason = nextSopOutcome;
-          updateData.droppedAt = new Date();
-        } else if (SOP_BULK_READY_REASONS.has(nextSopOutcome)) {
-          updateData.readyAt = new Date();
-        }
       }
 
-      const [updated] = await tx.update(claimsTable)
-        .set(updateData)
-        .where(eq(claimsTable.id, leg.id))
-        .returning();
+      // Wave D-PR2b: terminal-outcome legs flow through
+      // `setClaimDisposition` (passing `tx` as the executor so the
+      // disposition stamp + legacy mirror UPDATE participates in the
+      // bulk loop's outer transaction). Mid-walk legs keep the inline
+      // `sopAnswers/sopNodeId` UPDATE — no disposition change yet.
+      let updated: typeof claimsTable.$inferSelect;
+      if (isTerminal && nextSopOutcome) {
+        const result = await setClaimDisposition(
+          leg.id,
+          sopOutcomeToDisposition(nextSopOutcome),
+          { isTerminal: true, extraFields: updateData, ex: tx },
+        );
+        if (!result) throw new Error(`Leg ${leg.id} disappeared mid-bulk-advance`);
+        updated = result;
+      } else {
+        const [u] = await tx.update(claimsTable)
+          .set(updateData)
+          .where(eq(claimsTable.id, leg.id))
+          .returning();
+        updated = u;
+      }
       updatedRows.push(updated);
       await tx.insert(auditLogsTable).values({
         claimId: leg.id,

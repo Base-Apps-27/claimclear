@@ -34,6 +34,15 @@ export const STATUS_TO_PHASE: Record<string, InvoicePhase> = {
   "Generating Email": "submitted",
   "Awaiting Response": "submitted",
   "Ready to Review": "response_received",
+  // "Needs Review" is overloaded: `derivePhaseFromLegacy`
+  // (lib/db/migrations/0034_invoice_phase_and_disposition.sql) maps it
+  // to `triage` (where the Needs Review → Needs Evidence
+  // auto-promotion lives), while macro-phase / response-matcher
+  // / denormalized-cache treat it as `response_received` (the human
+  // post-response review lane). Default the fixture to the
+  // post-response interpretation — most call sites here are response-
+  // pending tests. Triage-phase tests (e.g. the auto_after_classify
+  // sibling-clear path) override `phase: "triage"` explicitly.
   "Needs Review": "response_received",
   "MAS Eligible": "awaiting_reattestation",
   "Resolved": "closed",
