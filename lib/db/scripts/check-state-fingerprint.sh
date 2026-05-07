@@ -74,10 +74,17 @@ SELECT 'dual_terminal_violation', COUNT(*)::text
    AND closure_reason IS NOT NULL
    AND closure_reason <> 'reattested'
 UNION ALL
+-- Valid set tracks the post-D-PR5 closure-reason vocabulary AND the
+-- per-claim Denied-by-Payor / Non-Issue refinements emitted by the
+-- /outcome routes (see lib/vocab + closure-intake-dialog). Sub-PR 1
+-- of D-PR6 updated docs/architecture/state-migration-plan.md §G to
+-- match but missed this script — caught post-publish 2026-05-07
+-- when prod fingerprint reported 6 false-positive drift rows that
+-- were all legitimate `denied_by_payor` values.
 SELECT 'claim_closure_drift', COUNT(*)::text
   FROM claims
  WHERE closure_reason IS NOT NULL
-   AND closure_reason NOT IN ('approved', 'denied', 'cannot_dispute', 'reattested', 'expired')
+   AND closure_reason NOT IN ('approved', 'denied', 'cannot_dispute', 'reattested', 'expired', 'denied_by_payor', 'non_issue')
 UNION ALL
 SELECT 'cron_drift', COUNT(*)::text
   FROM cron_runs
