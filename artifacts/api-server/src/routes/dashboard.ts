@@ -410,25 +410,17 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // `lib/leg-state/src/openness.ts`; conformance audit pins it.
   const openStatusFilter = eq(invoiceGroupsTable.isOpen, true);
 
-  // Wave C reader switch (Task #517): the actionable group set is now
-  // read off `invoice_groups.phase` — the canonical filing-state column
-  // maintained by `derivePhase` on every write path. The residual
-  // `status != "Portal Queued"` exclusion is unavoidable today: per the
-  // production deriver (`lib/invoice-state/src/derive-phase.ts`) both
-  // `Generating Email` and `Portal Queued` map to `ready_to_submit`,
-  // but only the former is pre-submit from the office's POV. Wave D's
-  // writer rewire will introduce a proper `submitted_via` claim column
-  // (or equivalent) and at THAT point the residual check disappears.
-  // The membership of this predicate matches GROUP_EXPIRING_ACTIONABLE_STATUSES
-  // exactly so the dashboard-vs-queue-vs-snapshot parity contract
-  // (Task #352, must-file-today-parity.test.ts) is preserved.
-  // See docs/architecture/state-wave-c-continuation-handoff-prompt.md §3.B.
+  // Wave D-PR5 collapse: the §3.B `status != "Portal Queued"` residual
+  // carve-out is gone now that the writer-rewire stamps
+  // `claims.submitted_via` and the deriver promotes any stamped group
+  // out of `ready_to_submit`. The pre-submit actionable set is exactly
+  // `phase IN (triage, ready_to_submit)` — pure phase membership.
+  // Locked against drift by the must-file-today-parity contract
+  // (Task #352, must-file-today-parity.test.ts). See
+  // docs/architecture/state-wave-d-pr5-handoff-prompt.md.
   const expiringStatusFilter = or(
     eq(invoiceGroupsTable.phase, "triage"),
-    and(
-      eq(invoiceGroupsTable.phase, "ready_to_submit"),
-      ne(invoiceGroupsTable.status, "Portal Queued"),
-    ),
+    eq(invoiceGroupsTable.phase, "ready_to_submit"),
   );
 
   const openGroupsWithDates = await db
@@ -482,15 +474,15 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // needs a chase rather than a fresh filing. Surfaced alongside
   // `urgentCount` so the dashboard never reads "0 to file today"
   // while the same data renders TODAY-style badges in lower tiers.
-  // Wave C reader switch (Task #517): same phase-anchored predicate
-  // shape as the actionable filter above. `Portal Queued` lives in
-  // `ready_to_submit` per the deriver, so the stuck-after-submission
-  // tier is exactly `phase = ready_to_submit AND status = "Portal Queued"`.
-  // Wave D will let us drop the residual status check once the
-  // `submitted_via` writer is in place. Membership matches
-  // GROUP_SUBMITTED_STUCK_STATUSES exactly.
+  // Wave D-PR5: stuck-after-submission tier — Portal-Queued groups
+  // are now promoted to phase='submitted' the moment the writer
+  // stamps `claims.submitted_via`, so the stuck filter pairs the
+  // canonical post-submit phase with the residual `status` hint that
+  // pins it to the portal-queued slice (the writer never moves
+  // these rows out of `Portal Queued` until the bot acks). Membership
+  // matches GROUP_SUBMITTED_STUCK_STATUSES exactly.
   const stuckStatusFilter = and(
-    eq(invoiceGroupsTable.phase, "ready_to_submit"),
+    eq(invoiceGroupsTable.phase, "submitted"),
     or(...GROUP_SUBMITTED_STUCK_STATUSES.map(s => eq(invoiceGroupsTable.status, s))),
   );
   const stuckGroupsWithDates = await db

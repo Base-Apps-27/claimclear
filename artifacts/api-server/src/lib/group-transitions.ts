@@ -108,6 +108,33 @@ export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
 
 const TERMINAL_STATUSES: string[] = ["Resolved", "Denied"];
 
+// Wave D-PR5 Half 2 — closure-aware writer support. When a group lands
+// at `(status='Resolved', outcome ∈ {Approved, Partially Approved})`,
+// stamp the canonical hierarchical-state-machine columns directly:
+//   • `phase = 'closed'`
+//   • `closureReason = 'approved'` (raw text — distinct from the
+//     LegacyClosureReasonValue union; the col is `text`, the value is
+//     pinned by the conformance audit)
+//   • `phaseEnteredAt = NOW()`
+// The deriver carries an equivalent safety-net branch in
+// `derivePhaseFromLegacy`, but writing on the same UPDATE keeps the
+// post-commit denormalized refresh from having to flip the row a
+// second time. See docs/architecture/state-wave-d-pr5-handoff-prompt.md.
+function applyClosureApprovedFields(
+  updateData: Partial<typeof invoiceGroupsTable.$inferInsert>,
+  newStatus: string,
+  newOutcome: string,
+): void {
+  if (
+    newStatus === "Resolved" &&
+    (newOutcome === "Approved" || newOutcome === "Partially Approved")
+  ) {
+    updateData.phase = "closed";
+    updateData.closureReason = "approved";
+    updateData.phaseEnteredAt = new Date();
+  }
+}
+
 async function checkActiveSubmissions(groupId: number, ex: DbExecutor): Promise<void> {
   const activeSubmissions = await ex.select().from(portalSubmissionsTable)
     .where(and(
@@ -576,6 +603,17 @@ export async function transitionGroupOutcome(opts: {
     if (closure.closureReviewNotes !== null) updateData.closureReviewNotes = closure.closureReviewNotes;
     updateData.closureReviewState = "pending";
   }
+  // Wave D-PR5 Half 2 — closure-aware stamp for Resolved+Approved /
+  // Partially Approved. Overrides the closureReason set above with the
+  // canonical 'approved' value when the outcome flip lands on a
+  // payor-paid verdict; phase + phaseEnteredAt are written here so the
+  // denormalized refresh doesn't have to flip them on the next pass.
+  if (
+    old.status === "Resolved" &&
+    (newOutcome === "Approved" || newOutcome === "Partially Approved")
+  ) {
+    applyClosureApprovedFields(updateData, old.status, newOutcome);
+  }
 
   // Task #495 — capture pre-update day-aggregate concluded state for
   // the day-complete edge check below.
@@ -740,6 +778,12 @@ export async function transitionGroupStatusAndOutcome(opts: {
     updateData.closureReviewState = "pending";
   }
   applyHoldFields(updateData, old.status, newStatus, extraFields?.holdReason);
+  // Wave D-PR5 Half 2 — closure-aware stamp on the combined
+  // status+outcome path. This is the writer the closure flow most
+  // commonly hits (Awaiting Response → Resolved+Approved); stamping
+  // phase='closed' + closureReason='approved' + phaseEnteredAt here
+  // keeps the denormalized refresh from having to flip the row.
+  applyClosureApprovedFields(updateData, newStatus, newOutcome);
 
   // Task #495 — capture pre-update day-aggregate concluded state for
   // the day-complete edge check below.

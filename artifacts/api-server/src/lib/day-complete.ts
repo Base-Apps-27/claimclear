@@ -43,52 +43,36 @@ import type { GroupTransitionActor } from "./group-transitions";
 type DbWithExecute = DbExecutor & Pick<typeof db, "execute">;
 const withExecute = (ex: DbExecutor): DbWithExecute => ex as DbWithExecute;
 
-// Wave D-PR4 (2026-05-07): the day-complete matcher now sources its
-// in-flight + closed sets from the canonical `invoice_groups.phase`
-// column. A group is "day-aggregate concluded" iff its phase has
-// crossed past triage/ready_to_submit/reviewed (i.e. it is in the
-// `submitted`, `response_received`, `awaiting_reattestation`, or
-// `closed` phase) OR its outcome marks it as never-needed-to-file
-// (Non-Issue / Withdrawn).
-//
-// Three legacy statuses are residuals — the canonical `phase` column
-// places them outside the post-submit set even though the legacy
-// operator-intent matcher has always treated them as "concluded from
-// the operator's POV":
-//   • `Portal Queued`   → 'ready_to_submit' (handed off to the bot)
-//   • `Generating Email`→ 'ready_to_submit' (handed off to the system)
-//   • `Resolved`        → 'triage' (when paired with a non-closure
-//                                   outcome like `Approved`; the
-//                                   migration 0034 backfill only
-//                                   promotes Resolved+Non-Issue and
-//                                   Resolved+Withdrawn to 'closed')
-// All three disappear in D-PR5 once `submitted_via` (for the two
-// ready_to_submit residuals) and the closure-aware `transitionInvoice`
-// writer (for `Resolved`) let the deriver promote these rows to their
-// canonical post-submit / closed phases. Until then we OR the legacy
-// status check alongside the phase membership predicate so behaviour
-// is preserved bit-for-bit.
+// Wave D-PR5 (2026-05-07): the day-complete matcher now reads pure
+// `invoice_groups.phase` membership. The three legacy status residuals
+// (`Portal Queued`, `Generating Email`, `Resolved`) the previous wave
+// had to OR alongside the phase set are gone:
+//   • `Portal Queued` / `Generating Email` → the writer-rewire stamps
+//     `claims.submitted_via` at every operator click site, and the
+//     deriver promotes any stamped group out of `ready_to_submit`
+//     into `submitted` (one of the post-submit phases).
+//   • `Resolved` (paired with Approved / Partially Approved) → the
+//     closure-aware writer in `transitionGroup{Outcome,
+//     StatusAndOutcome}` stamps `phase='closed'` directly, so the
+//     deriver branch is just a safety net.
+// A group is now concluded iff its `phase` is post-submit OR its
+// `outcome` marks it as never-needed-to-file. The JS predicate
+// (kept exported for tests / direct callers) and the SQL CTE in
+// `isDayConcluded` mirror that rule exactly.
 const CONCLUDED_PHASES = [
   "submitted",
   "response_received",
   "awaiting_reattestation",
   "closed",
 ] as const;
-const RESIDUAL_CONCLUDED_STATUSES = [
-  "Portal Queued",
-  "Generating Email",
-  "Resolved",
-] as const;
 const CONCLUDED_OUTCOMES = ["Non-Issue", "Withdrawn"] as const;
 
 const ALL_CONCLUDED_PHASES = new Set<string>(CONCLUDED_PHASES);
-const ALL_RESIDUAL_STATUSES = new Set<string>(RESIDUAL_CONCLUDED_STATUSES);
 const ALL_CONCLUDED_OUTCOMES = new Set<string>(CONCLUDED_OUTCOMES);
 
-function isGroupConcluded(g: { phase: string; status: string; outcome: string }): boolean {
+function isGroupConcluded(g: { phase: string; outcome: string }): boolean {
   return (
     ALL_CONCLUDED_PHASES.has(g.phase) ||
-    ALL_RESIDUAL_STATUSES.has(g.status) ||
     ALL_CONCLUDED_OUTCOMES.has(g.outcome)
   );
 }
@@ -138,21 +122,18 @@ export async function isDayConcluded(
   // matcher and the dashboard "must file today" hero can never
   // disagree about which day a group belongs to.
   //
-  // Wave D-PR4 (Task #517 follow-up): the predicate now reads the
-  // canonical `phase` column. A group is concluded when its phase is
-  // post-submit (`submitted` / `response_received` /
-  // `awaiting_reattestation` / `closed`) OR its outcome marks it
-  // as never-needed-to-file. Three residual `status` clauses match
-  // the legacy matcher's operator-intent semantics for rows that the
-  // deriver still parks in pre-submit phases — see the JS
-  // `isGroupConcluded` comment block above for the full rationale
-  // and the D-PR5 cleanup note.
+  // Wave D-PR5 collapse: the predicate is pure phase membership +
+  // outcome-driven closure. The three legacy status residuals
+  // (`Portal Queued`, `Generating Email`, `Resolved`) the previous
+  // wave had to OR-in are gone — the writer-rewire and closure-aware
+  // writer promote those groups into the canonical post-submit /
+  // closed phases. See the JS `isGroupConcluded` block above for the
+  // full rationale.
   const result = await withExecute(ex).execute(sql`
     WITH groups_for_day AS (
       SELECT
         ${invoiceGroupsTable.id}      AS group_id,
         ${invoiceGroupsTable.phase}   AS phase,
-        ${invoiceGroupsTable.status}  AS status,
         ${invoiceGroupsTable.outcome} AS outcome,
         -- service_date is a real DATE column maintained by
         -- recomputeGroupServiceDate on every write path; to_char
@@ -172,14 +153,6 @@ export async function isDayConcluded(
               'submitted', 'response_received',
               'awaiting_reattestation', 'closed'
             )
-            -- D-PR5-removable residuals (operator-intent semantics):
-            --   * Portal Queued / Generating Email live in
-            --     ready_to_submit but the operator already handed
-            --     off; day is done from their POV.
-            --   * Resolved (without a closure-bearing outcome) lives
-            --     in triage per migration 0034 backfill; legacy
-            --     matcher always counted it as closed.
-            OR status::text IN ('Portal Queued', 'Generating Email', 'Resolved')
             -- outcome-driven closure (Non-Issue at triage, or withdrawn)
             OR outcome::text IN ('Non-Issue', 'Withdrawn')
           )

@@ -253,3 +253,65 @@ pnpm exec tsc -b lib/db lib/vocab lib/leg-state lib/invoice-state
 ```
 
 Workflow `artifacts/training-guide: web` emits port-collision noise (`EADDRINUSE 0.0.0.0:5924`) on every restart — pre-existing, ignore.
+
+---
+
+## Session log — D-PR5 shipped (2026-05-07)
+
+### What landed
+
+**Half 1 — `claims.submitted_via` writer-rewire**
+- Migration `0038_claims_submitted_via.sql` (+ `0033_reflective_ted_forrester` drizzle snapshot regen): adds nullable `submitted_via` text column with `submitted_via IN ('portal','email')` CHECK + partial index `claims_submitted_via_idx ON (invoice_group_id) WHERE submitted_via IS NOT NULL`. Backfill stamps `'email'` where `dispute_email_sent=true` and `'portal'` where status ∈ {`Generating Email`, `Portal Queued`, `Processed`, `Ready to Review`, `Awaiting Response`}. Down migration drops the index + check + column.
+- Schema: `claims.submittedVia: text("submitted_via")` in `lib/db/src/schema/claims.ts`.
+- Writer stamps:
+  - `routes/portal-submissions.ts` — `transitionContext` extended with optional `submittedVia: 'portal'|'email'`, plumbed via `childFields` to `transitionGroupStatus`. Three call sites stamp `'portal'` (confirm, create, retry); the cancel→Needs Evidence site does NOT stamp.
+  - `lib/batch-processor.ts` — Direct-Email path stamps `submittedVia: 'email'` (line ~997); external-bot portal path stamps `'portal'` (line ~1182).
+- `derivePhaseFromLegacy` (lib/invoice-state/src/derive-phase.ts): added the submitted-promotion branch BEFORE the legacy switch — `submittedVia != null && status ∈ {Portal Queued, Generating Email, Processed} → phase='submitted'`. Also added the closure-aware safety-net branch for Resolved+Approved/Partially Approved → `phase='closed', closureReason='reattested'` (semantic equivalent for any caller that re-derives).
+- `LegacyInvoiceGroupShape` extended with `submittedVia?: string|null`.
+- `lib/denormalized-cache.ts` — added `fetchAnyChildSubmittedVia(groupId, ex)` helper that picks the first non-null `submitted_via` across child claims (uses the partial index). Both callsites (`refreshClaimDenormalizedCache` and `refreshGroupDerivedFields`) now feed the aggregate into `toLegacyGroupShape`.
+
+**Half 2 — closure-aware writer**
+- `lib/group-transitions.ts` — `applyClosureApprovedFields(updateData, status, outcome)` helper: when `status='Resolved'` and `outcome ∈ {Approved, Partially Approved}`, stamps `phase='closed' + closureReason='approved' + phaseEnteredAt=now()` on the same UPDATE. Wired into both `transitionGroupOutcome` (gated on `old.status='Resolved'` since this writer only flips the outcome) and `transitionGroupStatusAndOutcome` (the closure flow's primary path; gated on `newStatus='Resolved'`).
+- `'approved'` is intentionally a raw text value; `LegacyClosureReasonValue` was NOT extended to keep the typed-union surface stable for the deriver. The deriver branch returns `'reattested'` as the closest typed equivalent so any code re-deriving against legacy state still lands on `closed`.
+
+**Half 3 — collapses**
+- `lib/day-complete.ts` — dropped `RESIDUAL_CONCLUDED_STATUSES` set + the SQL `OR status::text IN (...)` clause. The JS `isGroupConcluded` predicate is now pure phase membership + `outcome ∈ {Non-Issue, Withdrawn}`. The CTE in `isDayConcluded` mirrors that exactly.
+- §3.B Portal-Queued exclusion collapsed in three readers:
+  - `lib/expiring-filter.ts:groupPhaseCondition('actionable')` — pure `phase IN (triage, ready_to_submit)`. Stuck mode now reads `phase='submitted' AND status ∈ GROUP_SUBMITTED_STUCK_STATUSES`.
+  - `lib/urgent-snapshot.ts` — same collapse on the actionable predicate.
+  - `routes/dashboard.ts:expiringStatusFilter` — pure `phase IN (triage, ready_to_submit)`. `stuckStatusFilter` reads `phase='submitted'` paired with `GROUP_SUBMITTED_STUCK_STATUSES`.
+- §3.E aggregates: not flipped this PR. Sites are pure read-side (status/outcome breakdowns at `dashboard.ts:170/749/1054/1263`, `invoice-groups.ts:113/494/925/951`, `brief-personalization.ts`, `daily-brief.ts:381`); the displayed labels still read by status. **Punted to D-PR6** — see skeleton in `state-wave-d-pr6-handoff-prompt.md`.
+
+### Validation gauntlet results
+- `tsc --noEmit` (api-server filter) — clean. Required composite-rebuild of `lib/db` after the new column landed (`pnpm exec tsc -b lib/db`).
+- Schema-drift workflow — clean (regenerated drizzle snapshot `0033_reflective_ted_forrester.sql` + `0033_snapshot.json`).
+- Conformance audit (dev) — **41 phase_mismatch, 0 is_open** (was 42; monotonic decrease, contract holds). The remaining 40 `Needs Review stored=response_received derived=triage` rows are the same pre-existing dev fixture drift documented through D-PR2b/2c/3/4. New row id=6113 surfaces `stored=submitted derived=closed` because of the safety-net Resolved+Approved+reattestCompleted branch; will heal lazily on next cache touch.
+- Targeted unit tests — `day-complete-celebration.test.ts` (9 tests), `must-file-today-parity.test.ts` (1 test) all pass after one fixture update (the priorConcluded gating test had to also stamp `claims.submittedVia='portal'` on direct UPDATEs to match the new writer contract). `dashboard-expiring.test.ts` / `urgent-today-transitions.test.ts` still flake on Thursdays (date-keyed Friday-shift assertions); pre-existing, unrelated to D-PR5.
+- API server workflow restarts cleanly; migration applies in 513ms.
+
+### Files touched
+```
+lib/db/src/schema/claims.ts
+lib/db/migrations/0038_claims_submitted_via.sql
+lib/db/migrations/rollback/0038_claims_submitted_via.down.sql
+lib/db/drizzle/0033_reflective_ted_forrester.sql + meta/0033_snapshot.json + meta/_journal.json
+lib/invoice-state/src/derive-phase.ts
+lib/invoice-state/src/legacy-shapes.ts
+artifacts/api-server/src/lib/denormalized-cache.ts
+artifacts/api-server/src/lib/group-transitions.ts
+artifacts/api-server/src/lib/batch-processor.ts
+artifacts/api-server/src/lib/day-complete.ts
+artifacts/api-server/src/lib/expiring-filter.ts
+artifacts/api-server/src/lib/urgent-snapshot.ts
+artifacts/api-server/src/routes/dashboard.ts
+artifacts/api-server/src/routes/portal-submissions.ts
+artifacts/api-server/src/__tests__/prompt-leg-inputs.test.ts (fixture: + submittedVia: null)
+artifacts/api-server/src/__tests__/day-complete-celebration.test.ts (fixture: + submittedVia stamp)
+docs/architecture/state-wave-d-pr5-handoff-prompt.md (this section)
+docs/architecture/state-wave-d-pr6-handoff-prompt.md (new — see skeleton)
+```
+
+### Post-publish verification (ops)
+1. Re-run conformance audit against PROD: `DATABASE_URL="$PROD_DATABASE_URL" pnpm --filter @workspace/scripts run check:invoice-state-derivation` — expect 0 phase_mismatch + 0 is_open. Migration 0038's backfill is the parity proof for existing rows; new writes are stamped at the click sites.
+2. Spot-check a fresh portal submission and a Direct-Email submission post-deploy: both should land with `claims.submitted_via` stamped and the parent group's `phase = 'submitted'`.
+3. Spot-check a Resolved+Approved closure: parent should land with `phase='closed', closure_reason='approved', phase_entered_at` set on the same write (no second-pass refresh required).

@@ -346,6 +346,19 @@ test("checkAndEmitDayCompleteForGroup: emits only on the false→true edge (prio
     await db.update(invoiceGroupsTable)
       .set({ status: "Portal Queued" })
       .where(eq(invoiceGroupsTable.id, b.group.id));
+    // Wave D-PR5: a raw status flip is no longer sufficient — the
+    // deriver now requires `claims.submitted_via` to be stamped before
+    // promoting `Portal Queued` from `ready_to_submit` → `submitted`.
+    // PROD writers (`portal-submissions.ts`, `batch-processor.ts`) set
+    // both fields together; this test simulates the same writer-shape
+    // by stamping `submittedVia` on the disputed children before the
+    // phase recompute.
+    await db.update(claimsTable)
+      .set({ status: "Portal Queued", submittedVia: "portal" })
+      .where(and(
+        eq(claimsTable.invoiceGroupId, b.group.id),
+        eq(claimsTable.includedInDispute, true),
+      ));
     // Wave D-PR4 phase resync — see import comment.
     await refreshGroupDerivedFields(b.group.id);
 

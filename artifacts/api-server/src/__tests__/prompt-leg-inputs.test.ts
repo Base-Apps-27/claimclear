@@ -190,6 +190,7 @@ function makeClaim(overrides: Partial<Claim> & Pick<Claim, "id" | "confNumber">)
     payorEmail: null,
     disputeEmailSent: false,
     disputeEmailSentAt: null,
+    submittedVia: null,
     importBatch: null,
     evidenceFiles: null,
     evidenceNotes: "GPS log uploaded.",

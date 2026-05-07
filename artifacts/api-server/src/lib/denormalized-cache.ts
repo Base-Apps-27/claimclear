@@ -74,7 +74,15 @@ function toLegacyClaimShape(claim: typeof claimsTable.$inferSelect): LegacyClaim
   };
 }
 
-function toLegacyGroupShape(group: typeof invoiceGroupsTable.$inferSelect): LegacyInvoiceGroupShape {
+function toLegacyGroupShape(
+  group: typeof invoiceGroupsTable.$inferSelect,
+  // Wave D-PR5: group-level aggregate of `claims.submitted_via` —
+  // any non-null value across the disputed children means the group
+  // has crossed the "filed" line and the deriver promotes it from
+  // `ready_to_submit` → `submitted`. Callers fetch this with
+  // `fetchAnyChildSubmittedVia` before constructing the shape.
+  extras?: { submittedVia?: string | null },
+): LegacyInvoiceGroupShape {
   return {
     status: group.status as LegacyInvoiceGroupShape["status"],
     outcome: group.outcome as LegacyInvoiceGroupShape["outcome"],
@@ -82,7 +90,29 @@ function toLegacyGroupShape(group: typeof invoiceGroupsTable.$inferSelect): Lega
     reattestCompletedAt: group.reattestCompletedAt,
     closureReason: group.closureReason,
     holdReason: group.holdReason,
+    submittedVia: extras?.submittedVia ?? null,
   };
+}
+
+/**
+ * Wave D-PR5: returns the first non-null `submitted_via` value across
+ * a group's child claims (or null when no child has been stamped). The
+ * deriver only checks for non-null, so a single match is sufficient
+ * — the partial index `claims_submitted_via_idx` keeps this cheap.
+ */
+async function fetchAnyChildSubmittedVia(
+  groupId: number,
+  ex: DbExecutor,
+): Promise<string | null> {
+  const [row] = await ex
+    .select({ submittedVia: claimsTable.submittedVia })
+    .from(claimsTable)
+    .where(and(
+      eq(claimsTable.invoiceGroupId, groupId),
+      isNotNull(claimsTable.submittedVia),
+    ))
+    .limit(1);
+  return row?.submittedVia ?? null;
 }
 
 /**
@@ -149,7 +179,13 @@ export async function refreshClaimDenormalizedCache(
     if (group) {
       // Compute (and possibly update) parent phase first so the
       // disposition trigger validates against the current phase.
-      const derivedPhase = derivePhaseFromLegacy(toLegacyGroupShape(group)).phase;
+      // D-PR5: feed the deriver the group-level `submittedVia`
+      // aggregate so the `ready_to_submit` → `submitted` promotion
+      // fires the moment any child carries a stamp.
+      const submittedVia = await fetchAnyChildSubmittedVia(group.id, ex);
+      const derivedPhase = derivePhaseFromLegacy(
+        toLegacyGroupShape(group, { submittedVia }),
+      ).phase;
       if (group.phase !== derivedPhase) {
         groupPhaseUpdate = { id: group.id, phase: derivedPhase };
       }
@@ -285,7 +321,12 @@ export async function refreshGroupDerivedFields(
 
   // Compute the canonical phase first — used both for the group
   // update and for re-deriving every child leg's disposition.
-  const derivedPhase = derivePhaseFromLegacy(toLegacyGroupShape(group)).phase;
+  // D-PR5: pass the group-level `submittedVia` aggregate so the
+  // submitted-promotion deriver branch fires.
+  const submittedVia = await fetchAnyChildSubmittedVia(invoiceGroupId, ex);
+  const derivedPhase = derivePhaseFromLegacy(
+    toLegacyGroupShape(group, { submittedVia }),
+  ).phase;
   const phaseChanged = group.phase !== derivedPhase;
 
   // reattest_required: only recompute when not blocked by pending MAS

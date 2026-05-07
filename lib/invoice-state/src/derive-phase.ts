@@ -46,6 +46,34 @@ export function derivePhaseFromLegacy(group: LegacyInvoiceGroupShape): DerivedPh
     return { phase: "awaiting_reattestation", closureReason: null, prePhaseHint: null };
   }
 
+  // Wave D-PR5 closure-aware safety net (Half 2): the writer
+  // (`transitionGroupOutcome` / `transitionGroupStatusAndOutcome`)
+  // now stamps phase='closed' + closureReason='approved' directly
+  // on Resolved+Approved/Partially Approved. This branch keeps the
+  // deriver consistent for any code path that re-runs derivation
+  // against the legacy tuple before the writer rewire is universal.
+  if (
+    group.status === "Resolved" &&
+    (group.outcome === "Approved" || group.outcome === "Partially Approved")
+  ) {
+    return { phase: "closed", closureReason: "reattested", prePhaseHint: null };
+  }
+
+  // Wave D-PR5 submitted-promotion (Half 1): once any child carries
+  // a non-null `submitted_via`, the group has crossed the "filed via
+  // portal/email" line. Promote to phase='submitted' so the §3.B
+  // residual `status != "Portal Queued"` exclusion across
+  // expiring-filter / urgent-snapshot / dashboard / day-complete can
+  // be deleted — phase membership becomes the single source of truth.
+  if (
+    group.submittedVia != null &&
+    (group.status === "Portal Queued" ||
+      group.status === "Generating Email" ||
+      group.status === "Processed")
+  ) {
+    return { phase: "submitted", closureReason: null, prePhaseHint: null };
+  }
+
   switch (group.status) {
     case "New":
     case "Needs Review":

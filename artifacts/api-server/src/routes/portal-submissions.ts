@@ -578,8 +578,14 @@ async function transitionContext(opts: {
   source: string;
   reason: string;
   actor: { userEmail: string | null; userName: string | null };
+  // Wave D-PR5: stamp `claims.submitted_via` on the cascaded child
+  // legs so the deriver promotes the group from `ready_to_submit` →
+  // `submitted` on the same write. Pass 'portal' on the create /
+  // confirm / retry sites; omit on the cancel site (which reverts to
+  // Needs Evidence and does NOT mark the dispute as filed).
+  submittedVia?: "portal" | "email";
 }): Promise<void> {
-  const { ctx, newStatus, source, reason, actor } = opts;
+  const { ctx, newStatus, source, reason, actor, submittedVia } = opts;
   await transitionGroupStatus({
     groupId: ctx.group.id,
     newStatus,
@@ -587,6 +593,7 @@ async function transitionContext(opts: {
     reason,
     actor,
     systemOverride: true,
+    childFields: submittedVia ? { submittedVia } : undefined,
   });
 }
 
@@ -1334,6 +1341,7 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
       source: "portal_submission_confirm",
       reason: `Portal submission #${id} confirmed and queued for processing`,
       actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+      submittedVia: "portal",
     });
   }
 
@@ -1564,6 +1572,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     source: "portal_submission_create",
     reason: `Portal submission created and queued${reason ? ` — reason: ${reason}` : ""}`,
     actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+    submittedVia: "portal",
   });
 
   res.status(201).json(submission);
@@ -1606,6 +1615,7 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
       source: "portal_submission_retry",
       reason: `Portal submission #${id} retried from "${existing.status}" status`,
       actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+      submittedVia: "portal",
     });
   }
 

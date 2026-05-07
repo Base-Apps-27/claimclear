@@ -988,6 +988,10 @@ async function processDirectEmail(
       disputeEmailSent: true,
       disputeEmailSentAt: submittedAtIso,
     },
+    // Wave D-PR5: this is the Direct-Email submission path — every
+    // disputed child leg gets its `submitted_via='email'` stamp so
+    // the deriver promotes the parent group to phase=`submitted`.
+    childFields: { submittedVia: "email" },
   });
 
   await db.insert(botActivityLogTable).values({
@@ -1169,6 +1173,10 @@ async function processViaExternalBot(
         disputeEmailSent: true,
         disputeEmailSentAt: submittedAtIso,
       },
+      // Wave D-PR5: external-bot portal submission path — stamp
+      // `submitted_via='portal'` on every disputed child leg so the
+      // deriver promotes the parent group to phase=`submitted`.
+      childFields: { submittedVia: "portal" },
     });
 
     await db.insert(botActivityLogTable).values({

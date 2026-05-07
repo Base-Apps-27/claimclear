@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
@@ -85,46 +85,32 @@ function claimStatusCondition(mode: ExpiringMode): SQL {
 
 function groupPhaseCondition(mode: ExpiringMode): SQL {
   if (mode === "stuck") {
-    // GROUP_SUBMITTED_STUCK_STATUSES = ["Portal Queued"]. Per the
-    // production deriver (`lib/invoice-state/src/derive-phase.ts`)
-    // Portal Queued lives in `ready_to_submit`, so the phase-based
-    // predicate is `phase = ready_to_submit AND status = "Portal Queued"`.
-    // We keep the residual `status` check here because Portal Queued
-    // is the only `ready_to_submit` member that represents a
-    // post-submit (filed-but-unconfirmed) row from the office's POV.
-    // Wave D will introduce a proper `submitted_via` claim column so
-    // this residual check can be deleted. See §3.B of the Wave C
-    // continuation handoff for the full rationale.
+    // GROUP_SUBMITTED_STUCK_STATUSES = ["Portal Queued"]. Wave D-PR5:
+    // any `Portal Queued` group with `submitted_via` stamped is now
+    // promoted by the deriver to `phase='submitted'`, so the
+    // stuck-after-submission tier reads `phase = submitted` paired with
+    // the residual status hint that pins it to the portal-queued slice
+    // (the writer never moves these rows out of `Portal Queued` until
+    // the bot acks). Membership matches GROUP_SUBMITTED_STUCK_STATUSES
+    // exactly.
     return and(
-      eq(invoiceGroupsTable.phase, "ready_to_submit"),
+      eq(invoiceGroupsTable.phase, "submitted"),
       ...GROUP_SUBMITTED_STUCK_STATUSES.map((s) => eq(invoiceGroupsTable.status, s)),
     ) as SQL;
   }
 
-  // Group-level "actionable, on-clock" — phase is necessary but not
-  // sufficient. Per the production deriver, both `Portal Queued` and
-  // `Generating Email` map to `ready_to_submit`, but only the latter is
-  // pre-submit from the office's POV (Portal Queued = filed via the
-  // portal, awaiting payor confirmation; the filing clock is satisfied
-  // at submission). So we read `phase` as the primary signal then
-  // exclude the Portal-Queued sub-set explicitly. This preserves the
-  // legacy GROUP_EXPIRING_ACTIONABLE_STATUSES = { New, Needs Evidence,
-  // On Hold, Generating Email } membership exactly, which the
-  // dashboard-vs-queue-vs-snapshot parity contract (Task #352, locked
-  // by must-file-today-parity.test.ts) depends on.
-  //
-  // The `status != "Portal Queued"` is the residual status dependency
-  // Wave C cannot eliminate. Wave D's writer rewire will introduce a
-  // proper `submitted_via` claim column (or equivalent group-level
-  // signal) and at THAT point the predicate becomes pure phase — the
-  // residual check should then be deleted. See §3.B of the Wave C
-  // continuation handoff and docs/architecture/state-hierarchy-v1.md.
+  // Group-level "actionable, on-clock". Wave D-PR5 collapsed the
+  // legacy `status != "Portal Queued"` exclusion: now that the
+  // writer-rewire stamps `claims.submitted_via` at every operator
+  // click site and the deriver promotes any group whose children
+  // carry that stamp from `ready_to_submit` → `submitted`, the
+  // pre-submit set is exactly `phase IN (triage, ready_to_submit)`.
+  // No residual status carve-out required — membership still matches
+  // GROUP_EXPIRING_ACTIONABLE_STATUSES bit-for-bit, locked by the
+  // must-file-today-parity contract (Task #352).
   return or(
     eq(invoiceGroupsTable.phase, "triage"),
-    and(
-      eq(invoiceGroupsTable.phase, "ready_to_submit"),
-      ne(invoiceGroupsTable.status, "Portal Queued"),
-    ),
+    eq(invoiceGroupsTable.phase, "ready_to_submit"),
   ) as SQL;
 }
 

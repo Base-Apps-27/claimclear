@@ -116,6 +116,15 @@ export const claimsTable = pgTable("claims", {
   payorEmail: text("payor_email"),
   disputeEmailSent: boolean("dispute_email_sent").notNull().default(false),
   disputeEmailSentAt: text("dispute_email_sent_at"),
+  // Wave D-PR5 (2026-05-07). Per-leg "how was this filed" signal —
+  // pinned values: 'portal' | 'email' | NULL (not yet submitted).
+  // Stamped by the writer click sites (portal-submissions
+  // create/confirm/retry, batch-processor Direct Email + external
+  // bot) and read by the deriver to promote a group from
+  // `ready_to_submit` → `submitted` once any child carries a
+  // non-null value. CHECK constraint + partial index live in
+  // migration 0038. See docs/architecture/state-wave-d-pr5-handoff-prompt.md.
+  submittedVia: text("submitted_via"),
   importBatch: text("import_batch"),
   // Per-leg attachment list. Stored as a JSONB array of file refs alongside
   // the canonical `claim_evidence` rows; the bot worker (collectGroupEvidenceUrls)
@@ -260,6 +269,13 @@ export const claimsTable = pgTable("claims", {
     "claims_mas_action_required_chk",
     sql`${table.masActionRequired} IS NULL OR ${table.masActionRequired} IN ('cancel','none')`,
   ),
+  check(
+    "claims_submitted_via_chk",
+    sql`${table.submittedVia} IS NULL OR ${table.submittedVia} IN ('portal','email')`,
+  ),
+  index("claims_submitted_via_idx")
+    .on(table.invoiceGroupId)
+    .where(sql`${table.submittedVia} IS NOT NULL`),
 ]);
 
 export const insertClaimSchema = createInsertSchema(claimsTable).omit({ id: true, createdAt: true, updatedAt: true });
