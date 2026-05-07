@@ -6,8 +6,8 @@ import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
 import { computeGroupReadiness } from "../lib/group-packaging";
-import { refreshGroupDerivedFields, getGroupMacroPhase, refreshClaimDenormalizedCache } from "../lib/denormalized-cache";
-import { getMacroPhase } from "../lib/macro-phase";
+import { refreshGroupDerivedFields, refreshClaimDenormalizedCache } from "../lib/denormalized-cache";
+import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -2418,7 +2418,7 @@ router.post("/invoice-groups/:id/group-context", asyncHandler(async (req, res): 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Group context can only be set in pre-submit",
@@ -2463,7 +2463,7 @@ router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (re
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Readback can only be confirmed in pre-submit",
@@ -2538,7 +2538,7 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Preview can only be generated in pre-submit",
@@ -2646,7 +2646,7 @@ router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Draft can only be edited in pre-submit",
@@ -2698,7 +2698,7 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Draft can only be regenerated in pre-submit",
@@ -2777,7 +2777,7 @@ router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
 
-  const phase = getMacroPhase(group.status);
+  const phase = getGroupMacroPhase(group);
   if (phase !== "pre-submit") {
     res.status(409).json({
       error: "Draft can only be marked reviewed in pre-submit",

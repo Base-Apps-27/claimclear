@@ -21,7 +21,7 @@ import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
-import { getMacroPhase, getGroupMacroPhase } from "../lib/macro-phase";
+import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";

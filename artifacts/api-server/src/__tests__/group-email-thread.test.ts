@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Tests for the group-level email thread endpoints (Task #240).
 //
 // Covers:
@@ -107,10 +108,12 @@ async function createSeedGroup(opts: {
 } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
   groupSeq += 1;
   const invoiceNumber = `GRP-T240-${Date.now()}-${groupSeq}-${Math.floor(Math.random() * 1e6)}`;
+  const status = opts.status ?? "Awaiting Response";
   const [row] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber,
-    status: (opts.status ?? "Awaiting Response") as any,
+    status: status as any,
     outcome: (opts.outcome ?? "Pending") as any,
+    phase: phaseForStatus(status),
   }).returning();
   return row;
 }
@@ -119,12 +122,14 @@ let claimSeq = 0;
 async function createSeedClaim(invoiceGroupId: number, refNumber?: string): Promise<typeof claimsTable.$inferSelect> {
   claimSeq += 1;
   const confNumber = `T240-${Date.now()}-${claimSeq}-${Math.floor(Math.random() * 1e6)}`;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     refNumber: refNumber ?? null,
     invoiceGroupId,
     status: "Awaiting Response",
     outcome: "Pending",
+    disposition,
   }).returning();
   return row;
 }

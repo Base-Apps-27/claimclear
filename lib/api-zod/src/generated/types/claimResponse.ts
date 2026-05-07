@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { ClaimResponseAttestationState } from "./claimResponseAttestationState";
 import type { ClaimResponseClosureReason } from "./claimResponseClosureReason";
 import type { ClaimResponseClosureReviewState } from "./claimResponseClosureReviewState";
+import type { ClaimResponseDisposition } from "./claimResponseDisposition";
 import type { ClaimResponseDropReason } from "./claimResponseDropReason";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
 import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionRequired";
@@ -46,8 +47,18 @@ export interface ClaimResponse {
   errorTypeName?: string | null;
   /** @nullable */
   claimAmount?: string | null;
+  /**
+   * DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+   * @deprecated
+   */
   status: ClaimResponseStatus;
+  /**
+   * DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E.
+   * @deprecated
+   */
   outcome: ClaimResponseOutcome;
+  /** Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `CLAIM_DISPOSITIONS`. */
+  disposition: ClaimResponseDisposition;
   /** @nullable */
   closureReason?: ClaimResponseClosureReason;
   /** @nullable */

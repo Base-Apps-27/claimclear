@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Task #470 — Pivot B1. Bulk SOP advance endpoint:
 // POST /invoice-groups/:id/sop-advance
 //
@@ -128,6 +129,7 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
     invoiceNumber,
     status: "Needs Evidence",
     outcome: "Pending",
+    phase: phaseForStatus("Needs Evidence"),
   }).returning();
   return row;
 }
@@ -179,6 +181,7 @@ async function createSeedClaim(opts: {
   duplicateOfClaimId?: number | null;
 }): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T470-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const disposition = await dispositionForGroup(opts.invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: "Needs Review",
@@ -191,6 +194,7 @@ async function createSeedClaim(opts: {
     includedInDispute: opts.includedInDispute ?? true,
     duplicateOfClaimId: opts.duplicateOfClaimId ?? null,
     claimAmount: "100.00",
+    disposition,
   }).returning();
   return row;
 }

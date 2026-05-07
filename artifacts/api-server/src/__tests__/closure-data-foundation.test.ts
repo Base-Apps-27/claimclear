@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Route-level tests for the closure-data foundation: auto-advance on classify,
 // structured Withdrawn / Non-Issue closures, and POST /claim-evidence/closure.
 
@@ -109,6 +110,7 @@ async function createSeedClaim(opts: {
     invoiceGroupId = group.id;
   }
   const confNumber = `T130-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: opts.status ?? "New",
@@ -116,6 +118,7 @@ async function createSeedClaim(opts: {
     errorTypeId: opts.errorTypeId ?? null,
     errorTypeName: opts.errorTypeId ? "Seeded Error" : null,
     invoiceGroupId,
+    disposition,
   }).returning();
   return row;
 }
@@ -126,6 +129,7 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
     invoiceNumber,
     status: "Needs Review",
     outcome: "Pending",
+    phase: phaseForStatus("Needs Review"),
   }).returning();
   return row;
 }

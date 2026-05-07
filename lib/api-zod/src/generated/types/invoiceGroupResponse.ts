@@ -19,6 +19,7 @@ import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupRespon
 import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
+import type { InvoiceGroupResponsePhase } from "./invoiceGroupResponsePhase";
 import type { InvoiceGroupResponseServiceDateReason } from "./invoiceGroupResponseServiceDateReason";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
 import type { PayorDenialReasonCode } from "./payorDenialReasonCode";
@@ -34,8 +35,18 @@ export interface InvoiceGroupResponse {
   errorTypeId?: string | null;
   /** @nullable */
   errorTypeName?: string | null;
+  /**
+   * DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+   * @deprecated
+   */
   status: InvoiceGroupResponseStatus;
+  /**
+   * DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E.
+   * @deprecated
+   */
   outcome: InvoiceGroupResponseOutcome;
+  /** Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `INVOICE_PHASES`. */
+  phase: InvoiceGroupResponsePhase;
   /** @nullable */
   closureReason?: InvoiceGroupResponseClosureReason;
   /** @nullable */
@@ -139,7 +150,8 @@ export interface InvoiceGroupResponse {
   /** @nullable */
   reattestNote?: string | null;
   /**
-   * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+   * DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.
+   * @deprecated
    * @nullable
    */
   macroPhase?: InvoiceGroupResponseMacroPhase;

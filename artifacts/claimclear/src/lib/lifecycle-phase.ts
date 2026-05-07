@@ -1,7 +1,24 @@
-// One-page mapping of every claim/group status to a small set of
-// "lifecycle phases". Phase, not status, is what the workflow player and the
-// list-page tabs branch on — so adding or renaming a status only requires
-// touching this file.
+// LifecyclePhase — the 6-bucket UI phase the workflow player and the
+// list-page tabs branch on.
+//
+// PASSTHROUGH MODULE (Wave C of the hierarchical state-machine
+// refactor — docs/architecture/state-hierarchy-v1.md and
+// state-hierarchy-execution-plan.md §6). The canonical source for an
+// invoice group's lifecycle is now the `invoice_groups.phase` column
+// surfaced as `group.phase` on every InvoiceGroupResponse. This file:
+//
+//   * defines the LifecyclePhase union (unchanged tab vocabulary —
+//     `LIFECYCLE_TABS` is what the URL filter strip serializes, so it
+//     stays status-keyed for one wave; Wave D restructures filters)
+//   * exposes `getGroupLifecyclePhaseFromGroup(group)` — the new
+//     canonical reader, maps `group.phase` → LifecyclePhase and
+//     handles the on-hold / awaiting-payout edge cases the same way
+//     `lib/macro-phase.ts` does on the server
+//   * keeps the legacy `getLifecyclePhase(status)` and
+//     `getGroupLifecyclePhase(status, legs)` signatures alive (now
+//     marked @deprecated) so a small number of call sites that still
+//     have only a status string in scope continue to work until
+//     Wave D
 //
 // Phases (the only thing UI code should switch on):
 //   pre-submit          — work the dispute is still being prepared for the portal
@@ -11,11 +28,7 @@
 //                         re-attest in MAS portal before funds release
 //   on-hold             — manually parked; deadline clock still ticks
 //   closed              — terminal state, nothing else to do
-//
-// The "two flavors of Needs Review" semantic split (pre-classification vs
-// post-response) is a separate task — for now Needs Review maps to
-// response-pending because the dominant operator action on it is "review the
-// payer response that just arrived".
+import type { InvoicePhase } from "@workspace/vocab";
 
 export type LifecyclePhase =
   | "pre-submit"
@@ -24,6 +37,20 @@ export type LifecyclePhase =
   | "mas-action-required"
   | "closed"
   | "on-hold";
+
+// Canonical phase → LifecyclePhase mapping. `reviewed` rolls up to
+// `response-pending` because the operator-facing surface for a
+// fully-verdicted-but-not-MAS-yet invoice is still the response-review
+// lane. (Same call as the server's PHASE_TO_MACRO in lib/macro-phase.ts.)
+const PHASE_TO_LIFECYCLE: Record<InvoicePhase, Exclude<LifecyclePhase, "on-hold">> = {
+  triage: "pre-submit",
+  ready_to_submit: "pre-submit",
+  submitted: "in-flight",
+  response_received: "response-pending",
+  reviewed: "response-pending",
+  awaiting_reattestation: "mas-action-required",
+  closed: "closed",
+};
 
 export const STATUSES_BY_PHASE: Record<LifecyclePhase, readonly string[]> = {
   // "Processed" sits in pre-submit alongside New / Needs Evidence —
@@ -38,13 +65,20 @@ export const STATUSES_BY_PHASE: Record<LifecyclePhase, readonly string[]> = {
   // MAS Eligible: positive MAS portal verdict, re-attestation owed in
   // MAS portal before the carrier releases funds. Distinct from
   // response-pending (which means a payor response landed via the
-  // dispute path). See `engageMasEligibleAttestationCascade` on the
-  // server for the auto-routing into the attestation queue.
+  // dispute path).
   "mas-action-required": ["MAS Eligible"],
   "closed": ["Resolved", "Denied", "Withdrawn"],
   "on-hold": ["On Hold"],
 };
 
+/**
+ * Status-based legacy reader. Used only by callers that still hold a
+ * status string (URL filter strips, list-page tab serialization). New
+ * reader code MUST call {@link getGroupLifecyclePhaseFromGroup} on the
+ * full group/claim row instead.
+ *
+ * @deprecated Wave C — read `group.phase` via getGroupLifecyclePhaseFromGroup.
+ */
 export function getLifecyclePhase(
   status: string | null | undefined,
 ): LifecyclePhase {
@@ -91,19 +125,10 @@ export const ENGAGEMENT_NEEDED_STATUSES: readonly string[] = ENGAGEMENT_NEEDED_P
   (p) => STATUSES_BY_PHASE[p],
 );
 
-// Group rollup: when collapsing a set of leg statuses into one phase for the
-// invoice group, only "disputed" legs (errorTypeId != null) count. Clean legs
-// sit on the same invoice but were never part of any dispute and must not
-// drag the group's phase backwards. Earliest (most-blocking) phase wins —
-// one stuck leg blocks the whole invoice's submission, by design.
-//
-// Order is the natural reading direction of work; on-hold is grouped with
-// the in-flight stretch so a parked leg shows up as still blocking
-// downstream work but doesn't masquerade as either pre-submit or closed.
-// `mas-action-required` sits just before `closed` because a MAS-Eligible
-// leg has a positive verdict and only one off-system step remaining
-// (re-attest in MAS portal) — closer to closed than to response-pending,
-// but still active work.
+// Group rollup ordering — earliest (most-blocking) phase wins. On-hold
+// is grouped between response-pending and mas-action-required so a
+// parked leg shows up as still blocking downstream work but doesn't
+// masquerade as either pre-submit or closed.
 const PHASE_ORDER: readonly LifecyclePhase[] = [
   "pre-submit",
   "in-flight",
@@ -118,6 +143,14 @@ export interface RideForRollup {
   errorTypeId?: string | null;
 }
 
+/**
+ * Status-based legacy group rollup. Folds disputed legs' statuses into
+ * the earliest LifecyclePhase. Kept for callers that still walk legs by
+ * status; new code should consume `group.phase` directly via
+ * {@link getGroupLifecyclePhaseFromGroup}.
+ *
+ * @deprecated Wave C — read `group.phase`.
+ */
 export function getGroupLifecyclePhase(
   groupStatus: string | null | undefined,
   legs: ReadonlyArray<RideForRollup> = [],
@@ -135,10 +168,38 @@ export function getGroupLifecyclePhase(
   return earliest;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// CANONICAL Wave-C reader. Reads `group.phase` from the row directly;
+// falls back to the status-based path only when the caller hasn't
+// fetched the new column yet.
+// ──────────────────────────────────────────────────────────────────────────
+export interface GroupForLifecyclePhase {
+  phase?: InvoicePhase | string | null;
+  status?: string | null | undefined;
+  reattestCompletedAt?: string | null;
+}
+
+export function getGroupLifecyclePhaseFromGroup(
+  group: GroupForLifecyclePhase,
+): LifecyclePhase {
+  // On-hold is sourced from legacy status — the phase column treats
+  // hold as a flag and backfills hold-suspended rows to `triage`.
+  // Mirrors the server's macro-phase.ts derivation.
+  if (group.status === "On Hold") return "on-hold";
+  if (group.phase && group.phase in PHASE_TO_LIFECYCLE) {
+    return PHASE_TO_LIFECYCLE[group.phase as InvoicePhase];
+  }
+  return getLifecyclePhase(group.status);
+}
+
 // Shared tab vocabulary for the Claims and Invoice Groups list pages. Both
 // pages must use the same labels and the same status buckets — the only
 // difference is the row entity. Source of truth lives here so a status added
 // to STATUSES_BY_PHASE flows into both filter strips without further edits.
+//
+// Tabs stay status-keyed for Wave C because the URL ?status=… filter
+// param serializes status strings; Wave D will restructure the filter
+// API to take phase values directly.
 export type LifecycleTabKey =
   | "All"
   | "Action Required"

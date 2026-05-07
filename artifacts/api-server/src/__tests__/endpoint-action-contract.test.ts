@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
@@ -162,6 +163,7 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
     invoiceNumber,
     status: "Needs Evidence",
     outcome: "Pending",
+    phase: phaseForStatus("Needs Evidence"),
   }).returning();
   return row;
 }
@@ -173,16 +175,19 @@ async function createSeedClaim(opts: {
   sopOutcome?: string | null;
 } = {}): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T411-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const invoiceGroupId = opts.invoiceGroupId ?? null;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: "Needs Evidence",
     outcome: "Pending",
-    invoiceGroupId: opts.invoiceGroupId ?? null,
+    invoiceGroupId,
     errorTypeId: opts.errorTypeId ?? null,
     errorTypeName: opts.errorTypeName ?? null,
     sopOutcome: opts.sopOutcome ?? null,
     includedInDispute: true,
     claimAmount: "100.00",
+    disposition,
   }).returning();
   return row;
 }

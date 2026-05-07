@@ -13,7 +13,8 @@ understanding readback / preview generation) instead.
  */
 
 /**
- * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+ * DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.
+ * @deprecated
  * @nullable
  */
 export type InvoiceGroupResponseMacroPhase =

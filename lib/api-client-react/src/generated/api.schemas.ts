@@ -26,6 +26,10 @@ export interface AuthUser {
   status: string;
 }
 
+/**
+ * DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+ * @deprecated
+ */
 export type ClaimResponseStatus =
   (typeof ClaimResponseStatus)[keyof typeof ClaimResponseStatus];
 
@@ -43,6 +47,10 @@ export const ClaimResponseStatus = {
   Denied: "Denied",
 } as const;
 
+/**
+ * DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E.
+ * @deprecated
+ */
 export type ClaimResponseOutcome =
   (typeof ClaimResponseOutcome)[keyof typeof ClaimResponseOutcome];
 
@@ -53,6 +61,37 @@ export const ClaimResponseOutcome = {
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
   Withdrawn: "Withdrawn",
+} as const;
+
+/**
+ * Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `CLAIM_DISPOSITIONS`.
+ */
+export type ClaimResponseDisposition =
+  (typeof ClaimResponseDisposition)[keyof typeof ClaimResponseDisposition];
+
+export const ClaimResponseDisposition = {
+  unclassified: "unclassified",
+  classifying: "classifying",
+  disposed_portal: "disposed_portal",
+  disposed_email: "disposed_email",
+  disposed_withdraw: "disposed_withdraw",
+  disposed_nonissue: "disposed_nonissue",
+  blocked: "blocked",
+  duplicate: "duplicate",
+  awaiting_review: "awaiting_review",
+  verdict_drafted: "verdict_drafted",
+  verdict_approved: "verdict_approved",
+  verdict_denied: "verdict_denied",
+  verdict_partial: "verdict_partial",
+  attest_pending: "attest_pending",
+  attest_queued: "attest_queued",
+  attested: "attested",
+  mas_cancelled: "mas_cancelled",
+  attest_not_required: "attest_not_required",
+  final_reattested: "final_reattested",
+  final_withdrawn: "final_withdrawn",
+  final_denied: "final_denied",
+  final_nonissue: "final_nonissue",
 } as const;
 
 /**
@@ -224,8 +263,18 @@ export interface ClaimResponse {
   errorTypeName?: string | null;
   /** @nullable */
   claimAmount?: string | null;
+  /**
+   * DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+   * @deprecated
+   */
   status: ClaimResponseStatus;
+  /**
+   * DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E.
+   * @deprecated
+   */
   outcome: ClaimResponseOutcome;
+  /** Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `CLAIM_DISPOSITIONS`. */
+  disposition: ClaimResponseDisposition;
   /** @nullable */
   closureReason?: ClaimResponseClosureReason;
   /** @nullable */
@@ -400,6 +449,10 @@ export interface ValidTransitionsResponse {
   awaitingPayorAgainAt?: string | null;
 }
 
+/**
+ * DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+ * @deprecated
+ */
 export type InvoiceGroupResponseStatus =
   (typeof InvoiceGroupResponseStatus)[keyof typeof InvoiceGroupResponseStatus];
 
@@ -417,6 +470,10 @@ export const InvoiceGroupResponseStatus = {
   Denied: "Denied",
 } as const;
 
+/**
+ * DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E.
+ * @deprecated
+ */
 export type InvoiceGroupResponseOutcome =
   (typeof InvoiceGroupResponseOutcome)[keyof typeof InvoiceGroupResponseOutcome];
 
@@ -427,6 +484,22 @@ export const InvoiceGroupResponseOutcome = {
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
   Withdrawn: "Withdrawn",
+} as const;
+
+/**
+ * Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `INVOICE_PHASES`.
+ */
+export type InvoiceGroupResponsePhase =
+  (typeof InvoiceGroupResponsePhase)[keyof typeof InvoiceGroupResponsePhase];
+
+export const InvoiceGroupResponsePhase = {
+  triage: "triage",
+  ready_to_submit: "ready_to_submit",
+  submitted: "submitted",
+  response_received: "response_received",
+  reviewed: "reviewed",
+  awaiting_reattestation: "awaiting_reattestation",
+  closed: "closed",
 } as const;
 
 /**
@@ -465,7 +538,8 @@ export type InvoiceGroupResponseEvidenceChecklist = {
 } | null;
 
 /**
- * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+ * DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.
+ * @deprecated
  * @nullable
  */
 export type InvoiceGroupResponseMacroPhase =
@@ -558,8 +632,18 @@ export interface InvoiceGroupResponse {
   errorTypeId?: string | null;
   /** @nullable */
   errorTypeName?: string | null;
+  /**
+   * DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+   * @deprecated
+   */
   status: InvoiceGroupResponseStatus;
+  /**
+   * DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E.
+   * @deprecated
+   */
   outcome: InvoiceGroupResponseOutcome;
+  /** Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `INVOICE_PHASES`. */
+  phase: InvoiceGroupResponsePhase;
   /** @nullable */
   closureReason?: InvoiceGroupResponseClosureReason;
   /** @nullable */
@@ -663,7 +747,8 @@ export interface InvoiceGroupResponse {
   /** @nullable */
   reattestNote?: string | null;
   /**
-   * Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).
+   * DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.
+   * @deprecated
    * @nullable
    */
   macroPhase?: InvoiceGroupResponseMacroPhase;

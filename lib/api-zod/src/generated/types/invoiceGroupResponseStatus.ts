@@ -12,6 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
+/**
+ * DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+ * @deprecated
+ */
 export type InvoiceGroupResponseStatus =
   (typeof InvoiceGroupResponseStatus)[keyof typeof InvoiceGroupResponseStatus];
 

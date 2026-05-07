@@ -12,6 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
+/**
+ * DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
+ * @deprecated
+ */
 export type ClaimResponseStatus =
   (typeof ClaimResponseStatus)[keyof typeof ClaimResponseStatus];
 

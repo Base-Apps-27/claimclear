@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Task #456 — atomic invoice-number rename inside the Re-attest commit
 // (both POST /invoice-groups/:id/reattest/complete and
 // POST /invoice-groups/:id/reattest/queue).
@@ -124,11 +125,13 @@ async function createSeedGroup(opts: {
   status?: any;
   reattestRequired?: boolean;
 } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
+  const status = opts.status ?? "Needs Review";
   const [row] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber: opts.invoiceNumber ?? uniqueInvoiceNumber("G"),
-    status: opts.status ?? "Needs Review",
+    status,
     outcome: "Pending",
     reattestRequired: opts.reattestRequired ?? false,
+    phase: phaseForStatus(status),
   }).returning();
   return row;
 }
@@ -149,6 +152,7 @@ async function createApprovedLeg(opts: {
   errorTypeName: string;
 }): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T456L-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const disposition = await dispositionForGroup(opts.invoiceGroupId);
   const [leg] = await db.insert(claimsTable).values({
     confNumber,
     status: "Awaiting Response",
@@ -159,6 +163,7 @@ async function createApprovedLeg(opts: {
     includedInDispute: true,
     claimAmount: "100.00",
     attestationState: "not_required",
+    disposition,
   }).returning();
   await db.insert(claimVerdictTable).values({
     claimId: leg.id,

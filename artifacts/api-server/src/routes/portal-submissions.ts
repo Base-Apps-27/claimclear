@@ -10,7 +10,7 @@ import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { lintDraft, type LintResult } from "../lib/draft-lint";
 import { primaryClaimIdForGroup } from "../lib/group-claims";
-import { getMacroPhase } from "../lib/macro-phase";
+import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
 import { buildPromptLegInputs, loadDecisionTreesForLegs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
@@ -1412,7 +1412,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   const isBot = submissionActor.kind === "system";
 
   if (ctx.group) {
-    const phase = getMacroPhase(ctx.group.status);
+    const phase = getGroupMacroPhase(ctx.group);
     if (phase !== "pre-submit") {
       res.status(409).json({
         error: "Group is not in pre-submit",

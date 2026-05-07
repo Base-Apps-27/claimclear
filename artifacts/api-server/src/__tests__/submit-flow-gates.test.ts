@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
@@ -105,10 +106,12 @@ async function createSeedGroup(opts: {
   previewGeneratedAt?: Date | null;
 } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
   const invoiceNumber = `T210G-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const status = opts.status ?? "Needs Evidence";
   const [row] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber,
-    status: opts.status ?? "Needs Evidence",
+    status,
     outcome: "Pending",
+    phase: phaseForStatus(status),
   }).returning();
 
   const updates: Record<string, unknown> = {};
@@ -139,16 +142,19 @@ async function createSeedClaim(opts: {
   includedInDispute?: boolean;
 } = {}): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T210-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const invoiceGroupId = opts.invoiceGroupId ?? null;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: opts.status ?? "Needs Evidence",
     outcome: opts.outcome ?? "Pending",
-    invoiceGroupId: opts.invoiceGroupId ?? null,
+    invoiceGroupId,
     errorTypeId: Object.prototype.hasOwnProperty.call(opts, "errorTypeId") ? opts.errorTypeId : null,
     errorTypeName: opts.errorTypeName ?? null,
     sopOutcome: opts.sopOutcome ?? null,
     includedInDispute: opts.includedInDispute ?? true,
     claimAmount: "100.00",
+    disposition,
   }).returning();
   return row;
 }

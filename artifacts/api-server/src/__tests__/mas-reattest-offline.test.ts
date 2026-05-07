@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Task #333 — admin "recorded offline" path on
 // POST /invoice-groups/:id/reattest/complete.
 //
@@ -114,10 +115,12 @@ async function fetchJson<T = any>(
 
 async function createSeedGroup(opts: { status?: any } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
   const invoiceNumber = `T333G-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const status = opts.status ?? "Needs Review";
   const [row] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber,
-    status: opts.status ?? "Needs Review",
+    status,
     outcome: "Pending",
+    phase: phaseForStatus(status),
   }).returning();
   return row;
 }
@@ -131,16 +134,19 @@ async function createSeedClaim(opts: {
   sopOutcome?: string | null;
 } = {}): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T333-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const invoiceGroupId = opts.invoiceGroupId ?? null;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: opts.status ?? "Needs Review",
     outcome: opts.outcome ?? "Pending",
-    invoiceGroupId: opts.invoiceGroupId ?? null,
+    invoiceGroupId,
     errorTypeId: opts.errorTypeId ?? null,
     errorTypeName: opts.errorTypeName ?? null,
     sopOutcome: opts.sopOutcome ?? null,
     includedInDispute: true,
     claimAmount: "100.00",
+    disposition,
   }).returning();
   return row;
 }

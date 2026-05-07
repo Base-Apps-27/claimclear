@@ -198,27 +198,48 @@ export const ListInvoiceGroupsResponse = zod.object({
       errorDetails: zod.string().nullish(),
       errorTypeId: zod.string().nullish(),
       errorTypeName: zod.string().nullish(),
-      status: zod.enum([
-        "New",
-        "Needs Review",
-        "Needs Evidence",
-        "Processed",
-        "Portal Queued",
-        "Generating Email",
-        "Ready to Review",
-        "Awaiting Response",
-        "On Hold",
-        "Resolved",
-        "Denied",
-      ]),
-      outcome: zod.enum([
-        "Pending",
-        "Approved",
-        "Denied",
-        "Partially Approved",
-        "Non-Issue",
-        "Withdrawn",
-      ]),
+      status: zod
+        .enum([
+          "New",
+          "Needs Review",
+          "Needs Evidence",
+          "Processed",
+          "Portal Queued",
+          "Generating Email",
+          "Ready to Review",
+          "Awaiting Response",
+          "On Hold",
+          "Resolved",
+          "Denied",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+        ),
+      outcome: zod
+        .enum([
+          "Pending",
+          "Approved",
+          "Denied",
+          "Partially Approved",
+          "Non-Issue",
+          "Withdrawn",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+        ),
+      phase: zod
+        .enum([
+          "triage",
+          "ready_to_submit",
+          "submitted",
+          "response_received",
+          "reviewed",
+          "awaiting_reattestation",
+          "closed",
+        ])
+        .describe(
+          "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+        ),
       closureReason: zod
         .union([
           zod.literal("denied_by_payor"),
@@ -390,7 +411,7 @@ export const ListInvoiceGroupsResponse = zod.object({
         ])
         .nullish()
         .describe(
-          "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+          "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
         ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
@@ -762,27 +783,48 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
           errorDetails: zod.string().nullish(),
           errorTypeId: zod.string().nullish(),
           errorTypeName: zod.string().nullish(),
-          status: zod.enum([
-            "New",
-            "Needs Review",
-            "Needs Evidence",
-            "Processed",
-            "Portal Queued",
-            "Generating Email",
-            "Ready to Review",
-            "Awaiting Response",
-            "On Hold",
-            "Resolved",
-            "Denied",
-          ]),
-          outcome: zod.enum([
-            "Pending",
-            "Approved",
-            "Denied",
-            "Partially Approved",
-            "Non-Issue",
-            "Withdrawn",
-          ]),
+          status: zod
+            .enum([
+              "New",
+              "Needs Review",
+              "Needs Evidence",
+              "Processed",
+              "Portal Queued",
+              "Generating Email",
+              "Ready to Review",
+              "Awaiting Response",
+              "On Hold",
+              "Resolved",
+              "Denied",
+            ])
+            .describe(
+              "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+            ),
+          outcome: zod
+            .enum([
+              "Pending",
+              "Approved",
+              "Denied",
+              "Partially Approved",
+              "Non-Issue",
+              "Withdrawn",
+            ])
+            .describe(
+              "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+            ),
+          phase: zod
+            .enum([
+              "triage",
+              "ready_to_submit",
+              "submitted",
+              "response_received",
+              "reviewed",
+              "awaiting_reattestation",
+              "closed",
+            ])
+            .describe(
+              "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+            ),
           closureReason: zod
             .union([
               zod.literal("denied_by_payor"),
@@ -954,7 +996,7 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             ])
             .nullish()
             .describe(
-              "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+              "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
             ),
           createdAt: zod.string().optional(),
           updatedAt: zod.string().optional(),
@@ -1095,27 +1137,63 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
                 errorTypeId: zod.string().nullish(),
                 errorTypeName: zod.string().nullish(),
                 claimAmount: zod.string().nullish(),
-                status: zod.enum([
-                  "New",
-                  "Needs Review",
-                  "Needs Evidence",
-                  "Processed",
-                  "Portal Queued",
-                  "Generating Email",
-                  "Ready to Review",
-                  "Awaiting Response",
-                  "On Hold",
-                  "Resolved",
-                  "Denied",
-                ]),
-                outcome: zod.enum([
-                  "Pending",
-                  "Approved",
-                  "Denied",
-                  "Partially Approved",
-                  "Non-Issue",
-                  "Withdrawn",
-                ]),
+                status: zod
+                  .enum([
+                    "New",
+                    "Needs Review",
+                    "Needs Evidence",
+                    "Processed",
+                    "Portal Queued",
+                    "Generating Email",
+                    "Ready to Review",
+                    "Awaiting Response",
+                    "On Hold",
+                    "Resolved",
+                    "Denied",
+                  ])
+                  .describe(
+                    "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+                  ),
+                outcome: zod
+                  .enum([
+                    "Pending",
+                    "Approved",
+                    "Denied",
+                    "Partially Approved",
+                    "Non-Issue",
+                    "Withdrawn",
+                  ])
+                  .describe(
+                    "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+                  ),
+                disposition: zod
+                  .enum([
+                    "unclassified",
+                    "classifying",
+                    "disposed_portal",
+                    "disposed_email",
+                    "disposed_withdraw",
+                    "disposed_nonissue",
+                    "blocked",
+                    "duplicate",
+                    "awaiting_review",
+                    "verdict_drafted",
+                    "verdict_approved",
+                    "verdict_denied",
+                    "verdict_partial",
+                    "attest_pending",
+                    "attest_queued",
+                    "attested",
+                    "mas_cancelled",
+                    "attest_not_required",
+                    "final_reattested",
+                    "final_withdrawn",
+                    "final_denied",
+                    "final_nonissue",
+                  ])
+                  .describe(
+                    "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+                  ),
                 closureReason: zod
                   .union([
                     zod.literal("denied_by_payor"),
@@ -1461,27 +1539,48 @@ export const GetInvoiceGroupResponse = zod
     errorDetails: zod.string().nullish(),
     errorTypeId: zod.string().nullish(),
     errorTypeName: zod.string().nullish(),
-    status: zod.enum([
-      "New",
-      "Needs Review",
-      "Needs Evidence",
-      "Processed",
-      "Portal Queued",
-      "Generating Email",
-      "Ready to Review",
-      "Awaiting Response",
-      "On Hold",
-      "Resolved",
-      "Denied",
-    ]),
-    outcome: zod.enum([
-      "Pending",
-      "Approved",
-      "Denied",
-      "Partially Approved",
-      "Non-Issue",
-      "Withdrawn",
-    ]),
+    status: zod
+      .enum([
+        "New",
+        "Needs Review",
+        "Needs Evidence",
+        "Processed",
+        "Portal Queued",
+        "Generating Email",
+        "Ready to Review",
+        "Awaiting Response",
+        "On Hold",
+        "Resolved",
+        "Denied",
+      ])
+      .describe(
+        "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+      ),
+    outcome: zod
+      .enum([
+        "Pending",
+        "Approved",
+        "Denied",
+        "Partially Approved",
+        "Non-Issue",
+        "Withdrawn",
+      ])
+      .describe(
+        "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+      ),
+    phase: zod
+      .enum([
+        "triage",
+        "ready_to_submit",
+        "submitted",
+        "response_received",
+        "reviewed",
+        "awaiting_reattestation",
+        "closed",
+      ])
+      .describe(
+        "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+      ),
     closureReason: zod
       .union([
         zod.literal("denied_by_payor"),
@@ -1653,7 +1752,7 @@ export const GetInvoiceGroupResponse = zod
       ])
       .nullish()
       .describe(
-        "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+        "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
       ),
     createdAt: zod.string().optional(),
     updatedAt: zod.string().optional(),
@@ -1801,27 +1900,63 @@ export const GetInvoiceGroupResponse = zod
             errorTypeId: zod.string().nullish(),
             errorTypeName: zod.string().nullish(),
             claimAmount: zod.string().nullish(),
-            status: zod.enum([
-              "New",
-              "Needs Review",
-              "Needs Evidence",
-              "Processed",
-              "Portal Queued",
-              "Generating Email",
-              "Ready to Review",
-              "Awaiting Response",
-              "On Hold",
-              "Resolved",
-              "Denied",
-            ]),
-            outcome: zod.enum([
-              "Pending",
-              "Approved",
-              "Denied",
-              "Partially Approved",
-              "Non-Issue",
-              "Withdrawn",
-            ]),
+            status: zod
+              .enum([
+                "New",
+                "Needs Review",
+                "Needs Evidence",
+                "Processed",
+                "Portal Queued",
+                "Generating Email",
+                "Ready to Review",
+                "Awaiting Response",
+                "On Hold",
+                "Resolved",
+                "Denied",
+              ])
+              .describe(
+                "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+              ),
+            outcome: zod
+              .enum([
+                "Pending",
+                "Approved",
+                "Denied",
+                "Partially Approved",
+                "Non-Issue",
+                "Withdrawn",
+              ])
+              .describe(
+                "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+              ),
+            disposition: zod
+              .enum([
+                "unclassified",
+                "classifying",
+                "disposed_portal",
+                "disposed_email",
+                "disposed_withdraw",
+                "disposed_nonissue",
+                "blocked",
+                "duplicate",
+                "awaiting_review",
+                "verdict_drafted",
+                "verdict_approved",
+                "verdict_denied",
+                "verdict_partial",
+                "attest_pending",
+                "attest_queued",
+                "attested",
+                "mas_cancelled",
+                "attest_not_required",
+                "final_reattested",
+                "final_withdrawn",
+                "final_denied",
+                "final_nonissue",
+              ])
+              .describe(
+                "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+              ),
             closureReason: zod
               .union([
                 zod.literal("denied_by_payor"),
@@ -2538,27 +2673,48 @@ export const UpdateInvoiceGroupResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -2730,7 +2886,7 @@ export const UpdateInvoiceGroupResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -2876,27 +3032,48 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -3068,7 +3245,7 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -3276,27 +3453,48 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -3468,7 +3666,7 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -3621,27 +3819,48 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
     errorDetails: zod.string().nullish(),
     errorTypeId: zod.string().nullish(),
     errorTypeName: zod.string().nullish(),
-    status: zod.enum([
-      "New",
-      "Needs Review",
-      "Needs Evidence",
-      "Processed",
-      "Portal Queued",
-      "Generating Email",
-      "Ready to Review",
-      "Awaiting Response",
-      "On Hold",
-      "Resolved",
-      "Denied",
-    ]),
-    outcome: zod.enum([
-      "Pending",
-      "Approved",
-      "Denied",
-      "Partially Approved",
-      "Non-Issue",
-      "Withdrawn",
-    ]),
+    status: zod
+      .enum([
+        "New",
+        "Needs Review",
+        "Needs Evidence",
+        "Processed",
+        "Portal Queued",
+        "Generating Email",
+        "Ready to Review",
+        "Awaiting Response",
+        "On Hold",
+        "Resolved",
+        "Denied",
+      ])
+      .describe(
+        "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+      ),
+    outcome: zod
+      .enum([
+        "Pending",
+        "Approved",
+        "Denied",
+        "Partially Approved",
+        "Non-Issue",
+        "Withdrawn",
+      ])
+      .describe(
+        "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+      ),
+    phase: zod
+      .enum([
+        "triage",
+        "ready_to_submit",
+        "submitted",
+        "response_received",
+        "reviewed",
+        "awaiting_reattestation",
+        "closed",
+      ])
+      .describe(
+        "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+      ),
     closureReason: zod
       .union([
         zod.literal("denied_by_payor"),
@@ -3813,7 +4032,7 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       ])
       .nullish()
       .describe(
-        "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+        "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
       ),
     createdAt: zod.string().optional(),
     updatedAt: zod.string().optional(),
@@ -3971,27 +4190,48 @@ export const TriageInvoiceGroupResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -4163,7 +4403,7 @@ export const TriageInvoiceGroupResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -4308,27 +4548,48 @@ export const HoldInvoiceGroupResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -4500,7 +4761,7 @@ export const HoldInvoiceGroupResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -4641,27 +4902,48 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -4833,7 +5115,7 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -5078,27 +5360,48 @@ export const RecordPayorDenialReasonResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -5270,7 +5573,7 @@ export const RecordPayorDenialReasonResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -5435,27 +5738,48 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -5627,7 +5951,7 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -5878,27 +6202,63 @@ export const GroupSopAdvanceResponse = zod
           errorTypeId: zod.string().nullish(),
           errorTypeName: zod.string().nullish(),
           claimAmount: zod.string().nullish(),
-          status: zod.enum([
-            "New",
-            "Needs Review",
-            "Needs Evidence",
-            "Processed",
-            "Portal Queued",
-            "Generating Email",
-            "Ready to Review",
-            "Awaiting Response",
-            "On Hold",
-            "Resolved",
-            "Denied",
-          ]),
-          outcome: zod.enum([
-            "Pending",
-            "Approved",
-            "Denied",
-            "Partially Approved",
-            "Non-Issue",
-            "Withdrawn",
-          ]),
+          status: zod
+            .enum([
+              "New",
+              "Needs Review",
+              "Needs Evidence",
+              "Processed",
+              "Portal Queued",
+              "Generating Email",
+              "Ready to Review",
+              "Awaiting Response",
+              "On Hold",
+              "Resolved",
+              "Denied",
+            ])
+            .describe(
+              "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+            ),
+          outcome: zod
+            .enum([
+              "Pending",
+              "Approved",
+              "Denied",
+              "Partially Approved",
+              "Non-Issue",
+              "Withdrawn",
+            ])
+            .describe(
+              "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+            ),
+          disposition: zod
+            .enum([
+              "unclassified",
+              "classifying",
+              "disposed_portal",
+              "disposed_email",
+              "disposed_withdraw",
+              "disposed_nonissue",
+              "blocked",
+              "duplicate",
+              "awaiting_review",
+              "verdict_drafted",
+              "verdict_approved",
+              "verdict_denied",
+              "verdict_partial",
+              "attest_pending",
+              "attest_queued",
+              "attested",
+              "mas_cancelled",
+              "attest_not_required",
+              "final_reattested",
+              "final_withdrawn",
+              "final_denied",
+              "final_nonissue",
+            ])
+            .describe(
+              "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+            ),
           closureReason: zod
             .union([
               zod.literal("denied_by_payor"),
@@ -6299,27 +6659,48 @@ export const SetGroupContextResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -6491,7 +6872,7 @@ export const SetGroupContextResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -6639,27 +7020,48 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -6831,7 +7233,7 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -6985,27 +7387,48 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -7177,7 +7600,7 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -7324,27 +7747,48 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -7516,7 +7960,7 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -7660,27 +8104,48 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -7852,7 +8317,7 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -7996,27 +8461,48 @@ export const StampPreviewGeneratedResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -8188,7 +8674,7 @@ export const StampPreviewGeneratedResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -8364,27 +8850,48 @@ export const CompleteGroupReattestResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -8556,7 +9063,7 @@ export const CompleteGroupReattestResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
@@ -8737,27 +9244,48 @@ export const BulkQueueGroupReattestResponse = zod
       errorDetails: zod.string().nullish(),
       errorTypeId: zod.string().nullish(),
       errorTypeName: zod.string().nullish(),
-      status: zod.enum([
-        "New",
-        "Needs Review",
-        "Needs Evidence",
-        "Processed",
-        "Portal Queued",
-        "Generating Email",
-        "Ready to Review",
-        "Awaiting Response",
-        "On Hold",
-        "Resolved",
-        "Denied",
-      ]),
-      outcome: zod.enum([
-        "Pending",
-        "Approved",
-        "Denied",
-        "Partially Approved",
-        "Non-Issue",
-        "Withdrawn",
-      ]),
+      status: zod
+        .enum([
+          "New",
+          "Needs Review",
+          "Needs Evidence",
+          "Processed",
+          "Portal Queued",
+          "Generating Email",
+          "Ready to Review",
+          "Awaiting Response",
+          "On Hold",
+          "Resolved",
+          "Denied",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+        ),
+      outcome: zod
+        .enum([
+          "Pending",
+          "Approved",
+          "Denied",
+          "Partially Approved",
+          "Non-Issue",
+          "Withdrawn",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+        ),
+      phase: zod
+        .enum([
+          "triage",
+          "ready_to_submit",
+          "submitted",
+          "response_received",
+          "reviewed",
+          "awaiting_reattestation",
+          "closed",
+        ])
+        .describe(
+          "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+        ),
       closureReason: zod
         .union([
           zod.literal("denied_by_payor"),
@@ -8929,7 +9457,7 @@ export const BulkQueueGroupReattestResponse = zod
         ])
         .nullish()
         .describe(
-          "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+          "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
         ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
@@ -9502,27 +10030,63 @@ export const ListClaimsResponse = zod.object({
       errorTypeId: zod.string().nullish(),
       errorTypeName: zod.string().nullish(),
       claimAmount: zod.string().nullish(),
-      status: zod.enum([
-        "New",
-        "Needs Review",
-        "Needs Evidence",
-        "Processed",
-        "Portal Queued",
-        "Generating Email",
-        "Ready to Review",
-        "Awaiting Response",
-        "On Hold",
-        "Resolved",
-        "Denied",
-      ]),
-      outcome: zod.enum([
-        "Pending",
-        "Approved",
-        "Denied",
-        "Partially Approved",
-        "Non-Issue",
-        "Withdrawn",
-      ]),
+      status: zod
+        .enum([
+          "New",
+          "Needs Review",
+          "Needs Evidence",
+          "Processed",
+          "Portal Queued",
+          "Generating Email",
+          "Ready to Review",
+          "Awaiting Response",
+          "On Hold",
+          "Resolved",
+          "Denied",
+        ])
+        .describe(
+          "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+        ),
+      outcome: zod
+        .enum([
+          "Pending",
+          "Approved",
+          "Denied",
+          "Partially Approved",
+          "Non-Issue",
+          "Withdrawn",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+        ),
+      disposition: zod
+        .enum([
+          "unclassified",
+          "classifying",
+          "disposed_portal",
+          "disposed_email",
+          "disposed_withdraw",
+          "disposed_nonissue",
+          "blocked",
+          "duplicate",
+          "awaiting_review",
+          "verdict_drafted",
+          "verdict_approved",
+          "verdict_denied",
+          "verdict_partial",
+          "attest_pending",
+          "attest_queued",
+          "attested",
+          "mas_cancelled",
+          "attest_not_required",
+          "final_reattested",
+          "final_withdrawn",
+          "final_denied",
+          "final_nonissue",
+        ])
+        .describe(
+          "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+        ),
       closureReason: zod
         .union([
           zod.literal("denied_by_payor"),
@@ -9877,27 +10441,63 @@ export const GetClaimResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -10243,27 +10843,63 @@ export const UpdateClaimResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -10604,27 +11240,63 @@ export const UpdateClaimStatusResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -10995,27 +11667,63 @@ export const UpdateClaimOutcomeResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -11330,27 +12038,63 @@ export const ListAttestationPendingResponse = zod.object({
       errorTypeId: zod.string().nullish(),
       errorTypeName: zod.string().nullish(),
       claimAmount: zod.string().nullish(),
-      status: zod.enum([
-        "New",
-        "Needs Review",
-        "Needs Evidence",
-        "Processed",
-        "Portal Queued",
-        "Generating Email",
-        "Ready to Review",
-        "Awaiting Response",
-        "On Hold",
-        "Resolved",
-        "Denied",
-      ]),
-      outcome: zod.enum([
-        "Pending",
-        "Approved",
-        "Denied",
-        "Partially Approved",
-        "Non-Issue",
-        "Withdrawn",
-      ]),
+      status: zod
+        .enum([
+          "New",
+          "Needs Review",
+          "Needs Evidence",
+          "Processed",
+          "Portal Queued",
+          "Generating Email",
+          "Ready to Review",
+          "Awaiting Response",
+          "On Hold",
+          "Resolved",
+          "Denied",
+        ])
+        .describe(
+          "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+        ),
+      outcome: zod
+        .enum([
+          "Pending",
+          "Approved",
+          "Denied",
+          "Partially Approved",
+          "Non-Issue",
+          "Withdrawn",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+        ),
+      disposition: zod
+        .enum([
+          "unclassified",
+          "classifying",
+          "disposed_portal",
+          "disposed_email",
+          "disposed_withdraw",
+          "disposed_nonissue",
+          "blocked",
+          "duplicate",
+          "awaiting_review",
+          "verdict_drafted",
+          "verdict_approved",
+          "verdict_denied",
+          "verdict_partial",
+          "attest_pending",
+          "attest_queued",
+          "attested",
+          "mas_cancelled",
+          "attest_not_required",
+          "final_reattested",
+          "final_withdrawn",
+          "final_denied",
+          "final_nonissue",
+        ])
+        .describe(
+          "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+        ),
       closureReason: zod
         .union([
           zod.literal("denied_by_payor"),
@@ -11703,27 +12447,63 @@ export const AttestClaimResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -12034,27 +12814,63 @@ export const QueueAttestationForClaimResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -12365,27 +13181,63 @@ export const ConfirmQueuedAttestationResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -12803,27 +13655,63 @@ export const UpdateClaimEvidenceResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -13146,27 +14034,63 @@ export const PlaceLegOnHoldResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -13472,27 +14396,63 @@ export const RemoveLegHoldResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -13795,27 +14755,63 @@ export const ClearLegHoldResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -14126,27 +15122,63 @@ export const ClassifyLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -14460,27 +15492,63 @@ export const SopAdvanceLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -14804,27 +15872,63 @@ export const ExcludeLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -15135,27 +16239,63 @@ export const IncludeLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -15483,27 +16623,63 @@ export const MarkLegDuplicateResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -15809,27 +16985,63 @@ export const UnmarkLegDuplicateResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -16136,27 +17348,63 @@ export const ReclassifyLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -16562,27 +17810,63 @@ export const SetLegContextResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -16902,27 +18186,63 @@ export const ConcludeLegResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -17236,27 +18556,63 @@ export const CompleteLegMasActionResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -17566,27 +18922,63 @@ export const TriageClaimResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -17899,27 +19291,63 @@ export const PostResponseActionResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -18268,27 +19696,63 @@ export const GenerateClaimEmailResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -21309,27 +22773,48 @@ export const GetDashboardSummaryResponse = zod.object({
       errorDetails: zod.string().nullish(),
       errorTypeId: zod.string().nullish(),
       errorTypeName: zod.string().nullish(),
-      status: zod.enum([
-        "New",
-        "Needs Review",
-        "Needs Evidence",
-        "Processed",
-        "Portal Queued",
-        "Generating Email",
-        "Ready to Review",
-        "Awaiting Response",
-        "On Hold",
-        "Resolved",
-        "Denied",
-      ]),
-      outcome: zod.enum([
-        "Pending",
-        "Approved",
-        "Denied",
-        "Partially Approved",
-        "Non-Issue",
-        "Withdrawn",
-      ]),
+      status: zod
+        .enum([
+          "New",
+          "Needs Review",
+          "Needs Evidence",
+          "Processed",
+          "Portal Queued",
+          "Generating Email",
+          "Ready to Review",
+          "Awaiting Response",
+          "On Hold",
+          "Resolved",
+          "Denied",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+        ),
+      outcome: zod
+        .enum([
+          "Pending",
+          "Approved",
+          "Denied",
+          "Partially Approved",
+          "Non-Issue",
+          "Withdrawn",
+        ])
+        .describe(
+          "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+        ),
+      phase: zod
+        .enum([
+          "triage",
+          "ready_to_submit",
+          "submitted",
+          "response_received",
+          "reviewed",
+          "awaiting_reattestation",
+          "closed",
+        ])
+        .describe(
+          "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+        ),
       closureReason: zod
         .union([
           zod.literal("denied_by_payor"),
@@ -21501,7 +22986,7 @@ export const GetDashboardSummaryResponse = zod.object({
         ])
         .nullish()
         .describe(
-          "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+          "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
         ),
       createdAt: zod.string().optional(),
       updatedAt: zod.string().optional(),
@@ -23843,27 +25328,63 @@ export const UpdateClaimClosureReviewResponse = zod.object({
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
   claimAmount: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  disposition: zod
+    .enum([
+      "unclassified",
+      "classifying",
+      "disposed_portal",
+      "disposed_email",
+      "disposed_withdraw",
+      "disposed_nonissue",
+      "blocked",
+      "duplicate",
+      "awaiting_review",
+      "verdict_drafted",
+      "verdict_approved",
+      "verdict_denied",
+      "verdict_partial",
+      "attest_pending",
+      "attest_queued",
+      "attested",
+      "mas_cancelled",
+      "attest_not_required",
+      "final_reattested",
+      "final_withdrawn",
+      "final_denied",
+      "final_nonissue",
+    ])
+    .describe(
+      "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `CLAIM_DISPOSITIONS`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -24183,27 +25704,48 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
   errorDetails: zod.string().nullish(),
   errorTypeId: zod.string().nullish(),
   errorTypeName: zod.string().nullish(),
-  status: zod.enum([
-    "New",
-    "Needs Review",
-    "Needs Evidence",
-    "Processed",
-    "Portal Queued",
-    "Generating Email",
-    "Ready to Review",
-    "Awaiting Response",
-    "On Hold",
-    "Resolved",
-    "Denied",
-  ]),
-  outcome: zod.enum([
-    "Pending",
-    "Approved",
-    "Denied",
-    "Partially Approved",
-    "Non-Issue",
-    "Withdrawn",
-  ]),
+  status: zod
+    .enum([
+      "New",
+      "Needs Review",
+      "Needs Evidence",
+      "Processed",
+      "Portal Queued",
+      "Generating Email",
+      "Ready to Review",
+      "Awaiting Response",
+      "On Hold",
+      "Resolved",
+      "Denied",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C\/D for backwards compatibility; dropped in Wave E.",
+    ),
+  outcome: zod
+    .enum([
+      "Pending",
+      "Approved",
+      "Denied",
+      "Partially Approved",
+      "Non-Issue",
+      "Withdrawn",
+    ])
+    .describe(
+      "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
+    ),
+  phase: zod
+    .enum([
+      "triage",
+      "ready_to_submit",
+      "submitted",
+      "response_received",
+      "reviewed",
+      "awaiting_reattestation",
+      "closed",
+    ])
+    .describe(
+      "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace\/vocab` `INVOICE_PHASES`.",
+    ),
   closureReason: zod
     .union([
       zod.literal("denied_by_payor"),
@@ -24375,7 +25917,7 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     ])
     .nullish()
     .describe(
-      "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.).",
+      "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.",
     ),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),

@@ -4883,9 +4883,17 @@ components:
         status:
           type: string
           enum: ["New", "Needs Review", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+          deprecated: true
+          description: "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E."
         outcome:
           type: string
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+          deprecated: true
+          description: "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E."
+        disposition:
+          type: string
+          enum: ["unclassified", "classifying", "disposed_portal", "disposed_email", "disposed_withdraw", "disposed_nonissue", "blocked", "duplicate", "awaiting_review", "verdict_drafted", "verdict_approved", "verdict_denied", "verdict_partial", "attest_pending", "attest_queued", "attested", "mas_cancelled", "attest_not_required", "final_reattested", "final_withdrawn", "final_denied", "final_nonissue"]
+          description: "Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `CLAIM_DISPOSITIONS`."
         closureReason:
           type: ["string", "null"]
           enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
@@ -5075,6 +5083,7 @@ components:
         - confNumber
         - status
         - outcome
+        - disposition
         - disputeEmailSent
         - attestationState
         - includedInDispute
@@ -5135,9 +5144,17 @@ components:
         status:
           type: string
           enum: ["New", "Needs Review", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold", "Resolved", "Denied"]
+          deprecated: true
+          description: "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E."
         outcome:
           type: string
           enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+          deprecated: true
+          description: "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E."
+        phase:
+          type: string
+          enum: ["triage", "ready_to_submit", "submitted", "response_received", "reviewed", "awaiting_reattestation", "closed"]
+          description: "Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `INVOICE_PHASES`."
         closureReason:
           type: ["string", "null"]
           enum: ["denied_by_payor", "cannot_dispute", "non_issue", null]
@@ -5261,7 +5278,8 @@ components:
         macroPhase:
           type: ["string", "null"]
           enum: ["pre-submit", "in-flight", "response-pending", "mas-action-required", "awaiting-payout", "closed", "on-hold", null]
-          description: "Server-derived macro phase used by the per-invoice transition surfaces. Only populated by endpoints that depend on it (group detail, MAS list, etc.)."
+          deprecated: true
+          description: "DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E."
         createdAt:
           type: string
         updatedAt:
@@ -5366,6 +5384,7 @@ components:
         - invoiceNumber
         - status
         - outcome
+        - phase
         - rideCount
         - disputeEmailSent
         - reattestRequired

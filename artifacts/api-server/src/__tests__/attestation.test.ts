@@ -1,3 +1,4 @@
+import { phaseForStatus, dispositionForGroup } from "./fixtures/state";
 // Route + transition tests for re-attestation tracking.
 //
 // Coverage:
@@ -119,14 +120,17 @@ async function createSeedClaim(opts: {
   const errorTypeId = Object.prototype.hasOwnProperty.call(opts, "errorTypeId")
     ? opts.errorTypeId ?? null
     : "et-test";
+  const invoiceGroupId = opts.invoiceGroupId ?? null;
+  const disposition = await dispositionForGroup(invoiceGroupId);
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: opts.status ?? "Awaiting Response",
     outcome: opts.outcome ?? "Pending",
     errorTypeId,
     errorTypeName: errorTypeId ? "Seeded Error" : null,
-    invoiceGroupId: opts.invoiceGroupId ?? null,
+    invoiceGroupId,
     claimAmount: "100.00",
+    disposition,
   }).returning();
   return row;
 }
@@ -137,6 +141,7 @@ async function createSeedGroup(): Promise<typeof invoiceGroupsTable.$inferSelect
     invoiceNumber,
     status: "Awaiting Response",
     outcome: "Pending",
+    phase: phaseForStatus("Awaiting Response"),
   }).returning();
   return row;
 }
