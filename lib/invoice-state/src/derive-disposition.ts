@@ -124,6 +124,15 @@ function terminalForClosedPhase(claim: LegacyClaimShape): ClaimDisposition {
       return "final_denied";
     case "cannot_dispute":
       return "final_withdrawn";
+    // Wave D-PR4: groups closed by the nightly Expired sweep get
+    // `closure_reason='expired'` (group-level heal in migration 0034
+    // §3a, plus the deriver's pre-migration backfill). Children
+    // cascaded by `syncChildRides` carry the same closure into a
+    // dedicated `disposed_expired` disposition so the closed-phase
+    // population is partitioned from the resolved/denied/non-issue
+    // terminals at read time.
+    case "expired":
+      return "disposed_expired";
   }
   if (claim.attestationState === "completed") return "final_reattested";
   switch (claim.outcome) {

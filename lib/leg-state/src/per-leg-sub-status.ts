@@ -79,6 +79,11 @@ const DISPOSITION_TO_SUB_STATUS: Record<string, LegSubStatus> = {
   final_withdrawn: "frozen",
   final_denied: "frozen",
   final_nonissue: "frozen",
+  // Wave D-PR4: closed-state terminal stamped by the Expired sweep
+  // when a group is auto-retired past its filing deadline. Lives in
+  // the closed phase like the other final_* values; presented to the
+  // operator as `frozen` (no further action available).
+  disposed_expired: "frozen",
 };
 
 // Pure projection from a leg's discrete state to its derived sub-status.

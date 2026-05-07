@@ -26,8 +26,8 @@
 // The function is idempotent — re-running it on a database with no
 // newly-eligible rows is a cheap no-op.
 
-import { and, eq, isNotNull, lt, or, sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
+import { db, claimsTable } from "@workspace/db";
 import { invoiceGroupsTable } from "@workspace/db";
 import { logger } from "./logger";
 import {
@@ -35,6 +35,7 @@ import {
   transitionGroupStatus,
   type GroupTransitionActor,
 } from "./group-transitions";
+import { setClaimDisposition } from "./leg-state/set-claim-disposition";
 
 export interface ExpiredSweepResult {
   /** Number of groups transitioned to Expired in this run. */
@@ -130,6 +131,13 @@ export async function sweepExpiredGroups(opts: SweepOptions): Promise<ExpiredSwe
 
   for (const row of eligible) {
     try {
+      // Wave D-PR4: stamp `phase='closed'` and `closure_reason='expired'`
+      // on the parent in the SAME UPDATE that flips status to Expired
+      // (extraFields rides on transitionGroupStatus's existing UPDATE),
+      // so the per-leg disposition stamp below sees the new phase via
+      // the deferrable `claims_disposition_phase_chk` trigger. The
+      // `phaseEnteredAt` bump matches what Wave D's `transitionInvoice`
+      // will own once the writer rewire ships in the next wave.
       await transitionGroupStatus({
         groupId: row.id,
         newStatus: "Expired",
@@ -140,7 +148,38 @@ export async function sweepExpiredGroups(opts: SweepOptions): Promise<ExpiredSwe
         // eligibility (the JOIN above already enforced the predicate),
         // so skip the per-status manual transition guard.
         systemOverride: true,
+        extraFields: {
+          phase: "closed",
+          phaseEnteredAt: new Date(),
+          closureReason: "expired",
+        },
       });
+
+      // Stamp `disposition='disposed_expired'` on every disputed,
+      // non-held leg under this group so the `phase='closed'` parent
+      // is no longer in violation of `VALID_DISPOSITIONS_BY_PHASE`.
+      // Mirrors the `syncChildRides` selector (errorTypeId IS NOT NULL
+      // AND status != 'On Hold') so the disposition stamp tracks the
+      // legacy status cascade exactly. `mirror: 'skip'` because Expired
+      // carries no SOP rationale — sop_outcome / drop_reason stay as
+      // they were. `isTerminal: true` is informational only here
+      // (mirror=skip suppresses the drop_reason write).
+      const disputedLegs = await db
+        .select({ id: claimsTable.id })
+        .from(claimsTable)
+        .where(and(
+          eq(claimsTable.invoiceGroupId, row.id),
+          ne(claimsTable.status, "On Hold"),
+          isNotNull(claimsTable.errorTypeId),
+        ));
+
+      for (const leg of disputedLegs) {
+        await setClaimDisposition(leg.id, "disposed_expired", {
+          isTerminal: true,
+          mirror: "skip",
+        });
+      }
+
       expired += 1;
       byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
       if (sampleGroupIds.length < 10) sampleGroupIds.push(row.id);

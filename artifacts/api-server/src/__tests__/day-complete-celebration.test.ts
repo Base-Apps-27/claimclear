@@ -46,6 +46,14 @@ import {
   getInvoiceGroupDay,
   checkAndEmitDayCompleteForGroup,
 } from "../lib/day-complete";
+// Wave D-PR4: `isDayConcluded` is now a phase-based reader. Raw-INSERT
+// fixtures bypass the writers that normally keep `invoice_groups.phase`
+// in lockstep with the legacy `(status, outcome, ...)` columns, so we
+// call `refreshGroupDerivedFields` to recompute the canonical `phase`
+// from the just-inserted legacy state. Same pattern is applied after
+// every direct writer call below for parity with the cache-helper-driven
+// PROD path.
+import { refreshGroupDerivedFields } from "../lib/denormalized-cache";
 
 const ACTOR = { userEmail: "celebration-tester@example.com", userName: "Celebration Tester" };
 
@@ -139,7 +147,15 @@ async function createGroupOnDay(opts: {
     date: opts.day,
   }).returning();
 
-  return { group, claim };
+  // Sync the canonical `phase` (Wave D-PR4 reader switch) — see import
+  // comment above. The deriver reads (status, outcome, closureReason,
+  // reattest_*) from the row we just inserted and writes back the
+  // matching phase, so subsequent `isDayConcluded` reads see the same
+  // bucket the legacy status implied.
+  await refreshGroupDerivedFields(group.id);
+  const [refreshed] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+
+  return { group: refreshed ?? group, claim };
 }
 
 async function cleanupGroup(id: number) {
@@ -247,6 +263,12 @@ test("transitionGroupStatusAndOutcome (closure path): emits exactly one celebrat
       actor: ACTOR,
     });
     assert.equal(result.success, true);
+    // Mirror the PROD cache-helper-driven path: re-derive phase from
+    // the just-updated legacy state so the day-complete reader sees
+    // the new canonical bucket. transitionGroupStatusAndOutcome itself
+    // does not touch phase (cache helpers do) so this is the test-side
+    // shim until the writer rewire ships.
+    await refreshGroupDerivedFields(b.group.id);
     assert.equal(await countCelebrations(day), 1);
   } finally {
     await cleanupGroup(a.group.id);
@@ -324,6 +346,8 @@ test("checkAndEmitDayCompleteForGroup: emits only on the false→true edge (prio
     await db.update(invoiceGroupsTable)
       .set({ status: "Portal Queued" })
       .where(eq(invoiceGroupsTable.id, b.group.id));
+    // Wave D-PR4 phase resync — see import comment.
+    await refreshGroupDerivedFields(b.group.id);
 
     const dayLookup = await getInvoiceGroupDay(b.group.id);
     assert.equal(dayLookup, day, "getInvoiceGroupDay should return the test day");
@@ -361,6 +385,7 @@ test("checkAndEmitDayCompleteForGroup: re-concludes celebrate again (Task #495)"
     await db.update(invoiceGroupsTable)
       .set({ status: "Needs Review" })
       .where(eq(invoiceGroupsTable.id, a.group.id));
+    await refreshGroupDerivedFields(a.group.id);
     assert.equal(await isDayConcluded(day), false);
 
     // Operator re-closes: another false→true edge — this MUST celebrate
@@ -368,6 +393,7 @@ test("checkAndEmitDayCompleteForGroup: re-concludes celebrate again (Task #495)"
     await db.update(invoiceGroupsTable)
       .set({ status: "Awaiting Response" })
       .where(eq(invoiceGroupsTable.id, a.group.id));
+    await refreshGroupDerivedFields(a.group.id);
     await checkAndEmitDayCompleteForGroup({ groupId: a.group.id, actor: ACTOR, priorConcluded: false });
     assert.equal(await countCelebrations(day), 2);
   } finally {

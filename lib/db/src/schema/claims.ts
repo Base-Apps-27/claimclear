@@ -46,6 +46,7 @@ export const claimDispositionEnum = pgEnum("claim_disposition", [
   "final_withdrawn",
   "final_denied",
   "final_nonissue",
+  "disposed_expired",
 ]);
 
 export const CLOSURE_REASONS = ["denied_by_payor", "cannot_dispute", "non_issue"] as const;

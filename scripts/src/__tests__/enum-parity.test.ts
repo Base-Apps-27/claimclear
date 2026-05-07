@@ -57,7 +57,9 @@ describe("Wave B enum parity", () => {
     );
   });
 
-  it("CLAIM_DISPOSITIONS has the 22 spec dispositions in canonical order", () => {
+  it("CLAIM_DISPOSITIONS has the 23 spec dispositions in canonical order", () => {
+    // 22 from Wave B (migration 0034) + `disposed_expired` appended
+    // by Wave D-PR4 (migration 0037) for the Expired-sweep cascade.
     assert.deepEqual(
       [...CLAIM_DISPOSITIONS],
       [
@@ -83,6 +85,7 @@ describe("Wave B enum parity", () => {
         "final_withdrawn",
         "final_denied",
         "final_nonissue",
+        "disposed_expired",
       ],
     );
   });

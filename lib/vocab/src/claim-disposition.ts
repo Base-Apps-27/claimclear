@@ -24,6 +24,7 @@ export const CLAIM_DISPOSITIONS = [
   "final_withdrawn",
   "final_denied",
   "final_nonissue",
+  "disposed_expired",
 ] as const;
 
 export type ClaimDisposition = typeof CLAIM_DISPOSITIONS[number];
@@ -161,6 +162,12 @@ export const CLAIM_DISPOSITION: Record<ClaimDisposition, GlossaryEntry> = {
     description: "Terminal: parent invoice closed after the leg was concluded as a non-issue.",
     domain: "claim_disposition",
   },
+  disposed_expired: {
+    enumValue: "disposed_expired",
+    label: "Expired (closed)",
+    description: "Terminal: parent invoice was auto-retired by the nightly Expired sweep after the filing deadline passed without submission.",
+    domain: "claim_disposition",
+  },
 };
 
 export function claimDispositionLabel(d: string): string {
@@ -227,6 +234,7 @@ const CLOSED_SET: ReadonlyArray<ClaimDisposition> = [
   "final_withdrawn",
   "final_denied",
   "final_nonissue",
+  "disposed_expired",
   "duplicate",
 ];
 
