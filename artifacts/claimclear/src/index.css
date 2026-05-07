@@ -592,3 +592,121 @@
 .email-body a {
   word-break: break-all;
 }
+
+/* ---------------------------------------------------------------- */
+/* Queue V3 wizard primitives — promoted from the queue-redesign    */
+/* mockup-sandbox _queue.css. All declarations are scoped to        */
+/* .cc-scope so they do not leak into the rest of the app. Used by  */
+/* InlineGroupWorkspaceV3 (Task #517).                              */
+/* ---------------------------------------------------------------- */
+.cc-scope .cc-btn-primary {
+  background: var(--cc-primary);
+  color: var(--cc-primary-fg);
+  border-color: var(--cc-primary);
+}
+.cc-scope .cc-btn-primary:not([disabled]):hover {
+  background: var(--cc-primary);
+  opacity: 0.92;
+}
+.cc-scope .cc-btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.cc-scope .cc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border: 1px solid var(--cc-border);
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  white-space: nowrap;
+}
+.cc-scope .cc-pill-amber { background: var(--cc-amber-bg); color: var(--cc-amber-fg); border-color: var(--cc-amber-border); }
+.cc-scope .cc-pill-blue  { background: var(--cc-blue-bg);  color: var(--cc-blue-fg);  border-color: var(--cc-blue-border); }
+.cc-scope .cc-pill-green { background: var(--cc-green-bg); color: var(--cc-green-fg); border-color: var(--cc-green-border); }
+.cc-scope .cc-pill-red   { background: var(--cc-red-bg);   color: var(--cc-red-fg);   border-color: var(--cc-red-border); }
+.cc-scope .cc-pill-muted { background: var(--cc-muted);    color: var(--cc-muted-fg); border-color: var(--cc-border); }
+
+.cc-scope .cc-meta { color: var(--cc-muted-fg); font-size: 0.75rem; }
+
+.cc-scope .cc-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--cc-card);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  flex-wrap: wrap;
+}
+
+.cc-scope .cc-segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--cc-muted);
+  border-radius: var(--cc-radius);
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.cc-scope .cc-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  border-radius: calc(var(--cc-radius) - 2px);
+  color: var(--cc-muted-fg);
+  white-space: nowrap;
+}
+.cc-scope .cc-segmented button.is-active {
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  font-weight: 600;
+}
+
+.cc-scope .cc-footer-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--cc-card);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  flex-wrap: wrap;
+}
+.cc-scope .cc-footer-pinned {
+  border: 2px solid var(--cc-primary);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+
+.cc-scope .cc-gauntlet-row {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+.cc-scope .cc-gauntlet-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--cc-muted);
+  color: var(--cc-muted-fg);
+}
+.cc-scope .cc-gauntlet-done   { background: var(--cc-green-bg); color: var(--cc-green-fg); }
+.cc-scope .cc-gauntlet-active { background: var(--cc-blue-bg);  color: var(--cc-blue-fg); font-weight: 600; }
