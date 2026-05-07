@@ -20,12 +20,14 @@
     "backfill:mas-bulk-combined-reconcile-pull2": "tsx ./src/migrations/2026-05-mas-bulk-combined-reconcile-pull2-backfill.ts",
     "backfill:typed-claims-date": "tsx ./src/migrations/2026-05-typed-claims-date-backfill.ts",
     "backfill:invoice-group-service-date": "tsx ./src/migrations/2026-05-invoice-group-service-date-backfill.ts",
-    "check:vocab-drift": "tsx ./src/check-vocab-drift.ts"
+    "check:vocab-drift": "tsx ./src/check-vocab-drift.ts",
+    "check:invoice-state-derivation": "tsx ./src/check-invoice-state-derivation.ts"
   },
   "dependencies": {
     "@workspace/api-server": "workspace:*",
     "@workspace/closure-options": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/invoice-state": "workspace:*",
     "@workspace/vocab": "workspace:*",
     "drizzle-orm": "catalog:"
   },

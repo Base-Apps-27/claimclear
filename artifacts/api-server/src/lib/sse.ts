@@ -12,6 +12,11 @@ export interface ClaimEvent {
   // into "Processed") without having to refetch the row first. Optional
   // because not every event carries a meaningful status change.
   toStatus?: string | null;
+  // Hierarchical state machine (Wave B placeholder; Wave D will populate).
+  // The new disposition the claim was moved into; lets Wave C/D readers
+  // react to disposition transitions without a refetch. Optional and purely
+  // additive — older clients ignore the field. See spec §2.
+  disposition?: string | null;
 }
 
 export interface GroupEvent {
@@ -26,6 +31,11 @@ export interface GroupEvent {
   // "Portal Queued") without having to refetch the row first. Optional
   // because not every group event carries a meaningful status change.
   toStatus?: string | null;
+  // Hierarchical state machine (Wave B placeholder; Wave D will populate).
+  // The new phase the group was moved into; lets Wave C/D readers react to
+  // phase transitions without a refetch. Optional and purely additive —
+  // older clients ignore the field. See spec §1.
+  phase?: string | null;
 }
 
 export type PresenceResourceType = "claim" | "invoice_group";

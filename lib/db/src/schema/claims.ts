@@ -13,6 +13,41 @@ export const claimOutcomeEnum = pgEnum("claim_outcome", [
   "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"
 ]);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hierarchical state machine — Wave B (2026-05-07).
+// `disposition` is the canonical per-claim column. The 22-tuple below MUST stay
+// byte-identical to `CLAIM_DISPOSITIONS` in `lib/vocab/src/claim-disposition.ts`
+// and to the enum value list in migration 0034. Cross-row contract: every
+// claim's disposition must belong to `VALID_DISPOSITIONS_BY_PHASE[parent.phase]`
+// — enforced at the DB layer by the `validate_disposition_against_phase`
+// trigger created in 0034. A parity test in
+// `scripts/src/__tests__/enum-parity.test.ts` enforces the cross-file invariant.
+// ─────────────────────────────────────────────────────────────────────────────
+export const claimDispositionEnum = pgEnum("claim_disposition", [
+  "unclassified",
+  "classifying",
+  "disposed_portal",
+  "disposed_email",
+  "disposed_withdraw",
+  "disposed_nonissue",
+  "blocked",
+  "duplicate",
+  "awaiting_review",
+  "verdict_drafted",
+  "verdict_approved",
+  "verdict_denied",
+  "verdict_partial",
+  "attest_pending",
+  "attest_queued",
+  "attested",
+  "mas_cancelled",
+  "attest_not_required",
+  "final_reattested",
+  "final_withdrawn",
+  "final_denied",
+  "final_nonissue",
+]);
+
 export const CLOSURE_REASONS = ["denied_by_payor", "cannot_dispute", "non_issue"] as const;
 export type ClosureReason = typeof CLOSURE_REASONS[number];
 
@@ -68,6 +103,13 @@ export const claimsTable = pgTable("claims", {
   // Population logic for these moves into the contracts task.
   status: claimStatusEnum().notNull().default("New"),
   outcome: claimOutcomeEnum().notNull().default("Pending"),
+  // Wave B (2026-05-07). Canonical per-claim hierarchical-state-machine column.
+  // Backfilled by migration 0034 from the (sop_outcome, drop_reason, outcome,
+  // attestation_state, included_in_dispute, duplicate_of_claim_id) tuple per
+  // `deriveDispositionFromLegacy`. Cross-row contract enforced by the
+  // `validate_disposition_against_phase` deferrable trigger. Read-only until
+  // Wave D's `setClaimDisposition` becomes its sole writer.
+  disposition: claimDispositionEnum("disposition").notNull().default("unclassified"),
   approvedAmount: numeric("approved_amount", { precision: 12, scale: 2 }),
   invoiceNumbers: text("invoice_numbers"),
   payorEmail: text("payor_email"),
@@ -178,6 +220,8 @@ export const claimsTable = pgTable("claims", {
 }, (table) => [
   index("claims_conf_number_idx").on(table.confNumber),
   index("claims_invoice_group_id_idx").on(table.invoiceGroupId),
+  index("claims_disposition_idx").on(table.disposition),
+  index("claims_invoice_group_disposition_idx").on(table.invoiceGroupId, table.disposition),
   index("claims_status_idx").on(table.status),
   index("claims_date_idx").on(table.date),
   index("claims_created_at_idx").on(table.createdAt),

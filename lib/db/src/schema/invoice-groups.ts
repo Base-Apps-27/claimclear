@@ -1,7 +1,26 @@
-import { pgTable, text, serial, integer, timestamp, numeric, boolean, jsonb, index, uniqueIndex, date } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, timestamp, numeric, boolean, jsonb, index, uniqueIndex, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimStatusEnum, claimOutcomeEnum } from "./claims";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hierarchical state machine — Wave B (2026-05-07).
+// `phase` is the canonical, sequential invoice-as-state-machine column. The
+// 7-tuple below MUST stay byte-identical to `INVOICE_PHASES` in
+// `lib/vocab/src/invoice-phase.ts` and to the enum value list in migration
+// 0034. A parity test in `scripts/src/__tests__/enum-parity.test.ts` enforces
+// the cross-file invariant. Wave B backfills this column and reads it for
+// derivation; Wave D's `transitionInvoice` becomes its sole writer.
+// ─────────────────────────────────────────────────────────────────────────────
+export const invoicePhaseEnum = pgEnum("invoice_phase", [
+  "triage",
+  "ready_to_submit",
+  "submitted",
+  "response_received",
+  "reviewed",
+  "awaiting_reattestation",
+  "closed",
+]);
 
 export const invoiceGroupsTable = pgTable("invoice_groups", {
   id: serial("id").primaryKey(),
@@ -12,6 +31,13 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   errorTypeName: text("error_type_name"),
   status: claimStatusEnum().notNull().default("New"),
   outcome: claimOutcomeEnum().notNull().default("Pending"),
+  // Wave B (2026-05-07). Canonical hierarchical-state-machine column. Backfilled
+  // by migration 0034 from the (status, outcome, reattest_*, closure_reason)
+  // tuple per `derivePhaseFromLegacy`. Read-only until Wave D's writer rewire.
+  // `phase_entered_at` is initialised to NOW() at backfill (history precision
+  // is recovered later by Wave D's `transitionInvoice`).
+  phase: invoicePhaseEnum("phase").notNull().default("triage"),
+  phaseEnteredAt: timestamp("phase_entered_at", { withTimezone: true }).notNull().defaultNow(),
   approvedAmount: numeric("approved_amount", { precision: 12, scale: 2 }),
   rideCount: integer("ride_count").notNull().default(0),
   // Earliest service date across the group's child claims (calendar
@@ -139,6 +165,7 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   index("invoice_groups_outcome_idx").on(table.outcome),
   index("invoice_groups_created_at_idx").on(table.createdAt),
   index("invoice_groups_service_date_idx").on(table.serviceDate),
+  index("invoice_groups_phase_idx").on(table.phase),
 ]);
 
 export const insertInvoiceGroupSchema = createInsertSchema(invoiceGroupsTable).omit({ id: true, createdAt: true, updatedAt: true });
